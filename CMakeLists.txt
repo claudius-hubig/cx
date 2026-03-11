@@ -7,6 +7,8 @@ add_executable(cx
     src/main.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_manager.cpp
 )
 
 target_include_directories(cx PRIVATE src)

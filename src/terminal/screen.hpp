@@ -1,46 +1,37 @@
 #pragma once
 
-#include <cstddef>
+#include "types.hpp"
+
 #include <string>
 #include <tuple>
 #include <variant>
-#include <vector>
+
+class Buffer;
+class BufferManager;
 
 enum class Action {
     Exit,
+    OpenFile,
 };
 
-struct RowIdx {
-    explicit RowIdx(std::size_t value) : value(value) {}
-    operator std::size_t() const { return value; }
-    std::size_t value;
-};
-
-struct ColIdx {
-    explicit ColIdx(std::size_t value) : value(value) {}
-    operator std::size_t() const { return value; }
-    std::size_t value;
-};
-
-// Manages the terminal screen buffer and the main input loop.
+// Manages terminal I/O and the main input loop.
 //
-// On construction, queries the terminal size and allocates a flat
-// row-major character buffer initialised to spaces. draw() renders the
-// full buffer to the terminal and repositions the hardware cursor.
-// loop() reads raw keystrokes and updates the buffer and cursor accordingly.
+// On construction, queries the terminal size. draw() calls Buffer::render()
+// to produce a screen image and writes it row-by-row to the terminal.
+// loop() reads raw keystrokes and forwards them to the Buffer.
 class Screen {
 public:
     Screen();
 
-    // Write character value into the buffer at (row, col).
-    void set(RowIdx row, ColIdx col, char value);
+    void setBuffer(Buffer& buf);
+    void setBufferManager(BufferManager& mgr);
 
-    // Render the entire buffer to the terminal and move the hardware
-    // cursor to the current logical cursor position.
+    // Render the buffer to the terminal and move the hardware cursor
+    // to the current buffer point position.
     void draw();
 
-    // Read keystrokes one character at a time, update the buffer, and
-    // redraw after each keystroke. Returns when stdin is closed or on Action::Exit.
+    // Read keystrokes one character at a time, forward them to the buffer,
+    // and redraw after each keystroke. Returns when stdin is closed or on Action::Exit.
     void loop();
 
     // Interpret a control character and return the appropriate response:
@@ -49,11 +40,12 @@ public:
     std::variant<std::monostate, std::string, Action> handleSpecialInput(char c);
 
 private:
-    // Query the new terminal size, allocate a fresh buffer initialised to
-    // spaces, copy the top-left overlap from the old buffer, and clamp the
-    // cursor to the new bounds.
     void resize();
     std::tuple<RowIdx, ColIdx> _size;
-    std::vector<char> _buffer;
-    std::tuple<RowIdx, ColIdx> _cursor;
+    Buffer* _buf = nullptr;
+    BufferManager* _bufMgr = nullptr;
+    BufferPoint _view_from = 0;
+    std::string _out;
+    bool _prompt_active = false;
+    std::string _prompt_input;
 };
