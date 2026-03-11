@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 23)
 add_executable(cx
     src/main.cpp
     src/terminal/setup_terminal.cpp
+    src/terminal/screen.cpp
 )
 
 target_include_directories(cx PRIVATE src)

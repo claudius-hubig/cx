@@ -6,7 +6,7 @@
 
 ## Build System
 
-- CMake (minimum 3.10), C++17
+- CMake (minimum 3.10), C++23
 - Build: `cmake -B build && cmake --build build`
 - Binary: `./build/cx`
 
@@ -14,3 +14,4 @@
 
 - No external libraries or dependencies — stdlib only
 - Target: C++23
+- POSIX headers (`<termios.h>`, `<sys/ioctl.h>`, `<unistd.h>`) are a necessary exception for terminal I/O; there is no stdlib alternative

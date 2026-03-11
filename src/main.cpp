@@ -1,9 +1,11 @@
 #include "terminal/setup_terminal.hpp"
-
-#include <iostream>
+#include "terminal/screen.hpp"
 
 int main() {
-    SetupTerminal terminal;
-
-    std::cin.get();
+    try {
+        SetupTerminal terminal;
+        Screen screen;
+        screen.loop();
+    } catch (...) {
+    }
 }
