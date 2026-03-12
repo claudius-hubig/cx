@@ -10,7 +10,7 @@ SetupTerminal::SetupTerminal() {
 
     // Switch to the alternate screen buffer and move the cursor to the
     // top-left. The previous screen contents are saved and restored on exit.
-    write(STDOUT_FILENO, "\x1b[?1049h\x1b[H", 11);
+    write(STDOUT_FILENO, "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q", 23);
 }
 
 SetupTerminal::~SetupTerminal() {

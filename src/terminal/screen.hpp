@@ -44,7 +44,6 @@ private:
     std::tuple<RowIdx, ColIdx> _size;
     Buffer* _buf = nullptr;
     BufferManager* _bufMgr = nullptr;
-    BufferPoint _view_from = 0;
     std::string _out;
     bool _prompt_active = false;
     std::string _prompt_input;

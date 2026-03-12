@@ -21,6 +21,105 @@ void Buffer::insert(char c) {
     ++_point;
 }
 
+void Buffer::deleteAtPoint() {
+    if (_point < _data.size())
+        _data.erase(_data.begin() + _point);
+}
+
+void Buffer::deleteBeforePoint() {
+    if (_point > 0) {
+        --_point;
+        _data.erase(_data.begin() + _point);
+    }
+}
+
+void Buffer::moveLeft() {
+    if (_point > 0)
+        --_point;
+}
+
+void Buffer::moveRight() {
+    if (_point < _data.size())
+        ++_point;
+}
+
+void Buffer::moveUp() {
+    // Find start of current line and compute column.
+    std::size_t line_start = _point;
+    while (line_start > 0 && _data[line_start - 1] != '\n')
+        --line_start;
+    std::size_t col = _point - line_start;
+
+    // If already on the first line, move to beginning.
+    if (line_start == 0) {
+        _point = 0;
+        return;
+    }
+
+    // Find start of previous line.
+    std::size_t prev_line_end = line_start - 1; // the '\n' before current line
+    std::size_t prev_line_start = prev_line_end;
+    while (prev_line_start > 0 && _data[prev_line_start - 1] != '\n')
+        --prev_line_start;
+
+    std::size_t prev_line_len = prev_line_end - prev_line_start;
+    _point = prev_line_start + std::min(col, prev_line_len);
+}
+
+void Buffer::moveDown() {
+    // Find start of current line and compute column.
+    std::size_t line_start = _point;
+    while (line_start > 0 && _data[line_start - 1] != '\n')
+        --line_start;
+    std::size_t col = _point - line_start;
+
+    // Find start of next line (past the '\n' after current position).
+    std::size_t next_line_start = _point;
+    while (next_line_start < _data.size() && _data[next_line_start] != '\n')
+        ++next_line_start;
+
+    // If no newline found, move to end.
+    if (next_line_start >= _data.size()) {
+        _point = _data.size();
+        return;
+    }
+
+    ++next_line_start; // skip the '\n'
+
+    // Find length of next line.
+    std::size_t next_line_end = next_line_start;
+    while (next_line_end < _data.size() && _data[next_line_end] != '\n')
+        ++next_line_end;
+
+    std::size_t next_line_len = next_line_end - next_line_start;
+    _point = next_line_start + std::min(col, next_line_len);
+}
+
+void Buffer::scrollDown() {
+    // Advance _viewFrom past the next newline.
+    while (_viewFrom < _data.size() && _data[_viewFrom] != '\n')
+        ++_viewFrom;
+    if (_viewFrom < _data.size())
+        ++_viewFrom; // skip the '\n'
+}
+
+std::size_t Buffer::screenRow(ColIdx cols) const {
+    std::size_t row = 0, col = 0;
+    for (std::size_t i = _viewFrom; i < _point && i < _data.size(); ++i) {
+        if (_data[i] == '\n') {
+            ++row;
+            col = 0;
+        } else {
+            ++col;
+            if (col >= cols.value) {
+                col = 0;
+                ++row;
+            }
+        }
+    }
+    return row;
+}
+
 void Buffer::overwrite(char c) {
     if (_point >= _data.size())
         _data.push_back(c);
@@ -28,14 +127,14 @@ void Buffer::overwrite(char c) {
         _data[_point] = c;
 }
 
-void Buffer::render(std::string& out, BufferPoint from, RowIdx rows, ColIdx cols) const {
+std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols) const {
     // Build a row-major screen image, then write each row with an explicit
     // ANSI cursor position. Also track where the point falls on screen.
     std::vector<char> screen(rows.value * cols.value, ' ');
     std::size_t row = 0, col = 0;
     std::size_t cur_row = 0, cur_col = 0;
 
-    for (std::size_t i = from; i < _data.size() && row < rows.value; ++i) {
+    for (std::size_t i = _viewFrom; i < _data.size() && row < rows.value; ++i) {
         if (i == _point) {
             cur_row = row;
             cur_col = col;
@@ -68,10 +167,5 @@ void Buffer::render(std::string& out, BufferPoint from, RowIdx rows, ColIdx cols
         out.append(screen.data() + r * cols.value, cols.value);
     }
 
-    // Reposition the terminal cursor to match the buffer point.
-    out += "\x1b[";
-    out += std::to_string(cur_row + 1);
-    out += ";";
-    out += std::to_string(cur_col + 1);
-    out += "H";
+    return {RowIdx{cur_row}, ColIdx{cur_col}};
 }

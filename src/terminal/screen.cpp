@@ -51,8 +51,10 @@ void Screen::draw() {
 
     _out.clear();
 
+    RowIdx cur_row{0};
+    ColIdx cur_col{0};
     if (_buf)
-        _buf->render(_out, _view_from, buf_rows, cols);
+        std::tie(cur_row, cur_col) = _buf->render(_out, buf_rows, cols);
 
     // Status line on the last row, with inverted colours.
     std::string status;
@@ -77,6 +79,17 @@ void Screen::draw() {
     _out += "\x1b[7m"; // reverse video
     _out += status;
     _out += "\x1b[0m"; // reset
+
+    // Position the terminal cursor AFTER the status line, so it lands
+    // in the buffer area rather than on the status bar.
+    _out += "\x1b[";
+    _out += std::to_string(cur_row.value + 1);
+    _out += ";";
+    _out += std::to_string(cur_col.value + 1);
+    _out += "H";
+
+    // Ensure the cursor is visible.
+    _out += "\x1b[?25h";
 
     write(STDOUT_FILENO, _out.data(), _out.size());
 }
@@ -112,7 +125,6 @@ void Screen::loop() {
                 if (_bufMgr && !_prompt_input.empty()) {
                     auto& buf = _bufMgr->open(_prompt_input);
                     setBuffer(buf);
-                    _view_from = 0;
                 }
                 _prompt_active = false;
                 _prompt_input.clear();
@@ -128,7 +140,37 @@ void Screen::loop() {
             // In raw mode the terminal does not translate CR to NL, but some
             // terminal emulators send \n for Enter anyway — handle both.
             if (_buf) _buf->insert('\n');
-        } else if (c < 0x20 || c == 0x7f) {
+        } else if (c == 0x7f) {
+            // Backspace: delete character before point.
+            if (_buf) _buf->deleteBeforePoint();
+        } else if (c == 0x1b) {
+            // Escape sequence: read the next bytes to identify the key.
+            char seq[2];
+            if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[') {
+                if (read(STDIN_FILENO, &seq[1], 1) == 1) {
+                    switch (seq[1]) {
+                        case 'A': if (_buf) _buf->moveUp(); break;
+                        case 'B':
+                            if (_buf) {
+                                _buf->moveDown();
+                                auto& [rows, cols] = _size;
+                                RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
+                                if (_buf->screenRow(cols) >= buf_rows.value)
+                                    _buf->scrollDown();
+                            }
+                            break;
+                        case 'C': if (_buf) _buf->moveRight(); break;
+                        case 'D': if (_buf) _buf->moveLeft(); break;
+                        case '3': {
+                            char tilde;
+                            if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
+                                if (_buf) _buf->deleteAtPoint();
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (c < 0x20) {
             // Control character: delegate to handleSpecialInput().
             auto result = handleSpecialInput(c);
             if (std::holds_alternative<Action>(result)) {
