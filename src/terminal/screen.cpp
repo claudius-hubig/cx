@@ -2,6 +2,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_manager.hpp"
 
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -58,10 +59,14 @@ void Screen::draw() {
 
     // Status line on the last row, with inverted colours.
     std::string status;
-    if (_prompt_active)
+    if (_prompt == Prompt::OpenFile)
         status = "File to open: " + _prompt_input;
-    else
-        status = "C-c exit  C-x hello  C-o open";
+    else if (_prompt == Prompt::GoToLine)
+        status = "Go to line: " + _prompt_input;
+    else if (_buf) {
+        auto [line, col] = _buf->lineCol();
+        status = std::to_string(line) + ":" + std::to_string(col);
+    }
 
     // Right-align the buffer name on the status line.
     std::string buf_name;
@@ -120,16 +125,32 @@ void Screen::loop() {
 
         // Prompt mode: keystrokes build the prompt input instead of editing
         // the buffer. Enter confirms, Escape (0x1b) cancels.
-        if (_prompt_active) {
+        if (_prompt != Prompt::None) {
             if (c == '\r' || c == '\n') {
-                if (_bufMgr && !_prompt_input.empty()) {
-                    auto& buf = _bufMgr->open(_prompt_input);
-                    setBuffer(buf);
+                if (!_prompt_input.empty()) {
+                    if (_prompt == Prompt::OpenFile && _bufMgr) {
+                        auto& buf = _bufMgr->open(_prompt_input);
+                        setBuffer(buf);
+                    } else if (_prompt == Prompt::GoToLine && _buf) {
+                        auto& [rows, cols] = _size;
+                        RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
+                        std::size_t line = 0;
+                        if (_prompt_input == "last")
+                            line = SIZE_MAX;
+                        else {
+                            for (char ch : _prompt_input) {
+                                if (ch >= '0' && ch <= '9')
+                                    line = line * 10 + (ch - '0');
+                            }
+                        }
+                        if (line > 0)
+                            _buf->gotoLine(line, buf_rows);
+                    }
                 }
-                _prompt_active = false;
+                _prompt = Prompt::None;
                 _prompt_input.clear();
             } else if (c == 0x1b) {
-                _prompt_active = false;
+                _prompt = Prompt::None;
                 _prompt_input.clear();
             } else if (c == 0x7f && !_prompt_input.empty()) {
                 _prompt_input.pop_back();
@@ -150,31 +171,47 @@ void Screen::loop() {
             // Backspace: delete character before point.
             if (_buf) _buf->deleteBeforePoint();
         } else if (c == 0x1b) {
-            // Escape sequence: read the next bytes to identify the key.
-            char seq[2];
-            if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[') {
-                if (read(STDIN_FILENO, &seq[1], 1) == 1) {
-                    switch (seq[1]) {
-                        case 'A': if (_buf) _buf->moveUp(); break;
-                        case 'B':
-                            if (_buf) {
-                                _buf->moveDown();
-                                auto& [rows, cols] = _size;
-                                RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
-                                if (_buf->screenRow(cols) >= buf_rows.value)
-                                    _buf->scrollDown();
+            // Use poll() to distinguish bare Esc from escape sequences.
+            struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+            if (poll(&pfd, 1, 50) > 0) {
+                // Escape sequence: read the next bytes to identify the key.
+                char seq[2];
+                if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[') {
+                    if (read(STDIN_FILENO, &seq[1], 1) == 1) {
+                        switch (seq[1]) {
+                            case 'A':
+                                if (_buf) {
+                                    _buf->moveUp();
+                                    if (_buf->point() < _buf->viewFrom())
+                                        _buf->scrollUp();
+                                }
+                                break;
+                            case 'B':
+                                if (_buf) {
+                                    _buf->moveDown();
+                                    auto& [rows, cols] = _size;
+                                    RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
+                                    if (_buf->screenRow(cols) >= buf_rows.value)
+                                        _buf->scrollDown();
+                                }
+                                break;
+                            case 'C': if (_buf) _buf->moveRight(); break;
+                            case 'D': if (_buf) _buf->moveLeft(); break;
+                            case 'H': if (_buf) _buf->moveHome(); break;
+                            case 'F': if (_buf) _buf->moveEnd(); break;
+                            case '3': {
+                                char tilde;
+                                if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
+                                    if (_buf) _buf->deleteAtPoint();
+                                break;
                             }
-                            break;
-                        case 'C': if (_buf) _buf->moveRight(); break;
-                        case 'D': if (_buf) _buf->moveLeft(); break;
-                        case '3': {
-                            char tilde;
-                            if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
-                                if (_buf) _buf->deleteAtPoint();
-                            break;
                         }
                     }
                 }
+            } else if (_buf && _buf->readonly() && _prevBuf) {
+                // Bare Esc in help buffer: switch back.
+                setBuffer(*_prevBuf);
+                _prevBuf = nullptr;
             }
         } else if (c < 0x20) {
             // Control character: delegate to handleSpecialInput().
@@ -184,8 +221,16 @@ void Screen::loop() {
                 if (action == Action::Exit)
                     break;
                 if (action == Action::OpenFile) {
-                    _prompt_active = true;
+                    _prompt = Prompt::OpenFile;
                     _prompt_input.clear();
+                }
+                if (action == Action::GoToLine) {
+                    _prompt = Prompt::GoToLine;
+                    _prompt_input.clear();
+                }
+                if (action == Action::Help && _bufMgr) {
+                    _prevBuf = _buf;
+                    setBuffer(_bufMgr->helpBuffer());
                 }
             }
             if (std::holds_alternative<std::string>(result) && _buf) {
@@ -193,7 +238,12 @@ void Screen::loop() {
                     _buf->insert(ch);
             }
         } else {
-            if (_buf) _buf->insert(c);
+            if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
+                setBuffer(*_prevBuf);
+                _prevBuf = nullptr;
+            } else if (_buf) {
+                _buf->insert(c);
+            }
         }
 
         draw();
@@ -211,6 +261,8 @@ void Screen::resize() {
 std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(char c) {
     switch (c) {
         case 0x03: return Action::Exit;   // Ctrl-C
+        case 0x08: return Action::Help;    // Ctrl-H
+        case 0x0c: return Action::GoToLine; // Ctrl-L
         case 0x0f: return Action::OpenFile; // Ctrl-O
         case 0x18: return std::string{"hello"};  // Ctrl-X
         default:   return std::monostate{};

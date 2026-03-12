@@ -16,7 +16,10 @@ public:
     // contents into a new Buffer if not already open.
     Buffer& open(std::filesystem::path const& path);
 
+    Buffer& helpBuffer() { return _helpBuffer; }
+
 private:
+    Buffer _helpBuffer;
     std::unordered_map<std::string, Buffer> _buffers;
     Screen& _screen;
 };

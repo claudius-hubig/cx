@@ -13,24 +13,57 @@ Buffer::Buffer(std::string name, std::filesystem::path const& path)
                       std::istreambuf_iterator<char>());
 }
 
+// Visual display width of a single (non-newline) character.
+static std::size_t charWidth(char ch) {
+    auto u = static_cast<unsigned char>(ch);
+    if (u == '\t')  return 2;  // rendered as two spaces
+    if (u < 0x20 || u == 0x7f) return 2;  // ^X or \0
+    return 1;
+}
+
 void Buffer::insert(char c) {
+    if (_readonly) return;
     if (_point >= _data.size())
         _data.push_back(c);
     else
         _data.insert(_data.begin() + _point, c);
     ++_point;
+
+    if (_desiredCol) {
+        // Compute visual column after the insertion.
+        std::size_t line_start = _point;
+        while (line_start > 0 && _data[line_start - 1] != '\n')
+            --line_start;
+        std::size_t vcol = 0;
+        for (std::size_t i = line_start; i < _point; ++i)
+            vcol += charWidth(_data[i]);
+        if (vcol >= _desiredCol->value)
+            _desiredCol.reset();
+    }
 }
 
 void Buffer::deleteAtPoint() {
+    if (_readonly) return;
     if (_point < _data.size())
         _data.erase(_data.begin() + _point);
 }
 
 void Buffer::deleteBeforePoint() {
+    if (_readonly) return;
     if (_point > 0) {
         --_point;
         _data.erase(_data.begin() + _point);
     }
+}
+
+void Buffer::moveHome() {
+    while (_point > 0 && _data[_point - 1] != '\n')
+        --_point;
+}
+
+void Buffer::moveEnd() {
+    while (_point < _data.size() && _data[_point] != '\n')
+        ++_point;
 }
 
 void Buffer::moveLeft() {
@@ -44,15 +77,21 @@ void Buffer::moveRight() {
 }
 
 void Buffer::moveUp() {
-    // Find start of current line and compute column.
+    // Find start of current line and compute visual column.
     std::size_t line_start = _point;
     while (line_start > 0 && _data[line_start - 1] != '\n')
         --line_start;
-    std::size_t col = _point - line_start;
+    std::size_t vcol = 0;
+    for (std::size_t i = line_start; i < _point; ++i)
+        vcol += charWidth(_data[i]);
+
+    // The goal column is the desired column if set, otherwise the current one.
+    std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
     // If already on the first line, move to beginning.
     if (line_start == 0) {
         _point = 0;
+        _desiredCol.reset();
         return;
     }
 
@@ -62,16 +101,35 @@ void Buffer::moveUp() {
     while (prev_line_start > 0 && _data[prev_line_start - 1] != '\n')
         --prev_line_start;
 
-    std::size_t prev_line_len = prev_line_end - prev_line_start;
-    _point = prev_line_start + std::min(col, prev_line_len);
+    // Walk the previous line to find the position matching the goal visual column.
+    std::size_t pos = prev_line_start;
+    std::size_t v = 0;
+    while (pos < prev_line_end) {
+        std::size_t w = charWidth(_data[pos]);
+        if (v + w > goal) break;
+        v += w;
+        ++pos;
+    }
+    _point = pos;
+
+    if (v == goal) {
+        _desiredCol.reset();
+    } else if (!_desiredCol) {
+        _desiredCol = ColIdx{goal};
+    }
 }
 
 void Buffer::moveDown() {
-    // Find start of current line and compute column.
+    // Find start of current line and compute visual column.
     std::size_t line_start = _point;
     while (line_start > 0 && _data[line_start - 1] != '\n')
         --line_start;
-    std::size_t col = _point - line_start;
+    std::size_t vcol = 0;
+    for (std::size_t i = line_start; i < _point; ++i)
+        vcol += charWidth(_data[i]);
+
+    // The goal column is the desired column if set, otherwise the current one.
+    std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
     // Find start of next line (past the '\n' after current position).
     std::size_t next_line_start = _point;
@@ -81,18 +139,33 @@ void Buffer::moveDown() {
     // If no newline found, move to end.
     if (next_line_start >= _data.size()) {
         _point = _data.size();
+        _desiredCol.reset();
         return;
     }
 
     ++next_line_start; // skip the '\n'
 
-    // Find length of next line.
+    // Find end of next line.
     std::size_t next_line_end = next_line_start;
     while (next_line_end < _data.size() && _data[next_line_end] != '\n')
         ++next_line_end;
 
-    std::size_t next_line_len = next_line_end - next_line_start;
-    _point = next_line_start + std::min(col, next_line_len);
+    // Walk the next line to find the position matching the goal visual column.
+    std::size_t pos = next_line_start;
+    std::size_t v = 0;
+    while (pos < next_line_end) {
+        std::size_t w = charWidth(_data[pos]);
+        if (v + w > goal) break;
+        v += w;
+        ++pos;
+    }
+    _point = pos;
+
+    if (v == goal) {
+        _desiredCol.reset();
+    } else if (!_desiredCol) {
+        _desiredCol = ColIdx{goal};
+    }
 }
 
 void Buffer::scrollDown() {
@@ -103,6 +176,40 @@ void Buffer::scrollDown() {
         ++_viewFrom; // skip the '\n'
 }
 
+void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
+    // Move _point to the start of the 1-based line number.
+    // If line exceeds the line count, move to the last line.
+    if (line == 0) line = 1;
+
+    _point = 0;
+    for (std::size_t cur = 1; cur < line && _point < _data.size(); ++cur) {
+        while (_point < _data.size() && _data[_point] != '\n')
+            ++_point;
+        if (_point < _data.size())
+            ++_point; // skip the '\n'
+    }
+
+    // Center _viewFrom so the target line is in the middle of the screen.
+    // First, count how many lines back we need to go (half the screen).
+    std::size_t half = screenRows.value / 2;
+    _viewFrom = _point;
+    for (std::size_t i = 0; i < half && _viewFrom > 0; ++i) {
+        --_viewFrom; // step back over '\n' or into previous line
+        while (_viewFrom > 0 && _data[_viewFrom - 1] != '\n')
+            --_viewFrom;
+    }
+}
+
+void Buffer::scrollUp() {
+    if (_viewFrom == 0)
+        return;
+    // _viewFrom is at the start of a line. Step back over the '\n' that
+    // ends the previous line, then find the start of that line.
+    --_viewFrom; // now on the '\n' of the previous line
+    while (_viewFrom > 0 && _data[_viewFrom - 1] != '\n')
+        --_viewFrom;
+}
+
 std::size_t Buffer::screenRow(ColIdx cols) const {
     std::size_t row = 0, col = 0;
     for (std::size_t i = _viewFrom; i < _point && i < _data.size(); ++i) {
@@ -110,7 +217,12 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
             ++row;
             col = 0;
         } else {
-            ++col;
+            std::size_t w = charWidth(_data[i]);
+            if (col + w > cols.value) {
+                ++row;
+                col = 0;
+            }
+            col += w;
             if (col >= cols.value) {
                 col = 0;
                 ++row;
@@ -120,7 +232,21 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
     return row;
 }
 
+std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
+    std::size_t line = 1, col = 1;
+    for (std::size_t i = 0; i < _point && i < _data.size(); ++i) {
+        if (_data[i] == '\n') {
+            ++line;
+            col = 1;
+        } else {
+            ++col;
+        }
+    }
+    return {line, col};
+}
+
 void Buffer::overwrite(char c) {
+    if (_readonly) return;
     if (_point >= _data.size())
         _data.push_back(c);
     else
@@ -128,27 +254,69 @@ void Buffer::overwrite(char c) {
 }
 
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols) const {
-    // Build a row-major screen image, then write each row with an explicit
-    // ANSI cursor position. Also track where the point falls on screen.
-    std::vector<char> screen(rows.value * cols.value, ' ');
+    static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
+    static constexpr auto kTabStyle  = "\x1b[48;2;70;70;70m";
+    static constexpr auto kReset     = "\x1b[0m";
+
+    // Per-row output: the ANSI-escaped content and its visual width.
+    struct RowData {
+        std::string content;
+        std::size_t width = 0;
+    };
+    std::vector<RowData> screen(rows.value);
+
     std::size_t row = 0, col = 0;
     std::size_t cur_row = 0, cur_col = 0;
 
     for (std::size_t i = _viewFrom; i < _data.size() && row < rows.value; ++i) {
-        if (i == _point) {
-            cur_row = row;
-            cur_col = col;
-        }
-        if (_data[i] == '\n') {
+        char ch = _data[i];
+
+        if (ch == '\n') {
+            if (i == _point) { cur_row = row; cur_col = col; }
             ++row;
             col = 0;
+            continue;
+        }
+
+        std::size_t w = charWidth(ch);
+
+        // Wrap if the representation doesn't fit on the current line.
+        if (col + w > cols.value) {
+            ++row;
+            col = 0;
+            if (row >= rows.value) break;
+        }
+
+        if (i == _point) { cur_row = row; cur_col = col; }
+
+        auto& rd = screen[row];
+        auto u = static_cast<unsigned char>(ch);
+        if (ch == '\t') {
+            rd.content += kTabStyle;
+            rd.content += "  ";
+            rd.content += kReset;
+        } else if (u == 0) {
+            rd.content += kCtrlColor;
+            rd.content += "\\0";
+            rd.content += kReset;
+        } else if (u == 0x7f) {
+            rd.content += kCtrlColor;
+            rd.content += "^?";
+            rd.content += kReset;
+        } else if (u < 0x20) {
+            rd.content += kCtrlColor;
+            rd.content += '^';
+            rd.content += static_cast<char>('@' + u);
+            rd.content += kReset;
         } else {
-            screen[row * cols.value + col] = _data[i];
-            ++col;
-            if (col >= cols.value) {
-                col = 0;
-                ++row;
-            }
+            rd.content += ch;
+        }
+        rd.width += w;
+        col += w;
+
+        if (col >= cols.value) {
+            ++row;
+            col = 0;
         }
     }
 
@@ -159,12 +327,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         cur_col = col;
     }
 
-    // Append each row with explicit cursor positioning.
+    // Append each row with explicit cursor positioning, padded with spaces.
     for (std::size_t r = 0; r < rows.value; ++r) {
         out += "\x1b[";
         out += std::to_string(r + 1);
         out += ";1H";
-        out.append(screen.data() + r * cols.value, cols.value);
+        out += screen[r].content;
+        if (screen[r].width < cols.value)
+            out.append(cols.value - screen[r].width, ' ');
     }
 
     return {RowIdx{cur_row}, ColIdx{cur_col}};

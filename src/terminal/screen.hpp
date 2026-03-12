@@ -12,6 +12,8 @@ class BufferManager;
 enum class Action {
     Exit,
     OpenFile,
+    GoToLine,
+    Help,
 };
 
 // Manages terminal I/O and the main input loop.
@@ -45,6 +47,8 @@ private:
     Buffer* _buf = nullptr;
     BufferManager* _bufMgr = nullptr;
     std::string _out;
-    bool _prompt_active = false;
+    enum class Prompt { None, OpenFile, GoToLine };
+    Prompt _prompt = Prompt::None;
     std::string _prompt_input;
+    Buffer* _prevBuf = nullptr;
 };
