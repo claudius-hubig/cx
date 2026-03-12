@@ -139,7 +139,13 @@ void Screen::loop() {
         } else if (c == '\r' || c == '\n') {
             // In raw mode the terminal does not translate CR to NL, but some
             // terminal emulators send \n for Enter anyway — handle both.
-            if (_buf) _buf->insert('\n');
+            if (_buf) {
+                _buf->insert('\n');
+                auto& [rows, cols] = _size;
+                RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
+                while (_buf->screenRow(cols) >= buf_rows.value)
+                    _buf->scrollDown();
+            }
         } else if (c == 0x7f) {
             // Backspace: delete character before point.
             if (_buf) _buf->deleteBeforePoint();
