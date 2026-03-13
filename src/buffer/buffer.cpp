@@ -1,28 +1,9 @@
 #include "buffer.hpp"
-
-#include <fstream>
-#include <iterator>
+#include "char_width.hpp"
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
-Buffer::Buffer(std::string name, std::filesystem::path const& path)
-    : _name(std::move(name)), _path(path) {
-    std::ifstream file(path, std::ios::binary);
-    if (file)
-        _data.assign(std::istreambuf_iterator<char>(file),
-                      std::istreambuf_iterator<char>());
-}
-
-// Visual display width of a single (non-newline) character.
-static std::size_t charWidth(char ch) {
-    auto u = static_cast<unsigned char>(ch);
-    if (u == '\t')  return 2;  // rendered as two spaces
-    if (u < 0x20 || u == 0x7f) return 2;  // ^X or \0
-    return 1;
-}
-
-void Buffer::insert(char c) {
-    if (_readonly) return;
+void Buffer::doInsert(char c) {
     if (_point >= _data.size())
         _data.push_back(c);
     else
@@ -42,14 +23,12 @@ void Buffer::insert(char c) {
     }
 }
 
-void Buffer::deleteAtPoint() {
-    if (_readonly) return;
+void Buffer::doDeleteAtPoint() {
     if (_point < _data.size())
         _data.erase(_data.begin() + _point);
 }
 
-void Buffer::deleteBeforePoint() {
-    if (_readonly) return;
+void Buffer::doDeleteBeforePoint() {
     if (_point > 0) {
         --_point;
         _data.erase(_data.begin() + _point);
@@ -245,8 +224,7 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
     return {line, col};
 }
 
-void Buffer::overwrite(char c) {
-    if (_readonly) return;
+void Buffer::doOverwrite(char c) {
     if (_point >= _data.size())
         _data.push_back(c);
     else
