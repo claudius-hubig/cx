@@ -1,12 +1,15 @@
 #include "screen.hpp"
 #include "buffer/buffer.hpp"
+#include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
+#include "buffer/text_buffer.hpp"
 
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <string>
 #include <variant>
@@ -37,6 +40,8 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
 
 void Screen::setBuffer(Buffer& buf) {
     _buf = &buf;
+    if (_bufMgr && !buf.readonly())
+        _bufMgr->touch(buf.name());
     draw();
 }
 
@@ -57,15 +62,27 @@ void Screen::draw() {
     if (_buf)
         std::tie(cur_row, cur_col) = _buf->render(_out, buf_rows, cols);
 
+    // Expire timed status message.
+    if (_statusExpiry && std::chrono::steady_clock::now() >= *_statusExpiry) {
+        _statusMsg.clear();
+        _statusExpiry.reset();
+    }
+
     // Status line on the last row, with inverted colours.
     std::string status;
     if (_prompt == Prompt::OpenFile)
         status = "File to open: " + _prompt_input;
     else if (_prompt == Prompt::GoToLine)
         status = "Go to line: " + _prompt_input;
+    else if (_prompt == Prompt::SaveAs)
+        status = "Save as: " + _prompt_input;
+    else if (_prompt == Prompt::SwitchBuffer)
+        status = "Buffer: " + _prompt_input;
     else if (_buf) {
         auto [line, col] = _buf->lineCol();
         status = std::to_string(line) + ":" + std::to_string(col);
+        if (!_statusMsg.empty())
+            status += " | " + _statusMsg;
     }
 
     // Right-align the buffer name on the status line.
@@ -128,7 +145,39 @@ void Screen::loop() {
         if (_prompt != Prompt::None) {
             if (c == '\r' || c == '\n') {
                 if (!_prompt_input.empty()) {
-                    if (_prompt == Prompt::OpenFile && _bufMgr) {
+                    if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
+                        Buffer* target = _bufMgr->find(_prompt_input);
+                        if (target) {
+                            setBuffer(*target);
+                        } else if (!_prompt_input.empty() && _prompt_input[0] == '*') {
+                            std::string name = _prompt_input;
+                            if (name.back() != '*')
+                                name += '*';
+                            target = _bufMgr->find(name);
+                            if (target)
+                                setBuffer(*target);
+                            else
+                                setBuffer(_bufMgr->create(name));
+                        } else {
+                            _statusMsg = "No such buffer";
+                            _statusExpiry = std::chrono::steady_clock::now()
+                                          + std::chrono::seconds(10);
+                        }
+                    } else if (_prompt == Prompt::SaveAs && _buf) {
+                        auto* tb = dynamic_cast<TextBuffer*>(_buf);
+                        if (tb) {
+                            tb->setPath(_prompt_input);
+                            if (tb->save()) {
+                                _statusMsg = "Saved to " + _prompt_input;
+                                _statusExpiry = std::chrono::steady_clock::now()
+                                              + std::chrono::seconds(10);
+                            } else {
+                                _statusMsg = "Error saving to " + _prompt_input;
+                                _statusExpiry = std::chrono::steady_clock::now()
+                                              + std::chrono::seconds(10);
+                            }
+                        }
+                    } else if (_prompt == Prompt::OpenFile && _bufMgr) {
                         auto& buf = _bufMgr->open(_prompt_input);
                         setBuffer(buf);
                     } else if (_prompt == Prompt::GoToLine && _buf) {
@@ -158,9 +207,16 @@ void Screen::loop() {
                 _prompt_input += c;
             }
         } else if (c == '\r' || c == '\n') {
-            // In raw mode the terminal does not translate CR to NL, but some
-            // terminal emulators send \n for Enter anyway — handle both.
-            if (_buf) {
+            // Buffer list: Enter selects the highlighted buffer.
+            auto* blb = dynamic_cast<BufferListBuffer*>(_buf);
+            if (blb && _prevBuf && _bufMgr) {
+                auto name = blb->selectedName();
+                Buffer* target = _bufMgr->find(name);
+                if (target) {
+                    _prevBuf = nullptr;
+                    setBuffer(*target);
+                }
+            } else if (_buf) {
                 _buf->insert('\n');
                 auto& [rows, cols] = _size;
                 RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
@@ -232,6 +288,33 @@ void Screen::loop() {
                     _prevBuf = _buf;
                     setBuffer(_bufMgr->helpBuffer());
                 }
+                if (action == Action::BufferList && _bufMgr) {
+                    _prevBuf = _buf;
+                    setBuffer(_bufMgr->bufferListBuffer());
+                }
+                if (action == Action::SwitchBuffer) {
+                    _prompt = Prompt::SwitchBuffer;
+                    _prompt_input.clear();
+                }
+                if (action == Action::Save && _buf) {
+                    auto* tb = dynamic_cast<TextBuffer*>(_buf);
+                    if (tb) {
+                        if (tb->hasPath()) {
+                            if (tb->save()) {
+                                _statusMsg = "Saved to " + tb->name();
+                                _statusExpiry = std::chrono::steady_clock::now()
+                                              + std::chrono::seconds(10);
+                            } else {
+                                _statusMsg = "Error saving to " + tb->name();
+                                _statusExpiry = std::chrono::steady_clock::now()
+                                              + std::chrono::seconds(10);
+                            }
+                        } else {
+                            _prompt = Prompt::SaveAs;
+                            _prompt_input.clear();
+                        }
+                    }
+                }
             }
             if (std::holds_alternative<std::string>(result) && _buf) {
                 for (char ch : std::get<std::string>(result))
@@ -260,10 +343,13 @@ void Screen::resize() {
 
 std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(char c) {
     switch (c) {
+        case 0x02: return Action::SwitchBuffer; // Ctrl-B
         case 0x03: return Action::Exit;   // Ctrl-C
         case 0x08: return Action::Help;    // Ctrl-H
+        case 0x0e: return Action::BufferList; // Ctrl-N
         case 0x0c: return Action::GoToLine; // Ctrl-L
         case 0x0f: return Action::OpenFile; // Ctrl-O
+        case 0x13: return Action::Save;    // Ctrl-S
         case 0x18: return std::string{"hello"};  // Ctrl-X
         default:   return std::monostate{};
     }

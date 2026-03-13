@@ -12,3 +12,16 @@ TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
         _data.assign(std::istreambuf_iterator<char>(file),
                       std::istreambuf_iterator<char>());
 }
+
+void TextBuffer::setPath(std::filesystem::path p) {
+    _path = std::move(p);
+    _name = _path->string();
+}
+
+bool TextBuffer::save() {
+    if (!_path) return false;
+    std::ofstream file(*_path, std::ios::binary);
+    if (!file) return false;
+    file.write(_data.data(), static_cast<std::streamsize>(_data.size()));
+    return file.good();
+}

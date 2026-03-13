@@ -46,7 +46,7 @@ public:
 
     // Compute the screen row of the point relative to _viewFrom,
     // given a screen column width of `cols`.
-    std::size_t screenRow(ColIdx cols) const;
+    virtual std::size_t screenRow(ColIdx cols) const;
 
     // Append a rows x cols screen image to `out`, starting from _viewFrom.
     // Each row is preceded by an ANSI cursor-positioning escape. Returns

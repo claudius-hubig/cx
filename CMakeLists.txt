@@ -10,6 +10,7 @@ add_executable(cx
     src/buffer/buffer.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
+    src/buffer/buffer_list_buffer.cpp
     src/buffer/buffer_manager.cpp
 )
 

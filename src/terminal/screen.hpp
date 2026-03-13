@@ -2,6 +2,8 @@
 
 #include "types.hpp"
 
+#include <chrono>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <variant>
@@ -14,6 +16,9 @@ enum class Action {
     OpenFile,
     GoToLine,
     Help,
+    Save,
+    BufferList,
+    SwitchBuffer,
 };
 
 // Manages terminal I/O and the main input loop.
@@ -47,8 +52,10 @@ private:
     Buffer* _buf = nullptr;
     BufferManager* _bufMgr = nullptr;
     std::string _out;
-    enum class Prompt { None, OpenFile, GoToLine };
+    enum class Prompt { None, OpenFile, GoToLine, SaveAs, SwitchBuffer };
     Prompt _prompt = Prompt::None;
     std::string _prompt_input;
     Buffer* _prevBuf = nullptr;
+    std::string _statusMsg;
+    std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
 };
