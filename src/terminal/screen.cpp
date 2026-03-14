@@ -247,7 +247,7 @@ void Screen::loop() {
                                     _buf->moveDown();
                                     auto& [rows, cols] = _size;
                                     RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
-                                    if (_buf->screenRow(cols) >= buf_rows.value)
+                                    while (_buf->screenRow(cols) >= buf_rows.value)
                                         _buf->scrollDown();
                                 }
                                 break;
