@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <filesystem>
 #include <limits>
 #include <string>
 #include <variant>
@@ -70,14 +71,14 @@ void Screen::draw() {
 
     // Status line on the last row, with inverted colours.
     std::string status;
-    if (_prompt == Prompt::OpenFile)
-        status = "File to open: " + _prompt_input;
-    else if (_prompt == Prompt::GoToLine)
+    if (_prompt == Prompt::GoToLine)
         status = "Go to line: " + _prompt_input;
     else if (_prompt == Prompt::SaveAs)
         status = "Save as: " + _prompt_input;
     else if (_prompt == Prompt::SwitchBuffer)
         status = "Buffer: " + _prompt_input;
+    else if (_prompt == Prompt::ConfirmSave)
+        status = _prompt_input;
     else if (_buf) {
         auto [line, col] = _buf->lineCol();
         status = std::to_string(line) + ":" + std::to_string(col);
@@ -88,7 +89,7 @@ void Screen::draw() {
     // Right-align the buffer name on the status line.
     std::string buf_name;
     if (_buf)
-        buf_name = _buf->name();
+        buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
     if (status.size() + buf_name.size() + 2 <= cols.value) {
         status.resize(cols.value - buf_name.size(), ' ');
         status += buf_name;
@@ -142,7 +143,23 @@ void Screen::loop() {
 
         // Prompt mode: keystrokes build the prompt input instead of editing
         // the buffer. Enter confirms, Escape (0x1b) cancels.
-        if (_prompt != Prompt::None) {
+        if (_prompt == Prompt::ConfirmSave) {
+            if (c == 'y' || c == 'Y') {
+                auto* tb = dynamic_cast<TextBuffer*>(_buf);
+                if (tb) {
+                    if (tb->save())
+                        setStatus("Saved to " + tb->name());
+                    else
+                        setStatus("Error saving to " + tb->name());
+                }
+                _prompt = Prompt::None;
+                _prompt_input.clear();
+            } else if (c == 'n' || c == 'N' || c == 0x1b) {
+                _prompt = Prompt::None;
+                _prompt_input.clear();
+            }
+            // Ignore all other keys.
+        } else if (_prompt != Prompt::None) {
             if (c == '\r' || c == '\n') {
                 if (!_prompt_input.empty()) {
                     if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
@@ -159,20 +176,26 @@ void Screen::loop() {
                             else
                                 setBuffer(_bufMgr->create(name));
                         } else {
-                            setStatus("No such buffer");
+                            // Not an existing buffer — try opening as a file.
+                            auto& buf = _bufMgr->open(_prompt_input);
+                            setBuffer(buf);
                         }
                     } else if (_prompt == Prompt::SaveAs && _buf) {
                         auto* tb = dynamic_cast<TextBuffer*>(_buf);
                         if (tb) {
                             tb->setPath(_prompt_input);
+                            if (!std::filesystem::exists(_prompt_input)) {
+                                _prompt = Prompt::ConfirmSave;
+                                _prompt_input = "File " + tb->name()
+                                    + " doesn't exist. Really save there? y/n: ";
+                                draw();
+                                continue;
+                            }
                             if (tb->save())
-                                setStatus("Saved to " + _prompt_input);
+                                setStatus("Saved to " + tb->name());
                             else
-                                setStatus("Error saving to " + _prompt_input);
+                                setStatus("Error saving to " + tb->name());
                         }
-                    } else if (_prompt == Prompt::OpenFile && _bufMgr) {
-                        auto& buf = _bufMgr->open(_prompt_input);
-                        setBuffer(buf);
                     } else if (_prompt == Prompt::GoToLine && _buf) {
                         std::size_t line = 0;
                         if (_prompt_input == "last")
@@ -296,18 +319,26 @@ void Screen::loop() {
                 auto action = std::get<Action>(result);
                 if (action == Action::Exit)
                     break;
-                else if (action == Action::OpenFile) {
-                    _prompt = Prompt::OpenFile;
-                    _prompt_input.clear();
-                } else if (action == Action::GoToLine) {
+                else if (action == Action::GoToLine) {
                     _prompt = Prompt::GoToLine;
                     _prompt_input.clear();
                 } else if (action == Action::Help && _bufMgr) {
-                    _prevBuf = _buf;
-                    setBuffer(_bufMgr->helpBuffer());
+                    if (_buf && _buf->readonly() && _prevBuf) {
+                        // Already in a readonly overlay (e.g. help); dismiss it.
+                        setBuffer(*_prevBuf);
+                        _prevBuf = nullptr;
+                    } else {
+                        _prevBuf = _buf;
+                        setBuffer(_bufMgr->helpBuffer());
+                    }
                 } else if (action == Action::BufferList && _bufMgr) {
-                    _prevBuf = _buf;
-                    setBuffer(_bufMgr->bufferListBuffer());
+                    if (_buf && _buf->readonly() && _prevBuf) {
+                        setBuffer(*_prevBuf);
+                        _prevBuf = nullptr;
+                    } else {
+                        _prevBuf = _buf;
+                        setBuffer(_bufMgr->bufferListBuffer());
+                    }
                 } else if (action == Action::SwitchBuffer) {
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
@@ -317,10 +348,15 @@ void Screen::loop() {
                     auto* tb = dynamic_cast<TextBuffer*>(_buf);
                     if (tb) {
                         if (tb->hasPath()) {
-                            if (tb->save())
+                            if (!std::filesystem::exists(tb->name())) {
+                                _prompt = Prompt::ConfirmSave;
+                                _prompt_input = "File " + tb->name()
+                                    + " doesn't exist. Really save there? y/n: ";
+                            } else if (tb->save()) {
                                 setStatus("Saved to " + tb->name());
-                            else
+                            } else {
                                 setStatus("Error saving to " + tb->name());
+                            }
                         } else {
                             _prompt = Prompt::SaveAs;
                             _prompt_input.clear();
@@ -378,7 +414,6 @@ std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(cha
         case 0x08: return Action::Help;    // Ctrl-H
         case 0x0e: return Action::BufferList; // Ctrl-N
         case 0x0c: return Action::GoToLine; // Ctrl-L
-        case 0x0f: return Action::OpenFile; // Ctrl-O
         case 0x13: return Action::Save;    // Ctrl-S
         case 0x17: return Action::ToggleWhitespace; // Ctrl-W
         case 0x18: return std::string{"hello"};  // Ctrl-X

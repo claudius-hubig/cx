@@ -34,6 +34,11 @@ public:
     // sorted alphabetically.
     std::vector<std::string> bufferNames() const;
 
+    // Return a short display name for the given buffer name. Uses just the
+    // filename when unambiguous, or the full path when another open buffer
+    // shares the same filename.
+    std::string displayName(std::string const& name) const;
+
     // Mark a buffer as most recently used.
     void touch(std::string const& name);
 

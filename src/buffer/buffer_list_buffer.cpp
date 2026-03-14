@@ -1,22 +1,136 @@
 #include "buffer_list_buffer.hpp"
 
+#include <map>
 #include <string>
 
-BufferListBuffer::BufferListBuffer(std::vector<std::string> names, std::size_t startLine)
-    : Buffer("*buffers*") {
-    refresh(std::move(names), startLine);
+namespace {
+
+struct DirNode {
+    std::map<std::string, DirNode> subdirs;
+    // (filename, full_path) pairs, kept in insertion (sorted) order.
+    std::vector<std::pair<std::string, std::string>> files;
+};
+
+void insertPath(DirNode& root, std::string const& fullPath) {
+    // Split on '/', skipping the leading '/'.
+    std::vector<std::string> parts;
+    std::size_t start = 1;
+    while (start < fullPath.size()) {
+        auto end = fullPath.find('/', start);
+        if (end == std::string::npos) end = fullPath.size();
+        parts.push_back(fullPath.substr(start, end - start));
+        start = end + 1;
+    }
+    if (parts.empty()) return;
+
+    DirNode* node = &root;
+    for (std::size_t i = 0; i + 1 < parts.size(); ++i)
+        node = &node->subdirs[parts[i]];
+    node->files.push_back({parts.back(), fullPath});
 }
 
-void BufferListBuffer::refresh(std::vector<std::string> names, std::size_t startLine) {
-    _names = std::move(names);
+void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent,
+                std::vector<std::string>& lines, std::vector<std::string>& names) {
+    std::size_t total = node.files.size() + node.subdirs.size();
+    if (total == 0) return;
+
+    // Single subdir, no files → collapse into prefix.
+    if (node.files.empty() && node.subdirs.size() == 1) {
+        auto& [name, child] = *node.subdirs.begin();
+        renderNode(child, prefix + name + "/", indent, lines, names);
+        return;
+    }
+
+    // Single file, no subdirs → show as one line with full prefix.
+    if (node.files.size() == 1 && node.subdirs.empty()) {
+        lines.push_back(std::string(indent, ' ') + prefix + node.files[0].first);
+        names.push_back(node.files[0].second);
+        return;
+    }
+
+    // Multiple children → directory header + indented entries.
+    lines.push_back(std::string(indent, ' ') + prefix);
+    names.push_back({});
+    indent += 2;
+
+    // Merge files and subdirs in sorted order.
+    auto fi = node.files.begin();
+    auto di = node.subdirs.begin();
+    while (fi != node.files.end() || di != node.subdirs.end()) {
+        bool useFile = fi != node.files.end() &&
+            (di == node.subdirs.end() || fi->first < di->first);
+        if (useFile) {
+            lines.push_back(std::string(indent, ' ') + fi->first);
+            names.push_back(fi->second);
+            ++fi;
+        } else {
+            renderNode(di->second, di->first + "/", indent, lines, names);
+            ++di;
+        }
+    }
+}
+
+} // namespace
+
+BufferListBuffer::BufferListBuffer(std::vector<std::string> names, std::string const& startName)
+    : Buffer("*buffers*") {
+    refresh(std::move(names), startName);
+}
+
+void BufferListBuffer::refresh(std::vector<std::string> names, std::string const& startName) {
+    _displayLines.clear();
+    _lineToName.clear();
+
+    // Separate non-path names from absolute paths.
+    DirNode root;
+    for (auto& name : names) {
+        if (!name.empty() && name[0] == '/') {
+            insertPath(root, name);
+        } else {
+            _displayLines.push_back(name);
+            _lineToName.push_back(name);
+        }
+    }
+
+    // Render path trie — iterate top-level children directly so the
+    // root "/" itself never appears as a header line.
+    {
+        auto fi = root.files.begin();
+        auto di = root.subdirs.begin();
+        while (fi != root.files.end() || di != root.subdirs.end()) {
+            bool useFile = fi != root.files.end() &&
+                (di == root.subdirs.end() || fi->first < di->first);
+            if (useFile) {
+                _displayLines.push_back("/" + fi->first);
+                _lineToName.push_back(fi->second);
+                ++fi;
+            } else {
+                renderNode(di->second, "/" + di->first + "/", 0,
+                           _displayLines, _lineToName);
+                ++di;
+            }
+        }
+    }
+
+    // Build _data from display lines (for base-class cursor navigation).
     _data.clear();
-    for (std::size_t i = 0; i < _names.size(); ++i) {
-        for (char c : _names[i])
+    for (std::size_t i = 0; i < _displayLines.size(); ++i) {
+        for (char c : _displayLines[i])
             _data.push_back(c);
-        if (i + 1 < _names.size())
+        if (i + 1 < _displayLines.size())
             _data.push_back('\n');
     }
-    // Place point at the start of startLine.
+
+    // Place point on the line matching startName.
+    std::size_t startLine = 0;
+    if (!startName.empty()) {
+        for (std::size_t i = 0; i < _lineToName.size(); ++i) {
+            if (_lineToName[i] == startName) {
+                startLine = i;
+                break;
+            }
+        }
+    }
     _point = 0;
     for (std::size_t line = 0; line < startLine && _point < _data.size(); ++line) {
         while (_point < _data.size() && _data[_point] != '\n')
@@ -37,8 +151,8 @@ std::size_t BufferListBuffer::lineAt(std::size_t pos) const {
 
 std::string BufferListBuffer::selectedName() const {
     auto line = lineAt(_point);
-    if (line < _names.size())
-        return _names[line];
+    if (line < _lineToName.size())
+        return _lineToName[line];
     return {};
 }
 
@@ -57,10 +171,10 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(
         out += std::to_string(r + 1);
         out += ";1H";
 
-        if (lineIdx < _names.size()) {
+        if (lineIdx < _displayLines.size()) {
             bool highlight = (lineIdx == curLine);
             if (highlight) out += kHighlight;
-            out += _names[lineIdx];
+            out += _displayLines[lineIdx];
             out += "\x1b[K";
             if (highlight) out += kReset;
         } else {

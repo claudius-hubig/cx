@@ -13,7 +13,6 @@ class BufferManager;
 
 enum class Action {
     Exit,
-    OpenFile,
     GoToLine,
     Help,
     Save,
@@ -42,6 +41,9 @@ public:
     // and redraw after each keystroke. Returns when stdin is closed or on Action::Exit.
     void loop();
 
+    // Display a timed status message on the status line.
+    void setStatus(std::string msg);
+
 private:
     // Interpret a control character and return the appropriate response:
     // Action::Exit on Ctrl-C, a string to insert on Ctrl-X, or monostate
@@ -50,12 +52,11 @@ private:
     void resize();
     // Number of rows available for buffer content (total minus status line).
     RowIdx bufRows() const;
-    void setStatus(std::string msg);
     std::tuple<RowIdx, ColIdx> _size;
     Buffer* _buf = nullptr;
     BufferManager* _bufMgr = nullptr;
     std::string _out;
-    enum class Prompt { None, OpenFile, GoToLine, SaveAs, SwitchBuffer };
+    enum class Prompt { None, GoToLine, SaveAs, SwitchBuffer, ConfirmSave };
     Prompt _prompt = Prompt::None;
     std::string _prompt_input;
     Buffer* _prevBuf = nullptr;

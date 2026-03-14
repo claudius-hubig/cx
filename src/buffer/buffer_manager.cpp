@@ -13,7 +13,7 @@ BufferManager::BufferManager(Screen& screen)
 }
 
 Buffer& BufferManager::open(std::filesystem::path const& path) {
-    auto canonical = std::filesystem::weakly_canonical(path);
+    auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(path));
     auto key = canonical.string();
     auto it = _buffers.find(key);
     if (it != _buffers.end())
@@ -28,21 +28,10 @@ BufferListBuffer& BufferManager::bufferListBuffer() {
     auto names = bufferNames();
     auto target = secondMRU();
 
-    // Find which sorted index the target name lands on.
-    std::size_t startLine = 0;
-    if (!target.empty()) {
-        for (std::size_t i = 0; i < names.size(); ++i) {
-            if (names[i] == target) {
-                startLine = i;
-                break;
-            }
-        }
-    }
-
     if (!_bufferListBuffer)
-        _bufferListBuffer = std::make_unique<BufferListBuffer>(std::move(names), startLine);
+        _bufferListBuffer = std::make_unique<BufferListBuffer>(std::move(names), target);
     else
-        _bufferListBuffer->refresh(std::move(names), startLine);
+        _bufferListBuffer->refresh(std::move(names), target);
     return *_bufferListBuffer;
 }
 
@@ -68,6 +57,17 @@ std::vector<std::string> BufferManager::bufferNames() const {
         names.push_back(name);
     std::sort(names.begin(), names.end());
     return names;
+}
+
+std::string BufferManager::displayName(std::string const& name) const {
+    auto filename = std::filesystem::path(name).filename().string();
+    if (filename.empty() || filename == name)
+        return name;
+    // Check if any other buffer shares the same filename.
+    for (auto& [other, _] : _buffers)
+        if (other != name && std::filesystem::path(other).filename() == filename)
+            return name;
+    return filename;
 }
 
 void BufferManager::touch(std::string const& name) {

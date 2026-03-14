@@ -12,38 +12,37 @@
 //   1  separator (empty in _data; rendered as '=')
 //   2  blank
 //   3  "Commands:"
-//   4  "  Ctrl-B      Switch to buffer"
+//   4  "  Ctrl-b      Switch/open buffer"
 //   ...
-//  12  "  Ctrl-X      ..."
-//  13  blank
-//  14  "Movement:"
-//  15  "  Arrows      Move cursor"
+//  11  "  Ctrl-x      ..."
+//  12  blank
+//  13  "Movement:"
+//  14  "  Arrows      Move cursor"
 //   ...
-//  20  "  Enter       Insert newline"
-//  21  blank
-//  22  footer
+//  19  "  Enter       Insert newline"
+//  20  blank
+//  21  footer
 //
 // In stacked mode the visual rows are 1:1 with data lines.
-// In side-by-side mode, data lines 14-20 appear in the right column
-// of visual rows 3-12 (alongside data lines 3-12).
+// In side-by-side mode, data lines 13-19 appear in the right column
+// of visual rows 3-11 (alongside data lines 3-11).
 
 static constexpr std::size_t kCmdStart  = 3;  // data line of "Commands:"
-static constexpr std::size_t kCmdEnd    = 13; // data line after last command entry (the blank)
-static constexpr std::size_t kMovStart  = 14; // data line of "Movement:"
-static constexpr std::size_t kMovEnd    = 21; // data line after last movement entry (the blank)
-static constexpr std::size_t kFooter    = 22;
+static constexpr std::size_t kCmdEnd    = 12; // data line after last command entry (the blank)
+static constexpr std::size_t kMovStart  = 13; // data line of "Movement:"
+static constexpr std::size_t kMovEnd    = 20; // data line after last movement entry (the blank)
+static constexpr std::size_t kFooter    = 21;
 
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
-    std::string_view{"  Ctrl-B      Switch to buffer"},
-    std::string_view{"  Ctrl-C      Exit"},
-    std::string_view{"  Ctrl-H      Show this help"},
-    std::string_view{"  Ctrl-L      Go to line"},
-    std::string_view{"  Ctrl-N      Buffer list"},
-    std::string_view{"  Ctrl-O      Open file"},
-    std::string_view{"  Ctrl-S      Save file"},
-    std::string_view{"  Ctrl-W      Toggle whitespace"},
-    std::string_view{R"(  Ctrl-X      Insert "hello")"},
+    std::string_view{"  Ctrl-b      Switch/open buffer"},
+    std::string_view{"  Ctrl-c      Exit"},
+    std::string_view{"  Ctrl-h      Show this help"},
+    std::string_view{"  Ctrl-l      Go to line"},
+    std::string_view{"  Ctrl-n      Buffer list"},
+    std::string_view{"  Ctrl-s      Save file"},
+    std::string_view{"  Ctrl-w      Toggle whitespace"},
+    std::string_view{R"(  Ctrl-x      Insert "hello")"},
 };
 
 static constexpr std::array kMovementLines = {
@@ -56,7 +55,7 @@ static constexpr std::array kMovementLines = {
     std::string_view{"  Enter       Insert newline"},
 };
 
-static constexpr std::string_view kFooterText = "Press 'q' or Esc to return to editing.";
+static constexpr std::string_view kFooterText = "Press 'q', Esc, or Ctrl-h to return to editing.";
 static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
 static constexpr std::size_t kHeaderRows = 3; // title + separator + blank
@@ -195,11 +194,11 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
     text += kTitle;               text += '\n'; // 0  title
     text += '\n';                               // 1  separator (rendered as '=')
     text += '\n';                               // 2  blank
-    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-12
-    text += '\n';                               // 13 blank
-    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 14-20
-    text += '\n';                               // 21 blank
-    text += kFooterText;          text += '\n'; // 22 footer
+    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-11
+    text += '\n';                               // 12 blank
+    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 13-19
+    text += '\n';                               // 20 blank
+    text += kFooterText;          text += '\n'; // 21 footer
     _data.assign(text.begin(), text.end());
 }
 
