@@ -277,27 +277,22 @@ void Screen::loop() {
                 auto action = std::get<Action>(result);
                 if (action == Action::Exit)
                     break;
-                if (action == Action::OpenFile) {
+                else if (action == Action::OpenFile) {
                     _prompt = Prompt::OpenFile;
                     _prompt_input.clear();
-                }
-                if (action == Action::GoToLine) {
+                } else if (action == Action::GoToLine) {
                     _prompt = Prompt::GoToLine;
                     _prompt_input.clear();
-                }
-                if (action == Action::Help && _bufMgr) {
+                } else if (action == Action::Help && _bufMgr) {
                     _prevBuf = _buf;
                     setBuffer(_bufMgr->helpBuffer());
-                }
-                if (action == Action::BufferList && _bufMgr) {
+                } else if (action == Action::BufferList && _bufMgr) {
                     _prevBuf = _buf;
                     setBuffer(_bufMgr->bufferListBuffer());
-                }
-                if (action == Action::SwitchBuffer) {
+                } else if (action == Action::SwitchBuffer) {
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
-                }
-                if (action == Action::Save && _buf) {
+                } else if (action == Action::Save && _buf) {
                     auto* tb = dynamic_cast<TextBuffer*>(_buf);
                     if (tb) {
                         if (tb->hasPath()) {
@@ -311,8 +306,7 @@ void Screen::loop() {
                         }
                     }
                 }
-            }
-            if (std::holds_alternative<std::string>(result) && _buf) {
+            } else if (std::holds_alternative<std::string>(result) && _buf) {
                 for (char ch : std::get<std::string>(result))
                     _buf->insert(ch);
             }
