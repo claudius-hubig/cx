@@ -2,6 +2,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
+#include "buffer/char_width.hpp"
 #include "buffer/text_buffer.hpp"
 
 #include <poll.h>
@@ -193,8 +194,17 @@ void Screen::loop() {
                 _prompt_input.clear();
             } else if (c == 0x7f && !_prompt_input.empty()) {
                 _prompt_input.pop_back();
-            } else if (c >= 0x20) {
+            } else if (static_cast<unsigned char>(c) >= 0x20) {
                 _prompt_input += c;
+                // Read remaining bytes of a UTF-8 sequence.
+                auto u = static_cast<unsigned char>(c);
+                if (u >= 0x80) {
+                    for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
+                        char next;
+                        if (read(STDIN_FILENO, &next, 1) != 1) break;
+                        _prompt_input += next;
+                    }
+                }
             }
         } else if (c == '\r' || c == '\n') {
             // Buffer list: Enter selects the highlighted buffer.
@@ -262,15 +272,24 @@ void Screen::loop() {
                 } else if (seq[0] != '[') {
                     // Not a CSI sequence — insert the byte verbatim
                     // (e.g. Alt+key sends ESC followed by the key).
-                    if (_buf && seq[0] >= 0x20)
+                    if (_buf && static_cast<unsigned char>(seq[0]) >= 0x20) {
                         _buf->insert(seq[0]);
+                        auto u = static_cast<unsigned char>(seq[0]);
+                        if (u >= 0x80) {
+                            for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
+                                char next;
+                                if (read(STDIN_FILENO, &next, 1) != 1) break;
+                                _buf->insert(next);
+                            }
+                        }
+                    }
                 }
             } else if (_buf && _buf->readonly() && _prevBuf) {
                 // Bare Esc in help buffer: switch back.
                 setBuffer(*_prevBuf);
                 _prevBuf = nullptr;
             }
-        } else if (c < 0x20) {
+        } else if (static_cast<unsigned char>(c) < 0x20) {
             // Control character: delegate to handleSpecialInput().
             auto result = handleSpecialInput(c);
             if (std::holds_alternative<Action>(result)) {
@@ -316,6 +335,15 @@ void Screen::loop() {
                 _prevBuf = nullptr;
             } else if (_buf) {
                 _buf->insert(c);
+                // Read and insert remaining bytes of a UTF-8 sequence.
+                auto u = static_cast<unsigned char>(c);
+                if (u >= 0x80) {
+                    for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
+                        char next;
+                        if (read(STDIN_FILENO, &next, 1) != 1) break;
+                        _buf->insert(next);
+                    }
+                }
             }
         }
 
