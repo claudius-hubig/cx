@@ -41,12 +41,11 @@ public:
     // and redraw after each keystroke. Returns when stdin is closed or on Action::Exit.
     void loop();
 
+private:
     // Interpret a control character and return the appropriate response:
     // Action::Exit on Ctrl-C, a string to insert on Ctrl-X, or monostate
     // for unhandled inputs.
     std::variant<std::monostate, std::string, Action> handleSpecialInput(char c);
-
-private:
     void resize();
     // Number of rows available for buffer content (total minus status line).
     RowIdx bufRows() const;
