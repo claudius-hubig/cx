@@ -83,8 +83,8 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
     if (!isSideBySide(cols))
         return dataLine; // stacked: 1:1
 
-    // Side-by-side: movement block (data lines 10-16) merges into
-    // the same visual rows as the command block (data lines 3-8).
+    // Side-by-side: movement block (data lines 13-19) merges into
+    // the same visual rows as the command block (data lines 3-11).
     if (dataLine < kMovStart)
         return dataLine;
     if (dataLine < kMovEnd) {
@@ -194,11 +194,11 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
     text += kTitle;               text += '\n'; // 0  title
     text += '\n';                               // 1  separator (rendered as '=')
     text += '\n';                               // 2  blank
-    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-8
-    text += '\n';                               // 9  blank
-    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 10-16
-    text += '\n';                               // 17 blank
-    text += kFooterText;          text += '\n'; // 18 footer
+    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-11
+    text += '\n';                               // 12 blank
+    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 13-19
+    text += '\n';                               // 20 blank
+    text += kFooterText;          text += '\n'; // 21 footer
     _data.assign(text.begin(), text.end());
 }
 
