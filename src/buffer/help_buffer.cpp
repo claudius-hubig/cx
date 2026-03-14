@@ -14,24 +14,24 @@
 //   3  "Commands:"
 //   4  "  Ctrl-B      Switch to buffer"
 //   ...
-//  11  "  Ctrl-X      ..."
-//  12  blank
-//  13  "Movement:"
-//  14  "  Arrows      Move cursor"
+//  12  "  Ctrl-X      ..."
+//  13  blank
+//  14  "Movement:"
+//  15  "  Arrows      Move cursor"
 //   ...
-//  19  "  Enter       Insert newline"
-//  20  blank
-//  21  footer
+//  20  "  Enter       Insert newline"
+//  21  blank
+//  22  footer
 //
 // In stacked mode the visual rows are 1:1 with data lines.
-// In side-by-side mode, data lines 13-19 appear in the right column
-// of visual rows 3-11 (alongside data lines 3-11).
+// In side-by-side mode, data lines 14-20 appear in the right column
+// of visual rows 3-12 (alongside data lines 3-12).
 
 static constexpr std::size_t kCmdStart  = 3;  // data line of "Commands:"
-static constexpr std::size_t kCmdEnd    = 12; // data line after last command entry (the blank)
-static constexpr std::size_t kMovStart  = 13; // data line of "Movement:"
-static constexpr std::size_t kMovEnd    = 20; // data line after last movement entry (the blank)
-static constexpr std::size_t kFooter    = 21;
+static constexpr std::size_t kCmdEnd    = 13; // data line after last command entry (the blank)
+static constexpr std::size_t kMovStart  = 14; // data line of "Movement:"
+static constexpr std::size_t kMovEnd    = 21; // data line after last movement entry (the blank)
+static constexpr std::size_t kFooter    = 22;
 
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
@@ -42,6 +42,7 @@ static constexpr std::array kCommandLines = {
     std::string_view{"  Ctrl-N      Buffer list"},
     std::string_view{"  Ctrl-O      Open file"},
     std::string_view{"  Ctrl-S      Save file"},
+    std::string_view{"  Ctrl-W      Toggle whitespace"},
     std::string_view{R"(  Ctrl-X      Insert "hello")"},
 };
 
@@ -83,8 +84,8 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
     if (!isSideBySide(cols))
         return dataLine; // stacked: 1:1
 
-    // Side-by-side: movement block (data lines 13-19) merges into
-    // the same visual rows as the command block (data lines 3-11).
+    // Side-by-side: movement block (data lines 14-20) merges into
+    // the same visual rows as the command block (data lines 3-12).
     if (dataLine < kMovStart)
         return dataLine;
     if (dataLine < kMovEnd) {
@@ -194,11 +195,11 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
     text += kTitle;               text += '\n'; // 0  title
     text += '\n';                               // 1  separator (rendered as '=')
     text += '\n';                               // 2  blank
-    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-11
-    text += '\n';                               // 12 blank
-    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 13-19
-    text += '\n';                               // 20 blank
-    text += kFooterText;          text += '\n'; // 21 footer
+    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-12
+    text += '\n';                               // 13 blank
+    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 14-20
+    text += '\n';                               // 21 blank
+    text += kFooterText;          text += '\n'; // 22 footer
     _data.assign(text.begin(), text.end());
 }
 
@@ -211,7 +212,7 @@ std::size_t HelpBuffer::screenRow(ColIdx cols) const {
 }
 
 std::tuple<RowIdx, ColIdx> HelpBuffer::render(
-        std::string& out, RowIdx rows, ColIdx cols) const {
+        std::string& out, RowIdx rows, ColIdx cols, bool /*showWhitespace*/) const {
 
     std::size_t c = cols.value;
 

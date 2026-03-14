@@ -51,7 +51,8 @@ public:
     // Each row is preceded by an ANSI cursor-positioning escape. Returns
     // the screen (row, col) of the point for the caller to position the
     // terminal cursor.
-    virtual std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols) const;
+    virtual std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
+                                             bool showWhitespace = false) const;
 
     BufferPoint point() const { return _point; }
     BufferPoint viewFrom() const { return _viewFrom; }

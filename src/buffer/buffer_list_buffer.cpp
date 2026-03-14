@@ -43,7 +43,7 @@ std::string BufferListBuffer::selectedName() const {
 }
 
 std::tuple<RowIdx, ColIdx> BufferListBuffer::render(
-        std::string& out, RowIdx rows, ColIdx cols) const {
+        std::string& out, RowIdx rows, ColIdx cols, bool /*showWhitespace*/) const {
 
     static constexpr auto kHighlight = "\x1b[7m"; // reverse video
     static constexpr auto kReset     = "\x1b[0m";

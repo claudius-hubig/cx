@@ -60,7 +60,7 @@ void Screen::draw() {
     RowIdx cur_row{0};
     ColIdx cur_col{0};
     if (_buf)
-        std::tie(cur_row, cur_col) = _buf->render(_out, br, cols);
+        std::tie(cur_row, cur_col) = _buf->render(_out, br, cols, _showWhitespace);
 
     // Expire timed status message.
     if (_statusExpiry && std::chrono::steady_clock::now() >= *_statusExpiry) {
@@ -311,6 +311,8 @@ void Screen::loop() {
                 } else if (action == Action::SwitchBuffer) {
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
+                } else if (action == Action::ToggleWhitespace) {
+                    _showWhitespace = !_showWhitespace;
                 } else if (action == Action::Save && _buf) {
                     auto* tb = dynamic_cast<TextBuffer*>(_buf);
                     if (tb) {
@@ -378,6 +380,7 @@ std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(cha
         case 0x0c: return Action::GoToLine; // Ctrl-L
         case 0x0f: return Action::OpenFile; // Ctrl-O
         case 0x13: return Action::Save;    // Ctrl-S
+        case 0x17: return Action::ToggleWhitespace; // Ctrl-W
         case 0x18: return std::string{"hello"};  // Ctrl-X
         default:   return std::monostate{};
     }

@@ -19,6 +19,7 @@ enum class Action {
     Save,
     BufferList,
     SwitchBuffer,
+    ToggleWhitespace,
 };
 
 // Manages terminal I/O and the main input loop.
@@ -60,4 +61,5 @@ private:
     Buffer* _prevBuf = nullptr;
     std::string _statusMsg;
     std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
+    bool _showWhitespace = false;
 };

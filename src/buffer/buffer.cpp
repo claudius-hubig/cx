@@ -258,10 +258,15 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
     return {line, col};
 }
 
-std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols) const {
-    static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
-    static constexpr auto kTabStyle  = "\x1b[48;2;70;70;70m";
-    static constexpr auto kReset     = "\x1b[0m";
+std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
+                                          bool showWhitespace) const {
+    static constexpr auto kCtrlColor  = "\x1b[38;2;204;120;50m";
+    static constexpr auto kReset      = "\x1b[0m";
+    // Whitespace-mode styles.
+    static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";   // very light grey bg
+    static constexpr auto kTabWsStyle = "\x1b[48;2;60;60;60m";   // darker grey bg
+    static constexpr auto kTabStyle   = "\x1b[48;2;70;70;70m";   // normal tab bg
+    static constexpr auto kNlStyle    = "\x1b[48;2;35;35;35m";   // very dark grey bg
 
     // Per-row output: the ANSI-escaped content.
     std::vector<std::string> screen(rows.value);
@@ -274,6 +279,12 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
         if (ch == '\n') {
             if (i == _point) { cur_row = row; cur_col = col; }
+            if (showWhitespace && col + 1 <= cols.value && row < rows.value) {
+                auto& rd = screen[row];
+                rd += kNlStyle;
+                rd += "\xe2\x86\xb5"; // ↵
+                rd += kReset;
+            }
             ++row;
             col = 0;
             ++i;
@@ -296,8 +307,18 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         if (u < 0x80) {
             // ASCII: handle control characters specially.
             if (ch == '\t') {
-                rd += kTabStyle;
-                rd += "  ";
+                if (showWhitespace) {
+                    rd += kTabWsStyle;
+                    rd += "\xe2\x96\xa0\xe2\x96\xba"; // ■►
+                    rd += kReset;
+                } else {
+                    rd += kTabStyle;
+                    rd += "  ";
+                    rd += kReset;
+                }
+            } else if (ch == ' ' && showWhitespace) {
+                rd += kSpaceStyle;
+                rd += "\xc2\xb7"; // ·
                 rd += kReset;
             } else if (u == 0) {
                 rd += kCtrlColor;
