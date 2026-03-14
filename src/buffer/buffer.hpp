@@ -25,7 +25,6 @@ public:
     void insert(char c)       { if (!readonly()) doInsert(c); }
     void deleteAtPoint()      { if (!readonly()) doDeleteAtPoint(); }
     void deleteBeforePoint()  { if (!readonly()) doDeleteBeforePoint(); }
-    void overwrite(char c)    { if (!readonly()) doOverwrite(c); }
 
     void moveLeft();
     void moveRight();
@@ -67,7 +66,6 @@ protected:
     void doInsert(char c);
     void doDeleteAtPoint();
     void doDeleteBeforePoint();
-    void doOverwrite(char c);
 
     std::string _name;
     std::vector<char> _data;

@@ -228,13 +228,6 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
     return {line, col};
 }
 
-void Buffer::doOverwrite(char c) {
-    if (_point >= _data.size())
-        _data.push_back(c);
-    else
-        _data[_point] = c;
-}
-
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols) const {
     static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
     static constexpr auto kTabStyle  = "\x1b[48;2;70;70;70m";
