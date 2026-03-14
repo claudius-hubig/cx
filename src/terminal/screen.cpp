@@ -51,16 +51,14 @@ void Screen::setBufferManager(BufferManager& mgr) {
 
 void Screen::draw() {
     auto& [rows, cols] = _size;
-
-    // Reserve the last row for the status line.
-    RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
+    auto br = bufRows();
 
     _out.clear();
 
     RowIdx cur_row{0};
     ColIdx cur_col{0};
     if (_buf)
-        std::tie(cur_row, cur_col) = _buf->render(_out, buf_rows, cols);
+        std::tie(cur_row, cur_col) = _buf->render(_out, br, cols);
 
     // Expire timed status message.
     if (_statusExpiry && std::chrono::steady_clock::now() >= *_statusExpiry) {
@@ -181,8 +179,6 @@ void Screen::loop() {
                         auto& buf = _bufMgr->open(_prompt_input);
                         setBuffer(buf);
                     } else if (_prompt == Prompt::GoToLine && _buf) {
-                        auto& [rows, cols] = _size;
-                        RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
                         std::size_t line = 0;
                         if (_prompt_input == "last")
                             line = SIZE_MAX;
@@ -193,7 +189,7 @@ void Screen::loop() {
                             }
                         }
                         if (line > 0)
-                            _buf->gotoLine(line, buf_rows);
+                            _buf->gotoLine(line, bufRows());
                     }
                 }
                 _prompt = Prompt::None;
@@ -219,8 +215,7 @@ void Screen::loop() {
             } else if (_buf) {
                 _buf->insert('\n');
                 auto& [rows, cols] = _size;
-                RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
-                while (_buf->screenRow(cols) >= buf_rows.value)
+                while (_buf->screenRow(cols) >= bufRows().value)
                     _buf->scrollDown();
             }
         } else if (c == 0x7f) {
@@ -246,8 +241,7 @@ void Screen::loop() {
                                 if (_buf) {
                                     _buf->moveDown();
                                     auto& [rows, cols] = _size;
-                                    RowIdx buf_rows{rows.value > 1 ? rows.value - 1 : 1};
-                                    while (_buf->screenRow(cols) >= buf_rows.value)
+                                    while (_buf->screenRow(cols) >= bufRows().value)
                                         _buf->scrollDown();
                                 }
                                 break;
@@ -344,6 +338,11 @@ void Screen::loop() {
 
         draw();
     }
+}
+
+RowIdx Screen::bufRows() const {
+    auto& [rows, cols] = _size;
+    return RowIdx{rows.value > 1 ? rows.value - 1 : 1};
 }
 
 void Screen::resize() {
