@@ -48,7 +48,6 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(
     static constexpr auto kHighlight = "\x1b[7m"; // reverse video
     static constexpr auto kReset     = "\x1b[0m";
 
-    std::size_t c = cols.value;
     std::size_t curLine = lineAt(_point);
     std::size_t scrollLine = lineAt(_viewFrom);
 
@@ -62,12 +61,10 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(
             bool highlight = (lineIdx == curLine);
             if (highlight) out += kHighlight;
             out += _names[lineIdx];
-            std::size_t nameLen = _names[lineIdx].size();
-            if (nameLen < c)
-                out.append(c - nameLen, ' ');
+            out += "\x1b[K";
             if (highlight) out += kReset;
         } else {
-            out.append(c, ' ');
+            out += "\x1b[K";
         }
     }
 

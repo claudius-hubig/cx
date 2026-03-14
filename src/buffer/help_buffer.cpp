@@ -269,13 +269,9 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(
         out += "\x1b[";
         out += std::to_string(r + 1);
         out += ";1H";
-        if (vi < vlines.size()) {
+        if (vi < vlines.size())
             out += vlines[vi].content;
-            if (vlines[vi].len < c)
-                out.append(c - vlines[vi].len, ' ');
-        } else {
-            out.append(c, ' ');
-        }
+        out += "\x1b[K";
     }
 
     return {RowIdx{curScreenRow}, ColIdx{curCol}};

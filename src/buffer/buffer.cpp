@@ -263,12 +263,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     static constexpr auto kTabStyle  = "\x1b[48;2;70;70;70m";
     static constexpr auto kReset     = "\x1b[0m";
 
-    // Per-row output: the ANSI-escaped content and its visual width.
-    struct RowData {
-        std::string content;
-        std::size_t width = 0;
-    };
-    std::vector<RowData> screen(rows.value);
+    // Per-row output: the ANSI-escaped content.
+    std::vector<std::string> screen(rows.value);
 
     std::size_t row = 0, col = 0;
     std::size_t cur_row = 0, cur_col = 0;
@@ -300,30 +296,29 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         if (u < 0x80) {
             // ASCII: handle control characters specially.
             if (ch == '\t') {
-                rd.content += kTabStyle;
-                rd.content += "  ";
-                rd.content += kReset;
+                rd += kTabStyle;
+                rd += "  ";
+                rd += kReset;
             } else if (u == 0) {
-                rd.content += kCtrlColor;
-                rd.content += "\\0";
-                rd.content += kReset;
+                rd += kCtrlColor;
+                rd += "\\0";
+                rd += kReset;
             } else if (u == 0x7f) {
-                rd.content += kCtrlColor;
-                rd.content += "^?";
-                rd.content += kReset;
+                rd += kCtrlColor;
+                rd += "^?";
+                rd += kReset;
             } else if (u < 0x20) {
-                rd.content += kCtrlColor;
-                rd.content += '^';
-                rd.content += static_cast<char>('@' + u);
-                rd.content += kReset;
+                rd += kCtrlColor;
+                rd += '^';
+                rd += static_cast<char>('@' + u);
+                rd += kReset;
             } else {
-                rd.content += ch;
+                rd += ch;
             }
         } else {
             // Multi-byte UTF-8: emit the whole sequence.
-            rd.content.append(_data.data() + i, info.len);
+            rd.append(_data.data() + i, info.len);
         }
-        rd.width += info.width;
         col += info.width;
 
         if (col >= cols.value) {
@@ -341,14 +336,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         cur_col = col;
     }
 
-    // Append each row with explicit cursor positioning, padded with spaces.
+    // Append each row with explicit cursor positioning.
     for (std::size_t r = 0; r < rows.value; ++r) {
         out += "\x1b[";
         out += std::to_string(r + 1);
         out += ";1H";
-        out += screen[r].content;
-        if (screen[r].width < cols.value)
-            out.append(cols.value - screen[r].width, ' ');
+        out += screen[r];
+        out += "\x1b[K"; // clear to end of line
     }
 
     return {RowIdx{cur_row}, ColIdx{cur_col}};
