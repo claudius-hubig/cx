@@ -38,21 +38,25 @@ void Buffer::doDeleteBeforePoint() {
 void Buffer::moveHome() {
     while (_point > 0 && _data[_point - 1] != '\n')
         --_point;
+    _desiredCol.reset();
 }
 
 void Buffer::moveEnd() {
     while (_point < _data.size() && _data[_point] != '\n')
         ++_point;
+    _desiredCol.reset();
 }
 
 void Buffer::moveLeft() {
     if (_point > 0)
         --_point;
+    _desiredCol.reset();
 }
 
 void Buffer::moveRight() {
     if (_point < _data.size())
         ++_point;
+    _desiredCol.reset();
 }
 
 void Buffer::moveUp() {
