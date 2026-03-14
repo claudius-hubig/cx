@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <limits>
 #include <string>
 #include <variant>
 
@@ -174,7 +175,7 @@ void Screen::loop() {
                     } else if (_prompt == Prompt::GoToLine && _buf) {
                         std::size_t line = 0;
                         if (_prompt_input == "last")
-                            line = SIZE_MAX;
+                            line = std::numeric_limits<std::size_t>::max();
                         else {
                             for (char ch : _prompt_input) {
                                 if (ch >= '0' && ch <= '9')
