@@ -18,5 +18,7 @@ public:
     void refresh(std::vector<std::string> names, std::size_t startLine = 0);
 
 private:
+    // Count newlines before pos in _data.
+    std::size_t lineAt(std::size_t pos) const;
     std::vector<std::string> _names;
 };

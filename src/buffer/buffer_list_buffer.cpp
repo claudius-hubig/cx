@@ -28,11 +28,15 @@ void BufferListBuffer::refresh(std::vector<std::string> names, std::size_t start
     _desiredCol.reset();
 }
 
-std::string BufferListBuffer::selectedName() const {
-    // Find which line the cursor is on.
+std::size_t BufferListBuffer::lineAt(std::size_t pos) const {
     std::size_t line = 0;
-    for (std::size_t i = 0; i < _point && i < _data.size(); ++i)
+    for (std::size_t i = 0; i < pos && i < _data.size(); ++i)
         if (_data[i] == '\n') ++line;
+    return line;
+}
+
+std::string BufferListBuffer::selectedName() const {
+    auto line = lineAt(_point);
     if (line < _names.size())
         return _names[line];
     return {};
@@ -45,16 +49,8 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(
     static constexpr auto kReset     = "\x1b[0m";
 
     std::size_t c = cols.value;
-
-    // Find which line the cursor is on.
-    std::size_t curLine = 0;
-    for (std::size_t i = 0; i < _point && i < _data.size(); ++i)
-        if (_data[i] == '\n') ++curLine;
-
-    // Count how many lines _viewFrom has scrolled past.
-    std::size_t scrollLine = 0;
-    for (std::size_t i = 0; i < _viewFrom && i < _data.size(); ++i)
-        if (_data[i] == '\n') ++scrollLine;
+    std::size_t curLine = lineAt(_point);
+    std::size_t scrollLine = lineAt(_viewFrom);
 
     for (std::size_t r = 0; r < rows.value; ++r) {
         std::size_t lineIdx = scrollLine + r;
