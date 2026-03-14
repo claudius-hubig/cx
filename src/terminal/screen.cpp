@@ -261,8 +261,21 @@ void Screen::loop() {
                                     if (_buf) _buf->deleteAtPoint();
                                 break;
                             }
+                            default: {
+                                // Drain remaining bytes of unrecognised escape sequence.
+                                char discard;
+                                struct pollfd dp = {STDIN_FILENO, POLLIN, 0};
+                                while (poll(&dp, 1, 0) > 0)
+                                    if (read(STDIN_FILENO, &discard, 1) != 1) break;
+                                break;
+                            }
                         }
                     }
+                } else if (seq[0] != '[') {
+                    // Not a CSI sequence — insert the byte verbatim
+                    // (e.g. Alt+key sends ESC followed by the key).
+                    if (_buf && seq[0] >= 0x20)
+                        _buf->insert(seq[0]);
                 }
             } else if (_buf && _buf->readonly() && _prevBuf) {
                 // Bare Esc in help buffer: switch back.
