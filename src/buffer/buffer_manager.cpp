@@ -46,10 +46,11 @@ BufferListBuffer& BufferManager::bufferListBuffer() {
 }
 
 Buffer& BufferManager::create(std::string name) {
-    auto buf = std::make_unique<TextBuffer>(name);
-    auto& ref = *buf;
-    _buffers.emplace(std::move(name), std::move(buf));
-    return ref;
+    auto [it, inserted] = _buffers.emplace(name, nullptr);
+    if (!inserted)
+        return *it->second;
+    it->second = std::make_unique<TextBuffer>(std::move(name));
+    return *it->second;
 }
 
 Buffer* BufferManager::find(std::string const& name) {
