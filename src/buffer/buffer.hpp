@@ -66,6 +66,8 @@ protected:
     void doInsert(char c);
     void doDeleteAtPoint();
     void doDeleteBeforePoint();
+    // Sum of display widths of characters in _data[from..to).
+    std::size_t visualCol(std::size_t from, std::size_t to) const;
 
     std::string _name;
     std::vector<char> _data;

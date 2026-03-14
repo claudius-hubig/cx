@@ -16,22 +16,33 @@ void Buffer::doInsert(char c) {
         while (line_start > 0 && _data[line_start - 1] != '\n')
             --line_start;
         std::size_t vcol = 0;
-        for (std::size_t i = line_start; i < _point; ++i)
-            vcol += charWidth(_data[i]);
+        for (std::size_t i = line_start; i < _point;) {
+            auto info = charInfoAt(_data.data() + i, _point - i);
+            vcol += info.width;
+            i += info.len;
+        }
         if (vcol >= _desiredCol->value)
             _desiredCol.reset();
     }
 }
 
 void Buffer::doDeleteAtPoint() {
-    if (_point < _data.size())
-        _data.erase(_data.begin() + _point);
+    if (_point < _data.size()) {
+        auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
+        auto end = std::min(_point + len, _data.size());
+        _data.erase(_data.begin() + _point, _data.begin() + end);
+    }
 }
 
 void Buffer::doDeleteBeforePoint() {
     if (_point > 0) {
+        // Walk back over continuation bytes to find the start of the code point.
         --_point;
-        _data.erase(_data.begin() + _point);
+        while (_point > 0 && isUtf8Continuation(static_cast<unsigned char>(_data[_point])))
+            --_point;
+        auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
+        auto end = std::min(_point + len, _data.size());
+        _data.erase(_data.begin() + _point, _data.begin() + end);
     }
 }
 
@@ -48,15 +59,32 @@ void Buffer::moveEnd() {
 }
 
 void Buffer::moveLeft() {
-    if (_point > 0)
+    if (_point > 0) {
         --_point;
+        // Skip back over UTF-8 continuation bytes to the start of the code point.
+        while (_point > 0 && isUtf8Continuation(static_cast<unsigned char>(_data[_point])))
+            --_point;
+    }
     _desiredCol.reset();
 }
 
 void Buffer::moveRight() {
-    if (_point < _data.size())
-        ++_point;
+    if (_point < _data.size()) {
+        auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
+        _point = std::min(_point + len, _data.size());
+    }
     _desiredCol.reset();
+}
+
+// Compute visual column width of text in _data[from..to).
+std::size_t Buffer::visualCol(std::size_t from, std::size_t to) const {
+    std::size_t vcol = 0;
+    for (std::size_t i = from; i < to;) {
+        auto info = charInfoAt(_data.data() + i, to - i);
+        vcol += info.width;
+        i += info.len;
+    }
+    return vcol;
 }
 
 void Buffer::moveUp() {
@@ -64,9 +92,7 @@ void Buffer::moveUp() {
     std::size_t line_start = _point;
     while (line_start > 0 && _data[line_start - 1] != '\n')
         --line_start;
-    std::size_t vcol = 0;
-    for (std::size_t i = line_start; i < _point; ++i)
-        vcol += charWidth(_data[i]);
+    std::size_t vcol = visualCol(line_start, _point);
 
     // The goal column is the desired column if set, otherwise the current one.
     std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
@@ -88,10 +114,10 @@ void Buffer::moveUp() {
     std::size_t pos = prev_line_start;
     std::size_t v = 0;
     while (pos < prev_line_end) {
-        std::size_t w = charWidth(_data[pos]);
-        if (v + w > goal) break;
-        v += w;
-        ++pos;
+        auto info = charInfoAt(_data.data() + pos, prev_line_end - pos);
+        if (v + info.width > goal) break;
+        v += info.width;
+        pos += info.len;
     }
     _point = pos;
 
@@ -107,9 +133,7 @@ void Buffer::moveDown() {
     std::size_t line_start = _point;
     while (line_start > 0 && _data[line_start - 1] != '\n')
         --line_start;
-    std::size_t vcol = 0;
-    for (std::size_t i = line_start; i < _point; ++i)
-        vcol += charWidth(_data[i]);
+    std::size_t vcol = visualCol(line_start, _point);
 
     // The goal column is the desired column if set, otherwise the current one.
     std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
@@ -137,10 +161,10 @@ void Buffer::moveDown() {
     std::size_t pos = next_line_start;
     std::size_t v = 0;
     while (pos < next_line_end) {
-        std::size_t w = charWidth(_data[pos]);
-        if (v + w > goal) break;
-        v += w;
-        ++pos;
+        auto info = charInfoAt(_data.data() + pos, next_line_end - pos);
+        if (v + info.width > goal) break;
+        v += info.width;
+        pos += info.len;
     }
     _point = pos;
 
@@ -195,34 +219,40 @@ void Buffer::scrollUp() {
 
 std::size_t Buffer::screenRow(ColIdx cols) const {
     std::size_t row = 0, col = 0;
-    for (std::size_t i = _viewFrom; i < _point && i < _data.size(); ++i) {
+    for (std::size_t i = _viewFrom; i < _point && i < _data.size();) {
         if (_data[i] == '\n') {
             ++row;
             col = 0;
+            ++i;
         } else {
-            std::size_t w = charWidth(_data[i]);
-            if (col + w > cols.value) {
+            auto info = charInfoAt(_data.data() + i, _data.size() - i);
+            if (col + info.width > cols.value) {
                 ++row;
                 col = 0;
             }
-            col += w;
+            col += info.width;
             if (col >= cols.value) {
                 col = 0;
                 ++row;
             }
+            i += info.len;
         }
     }
     return row;
 }
 
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
+    // Count code points (not bytes) for the column.
     std::size_t line = 1, col = 1;
-    for (std::size_t i = 0; i < _point && i < _data.size(); ++i) {
+    for (std::size_t i = 0; i < _point && i < _data.size();) {
         if (_data[i] == '\n') {
             ++line;
             col = 1;
+            ++i;
         } else {
+            auto len = utf8SeqLen(static_cast<unsigned char>(_data[i]));
             ++col;
+            i += std::min(len, _data.size() - i);
         }
     }
     return {line, col};
@@ -243,20 +273,22 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     std::size_t row = 0, col = 0;
     std::size_t cur_row = 0, cur_col = 0;
 
-    for (std::size_t i = _viewFrom; i < _data.size() && row < rows.value; ++i) {
+    for (std::size_t i = _viewFrom; i < _data.size() && row < rows.value;) {
         char ch = _data[i];
 
         if (ch == '\n') {
             if (i == _point) { cur_row = row; cur_col = col; }
             ++row;
             col = 0;
+            ++i;
             continue;
         }
 
-        std::size_t w = charWidth(ch);
+        auto u = static_cast<unsigned char>(ch);
+        auto info = charInfoAt(_data.data() + i, _data.size() - i);
 
         // Wrap if the representation doesn't fit on the current line.
-        if (col + w > cols.value) {
+        if (col + info.width > cols.value) {
             ++row;
             col = 0;
             if (row >= rows.value) break;
@@ -265,34 +297,41 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         if (i == _point) { cur_row = row; cur_col = col; }
 
         auto& rd = screen[row];
-        auto u = static_cast<unsigned char>(ch);
-        if (ch == '\t') {
-            rd.content += kTabStyle;
-            rd.content += "  ";
-            rd.content += kReset;
-        } else if (u == 0) {
-            rd.content += kCtrlColor;
-            rd.content += "\\0";
-            rd.content += kReset;
-        } else if (u == 0x7f) {
-            rd.content += kCtrlColor;
-            rd.content += "^?";
-            rd.content += kReset;
-        } else if (u < 0x20) {
-            rd.content += kCtrlColor;
-            rd.content += '^';
-            rd.content += static_cast<char>('@' + u);
-            rd.content += kReset;
+        if (u < 0x80) {
+            // ASCII: handle control characters specially.
+            if (ch == '\t') {
+                rd.content += kTabStyle;
+                rd.content += "  ";
+                rd.content += kReset;
+            } else if (u == 0) {
+                rd.content += kCtrlColor;
+                rd.content += "\\0";
+                rd.content += kReset;
+            } else if (u == 0x7f) {
+                rd.content += kCtrlColor;
+                rd.content += "^?";
+                rd.content += kReset;
+            } else if (u < 0x20) {
+                rd.content += kCtrlColor;
+                rd.content += '^';
+                rd.content += static_cast<char>('@' + u);
+                rd.content += kReset;
+            } else {
+                rd.content += ch;
+            }
         } else {
-            rd.content += ch;
+            // Multi-byte UTF-8: emit the whole sequence.
+            rd.content.append(_data.data() + i, info.len);
         }
-        rd.width += w;
-        col += w;
+        rd.width += info.width;
+        col += info.width;
 
         if (col >= cols.value) {
             ++row;
             col = 0;
         }
+
+        i += info.len;
     }
 
     // If point is at or past the end of data, its position is wherever
