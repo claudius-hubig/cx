@@ -1,6 +1,8 @@
 #include "help_buffer.hpp"
 
 #include <algorithm>
+#include <array>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,26 +33,26 @@ static constexpr std::size_t kMovStart  = 13; // data line of "Movement:"
 static constexpr std::size_t kMovEnd    = 20; // data line after last movement entry (the blank)
 static constexpr std::size_t kFooter    = 21;
 
-static const std::vector<std::string_view> kCommandLines = {
-    "Commands:",
-    "  Ctrl-B      Switch to buffer",
-    "  Ctrl-C      Exit",
-    "  Ctrl-H      Show this help",
-    "  Ctrl-L      Go to line",
-    "  Ctrl-N      Buffer list",
-    "  Ctrl-O      Open file",
-    "  Ctrl-S      Save file",
-    R"(  Ctrl-X      Insert "hello")",
+static constexpr std::array kCommandLines = {
+    std::string_view{"Commands:"},
+    std::string_view{"  Ctrl-B      Switch to buffer"},
+    std::string_view{"  Ctrl-C      Exit"},
+    std::string_view{"  Ctrl-H      Show this help"},
+    std::string_view{"  Ctrl-L      Go to line"},
+    std::string_view{"  Ctrl-N      Buffer list"},
+    std::string_view{"  Ctrl-O      Open file"},
+    std::string_view{"  Ctrl-S      Save file"},
+    std::string_view{R"(  Ctrl-X      Insert "hello")"},
 };
 
-static const std::vector<std::string_view> kMovementLines = {
-    "Movement:",
-    "  Arrows      Move cursor",
-    "  Home        Start of line",
-    "  End         End of line",
-    "  Bksp        Delete before cursor",
-    "  Delete      Delete at cursor",
-    "  Enter       Insert newline",
+static constexpr std::array kMovementLines = {
+    std::string_view{"Movement:"},
+    std::string_view{"  Arrows      Move cursor"},
+    std::string_view{"  Home        Start of line"},
+    std::string_view{"  End         End of line"},
+    std::string_view{"  Bksp        Delete before cursor"},
+    std::string_view{"  Delete      Delete at cursor"},
+    std::string_view{"  Enter       Insert newline"},
 };
 
 static constexpr std::string_view kFooterText = "Press 'q' or Esc to return to editing.";
@@ -58,7 +60,7 @@ static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
 static constexpr std::size_t kHeaderRows = 3; // title + separator + blank
 
-static std::size_t maxWidth(std::vector<std::string_view> const& lines) {
+static std::size_t maxWidth(std::span<const std::string_view> lines) {
     std::size_t w = 0;
     for (auto& l : lines)
         w = std::max(w, l.size());
