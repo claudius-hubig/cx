@@ -262,7 +262,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
                                           bool showWhitespace) const {
     static constexpr auto kCtrlColor  = "\x1b[38;2;204;120;50m";
     static constexpr auto kReset      = "\x1b[0m";
-    // Whitespace-mode styles.
+    // Whitespace-mode styles: background + dark red foreground.
+    static constexpr auto kWsFg       = "\x1b[38;2;140;60;60m";
     static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";   // very light grey bg
     static constexpr auto kTabWsStyle = "\x1b[48;2;60;60;60m";   // darker grey bg
     static constexpr auto kTabStyle   = "\x1b[48;2;70;70;70m";   // normal tab bg
@@ -282,6 +283,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
             if (showWhitespace && col + 1 <= cols.value && row < rows.value) {
                 auto& rd = screen[row];
                 rd += kNlStyle;
+                rd += kWsFg;
                 rd += "\xe2\x86\xb5"; // ↵
                 rd += kReset;
             }
@@ -309,6 +311,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
             if (ch == '\t') {
                 if (showWhitespace) {
                     rd += kTabWsStyle;
+                    rd += kWsFg;
                     rd += "\xe2\x96\xa0\xe2\x96\xba"; // ■►
                     rd += kReset;
                 } else {
@@ -318,6 +321,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
                 }
             } else if (ch == ' ' && showWhitespace) {
                 rd += kSpaceStyle;
+                rd += kWsFg;
                 rd += "\xc2\xb7"; // ·
                 rd += kReset;
             } else if (u == 0) {
