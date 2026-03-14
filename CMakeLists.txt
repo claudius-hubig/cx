@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 23)
 
 add_executable(cx
     src/main.cpp
+    src/error_log.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
     src/buffer/buffer.cpp
