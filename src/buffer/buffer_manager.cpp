@@ -13,11 +13,12 @@ BufferManager::BufferManager(Screen& screen)
 }
 
 Buffer& BufferManager::open(std::filesystem::path const& path) {
-    auto key = path.string();
+    auto canonical = std::filesystem::weakly_canonical(path);
+    auto key = canonical.string();
     auto it = _buffers.find(key);
     if (it != _buffers.end())
         return *it->second;
-    auto buf = std::make_unique<TextBuffer>(key, path);
+    auto buf = std::make_unique<TextBuffer>(key, canonical);
     auto& ref = *buf;
     _buffers.emplace(key, std::move(buf));
     return ref;
