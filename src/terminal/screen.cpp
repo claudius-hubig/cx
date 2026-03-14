@@ -157,23 +157,16 @@ void Screen::loop() {
                             else
                                 setBuffer(_bufMgr->create(name));
                         } else {
-                            _statusMsg = "No such buffer";
-                            _statusExpiry = std::chrono::steady_clock::now()
-                                          + std::chrono::seconds(10);
+                            setStatus("No such buffer");
                         }
                     } else if (_prompt == Prompt::SaveAs && _buf) {
                         auto* tb = dynamic_cast<TextBuffer*>(_buf);
                         if (tb) {
                             tb->setPath(_prompt_input);
-                            if (tb->save()) {
-                                _statusMsg = "Saved to " + _prompt_input;
-                                _statusExpiry = std::chrono::steady_clock::now()
-                                              + std::chrono::seconds(10);
-                            } else {
-                                _statusMsg = "Error saving to " + _prompt_input;
-                                _statusExpiry = std::chrono::steady_clock::now()
-                                              + std::chrono::seconds(10);
-                            }
+                            if (tb->save())
+                                setStatus("Saved to " + _prompt_input);
+                            else
+                                setStatus("Error saving to " + _prompt_input);
                         }
                     } else if (_prompt == Prompt::OpenFile && _bufMgr) {
                         auto& buf = _bufMgr->open(_prompt_input);
@@ -307,15 +300,10 @@ void Screen::loop() {
                     auto* tb = dynamic_cast<TextBuffer*>(_buf);
                     if (tb) {
                         if (tb->hasPath()) {
-                            if (tb->save()) {
-                                _statusMsg = "Saved to " + tb->name();
-                                _statusExpiry = std::chrono::steady_clock::now()
-                                              + std::chrono::seconds(10);
-                            } else {
-                                _statusMsg = "Error saving to " + tb->name();
-                                _statusExpiry = std::chrono::steady_clock::now()
-                                              + std::chrono::seconds(10);
-                            }
+                            if (tb->save())
+                                setStatus("Saved to " + tb->name());
+                            else
+                                setStatus("Error saving to " + tb->name());
                         } else {
                             _prompt = Prompt::SaveAs;
                             _prompt_input.clear();
@@ -351,6 +339,11 @@ void Screen::resize() {
     _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
     // No buffer to resize — render() produces a fresh screen image each time.
     // No cursor to clamp — it's derived from the buffer point.
+}
+
+void Screen::setStatus(std::string msg) {
+    _statusMsg = std::move(msg);
+    _statusExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 }
 
 std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(char c) {

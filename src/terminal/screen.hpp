@@ -50,6 +50,7 @@ private:
     void resize();
     // Number of rows available for buffer content (total minus status line).
     RowIdx bufRows() const;
+    void setStatus(std::string msg);
     std::tuple<RowIdx, ColIdx> _size;
     Buffer* _buf = nullptr;
     BufferManager* _bufMgr = nullptr;
