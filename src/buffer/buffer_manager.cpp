@@ -138,6 +138,10 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
             }
         }
 
+        // Canonicalize the directory once, not per-entry.
+        auto canonDir = std::filesystem::weakly_canonical(
+            std::filesystem::absolute(dir));
+
         for (auto& [filename, isDir] : _dirCache.entries) {
             if (!filename.starts_with(filePrefix))
                 continue;
@@ -153,10 +157,7 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
 
             // If this file is already an open buffer, use its buffer name
             // so that find() resolves to the existing buffer.
-            auto path = dir / filename;
-            auto canonical = std::filesystem::weakly_canonical(
-                std::filesystem::absolute(path));
-            auto canonStr = canonical.string();
+            auto canonStr = (canonDir / filename).string();
             auto bufIt = _buffers.find(canonStr);
             result.push_back({matchStr,
                               bufIt != _buffers.end() ? canonStr : matchStr});
