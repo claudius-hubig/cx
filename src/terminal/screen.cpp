@@ -61,9 +61,11 @@ static void handle_sigwinch(int) {
 Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
     // TIOCGWINSZ is the standard POSIX ioctl for querying the terminal
     // dimensions in rows and columns.
-    struct winsize ws;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
-    _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
+    struct winsize ws = {};
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0)
+        _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
+    else
+        _size = {RowIdx{24}, ColIdx{80}}; // sensible fallback
 
     // Use sigaction() instead of signal() to avoid SA_RESTART, which glibc
     // sets by default. Without SA_RESTART, read() returns EINTR on SIGWINCH
@@ -583,9 +585,9 @@ RowIdx Screen::bufRows() const {
 }
 
 void Screen::resize() {
-    struct winsize ws;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
-    _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
+    struct winsize ws = {};
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0)
+        _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
     // No buffer to resize — render() produces a fresh screen image each time.
     // No cursor to clamp — it's derived from the buffer point.
 }
