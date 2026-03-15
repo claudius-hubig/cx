@@ -97,7 +97,6 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
 // Build all visual lines for a given column width.
 struct VisualLine {
     std::string content;
-    std::size_t len = 0;
 };
 
 static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
@@ -109,14 +108,14 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
         std::size_t pad = (c > kTitle.size()) ? (c - kTitle.size()) / 2 : 0;
         std::string s(pad, ' ');
         s += kTitle;
-        vlines.push_back({s, pad + kTitle.size()});
+        vlines.push_back({s});
     }
 
     // Row 1: separator.
-    vlines.push_back({std::string(c, '='), c});
+    vlines.push_back({std::string(c, '=')});
 
     // Row 2: blank.
-    vlines.push_back({"", 0});
+    vlines.push_back({""});
 
     std::size_t leftW = maxWidth(kCommandLines);
     std::size_t rightW = maxWidth(kMovementLines);
@@ -148,31 +147,31 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
             line.append(kGap, ' ');
             if (i < movCount)
                 line += kMovementLines[i];
-            vlines.push_back({line, line.size()});
+            vlines.push_back({line});
         }
     } else {
         for (std::size_t i = 0; i < cmdCount; ++i) {
             std::string line(leftPad, ' ');
             line += kCommandLines[i];
-            vlines.push_back({line, line.size()});
+            vlines.push_back({line});
         }
-        vlines.push_back({"", 0}); // blank between blocks
+        vlines.push_back({""}); // blank between blocks
         for (std::size_t i = 0; i < movCount; ++i) {
             std::string line(leftPad, ' ');
             line += kMovementLines[i];
-            vlines.push_back({line, line.size()});
+            vlines.push_back({line});
         }
     }
 
     // Blank before footer.
-    vlines.push_back({"", 0});
+    vlines.push_back({""});
 
     // Footer centered.
     {
         std::size_t fpad = (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
         std::string s(fpad, ' ');
         s += kFooterText;
-        vlines.push_back({s, fpad + kFooterText.size()});
+        vlines.push_back({s});
     }
 
     return vlines;
