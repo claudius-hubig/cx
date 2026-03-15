@@ -294,8 +294,8 @@ void Screen::loop() {
                         }
                     } else if (_prompt == Prompt::SaveAs && _buf) {
                         auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                        if (tb) {
-                            tb->setPath(_prompt_input);
+                        if (tb && _bufMgr) {
+                            _bufMgr->rename(tb->name(), _prompt_input);
                             if (!std::filesystem::exists(_prompt_input)) {
                                 _prompt = Prompt::ConfirmSave;
                                 _prompt_input = "File " + tb->name()

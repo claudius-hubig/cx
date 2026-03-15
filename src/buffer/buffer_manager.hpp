@@ -45,6 +45,10 @@ public:
     std::vector<std::pair<std::string, std::string>> completions(
         std::string const& prefix) const;
 
+    // Change a buffer's path and re-key it in the map. The old name
+    // must exist. Updates MRU to reflect the new name.
+    void rename(std::string const& oldName, std::filesystem::path newPath);
+
     // Remove the named buffer. Returns the next buffer to switch to
     // (most recently used, or a fresh *1* if none remain).
     Buffer& kill(std::string const& name);

@@ -138,6 +138,20 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
     return result;
 }
 
+void BufferManager::rename(std::string const& oldName, std::filesystem::path newPath) {
+    auto it = _buffers.find(oldName);
+    if (it == _buffers.end()) return;
+    auto buf = std::move(it->second);
+    _buffers.erase(it);
+    buf->setPath(std::move(newPath));
+    auto newName = buf->name();
+    _buffers.emplace(newName, std::move(buf));
+    // Update MRU.
+    auto mi = std::find(_mru.begin(), _mru.end(), oldName);
+    if (mi != _mru.end())
+        *mi = newName;
+}
+
 Buffer& BufferManager::kill(std::string const& name) {
     _buffers.erase(name);
     auto it = std::find(_mru.begin(), _mru.end(), name);
