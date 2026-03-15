@@ -272,11 +272,17 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     static constexpr auto kTabStyle   = "\x1b[48;2;70;70;70m";   // normal tab bg
     static constexpr auto kNlStyle    = "\x1b[48;2;35;35;35m";   // very dark grey bg
 
-    // Per-row output: the ANSI-escaped content.
-    std::vector<std::string> screen(rows.value);
+    // Emit cursor positioning for the start of each row.
+    auto emitRowStart = [&](std::size_t r) {
+        out += "\x1b[";
+        out += std::to_string(r + 1);
+        out += ";1H";
+    };
 
     std::size_t row = 0, col = 0;
     std::size_t cur_row = 0, cur_col = 0;
+
+    emitRowStart(0);
 
     for (std::size_t i = _viewFrom; i < _data.size() && row < rows.value;) {
         char ch = _data[i];
@@ -284,14 +290,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         if (ch == '\n') {
             if (i == _point) { cur_row = row; cur_col = col; }
             if (showWhitespace && col + 1 <= cols.value && row < rows.value) {
-                auto& rd = screen[row];
-                rd += kNlStyle;
-                rd += kWsFg;
-                rd += "\xe2\x86\xb5"; // ↵
-                rd += kReset;
+                out += kNlStyle;
+                out += kWsFg;
+                out += "\xe2\x86\xb5"; // ↵
+                out += kReset;
             }
+            out += "\x1b[K";
             ++row;
             col = 0;
+            if (row < rows.value) emitRowStart(row);
             ++i;
             continue;
         }
@@ -301,57 +308,60 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
         // Wrap if the representation doesn't fit on the current line.
         if (col + info.width > cols.value) {
+            out += "\x1b[K";
             ++row;
             col = 0;
             if (row >= rows.value) break;
+            emitRowStart(row);
         }
 
         if (i == _point) { cur_row = row; cur_col = col; }
 
-        auto& rd = screen[row];
         if (u < 0x80) {
             // ASCII: handle control characters specially.
             if (ch == '\t') {
                 if (showWhitespace) {
-                    rd += kTabWsStyle;
-                    rd += kWsFg;
-                    rd += "\xe2\x96\xa0\xe2\x96\xba"; // ■►
-                    rd += kReset;
+                    out += kTabWsStyle;
+                    out += kWsFg;
+                    out += "\xe2\x96\xa0\xe2\x96\xba"; // ■►
+                    out += kReset;
                 } else {
-                    rd += kTabStyle;
-                    rd += "  ";
-                    rd += kReset;
+                    out += kTabStyle;
+                    out += "  ";
+                    out += kReset;
                 }
             } else if (ch == ' ' && showWhitespace) {
-                rd += kSpaceStyle;
-                rd += kWsFg;
-                rd += "\xc2\xb7"; // ·
-                rd += kReset;
+                out += kSpaceStyle;
+                out += kWsFg;
+                out += "\xc2\xb7"; // ·
+                out += kReset;
             } else if (u == 0) {
-                rd += kCtrlColor;
-                rd += "\\0";
-                rd += kReset;
+                out += kCtrlColor;
+                out += "\\0";
+                out += kReset;
             } else if (u == 0x7f) {
-                rd += kCtrlColor;
-                rd += "^?";
-                rd += kReset;
+                out += kCtrlColor;
+                out += "^?";
+                out += kReset;
             } else if (u < 0x20) {
-                rd += kCtrlColor;
-                rd += '^';
-                rd += static_cast<char>('@' + u);
-                rd += kReset;
+                out += kCtrlColor;
+                out += '^';
+                out += static_cast<char>('@' + u);
+                out += kReset;
             } else {
-                rd += ch;
+                out += ch;
             }
         } else {
             // Multi-byte UTF-8: emit the whole sequence.
-            rd.append(_data.data() + i, info.len);
+            out.append(_data.data() + i, info.len);
         }
         col += info.width;
 
         if (col >= cols.value) {
+            out += "\x1b[K";
             ++row;
             col = 0;
+            if (row < rows.value) emitRowStart(row);
         }
 
         i += info.len;
@@ -364,13 +374,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         cur_col = col;
     }
 
-    // Append each row with explicit cursor positioning.
-    for (std::size_t r = 0; r < rows.value; ++r) {
-        out += "\x1b[";
-        out += std::to_string(r + 1);
-        out += ";1H";
-        out += screen[r];
-        out += "\x1b[K"; // clear to end of line
+    // Clear remaining rows.
+    for (std::size_t r = row; r < rows.value; ++r) {
+        if (r > row) emitRowStart(r);
+        out += "\x1b[K";
     }
 
     return {RowIdx{cur_row}, ColIdx{cur_col}};
