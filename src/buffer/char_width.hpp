@@ -106,11 +106,8 @@ struct CharInfo {
 /// len == 1 from decodeUtf8) get width 2 for hex display.
 inline constexpr CharInfo charInfoAt(const char* data, std::size_t avail) {
     auto u = static_cast<unsigned char>(data[0]);
-    if (u < 0x80) {
-        if (u == '\t')  return {2, 1};
-        if (u < 0x20 || u == 0x7f) return {2, 1};
-        return {1, 1};
-    }
+    if (u < 0x80)
+        return {charWidth(static_cast<char>(u)), 1};
     auto [cp, len] = decodeUtf8(data, avail);
     if (len == 1) return {2, 1}; // invalid byte — displayed as 2-digit hex
     return {codepointWidth(cp), len};
