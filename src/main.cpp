@@ -25,7 +25,9 @@ int main(int argc, char* argv[]) {
         screen.loop();
     } catch (std::exception const& e) {
         logError(e.what());
+        return 1;
     } catch (...) {
         logError("unknown exception");
+        return 1;
     }
 }

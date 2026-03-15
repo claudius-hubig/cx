@@ -9,6 +9,9 @@ public:
     SetupTerminal();
     ~SetupTerminal();
 
+    SetupTerminal(SetupTerminal const&) = delete;
+    SetupTerminal& operator=(SetupTerminal const&) = delete;
+
 private:
     struct termios _saved_flags;
 };
