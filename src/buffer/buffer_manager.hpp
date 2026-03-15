@@ -44,6 +44,7 @@ public:
     /// Return a short display name: just the filename if unambiguous among
     /// open buffers, or the full path if another buffer shares the same
     /// filename. Non-path names (like "*1*") are returned as-is.
+    /// Uses a cached map that is refreshed when buffers are opened/created.
     std::string displayName(std::string const& name) const;
 
     /// Return completions for the given prefix, matching buffer display
@@ -70,9 +71,12 @@ public:
     std::string secondMRU() const;
 
 private:
+    void refreshDisplayNames();
+
     std::unique_ptr<HelpBuffer> _helpBuffer;
     std::unique_ptr<BufferListBuffer> _bufferListBuffer;
     std::unordered_map<std::string, std::unique_ptr<TextBuffer>> _buffers;
+    std::unordered_map<std::string, std::string> _displayNames;
     std::vector<std::string> _mru; // most recently used first
     BufferSink& _sink;
 

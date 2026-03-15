@@ -9,6 +9,7 @@ BufferManager::BufferManager(BufferSink& sink)
     auto& ref = *buf;
     _buffers.emplace("*1*", std::move(buf));
     _mru.push_back("*1*");
+    refreshDisplayNames();
     _sink.setBuffer(ref);
 }
 
@@ -23,6 +24,7 @@ Buffer& BufferManager::open(std::filesystem::path const& path) {
     auto buf = std::make_unique<TextBuffer>(key, canonical);
     auto& ref = *buf;
     _buffers.emplace(key, std::move(buf));
+    refreshDisplayNames();
     touch(key);
     return ref;
 }
@@ -44,6 +46,7 @@ Buffer& BufferManager::create(std::string name) {
         return *it->second;
     auto key = it->first;
     it->second = std::make_unique<TextBuffer>(std::move(name));
+    refreshDisplayNames();
     touch(key);
     return *it->second;
 }
@@ -65,24 +68,15 @@ std::vector<std::string> BufferManager::bufferNames() const {
 }
 
 std::string BufferManager::displayName(std::string const& name) const {
-    auto filename = std::filesystem::path(name).filename().string();
-    if (filename.empty() || filename == name)
-        return name;
-    // Check if any other buffer shares the same filename.
-    for (auto& [other, _] : _buffers)
-        if (other != name && std::filesystem::path(other).filename() == filename)
-            return name;
-    return filename;
+    auto it = _displayNames.find(name);
+    if (it != _displayNames.end())
+        return it->second;
+    return name;
 }
 
-std::vector<std::pair<std::string, std::string>> BufferManager::completions(
-        std::string const& prefix) const {
-    std::vector<std::pair<std::string, std::string>> result;
-
-    // Precompute display names to avoid O(n^2) from calling displayName()
-    // inside the loop (it checks all buffers for filename collisions).
-    std::unordered_map<std::string, std::string> displayNames;
-    displayNames.reserve(_buffers.size());
+void BufferManager::refreshDisplayNames() {
+    _displayNames.clear();
+    _displayNames.reserve(_buffers.size());
     // Count filename occurrences to detect ambiguity.
     std::unordered_map<std::string, int> fnCount;
     for (auto& [name, _] : _buffers) {
@@ -93,14 +87,19 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
     for (auto& [name, _] : _buffers) {
         auto fn = std::filesystem::path(name).filename().string();
         if (!fn.empty() && fn != name && fnCount[fn] == 1)
-            displayNames[name] = fn;
+            _displayNames[name] = fn;
         else
-            displayNames[name] = name;
+            _displayNames[name] = name;
     }
+}
 
-    // Match against open buffers.
+std::vector<std::pair<std::string, std::string>> BufferManager::completions(
+        std::string const& prefix) const {
+    std::vector<std::pair<std::string, std::string>> result;
+
+    // Match against open buffers using cached display names.
     for (auto& [name, _] : _buffers) {
-        auto& dn = displayNames[name];
+        auto dn = displayName(name);
         if (dn.starts_with(prefix))
             result.push_back({dn, name});
         else if (name.starts_with(prefix))
@@ -180,6 +179,7 @@ void BufferManager::rename(std::string const& oldName, std::filesystem::path new
     buf->setPath(std::move(newPath));
     auto newName = buf->name();
     _buffers.emplace(newName, std::move(buf));
+    refreshDisplayNames();
     // Update MRU.
     auto mi = std::find(_mru.begin(), _mru.end(), oldName);
     if (mi != _mru.end())
