@@ -185,7 +185,7 @@ void BufferManager::rename(std::string const& oldName, std::filesystem::path new
         *mi = newName;
 }
 
-Buffer& BufferManager::kill(std::string const& name) {
+Buffer& BufferManager::kill(std::string name) {
     _buffers.erase(name);
     auto it = std::find(_mru.begin(), _mru.end(), name);
     if (it != _mru.end())

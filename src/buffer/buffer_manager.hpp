@@ -58,7 +58,9 @@ public:
 
     /// Remove the named buffer. Always leaves >= 1 buffer (creates "*1*"
     /// if all killed). Returns the next buffer (most recently used).
-    Buffer& kill(std::string const& name);
+    /// Takes name by value to prevent use-after-free when the caller
+    /// passes a reference to a string owned by the buffer being killed.
+    Buffer& kill(std::string name);
 
     /// Mark a buffer as most recently used (moves to front of MRU list).
     void touch(std::string const& name);
