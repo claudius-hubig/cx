@@ -9,6 +9,7 @@ void Buffer::doInsert(char c) {
     else
         _data.insert(_data.begin() + _point, c);
     ++_point;
+    _modified = true;
 
     if (_desiredCol) {
         // Compute visual column after the insertion.
@@ -31,6 +32,7 @@ void Buffer::doDeleteAtPoint() {
         auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
         auto end = std::min(_point + len, _data.size());
         _data.erase(_data.begin() + _point, _data.begin() + end);
+        _modified = true;
     }
 }
 
@@ -43,6 +45,7 @@ void Buffer::doDeleteBeforePoint() {
         auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
         auto end = std::min(_point + len, _data.size());
         _data.erase(_data.begin() + _point, _data.begin() + end);
+        _modified = true;
     }
 }
 

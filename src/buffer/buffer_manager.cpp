@@ -73,6 +73,8 @@ std::string BufferManager::displayName(std::string const& name) const {
 std::vector<std::pair<std::string, std::string>> BufferManager::completions(
         std::string const& prefix) const {
     std::vector<std::pair<std::string, std::string>> result;
+
+    // Match against open buffers.
     for (auto& [name, _] : _buffers) {
         auto dn = displayName(name);
         if (dn.starts_with(prefix))
@@ -87,8 +89,73 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
                 result.push_back({name, name});
         }
     }
+
+    // Match against files on disk.
+    if (!prefix.empty()) {
+        std::filesystem::path dir = ".";
+        std::string filePrefix = prefix;
+        auto lastSlash = prefix.rfind('/');
+        if (lastSlash != std::string::npos) {
+            auto dirStr = prefix.substr(0, lastSlash);
+            dir = dirStr.empty() ? std::filesystem::path("/")
+                                 : std::filesystem::path(dirStr);
+            filePrefix = prefix.substr(lastSlash + 1);
+        }
+
+        std::error_code ec;
+        for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            auto filename = entry.path().filename().string();
+            if (filename.starts_with("."))
+                continue;
+            if (!filename.starts_with(filePrefix))
+                continue;
+
+            std::string matchStr;
+            if (lastSlash != std::string::npos)
+                matchStr = prefix.substr(0, lastSlash + 1) + filename;
+            else
+                matchStr = filename;
+
+            if (entry.is_directory(ec))
+                matchStr += "/";
+
+            // If this file is already an open buffer, use its buffer name
+            // so that find() resolves to the existing buffer.
+            auto canonical = std::filesystem::weakly_canonical(
+                std::filesystem::absolute(entry.path()));
+            auto canonStr = canonical.string();
+            auto bufIt = _buffers.find(canonStr);
+            result.push_back({matchStr,
+                              bufIt != _buffers.end() ? canonStr : matchStr});
+        }
+    }
+
     std::sort(result.begin(), result.end());
+    // Deduplicate by match string.
+    auto last = std::unique(result.begin(), result.end(),
+        [](auto const& a, auto const& b) { return a.first == b.first; });
+    result.erase(last, result.end());
     return result;
+}
+
+Buffer& BufferManager::kill(std::string const& name) {
+    _buffers.erase(name);
+    auto it = std::find(_mru.begin(), _mru.end(), name);
+    if (it != _mru.end())
+        _mru.erase(it);
+    if (_buffers.empty()) {
+        auto buf = std::make_unique<TextBuffer>("*1*");
+        auto& ref = *buf;
+        _buffers.emplace("*1*", std::move(buf));
+        _mru.push_back("*1*");
+        return ref;
+    }
+    if (!_mru.empty()) {
+        auto found = _buffers.find(_mru.front());
+        if (found != _buffers.end())
+            return *found->second;
+    }
+    return *_buffers.begin()->second;
 }
 
 void BufferManager::touch(std::string const& name) {

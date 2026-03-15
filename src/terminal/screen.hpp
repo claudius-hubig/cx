@@ -18,6 +18,7 @@ enum class Action {
     GoToLine,
     Help,
     Save,
+    KillBuffer,
     BufferList,
     SwitchBuffer,
     ToggleWhitespace,
@@ -58,13 +59,14 @@ private:
     Buffer* _buf = nullptr;
     BufferManager* _bufMgr = nullptr;
     std::string _out;
-    enum class Prompt { None, GoToLine, SaveAs, SwitchBuffer, ConfirmSave };
+    enum class Prompt { None, GoToLine, SaveAs, SwitchBuffer, ConfirmSave, ConfirmKill };
     Prompt _prompt = Prompt::None;
     std::string _prompt_input;
     Buffer* _prevBuf = nullptr;
     std::string _statusMsg;
     std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
     bool _showWhitespace = false;
+    bool _killPending = false; // kill buffer after SaveAs completes
 
     // Auto-completion state for SwitchBuffer prompt.
     void updateCompletions();

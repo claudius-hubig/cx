@@ -21,6 +21,9 @@ public:
 
     virtual bool readonly() const = 0;
 
+    // True when the buffer has been edited since last save (or creation).
+    bool modified() const { return _modified; }
+
     // Non-virtual editing wrappers that guard on readonly().
     void insert(char c)       { if (!readonly()) doInsert(c); }
     void deleteAtPoint()      { if (!readonly()) doDeleteAtPoint(); }
@@ -75,4 +78,5 @@ protected:
     BufferPoint _point = 0;
     BufferPoint _viewFrom = 0;
     std::optional<ColIdx> _desiredCol;
+    bool _modified = false;
 };

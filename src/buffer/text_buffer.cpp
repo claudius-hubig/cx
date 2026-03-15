@@ -23,5 +23,9 @@ bool TextBuffer::save() {
     std::ofstream file(*_path, std::ios::binary);
     if (!file) return false;
     file.write(_data.data(), static_cast<std::streamsize>(_data.size()));
-    return file.good();
+    if (file.good()) {
+        _modified = false;
+        return true;
+    }
+    return false;
 }

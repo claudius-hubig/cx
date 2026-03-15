@@ -115,7 +115,7 @@ void Screen::draw() {
                 status_vwidth += hint.size() + cnt.size();
             }
         }
-    } else if (_prompt == Prompt::ConfirmSave) {
+    } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill) {
         status = _prompt_input;
         status_vwidth = status.size();
     } else if (_buf) {
@@ -126,10 +126,16 @@ void Screen::draw() {
         status_vwidth = status.size();
     }
 
-    // Right-align the buffer name on the status line.
+    // Right-align the buffer name + modification indicator on the status line.
     std::string buf_name;
-    if (_buf)
+    if (_buf) {
         buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
+        auto* tb = dynamic_cast<TextBuffer const*>(_buf);
+        if (tb && tb->modified())
+            buf_name += " +";
+        else
+            buf_name += "  ";
+    }
     if (status_vwidth + buf_name.size() + 2 <= cols.value) {
         status.append(cols.value - buf_name.size() - status_vwidth, ' ');
         status += buf_name;
@@ -187,18 +193,65 @@ void Screen::loop() {
             if (c == 'y' || c == 'Y') {
                 auto* tb = dynamic_cast<TextBuffer*>(_buf);
                 if (tb) {
-                    if (tb->save())
+                    if (tb->save()) {
                         setStatus("Saved to " + tb->name());
-                    else
+                        if (_killPending && _bufMgr) {
+                            _killPending = false;
+                            auto name = tb->name();
+                            _prompt = Prompt::None;
+                            _prompt_input.clear();
+                            if (_prevBuf == _buf) _prevBuf = nullptr;
+                            setBuffer(_bufMgr->kill(name));
+                            draw();
+                            continue;
+                        }
+                    } else {
                         setStatus("Error saving to " + tb->name());
+                        _killPending = false;
+                    }
                 }
                 _prompt = Prompt::None;
                 _prompt_input.clear();
             } else if (c == 'n' || c == 'N' || c == 0x1b) {
                 _prompt = Prompt::None;
                 _prompt_input.clear();
+                _killPending = false;
             }
             // Ignore all other keys.
+        } else if (_prompt == Prompt::ConfirmKill) {
+            if (c == 'y' || c == 'Y') {
+                auto* tb = dynamic_cast<TextBuffer*>(_buf);
+                if (tb && _bufMgr) {
+                    if (tb->hasPath()) {
+                        // Modified file-backed: save then kill.
+                        tb->save();
+                        auto name = tb->name();
+                        _prompt = Prompt::None;
+                        _prompt_input.clear();
+                        if (_prevBuf == _buf) _prevBuf = nullptr;
+                        setBuffer(_bufMgr->kill(name));
+                    } else {
+                        // Temp buffer: enter SaveAs, then kill after save.
+                        _killPending = true;
+                        _prompt = Prompt::SaveAs;
+                        _prompt_input.clear();
+                    }
+                }
+            } else if (c == 'n' || c == 'N') {
+                // Kill without saving.
+                auto* tb = dynamic_cast<TextBuffer*>(_buf);
+                if (tb && _bufMgr) {
+                    auto name = tb->name();
+                    _prompt = Prompt::None;
+                    _prompt_input.clear();
+                    if (_prevBuf == _buf) _prevBuf = nullptr;
+                    setBuffer(_bufMgr->kill(name));
+                }
+            } else if (c == 0x1b) {
+                // Cancel.
+                _prompt = Prompt::None;
+                _prompt_input.clear();
+            }
         } else if (_prompt != Prompt::None) {
             if (c == '\r' || c == '\n') {
                 if (!_prompt_input.empty()) {
@@ -228,6 +281,14 @@ void Screen::loop() {
                                 setBuffer(_bufMgr->create(name));
                         } else {
                             // Not an existing buffer — try opening as a file.
+                            std::error_code fec;
+                            if (std::filesystem::is_directory(_prompt_input, fec)) {
+                                if (!_prompt_input.ends_with('/'))
+                                    _prompt_input += '/';
+                                updateCompletions();
+                                draw();
+                                continue;
+                            }
                             auto& buf = _bufMgr->open(_prompt_input);
                             setBuffer(buf);
                         }
@@ -242,10 +303,24 @@ void Screen::loop() {
                                 draw();
                                 continue;
                             }
-                            if (tb->save())
+                            if (tb->save()) {
                                 setStatus("Saved to " + tb->name());
-                            else
+                                if (_killPending && _bufMgr) {
+                                    _killPending = false;
+                                    auto name = tb->name();
+                                    _prompt = Prompt::None;
+                                    _prompt_input.clear();
+                                    _completions.clear();
+                                    _completionIdx = -1;
+                                    if (_prevBuf == _buf) _prevBuf = nullptr;
+                                    setBuffer(_bufMgr->kill(name));
+                                    draw();
+                                    continue;
+                                }
+                            } else {
                                 setStatus("Error saving to " + tb->name());
+                                _killPending = false;
+                            }
                         }
                     } else if (_prompt == Prompt::GoToLine && _buf) {
                         std::size_t line = 0;
@@ -266,10 +341,31 @@ void Screen::loop() {
                 _completions.clear();
                 _completionIdx = -1;
             } else if (c == 0x1b) {
-                _prompt = Prompt::None;
-                _prompt_input.clear();
-                _completions.clear();
-                _completionIdx = -1;
+                // Distinguish bare Esc (cancel) from escape sequences.
+                struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+                if (poll(&pfd, 1, 50) > 0) {
+                    char seq[2];
+                    if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '['
+                        && read(STDIN_FILENO, &seq[1], 1) == 1) {
+                        if (seq[1] == 'C' && _prompt == Prompt::SwitchBuffer
+                            && !_completions.empty()) {
+                            // Right arrow: accept the current completion.
+                            if (_completionIdx >= 0)
+                                _prompt_input = _completions[_completionIdx].first;
+                            else if (_completions.size() == 1)
+                                _prompt_input = _completions[0].first;
+                            updateCompletions();
+                        }
+                        // Ignore other escape sequences in prompt mode.
+                    }
+                } else {
+                    // Bare Esc: cancel prompt.
+                    _prompt = Prompt::None;
+                    _prompt_input.clear();
+                    _completions.clear();
+                    _completionIdx = -1;
+                    _killPending = false;
+                }
             } else if (c == '\t' && _prompt == Prompt::SwitchBuffer
                        && !_completions.empty()) {
                 if (_completionIdx < 0)
@@ -278,6 +374,9 @@ void Screen::loop() {
                     _completionIdx = (_completionIdx + 1)
                                      % static_cast<int>(_completions.size());
                 _prompt_input = _completions[_completionIdx].first;
+                // Directory: navigate into it only when unambiguous.
+                if (_prompt_input.ends_with('/') && _completions.size() == 1)
+                    updateCompletions();
             } else if (c == 0x7f && !_prompt_input.empty()) {
                 _prompt_input.pop_back();
                 if (_prompt == Prompt::SwitchBuffer)
@@ -410,6 +509,24 @@ void Screen::loop() {
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
                     updateCompletions();
+                } else if (action == Action::KillBuffer && _buf && _bufMgr) {
+                    auto* tb = dynamic_cast<TextBuffer*>(_buf);
+                    if (tb) {
+                        if (!tb->modified()) {
+                            // Unmodified: kill immediately.
+                            auto name = tb->name();
+                            if (_prevBuf == _buf) _prevBuf = nullptr;
+                            setBuffer(_bufMgr->kill(name));
+                        } else if (!tb->hasPath()) {
+                            _prompt = Prompt::ConfirmKill;
+                            _prompt_input =
+                                "Killing temporary buffer. Save to file first? y/n: ";
+                        } else {
+                            _prompt = Prompt::ConfirmKill;
+                            _prompt_input =
+                                "Killing modified buffer. Save to file first? y/n: ";
+                        }
+                    }
                 } else if (action == Action::ToggleWhitespace) {
                     _showWhitespace = !_showWhitespace;
                 } else if (action == Action::Save && _buf) {
@@ -490,6 +607,7 @@ std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(cha
         case 0x02: return Action::SwitchBuffer; // Ctrl-B
         case 0x03: return Action::Exit;   // Ctrl-C
         case 0x08: return Action::Help;    // Ctrl-H
+        case 0x0b: return Action::KillBuffer; // Ctrl-K
         case 0x0e: return Action::BufferList; // Ctrl-N
         case 0x0c: return Action::GoToLine; // Ctrl-L
         case 0x13: return Action::Save;    // Ctrl-S

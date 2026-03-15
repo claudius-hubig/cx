@@ -14,30 +14,31 @@
 //   3  "Commands:"
 //   4  "  Ctrl-b      Switch/open buffer"
 //   ...
-//  11  "  Ctrl-x      ..."
-//  12  blank
-//  13  "Movement:"
-//  14  "  Arrows      Move cursor"
+//  12  "  Ctrl-x      ..."
+//  13  blank
+//  14  "Movement:"
+//  15  "  Arrows      Move cursor"
 //   ...
-//  19  "  Enter       Insert newline"
-//  20  blank
-//  21  footer
+//  20  "  Enter       Insert newline"
+//  21  blank
+//  22  footer
 //
 // In stacked mode the visual rows are 1:1 with data lines.
-// In side-by-side mode, data lines 13-19 appear in the right column
-// of visual rows 3-11 (alongside data lines 3-11).
+// In side-by-side mode, data lines 14-20 appear in the right column
+// of visual rows 3-12 (alongside data lines 3-12).
 
 static constexpr std::size_t kCmdStart  = 3;  // data line of "Commands:"
-static constexpr std::size_t kCmdEnd    = 12; // data line after last command entry (the blank)
-static constexpr std::size_t kMovStart  = 13; // data line of "Movement:"
-static constexpr std::size_t kMovEnd    = 20; // data line after last movement entry (the blank)
-static constexpr std::size_t kFooter    = 21;
+static constexpr std::size_t kCmdEnd    = 13; // data line after last command entry (the blank)
+static constexpr std::size_t kMovStart  = 14; // data line of "Movement:"
+static constexpr std::size_t kMovEnd    = 21; // data line after last movement entry (the blank)
+static constexpr std::size_t kFooter    = 22;
 
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
     std::string_view{"  Ctrl-b      Switch/open buffer"},
     std::string_view{"  Ctrl-c      Exit"},
     std::string_view{"  Ctrl-h      Show this help"},
+    std::string_view{"  Ctrl-k      Kill buffer"},
     std::string_view{"  Ctrl-l      Go to line"},
     std::string_view{"  Ctrl-n      Buffer list"},
     std::string_view{"  Ctrl-s      Save file"},
@@ -84,7 +85,7 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
         return dataLine; // stacked: 1:1
 
     // Side-by-side: movement block (data lines 14-20) merges into
-    // the same visual rows as the command block (data lines 3-12).
+    // the same visual rows as the command block (data lines 3-13).
     if (dataLine < kMovStart)
         return dataLine;
     if (dataLine < kMovEnd) {
@@ -93,13 +94,13 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
     }
     // Lines after movement block: collapse the movement range.
     // Data lines kMovStart..kMovEnd-1 (7 lines) share rows with
-    // kCmdStart..kCmdEnd-1 (6 cmd + blank). The merged block has
-    // max(6,7) = 7 rows. After that: blank + footer.
-    std::size_t cmdCount = kCmdEnd - kCmdStart;  // 6 entries + blank handled below
-    std::size_t movCount = kMovEnd - kMovStart;   // 7 entries
+    // kCmdStart..kCmdEnd-1 (10 cmd entries). The merged block has
+    // max(10,7) = 10 rows. After that: blank + footer.
+    std::size_t cmdCount = kCmdEnd - kCmdStart;
+    std::size_t movCount = kMovEnd - kMovStart;
     std::size_t mergedRows = std::max(cmdCount, movCount);
-    // Data line kMovEnd (17, blank) → visual row kCmdStart + mergedRows
-    // Data line kFooter (18) → visual row kCmdStart + mergedRows + 1
+    // Data line kMovEnd (21, blank) → visual row kCmdStart + mergedRows
+    // Data line kFooter (22) → visual row kCmdStart + mergedRows + 1
     return kCmdStart + mergedRows + (dataLine - kMovEnd);
 }
 
@@ -194,11 +195,11 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
     text += kTitle;               text += '\n'; // 0  title
     text += '\n';                               // 1  separator (rendered as '=')
     text += '\n';                               // 2  blank
-    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-11
-    text += '\n';                               // 12 blank
-    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 13-19
-    text += '\n';                               // 20 blank
-    text += kFooterText;          text += '\n'; // 21 footer
+    for (auto& l : kCommandLines) { text += l; text += '\n'; } // 3-12
+    text += '\n';                               // 13 blank
+    for (auto& l : kMovementLines) { text += l; text += '\n'; } // 14-20
+    text += '\n';                               // 21 blank
+    text += kFooterText;          text += '\n'; // 22 footer
     _data.assign(text.begin(), text.end());
 }
 
