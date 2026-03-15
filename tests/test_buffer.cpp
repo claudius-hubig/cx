@@ -3,10 +3,15 @@
 
 #include "buffer/text_buffer.hpp"
 #include "buffer/help_buffer.hpp"
+#include "buffer/char_width.hpp"
 
-// Helper: insert a string byte-by-byte into a buffer.
+// Helper: insert a string as UTF-8 codepoints into a buffer.
 static void insertString(Buffer& buf, std::string_view s) {
-    for (char c : s) buf.insert(c);
+    for (std::size_t i = 0; i < s.size();) {
+        auto [cp, len] = decodeUtf8(s.data() + i, s.size() - i);
+        buf.insert(cp);
+        i += len;
+    }
 }
 
 // --- Insert ---
@@ -66,9 +71,8 @@ BOOST_AUTO_TEST_CASE(deleteAtPoint_at_end_noop) {
 
 BOOST_AUTO_TEST_CASE(deleteAtPoint_utf8_full_sequence) {
     TextBuffer buf("test");
-    // Insert é (2 bytes: C3 A9)
-    buf.insert('\xC3');
-    buf.insert('\xA9');
+    // Insert é (U+00E9, 2 bytes: C3 A9)
+    buf.insert(0x00E9u);
     buf.insert('x');
     buf.moveHome();
     buf.deleteAtPoint(); // should delete both bytes of é
@@ -102,9 +106,8 @@ BOOST_AUTO_TEST_CASE(deleteBeforePoint_at_start_noop) {
 
 BOOST_AUTO_TEST_CASE(deleteBeforePoint_utf8) {
     TextBuffer buf("test");
-    // Insert é (2 bytes)
-    buf.insert('\xC3');
-    buf.insert('\xA9');
+    // Insert é (U+00E9)
+    buf.insert(0x00E9u);
     buf.deleteBeforePoint(); // should delete both bytes
     BOOST_CHECK_EQUAL(buf.point(), 0u);
 }
@@ -127,17 +130,15 @@ BOOST_AUTO_TEST_CASE(moveRight_at_end) {
 
 BOOST_AUTO_TEST_CASE(moveLeft_utf8_skipping) {
     TextBuffer buf("test");
-    // Insert é (2 bytes)
-    buf.insert('\xC3');
-    buf.insert('\xA9');
+    // Insert é (U+00E9)
+    buf.insert(0x00E9u);
     buf.moveLeft(); // should skip back over both bytes
     BOOST_CHECK_EQUAL(buf.point(), 0u);
 }
 
 BOOST_AUTO_TEST_CASE(moveRight_utf8_skipping) {
     TextBuffer buf("test");
-    buf.insert('\xC3');
-    buf.insert('\xA9');
+    buf.insert(0x00E9u);
     buf.moveHome();
     buf.moveRight(); // should advance past both bytes
     BOOST_CHECK_EQUAL(buf.point(), 2u);
@@ -314,9 +315,8 @@ BOOST_AUTO_TEST_CASE(lineCol_after_newline) {
 
 BOOST_AUTO_TEST_CASE(lineCol_utf8_counts_codepoints) {
     TextBuffer buf("test");
-    // Insert é (2 bytes, 1 codepoint)
-    buf.insert('\xC3');
-    buf.insert('\xA9');
+    // Insert é (U+00E9, 1 codepoint)
+    buf.insert(0x00E9u);
     buf.insert('x');
     auto [line, col] = buf.lineCol();
     BOOST_CHECK_EQUAL(col, 3u); // é(1) + x(1) = 2 codepoints, 1-indexed → 3

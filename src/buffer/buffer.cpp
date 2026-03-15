@@ -3,16 +3,33 @@
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
-void Buffer::doInsert(char c) {
-    if (_point >= _data.size())
-        _data.push_back(c);
-    else
-        _data.insert(_data.begin() + _point, c);
-    ++_point;
+void Buffer::doInsert(uint32_t cp) {
+    char buf[4];
+    std::size_t n;
+    if (cp < 0x80) {
+        buf[0] = static_cast<char>(cp);
+        n = 1;
+    } else if (cp < 0x800) {
+        buf[0] = static_cast<char>(0xC0 | (cp >> 6));
+        buf[1] = static_cast<char>(0x80 | (cp & 0x3F));
+        n = 2;
+    } else if (cp < 0x10000) {
+        buf[0] = static_cast<char>(0xE0 | (cp >> 12));
+        buf[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        buf[2] = static_cast<char>(0x80 | (cp & 0x3F));
+        n = 3;
+    } else {
+        buf[0] = static_cast<char>(0xF0 | (cp >> 18));
+        buf[1] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        buf[2] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        buf[3] = static_cast<char>(0x80 | (cp & 0x3F));
+        n = 4;
+    }
+    _data.insert(_data.begin() + _point, buf, buf + n);
+    _point += n;
     _modified = true;
 
     if (_desiredCol) {
-        // Compute visual column after the insertion.
         std::size_t line_start = _point;
         while (line_start > 0 && _data[line_start - 1] != '\n')
             --line_start;

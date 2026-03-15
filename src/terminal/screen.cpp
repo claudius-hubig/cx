@@ -25,17 +25,25 @@ static void readUtf8Tail(unsigned char lead, std::string& dest) {
     }
 }
 
-// Insert a character (and any UTF-8 continuation bytes) into a buffer.
+// Read a full UTF-8 character from stdin (given the lead byte) and insert
+// it into the buffer as a single codepoint.
 static void insertCharWithUtf8(Buffer& buf, char c) {
-    buf.insert(c);
     auto u = static_cast<unsigned char>(c);
-    if (u >= 0x80) {
-        for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
-            char next;
-            if (read(STDIN_FILENO, &next, 1) != 1) break;
-            buf.insert(next);
-        }
+    if (u < 0x80) {
+        buf.insert(static_cast<uint32_t>(u));
+        return;
     }
+    char seq[4];
+    seq[0] = c;
+    std::size_t expected = utf8SeqLen(u);
+    std::size_t got = 1;
+    for (std::size_t j = 1; j < expected; ++j) {
+        char next;
+        if (read(STDIN_FILENO, &next, 1) != 1) break;
+        seq[got++] = next;
+    }
+    auto [cp, len] = decodeUtf8(seq, got);
+    buf.insert(cp);
 }
 
 // Write all bytes to fd, retrying on partial writes and EINTR.
@@ -563,8 +571,12 @@ void Screen::loop() {
                     }
                 }
             } else if (std::holds_alternative<std::string>(result) && _buf) {
-                for (char ch : std::get<std::string>(result))
-                    _buf->insert(ch);
+                auto& s = std::get<std::string>(result);
+                for (std::size_t j = 0; j < s.size();) {
+                    auto [cp, len] = decodeUtf8(s.data() + j, s.size() - j);
+                    _buf->insert(cp);
+                    j += len;
+                }
             }
         } else {
             if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {

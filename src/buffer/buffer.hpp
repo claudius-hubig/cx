@@ -2,6 +2,7 @@
 
 #include "types.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -37,9 +38,9 @@ public:
     /// TextBuffer.
     virtual bool save() { return false; }
 
-    /// Insert a single byte at _point. No-op if readonly(). The caller
-    /// inserts UTF-8 sequences one byte at a time. Sets _modified.
-    void insert(char c)       { if (!readonly()) doInsert(c); }
+    /// Insert a Unicode code point at _point, encoding it as UTF-8. No-op
+    /// if readonly(). The entire multi-byte sequence is inserted atomically.
+    void insert(uint32_t cp)  { if (!readonly()) doInsert(cp); }
 
     /// Delete the character (full UTF-8 sequence) at _point. No-op if
     /// readonly() or point is at end of buffer.
@@ -110,7 +111,7 @@ public:
 protected:
     explicit Buffer(std::string name);
 
-    void doInsert(char c);
+    void doInsert(uint32_t cp);
     void doDeleteAtPoint();
     void doDeleteBeforePoint();
     // Sum of display widths of characters in _data[from..to).
