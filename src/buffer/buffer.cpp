@@ -3,6 +3,10 @@
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
+// Performance note: insertion into a vector<char> is O(n) per call because
+// all data after _point must be shifted. A gap buffer or rope would make
+// insertions O(1) amortised, but the current approach is acceptable for
+// typical file sizes.
 void Buffer::doInsert(uint32_t cp) {
     char buf[4];
     std::size_t n;
@@ -240,6 +244,9 @@ void Buffer::scrollUp() {
         --_viewFrom;
 }
 
+// Performance note: scans from _viewFrom to _point on every call. This is
+// O(n) per keystroke when the cursor is far from _viewFrom. Called once per
+// draw(), so acceptable for now but a cached line index would improve this.
 std::size_t Buffer::screenRow(ColIdx cols) const {
     std::size_t row = 0, col = 0;
     for (std::size_t i = _viewFrom; i < _point && i < _data.size();) {
@@ -264,8 +271,10 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
     return row;
 }
 
+// Performance note: scans from _data[0] to _point on every call (O(n) per
+// keystroke). Called once per draw() for the status bar. A cached line/col
+// updated incrementally on each edit would improve this.
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
-    // Count code points (not bytes) for the column.
     std::size_t line = 1, col = 1;
     for (std::size_t i = 0; i < _point && i < _data.size();) {
         if (_data[i] == '\n') {
@@ -281,6 +290,10 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
     return {line, col};
 }
 
+// Performance note: rebuilds the entire ANSI output from scratch on every
+// call. The `out` string is reused (clear() keeps capacity), so allocation
+// pressure is bounded, but the CPU work scales with screen size. This is
+// not a performance concern at typical terminal sizes.
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
                                           bool showWhitespace) const {
     static constexpr auto kCtrlColor  = "\x1b[38;2;204;120;50m";
