@@ -29,7 +29,11 @@ void insertPath(DirNode& root, std::string const& fullPath) {
     node->files.push_back({parts.back(), fullPath});
 }
 
+// Render a directory node's contents into lines/names.
+// If showHeader is true, emits a directory header line; otherwise, children
+// are rendered in-place (used for the root "/" to avoid a bare "/" header).
 void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent,
+                bool showHeader,
                 std::vector<std::string>& lines, std::vector<std::string>& names) {
     std::size_t total = node.files.size() + node.subdirs.size();
     if (total == 0) return;
@@ -37,7 +41,7 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
     // Single subdir, no files → collapse into prefix.
     if (node.files.empty() && node.subdirs.size() == 1) {
         auto& [name, child] = *node.subdirs.begin();
-        renderNode(child, prefix + name + "/", indent, lines, names);
+        renderNode(child, prefix + name + "/", indent, showHeader, lines, names);
         return;
     }
 
@@ -48,10 +52,12 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
         return;
     }
 
-    // Multiple children → directory header + indented entries.
-    lines.push_back(std::string(indent, ' ') + prefix);
-    names.push_back({});
-    indent += 2;
+    // Multiple children → directory header (if shown) + indented entries.
+    if (showHeader) {
+        lines.push_back(std::string(indent, ' ') + prefix);
+        names.push_back({});
+        indent += 2;
+    }
 
     // Merge files and subdirs in sorted order.
     auto fi = node.files.begin();
@@ -64,7 +70,7 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
             names.push_back(fi->second);
             ++fi;
         } else {
-            renderNode(di->second, di->first + "/", indent, lines, names);
+            renderNode(di->second, di->first + "/", indent, true, lines, names);
             ++di;
         }
     }
@@ -92,25 +98,9 @@ void BufferListBuffer::refresh(std::vector<std::string> names, std::string const
         }
     }
 
-    // Render path trie — iterate top-level children directly so the
-    // root "/" itself never appears as a header line.
-    {
-        auto fi = root.files.begin();
-        auto di = root.subdirs.begin();
-        while (fi != root.files.end() || di != root.subdirs.end()) {
-            bool useFile = fi != root.files.end() &&
-                (di == root.subdirs.end() || fi->first < di->first);
-            if (useFile) {
-                _displayLines.push_back("/" + fi->first);
-                _lineToName.push_back(fi->second);
-                ++fi;
-            } else {
-                renderNode(di->second, "/" + di->first + "/", 0,
-                           _displayLines, _lineToName);
-                ++di;
-            }
-        }
-    }
+    // Render path trie — suppress the root "/" header so it doesn't
+    // appear as a bare line.
+    renderNode(root, "/", 0, false, _displayLines, _lineToName);
 
     // Build _data from display lines (for base-class cursor navigation).
     _data.clear();
