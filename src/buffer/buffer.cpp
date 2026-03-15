@@ -3,6 +3,12 @@
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
+std::size_t Buffer::lineStart(std::size_t pos) const {
+    while (pos > 0 && _data[pos - 1] != '\n')
+        --pos;
+    return pos;
+}
+
 // Performance note: insertion into a vector<char> is O(n) per call because
 // all data after _point must be shifted. A gap buffer or rope would make
 // insertions O(1) amortised, but the current approach is acceptable for
@@ -34,11 +40,9 @@ void Buffer::doInsert(uint32_t cp) {
     _modified = true;
 
     if (_desiredCol) {
-        std::size_t line_start = _point;
-        while (line_start > 0 && _data[line_start - 1] != '\n')
-            --line_start;
+        std::size_t ls = lineStart(_point);
         std::size_t vcol = 0;
-        for (std::size_t i = line_start; i < _point;) {
+        for (std::size_t i = ls; i < _point;) {
             auto info = charInfoAt(_data.data() + i, _point - i);
             vcol += info.width;
             i += info.len;
@@ -72,8 +76,7 @@ void Buffer::doDeleteBeforePoint() {
 }
 
 void Buffer::moveHome() {
-    while (_point > 0 && _data[_point - 1] != '\n')
-        --_point;
+    _point = lineStart(_point);
     _desiredCol.reset();
 }
 
@@ -114,26 +117,22 @@ std::size_t Buffer::visualCol(std::size_t from, std::size_t to) const {
 
 void Buffer::moveUp() {
     // Find start of current line and compute visual column.
-    std::size_t line_start = _point;
-    while (line_start > 0 && _data[line_start - 1] != '\n')
-        --line_start;
-    std::size_t vcol = visualCol(line_start, _point);
+    std::size_t ls = lineStart(_point);
+    std::size_t vcol = visualCol(ls, _point);
 
     // The goal column is the desired column if set, otherwise the current one.
     std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
     // If already on the first line, move to beginning.
-    if (line_start == 0) {
+    if (ls == 0) {
         _point = 0;
         _desiredCol.reset();
         return;
     }
 
     // Find start of previous line.
-    std::size_t prev_line_end = line_start - 1; // the '\n' before current line
-    std::size_t prev_line_start = prev_line_end;
-    while (prev_line_start > 0 && _data[prev_line_start - 1] != '\n')
-        --prev_line_start;
+    std::size_t prev_line_end = ls - 1; // the '\n' before current line
+    std::size_t prev_line_start = lineStart(prev_line_end);
 
     // Walk the previous line to find the position matching the goal visual column.
     std::size_t pos = prev_line_start;
@@ -155,10 +154,8 @@ void Buffer::moveUp() {
 
 void Buffer::moveDown() {
     // Find start of current line and compute visual column.
-    std::size_t line_start = _point;
-    while (line_start > 0 && _data[line_start - 1] != '\n')
-        --line_start;
-    std::size_t vcol = visualCol(line_start, _point);
+    std::size_t ls = lineStart(_point);
+    std::size_t vcol = visualCol(ls, _point);
 
     // The goal column is the desired column if set, otherwise the current one.
     std::size_t goal = _desiredCol ? _desiredCol->value : vcol;

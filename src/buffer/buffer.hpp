@@ -114,6 +114,8 @@ protected:
     void doInsert(uint32_t cp);
     void doDeleteAtPoint();
     void doDeleteBeforePoint();
+    // Index of the first byte of the line containing pos (scans back for '\n').
+    std::size_t lineStart(std::size_t pos) const;
     // Sum of display widths of characters in _data[from..to).
     std::size_t visualCol(std::size_t from, std::size_t to) const;
 
