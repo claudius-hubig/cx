@@ -21,6 +21,7 @@ Buffer& BufferManager::open(std::filesystem::path const& path) {
     auto buf = std::make_unique<TextBuffer>(key, canonical);
     auto& ref = *buf;
     _buffers.emplace(key, std::move(buf));
+    touch(key);
     return ref;
 }
 
@@ -39,7 +40,9 @@ Buffer& BufferManager::create(std::string name) {
     auto [it, inserted] = _buffers.emplace(name, nullptr);
     if (!inserted)
         return *it->second;
+    auto key = it->first;
     it->second = std::make_unique<TextBuffer>(std::move(name));
+    touch(key);
     return *it->second;
 }
 
