@@ -24,6 +24,13 @@ public:
     // True when the buffer has been edited since last save (or creation).
     bool modified() const { return _modified; }
 
+    // Whether this buffer is backed by a file on disk.
+    virtual bool hasPath() const { return false; }
+
+    // Write buffer contents to its file. Returns true on success.
+    // Default returns false (unsaved/readonly buffers).
+    virtual bool save() { return false; }
+
     // Non-virtual editing wrappers that guard on readonly().
     void insert(char c)       { if (!readonly()) doInsert(c); }
     void deleteAtPoint()      { if (!readonly()) doDeleteAtPoint(); }

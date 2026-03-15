@@ -13,11 +13,11 @@ public:
 
     bool readonly() const override { return false; }
 
-    bool hasPath() const { return _path.has_value(); }
+    bool hasPath() const override { return _path.has_value(); }
     void setPath(std::filesystem::path p);
 
     // Write _data to _path. Returns true on success.
-    bool save();
+    bool save() override;
 
 private:
     std::optional<std::filesystem::path> _path;

@@ -3,8 +3,6 @@
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
 #include "buffer/char_width.hpp"
-#include "buffer/text_buffer.hpp"
-
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -153,8 +151,7 @@ void Screen::draw() {
     std::string buf_name;
     if (_buf) {
         buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
-        auto* tb = dynamic_cast<TextBuffer const*>(_buf);
-        if (tb && tb->modified())
+        if (_buf->modified())
             buf_name += " +";
         else
             buf_name += "  ";
@@ -214,24 +211,21 @@ void Screen::loop() {
         // the buffer. Enter confirms, Escape (0x1b) cancels.
         if (_prompt == Prompt::ConfirmSave) {
             if (c == 'y' || c == 'Y') {
-                auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                if (tb) {
-                    if (tb->save()) {
-                        setStatus("Saved to " + tb->name());
-                        if (_killPending && _bufMgr) {
-                            _killPending = false;
-                            auto name = tb->name();
-                            _prompt = Prompt::None;
-                            _prompt_input.clear();
-                            if (_prevBuf == _buf) _prevBuf = nullptr;
-                            setBuffer(_bufMgr->kill(name));
-                            draw();
-                            continue;
-                        }
-                    } else {
-                        setStatus("Error saving to " + tb->name());
+                if (_buf && _buf->save()) {
+                    setStatus("Saved to " + _buf->name());
+                    if (_killPending && _bufMgr) {
                         _killPending = false;
+                        auto name = _buf->name();
+                        _prompt = Prompt::None;
+                        _prompt_input.clear();
+                        if (_prevBuf == _buf) _prevBuf = nullptr;
+                        setBuffer(_bufMgr->kill(name));
+                        draw();
+                        continue;
                     }
+                } else if (_buf) {
+                    setStatus("Error saving to " + _buf->name());
+                    _killPending = false;
                 }
                 _prompt = Prompt::None;
                 _prompt_input.clear();
@@ -243,12 +237,11 @@ void Screen::loop() {
             // Ignore all other keys.
         } else if (_prompt == Prompt::ConfirmKill) {
             if (c == 'y' || c == 'Y') {
-                auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                if (tb && _bufMgr) {
-                    if (tb->hasPath()) {
+                if (_buf && _bufMgr) {
+                    if (_buf->hasPath()) {
                         // Modified file-backed: save then kill.
-                        tb->save();
-                        auto name = tb->name();
+                        _buf->save();
+                        auto name = _buf->name();
                         _prompt = Prompt::None;
                         _prompt_input.clear();
                         if (_prevBuf == _buf) _prevBuf = nullptr;
@@ -262,9 +255,8 @@ void Screen::loop() {
                 }
             } else if (c == 'n' || c == 'N') {
                 // Kill without saving.
-                auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                if (tb && _bufMgr) {
-                    auto name = tb->name();
+                if (_buf && _bufMgr) {
+                    auto name = _buf->name();
                     _prompt = Prompt::None;
                     _prompt_input.clear();
                     if (_prevBuf == _buf) _prevBuf = nullptr;
@@ -315,36 +307,33 @@ void Screen::loop() {
                             auto& buf = _bufMgr->open(_prompt_input);
                             setBuffer(buf);
                         }
-                    } else if (_prompt == Prompt::SaveAs && _buf) {
-                        auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                        if (tb && _bufMgr) {
-                            auto targetExists = std::filesystem::exists(_prompt_input);
-                            _bufMgr->rename(tb->name(), _prompt_input);
-                            if (targetExists) {
-                                _prompt = Prompt::ConfirmSave;
-                                _prompt_input = "Overwrite " + tb->name()
-                                    + "? y/n: ";
+                    } else if (_prompt == Prompt::SaveAs && _buf && _bufMgr) {
+                        auto targetExists = std::filesystem::exists(_prompt_input);
+                        _bufMgr->rename(_buf->name(), _prompt_input);
+                        if (targetExists) {
+                            _prompt = Prompt::ConfirmSave;
+                            _prompt_input = "Overwrite " + _buf->name()
+                                + "? y/n: ";
+                            draw();
+                            continue;
+                        }
+                        if (_buf->save()) {
+                            setStatus("Saved to " + _buf->name());
+                            if (_killPending) {
+                                _killPending = false;
+                                auto name = _buf->name();
+                                _prompt = Prompt::None;
+                                _prompt_input.clear();
+                                _completions.clear();
+                                _completionIdx = -1;
+                                if (_prevBuf == _buf) _prevBuf = nullptr;
+                                setBuffer(_bufMgr->kill(name));
                                 draw();
                                 continue;
                             }
-                            if (tb->save()) {
-                                setStatus("Saved to " + tb->name());
-                                if (_killPending && _bufMgr) {
-                                    _killPending = false;
-                                    auto name = tb->name();
-                                    _prompt = Prompt::None;
-                                    _prompt_input.clear();
-                                    _completions.clear();
-                                    _completionIdx = -1;
-                                    if (_prevBuf == _buf) _prevBuf = nullptr;
-                                    setBuffer(_bufMgr->kill(name));
-                                    draw();
-                                    continue;
-                                }
-                            } else {
-                                setStatus("Error saving to " + tb->name());
-                                _killPending = false;
-                            }
+                        } else {
+                            setStatus("Error saving to " + _buf->name());
+                            _killPending = false;
                         }
                     } else if (_prompt == Prompt::GoToLine && _buf) {
                         std::size_t line = 0;
@@ -523,43 +512,39 @@ void Screen::loop() {
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
                     updateCompletions();
-                } else if (action == Action::KillBuffer && _buf && _bufMgr) {
-                    auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                    if (tb) {
-                        if (!tb->modified()) {
-                            // Unmodified: kill immediately.
-                            auto name = tb->name();
-                            if (_prevBuf == _buf) _prevBuf = nullptr;
-                            setBuffer(_bufMgr->kill(name));
-                        } else if (!tb->hasPath()) {
-                            _prompt = Prompt::ConfirmKill;
-                            _prompt_input =
-                                "Killing temporary buffer. Save to file first? y/n: ";
-                        } else {
-                            _prompt = Prompt::ConfirmKill;
-                            _prompt_input =
-                                "Killing modified buffer. Save to file first? y/n: ";
-                        }
+                } else if (action == Action::KillBuffer && _buf && _bufMgr
+                           && !_buf->readonly()) {
+                    if (!_buf->modified()) {
+                        // Unmodified: kill immediately.
+                        auto name = _buf->name();
+                        if (_prevBuf == _buf) _prevBuf = nullptr;
+                        setBuffer(_bufMgr->kill(name));
+                    } else if (!_buf->hasPath()) {
+                        _prompt = Prompt::ConfirmKill;
+                        _prompt_input =
+                            "Killing temporary buffer. Save to file first? y/n: ";
+                    } else {
+                        _prompt = Prompt::ConfirmKill;
+                        _prompt_input =
+                            "Killing modified buffer. Save to file first? y/n: ";
                     }
                 } else if (action == Action::ToggleWhitespace) {
                     _showWhitespace = !_showWhitespace;
-                } else if (action == Action::Save && _buf) {
-                    auto* tb = dynamic_cast<TextBuffer*>(_buf);
-                    if (tb) {
-                        if (tb->hasPath()) {
-                            if (!std::filesystem::exists(tb->name())) {
-                                _prompt = Prompt::ConfirmSave;
-                                _prompt_input = "File " + tb->name()
-                                    + " doesn't exist. Really save there? y/n: ";
-                            } else if (tb->save()) {
-                                setStatus("Saved to " + tb->name());
-                            } else {
-                                setStatus("Error saving to " + tb->name());
-                            }
+                } else if (action == Action::Save && _buf
+                           && !_buf->readonly()) {
+                    if (_buf->hasPath()) {
+                        if (!std::filesystem::exists(_buf->name())) {
+                            _prompt = Prompt::ConfirmSave;
+                            _prompt_input = "File " + _buf->name()
+                                + " doesn't exist. Really save there? y/n: ";
+                        } else if (_buf->save()) {
+                            setStatus("Saved to " + _buf->name());
                         } else {
-                            _prompt = Prompt::SaveAs;
-                            _prompt_input.clear();
+                            setStatus("Error saving to " + _buf->name());
                         }
+                    } else {
+                        _prompt = Prompt::SaveAs;
+                        _prompt_input.clear();
                     }
                 }
             } else if (std::holds_alternative<std::string>(result) && _buf) {
