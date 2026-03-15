@@ -56,11 +56,12 @@ void Buffer::doDeleteAtPoint() {
 void Buffer::doDeleteBeforePoint() {
     if (_point > 0) {
         // Walk back over continuation bytes to find the start of the code point.
+        auto end = _point;
         --_point;
         while (_point > 0 && isUtf8Continuation(static_cast<unsigned char>(_data[_point])))
             --_point;
-        auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
-        auto end = std::min(_point + len, _data.size());
+        // Delete everything from the start we found to the original position.
+        // This correctly handles malformed data (stray continuation bytes).
         _data.erase(_data.begin() + _point, _data.begin() + end);
         _modified = true;
     }
