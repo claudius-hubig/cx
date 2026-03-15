@@ -2,9 +2,11 @@
 
 #include "buffer/buffer_sink.hpp"
 
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 
 // Trivial BufferSink stub for testing BufferManager without a terminal.
@@ -18,7 +20,10 @@ public:
 class TempFile {
 public:
     explicit TempFile(std::string const& content = {}) {
-        _path = std::filesystem::temp_directory_path() / ("cx_test_" + std::to_string(std::rand()));
+        static std::atomic<int> counter{0};
+        static auto seed = std::random_device{}();
+        _path = std::filesystem::temp_directory_path()
+              / ("cx_test_" + std::to_string(seed) + "_" + std::to_string(counter++));
         std::ofstream f(_path, std::ios::binary);
         f << content;
     }
