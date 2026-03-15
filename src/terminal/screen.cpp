@@ -100,12 +100,12 @@ void Screen::draw() {
     auto& [rows, cols] = _size;
     auto br = bufRows();
 
-    _out.clear();
+    _renderBuf.clear();
 
     RowIdx cur_row{0};
     ColIdx cur_col{0};
     if (_buf)
-        std::tie(cur_row, cur_col) = _buf->render(_out, br, cols, _showWhitespace);
+        std::tie(cur_row, cur_col) = _buf->render(_renderBuf, br, cols, _showWhitespace);
 
     // Expire timed status message.
     if (_statusExpiry && std::chrono::steady_clock::now() >= *_statusExpiry) {
@@ -185,25 +185,25 @@ void Screen::draw() {
     } else if (status_vwidth < cols.value) {
         status.append(cols.value - status_vwidth, ' ');
     }
-    _out += "\x1b[";
-    _out += std::to_string(rows.value);
-    _out += ";1H";
-    _out += "\x1b[7m"; // reverse video
-    _out += status;
-    _out += "\x1b[0m"; // reset
+    _renderBuf += "\x1b[";
+    _renderBuf += std::to_string(rows.value);
+    _renderBuf += ";1H";
+    _renderBuf += "\x1b[7m"; // reverse video
+    _renderBuf += status;
+    _renderBuf += "\x1b[0m"; // reset
 
     // Position the terminal cursor AFTER the status line, so it lands
     // in the buffer area rather than on the status bar.
-    _out += "\x1b[";
-    _out += std::to_string(cur_row.value + 1);
-    _out += ";";
-    _out += std::to_string(cur_col.value + 1);
-    _out += "H";
+    _renderBuf += "\x1b[";
+    _renderBuf += std::to_string(cur_row.value + 1);
+    _renderBuf += ";";
+    _renderBuf += std::to_string(cur_col.value + 1);
+    _renderBuf += "H";
 
     // Ensure the cursor is visible.
-    _out += "\x1b[?25h";
+    _renderBuf += "\x1b[?25h";
 
-    writeAll(STDOUT_FILENO, _out.data(), _out.size());
+    writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
 }
 
 void Screen::loop() {
