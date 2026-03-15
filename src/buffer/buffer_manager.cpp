@@ -70,6 +70,27 @@ std::string BufferManager::displayName(std::string const& name) const {
     return filename;
 }
 
+std::vector<std::pair<std::string, std::string>> BufferManager::completions(
+        std::string const& prefix) const {
+    std::vector<std::pair<std::string, std::string>> result;
+    for (auto& [name, _] : _buffers) {
+        auto dn = displayName(name);
+        if (dn.starts_with(prefix))
+            result.push_back({dn, name});
+        else if (name.starts_with(prefix))
+            result.push_back({name, name});
+        else {
+            // Also match against the bare filename (covers the ambiguous
+            // case where displayName returns the full path).
+            auto fn = std::filesystem::path(name).filename().string();
+            if (!fn.empty() && fn != dn && fn.starts_with(prefix))
+                result.push_back({name, name});
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
 void BufferManager::touch(std::string const& name) {
     // Move name to front of MRU list.
     auto it = std::find(_mru.begin(), _mru.end(), name);

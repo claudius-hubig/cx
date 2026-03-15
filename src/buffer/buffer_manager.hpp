@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 class Screen;
@@ -38,6 +39,11 @@ public:
     // filename when unambiguous, or the full path when another open buffer
     // shares the same filename.
     std::string displayName(std::string const& name) const;
+
+    // Return completions for the given prefix, matching on display names.
+    // Each pair: {displayName, bufferName}.
+    std::vector<std::pair<std::string, std::string>> completions(
+        std::string const& prefix) const;
 
     // Mark a buffer as most recently used.
     void touch(std::string const& name);

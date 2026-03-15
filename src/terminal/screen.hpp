@@ -6,7 +6,9 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <variant>
+#include <vector>
 
 class Buffer;
 class BufferManager;
@@ -63,4 +65,9 @@ private:
     std::string _statusMsg;
     std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
     bool _showWhitespace = false;
+
+    // Auto-completion state for SwitchBuffer prompt.
+    void updateCompletions();
+    std::vector<std::pair<std::string, std::string>> _completions; // {displayName, bufName}
+    int _completionIdx = -1; // -1 = no selection, 0+ = cycling
 };

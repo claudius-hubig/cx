@@ -71,30 +71,70 @@ void Screen::draw() {
 
     // Status line on the last row, with inverted colours.
     std::string status;
-    if (_prompt == Prompt::GoToLine)
+    std::size_t status_vwidth = 0; // visual width (excludes ANSI escapes)
+    if (_prompt == Prompt::GoToLine) {
         status = "Go to line: " + _prompt_input;
-    else if (_prompt == Prompt::SaveAs)
+        status_vwidth = status.size();
+    } else if (_prompt == Prompt::SaveAs) {
         status = "Save as: " + _prompt_input;
-    else if (_prompt == Prompt::SwitchBuffer)
+        status_vwidth = status.size();
+    } else if (_prompt == Prompt::SwitchBuffer) {
         status = "Buffer: " + _prompt_input;
-    else if (_prompt == Prompt::ConfirmSave)
+        status_vwidth = status.size();
+        // Append completion hints (dim text). A completion's match
+        // string may or may not share the typed prefix (e.g. filename
+        // matches against a full-path match string).
+        auto hintFor = [&](std::string const& match) -> std::string {
+            if (match.starts_with(_prompt_input))
+                return match.substr(_prompt_input.size());
+            return match;
+        };
+        if (_completionIdx < 0 && !_completions.empty()) {
+            auto hint = hintFor(_completions[0].first);
+            if (_completions.size() == 1) {
+                if (!hint.empty()) {
+                    status += "\x1b[2m" + hint + "\x1b[22m";
+                    status_vwidth += hint.size();
+                }
+            } else if (_completions.size() <= 3) {
+                status += "\x1b[2m[";
+                status_vwidth++;
+                for (std::size_t i = 0; i < _completions.size(); ++i) {
+                    if (i > 0) { status += "/"; status_vwidth++; }
+                    auto h = hintFor(_completions[i].first);
+                    if (h.empty()) h = _completions[i].first;
+                    status += h;
+                    status_vwidth += h.size();
+                }
+                status += "]\x1b[22m";
+                status_vwidth++;
+            } else {
+                auto cnt = " (" + std::to_string(_completions.size())
+                           + " matches)";
+                status += "\x1b[2m" + hint + cnt + "\x1b[22m";
+                status_vwidth += hint.size() + cnt.size();
+            }
+        }
+    } else if (_prompt == Prompt::ConfirmSave) {
         status = _prompt_input;
-    else if (_buf) {
+        status_vwidth = status.size();
+    } else if (_buf) {
         auto [line, col] = _buf->lineCol();
         status = std::to_string(line) + ":" + std::to_string(col);
         if (!_statusMsg.empty())
             status += " | " + _statusMsg;
+        status_vwidth = status.size();
     }
 
     // Right-align the buffer name on the status line.
     std::string buf_name;
     if (_buf)
         buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
-    if (status.size() + buf_name.size() + 2 <= cols.value) {
-        status.resize(cols.value - buf_name.size(), ' ');
+    if (status_vwidth + buf_name.size() + 2 <= cols.value) {
+        status.append(cols.value - buf_name.size() - status_vwidth, ' ');
         status += buf_name;
-    } else {
-        status.resize(cols.value, ' ');
+    } else if (status_vwidth < cols.value) {
+        status.append(cols.value - status_vwidth, ' ');
     }
     _out += "\x1b[";
     _out += std::to_string(rows.value);
@@ -163,7 +203,18 @@ void Screen::loop() {
             if (c == '\r' || c == '\n') {
                 if (!_prompt_input.empty()) {
                     if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
-                        Buffer* target = _bufMgr->find(_prompt_input);
+                        // Resolve target from completion or typed input.
+                        std::string resolved;
+                        if (_completionIdx >= 0
+                            && _completionIdx < static_cast<int>(_completions.size()))
+                            resolved = _completions[_completionIdx].second;
+                        else if (_completions.size() == 1)
+                            resolved = _completions[0].second;
+                        Buffer* target = nullptr;
+                        if (!resolved.empty())
+                            target = _bufMgr->find(resolved);
+                        if (!target)
+                            target = _bufMgr->find(_prompt_input);
                         if (target) {
                             setBuffer(*target);
                         } else if (!_prompt_input.empty() && _prompt_input[0] == '*') {
@@ -212,11 +263,25 @@ void Screen::loop() {
                 }
                 _prompt = Prompt::None;
                 _prompt_input.clear();
+                _completions.clear();
+                _completionIdx = -1;
             } else if (c == 0x1b) {
                 _prompt = Prompt::None;
                 _prompt_input.clear();
+                _completions.clear();
+                _completionIdx = -1;
+            } else if (c == '\t' && _prompt == Prompt::SwitchBuffer
+                       && !_completions.empty()) {
+                if (_completionIdx < 0)
+                    _completionIdx = 0;
+                else
+                    _completionIdx = (_completionIdx + 1)
+                                     % static_cast<int>(_completions.size());
+                _prompt_input = _completions[_completionIdx].first;
             } else if (c == 0x7f && !_prompt_input.empty()) {
                 _prompt_input.pop_back();
+                if (_prompt == Prompt::SwitchBuffer)
+                    updateCompletions();
             } else if (static_cast<unsigned char>(c) >= 0x20) {
                 _prompt_input += c;
                 // Read remaining bytes of a UTF-8 sequence.
@@ -228,6 +293,8 @@ void Screen::loop() {
                         _prompt_input += next;
                     }
                 }
+                if (_prompt == Prompt::SwitchBuffer)
+                    updateCompletions();
             }
         } else if (c == '\r' || c == '\n') {
             // Buffer list: Enter selects the highlighted buffer.
@@ -342,6 +409,7 @@ void Screen::loop() {
                 } else if (action == Action::SwitchBuffer) {
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
+                    updateCompletions();
                 } else if (action == Action::ToggleWhitespace) {
                     _showWhitespace = !_showWhitespace;
                 } else if (action == Action::Save && _buf) {
@@ -400,6 +468,16 @@ void Screen::resize() {
     _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
     // No buffer to resize — render() produces a fresh screen image each time.
     // No cursor to clamp — it's derived from the buffer point.
+}
+
+void Screen::updateCompletions() {
+    if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
+        _completions = _bufMgr->completions(_prompt_input);
+        _completionIdx = -1;
+    } else {
+        _completions.clear();
+        _completionIdx = -1;
+    }
 }
 
 void Screen::setStatus(std::string msg) {
