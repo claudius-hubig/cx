@@ -77,9 +77,28 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
         std::string const& prefix) const {
     std::vector<std::pair<std::string, std::string>> result;
 
+    // Precompute display names to avoid O(n^2) from calling displayName()
+    // inside the loop (it checks all buffers for filename collisions).
+    std::unordered_map<std::string, std::string> displayNames;
+    displayNames.reserve(_buffers.size());
+    // Count filename occurrences to detect ambiguity.
+    std::unordered_map<std::string, int> fnCount;
+    for (auto& [name, _] : _buffers) {
+        auto fn = std::filesystem::path(name).filename().string();
+        if (!fn.empty() && fn != name)
+            fnCount[fn]++;
+    }
+    for (auto& [name, _] : _buffers) {
+        auto fn = std::filesystem::path(name).filename().string();
+        if (!fn.empty() && fn != name && fnCount[fn] == 1)
+            displayNames[name] = fn;
+        else
+            displayNames[name] = name;
+    }
+
     // Match against open buffers.
     for (auto& [name, _] : _buffers) {
-        auto dn = displayName(name);
+        auto& dn = displayNames[name];
         if (dn.starts_with(prefix))
             result.push_back({dn, name});
         else if (name.starts_with(prefix))
