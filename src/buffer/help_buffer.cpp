@@ -28,10 +28,10 @@
 // of visual rows 3-12 (alongside data lines 3-12).
 
 static constexpr std::size_t kCmdStart  = 3;  // data line of "Commands:"
-static constexpr std::size_t kCmdEnd    = 13; // data line after last command entry (the blank)
-static constexpr std::size_t kMovStart  = 14; // data line of "Movement:"
-static constexpr std::size_t kMovEnd    = 21; // data line after last movement entry (the blank)
-static constexpr std::size_t kFooter    = 22;
+static constexpr std::size_t kCmdEnd    = 12; // data line after last command entry (the blank)
+static constexpr std::size_t kMovStart  = 13; // data line of "Movement:"
+static constexpr std::size_t kMovEnd    = 20; // data line after last movement entry (the blank)
+static constexpr std::size_t kFooter    = 21;
 
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
@@ -43,7 +43,6 @@ static constexpr std::array kCommandLines = {
     std::string_view{"  Ctrl-n      Buffer list"},
     std::string_view{"  Ctrl-s      Save file"},
     std::string_view{"  Ctrl-w      Toggle whitespace"},
-    std::string_view{R"(  Ctrl-x      Insert "hello")"},
 };
 
 static constexpr std::array kMovementLines = {

@@ -618,7 +618,6 @@ std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(cha
         case 0x0c: return Action::GoToLine; // Ctrl-L
         case 0x13: return Action::Save;    // Ctrl-S
         case 0x17: return Action::ToggleWhitespace; // Ctrl-W
-        case 0x18: return std::string{"hello"};  // Ctrl-X
         default:   return std::monostate{};
     }
 }
