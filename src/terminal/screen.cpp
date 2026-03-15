@@ -17,6 +17,29 @@
 #include <string>
 #include <variant>
 
+// Read remaining bytes of a UTF-8 sequence from stdin, given the lead byte.
+// Appends continuation bytes to `dest`.
+static void readUtf8Tail(unsigned char lead, std::string& dest) {
+    for (std::size_t j = 1; j < utf8SeqLen(lead); ++j) {
+        char next;
+        if (read(STDIN_FILENO, &next, 1) != 1) break;
+        dest += next;
+    }
+}
+
+// Insert a character (and any UTF-8 continuation bytes) into a buffer.
+static void insertCharWithUtf8(Buffer& buf, char c) {
+    buf.insert(c);
+    auto u = static_cast<unsigned char>(c);
+    if (u >= 0x80) {
+        for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
+            char next;
+            if (read(STDIN_FILENO, &next, 1) != 1) break;
+            buf.insert(next);
+        }
+    }
+}
+
 // Set by the SIGWINCH handler; checked in loop() to trigger a resize.
 static volatile sig_atomic_t g_resized = 0;
 
@@ -389,15 +412,8 @@ void Screen::loop() {
                     updateCompletions();
             } else if (static_cast<unsigned char>(c) >= 0x20) {
                 _prompt_input += c;
-                // Read remaining bytes of a UTF-8 sequence.
                 auto u = static_cast<unsigned char>(c);
-                if (u >= 0x80) {
-                    for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
-                        char next;
-                        if (read(STDIN_FILENO, &next, 1) != 1) break;
-                        _prompt_input += next;
-                    }
-                }
+                if (u >= 0x80) readUtf8Tail(u, _prompt_input);
                 if (_prompt == Prompt::SwitchBuffer)
                     updateCompletions();
             }
@@ -467,17 +483,8 @@ void Screen::loop() {
                 } else if (seq[0] != '[') {
                     // Not a CSI sequence — insert the byte verbatim
                     // (e.g. Alt+key sends ESC followed by the key).
-                    if (_buf && static_cast<unsigned char>(seq[0]) >= 0x20) {
-                        _buf->insert(seq[0]);
-                        auto u = static_cast<unsigned char>(seq[0]);
-                        if (u >= 0x80) {
-                            for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
-                                char next;
-                                if (read(STDIN_FILENO, &next, 1) != 1) break;
-                                _buf->insert(next);
-                            }
-                        }
-                    }
+                    if (_buf && static_cast<unsigned char>(seq[0]) >= 0x20)
+                        insertCharWithUtf8(*_buf, seq[0]);
                 }
             } else if (_buf && _buf->readonly() && _prevBuf) {
                 // Bare Esc in help buffer: switch back.
@@ -564,16 +571,7 @@ void Screen::loop() {
                 setBuffer(*_prevBuf);
                 _prevBuf = nullptr;
             } else if (_buf) {
-                _buf->insert(c);
-                // Read and insert remaining bytes of a UTF-8 sequence.
-                auto u = static_cast<unsigned char>(c);
-                if (u >= 0x80) {
-                    for (std::size_t j = 1; j < utf8SeqLen(u); ++j) {
-                        char next;
-                        if (read(STDIN_FILENO, &next, 1) != 1) break;
-                        _buf->insert(next);
-                    }
-                }
+                insertCharWithUtf8(*_buf, c);
             }
         }
 
