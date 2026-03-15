@@ -16,8 +16,10 @@ Buffer& BufferManager::open(std::filesystem::path const& path) {
     auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(path));
     auto key = canonical.string();
     auto it = _buffers.find(key);
-    if (it != _buffers.end())
+    if (it != _buffers.end()) {
+        touch(key);
         return *it->second;
+    }
     auto buf = std::make_unique<TextBuffer>(key, canonical);
     auto& ref = *buf;
     _buffers.emplace(key, std::move(buf));
