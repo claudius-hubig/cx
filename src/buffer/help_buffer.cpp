@@ -7,32 +7,6 @@
 #include <string_view>
 #include <vector>
 
-// Data layout (stacked order, one line per entry):
-//   0  title ("cx")
-//   1  separator (empty in _data; rendered as '=')
-//   2  blank
-//   3  "Commands:"
-//   4  "  Ctrl-b      Switch/open buffer"
-//   ...
-//  12  "  Ctrl-x      ..."
-//  13  blank
-//  14  "Movement:"
-//  15  "  Arrows      Move cursor"
-//   ...
-//  20  "  Enter       Insert newline"
-//  21  blank
-//  22  footer
-//
-// In stacked mode the visual rows are 1:1 with data lines.
-// In side-by-side mode, data lines 14-20 appear in the right column
-// of visual rows 3-12 (alongside data lines 3-12).
-
-static constexpr std::size_t kCmdStart  = 3;  // data line of "Commands:"
-static constexpr std::size_t kCmdEnd    = 12; // data line after last command entry (the blank)
-static constexpr std::size_t kMovStart  = 13; // data line of "Movement:"
-static constexpr std::size_t kMovEnd    = 20; // data line after last movement entry (the blank)
-static constexpr std::size_t kFooter    = 21;
-
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
     std::string_view{"  Ctrl-b      Switch/open buffer"},
@@ -58,7 +32,24 @@ static constexpr std::array kMovementLines = {
 static constexpr std::string_view kFooterText = "Press 'q', Esc, or Ctrl-h to return to editing.";
 static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
-static constexpr std::size_t kHeaderRows = 3; // title + separator + blank
+
+// Data layout (one line per entry), derived from array sizes:
+//   0..2             header (title, separator, blank)
+//   kCmdStart..      command lines (kCommandLines)
+//   kCmdEnd          blank
+//   kMovStart..      movement lines (kMovementLines)
+//   kMovEnd          blank
+//   kFooter          footer
+//
+// In stacked mode the visual rows are 1:1 with data lines.
+// In side-by-side mode the movement block occupies the right column
+// alongside the command block.
+static constexpr std::size_t kHeaderLines = 3;
+static constexpr std::size_t kCmdStart  = kHeaderLines;
+static constexpr std::size_t kCmdEnd    = kCmdStart + kCommandLines.size();
+static constexpr std::size_t kMovStart  = kCmdEnd + 1;   // +1 for blank
+static constexpr std::size_t kMovEnd    = kMovStart + kMovementLines.size();
+static constexpr std::size_t kFooter    = kMovEnd + 1;   // +1 for blank
 
 static std::size_t maxWidth(std::span<const std::string_view> lines) {
     std::size_t w = 0;
