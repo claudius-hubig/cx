@@ -4,7 +4,11 @@
 #include <cstdint>
 #include <utility>
 
-// Visual display width of a single ASCII byte (non-newline).
+/// Visual display width of a single ASCII byte (excluding newline).
+/// ASCII only: tab and control characters (including NUL and DEL) return 2
+/// (rendered as two-character sequences like ^X or \0); printable bytes
+/// (including space) return 1. Does not handle newline or multi-byte UTF-8
+/// lead bytes — callers must check for those separately.
 inline constexpr std::size_t charWidth(char ch) {
     auto u = static_cast<unsigned char>(ch);
     if (u == '\t')  return 2;  // rendered as two spaces
@@ -12,11 +16,15 @@ inline constexpr std::size_t charWidth(char ch) {
     return 1;
 }
 
+/// Return true if b is a UTF-8 continuation byte: (b & 0xC0) == 0x80.
+/// Pure predicate — works on any unsigned char value.
 inline constexpr bool isUtf8Continuation(unsigned char b) {
     return (b & 0xC0) == 0x80;
 }
 
-// Number of bytes in a UTF-8 sequence starting with the given lead byte.
+/// Number of bytes in a UTF-8 sequence starting with the given lead byte.
+/// Returns 1 for ASCII (<0x80), 2-4 for valid multi-byte lead bytes, and
+/// 1 for invalid/continuation bytes (no error signaling).
 inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
     if (lead < 0x80) return 1;
     if ((lead & 0xE0) == 0xC0) return 2;
@@ -25,7 +33,10 @@ inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
     return 1; // invalid or continuation — treat as single byte
 }
 
-// Decode a UTF-8 code point. Returns {codepoint, byte_length}.
+/// Decode a UTF-8 code point starting at data[0].
+/// Precondition: avail > 0 (at least one byte available).
+/// Returns {codepoint, byte_length}. For malformed or truncated sequences
+/// the raw byte value is returned with length 1.
 inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(
         const char* data, std::size_t avail) {
     auto u = static_cast<unsigned char>(data[0]);
@@ -51,7 +62,10 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(
     return {u, 1}; // invalid/truncated, treat as raw byte
 }
 
-// Display width of a Unicode code point (1 or 2 cells).
+/// Display width of a Unicode code point: 2 for CJK / wide ranges
+/// (Hangul Jamo, CJK radicals, Hiragana/Katakana, CJK unified, Yi,
+/// Hangul syllables, fullwidth forms, CJK extensions B-G), 1 otherwise.
+/// Does not handle combining marks or zero-width characters.
 inline constexpr std::size_t codepointWidth(uint32_t cp) {
     if (cp >= 0x1100 && cp <= 0x115F) return 2;  // Hangul Jamo
     if (cp >= 0x2E80 && cp <= 0x303E) return 2;  // CJK Radicals, Kangxi
@@ -68,12 +82,16 @@ inline constexpr std::size_t codepointWidth(uint32_t cp) {
     return 1;
 }
 
-// Width and byte length of the character/code-point at data[0..avail).
+/// Width and byte length of the character/code-point at data[0..avail).
 struct CharInfo {
     std::size_t width; // display columns
     std::size_t len;   // bytes consumed
 };
 
+/// Combined decode + width for the character at data[0..avail).
+/// Precondition: avail > 0. For ASCII bytes, applies charWidth rules
+/// (tab/control → width 2, printable → 1). For multi-byte UTF-8,
+/// decodes and returns codepointWidth.
 inline constexpr CharInfo charInfoAt(const char* data, std::size_t avail) {
     auto u = static_cast<unsigned char>(data[0]);
     if (u < 0x80) {

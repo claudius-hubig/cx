@@ -1,15 +1,15 @@
 #include "buffer_manager.hpp"
-#include "terminal/screen.hpp"
+#include "buffer/buffer_sink.hpp"
 
 #include <algorithm>
 
-BufferManager::BufferManager(Screen& screen)
-    : _helpBuffer(std::make_unique<HelpBuffer>()), _screen(screen) {
+BufferManager::BufferManager(BufferSink& sink)
+    : _helpBuffer(std::make_unique<HelpBuffer>()), _sink(sink) {
     auto buf = std::make_unique<TextBuffer>("*1*");
     auto& ref = *buf;
     _buffers.emplace("*1*", std::move(buf));
     _mru.push_back("*1*");
-    _screen.setBuffer(ref);
+    _sink.setBuffer(ref);
 }
 
 Buffer& BufferManager::open(std::filesystem::path const& path) {

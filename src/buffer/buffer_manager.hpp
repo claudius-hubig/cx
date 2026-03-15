@@ -12,51 +12,59 @@
 #include <utility>
 #include <vector>
 
-class Screen;
+class BufferSink;
 
 class BufferManager {
 public:
-    explicit BufferManager(Screen& screen);
+    /// Construct the manager. Creates a default "*1*" buffer and calls
+    /// sink.setBuffer() with it.
+    explicit BufferManager(BufferSink& sink);
 
-    // Open (or return existing) buffer for the given path. Reads the file
-    // contents into a new TextBuffer if not already open.
+    /// Open (or return existing) buffer for the given path. Canonicalizes
+    /// via weakly_canonical(absolute()). Returns existing buffer if already
+    /// open; otherwise reads file into a new TextBuffer. Calls touch().
     Buffer& open(std::filesystem::path const& path);
 
     Buffer& helpBuffer() { return *_helpBuffer; }
+
+    /// Return the buffer list buffer, creating it lazily on first call.
+    /// Always refreshes the display with current buffer names.
     BufferListBuffer& bufferListBuffer();
 
-    // Find a buffer by name. Returns nullptr if not found.
+    /// Find a buffer by exact name. Returns nullptr if not found.
     Buffer* find(std::string const& name);
 
-    // Create a new empty buffer with the given name. Returns the new buffer.
+    /// Create a new empty buffer with the given name. Idempotent: returns
+    /// the existing buffer if one with the same name exists. Calls touch().
     Buffer& create(std::string name);
 
-    // Return the names of all buffers (excluding help and buffer list),
-    // sorted alphabetically.
+    /// Return sorted names of all buffers (excluding help and buffer list).
     std::vector<std::string> bufferNames() const;
 
-    // Return a short display name for the given buffer name. Uses just the
-    // filename when unambiguous, or the full path when another open buffer
-    // shares the same filename.
+    /// Return a short display name: just the filename if unambiguous among
+    /// open buffers, or the full path if another buffer shares the same
+    /// filename. Non-path names (like "*1*") are returned as-is.
     std::string displayName(std::string const& name) const;
 
-    // Return completions for the given prefix, matching on display names.
-    // Each pair: {displayName, bufferName}.
+    /// Return completions for the given prefix, matching buffer display
+    /// names and filesystem entries. Each pair: {displayName, bufferName}.
+    /// Results are sorted and deduplicated.
     std::vector<std::pair<std::string, std::string>> completions(
         std::string const& prefix) const;
 
-    // Change a buffer's path and re-key it in the map. The old name
-    // must exist. Updates MRU to reflect the new name.
+    /// Change a buffer's path and re-key it in the map. Silently returns
+    /// if oldName is not found. Updates MRU to reflect the new name.
     void rename(std::string const& oldName, std::filesystem::path newPath);
 
-    // Remove the named buffer. Returns the next buffer to switch to
-    // (most recently used, or a fresh *1* if none remain).
+    /// Remove the named buffer. Always leaves >= 1 buffer (creates "*1*"
+    /// if all killed). Returns the next buffer (most recently used).
     Buffer& kill(std::string const& name);
 
-    // Mark a buffer as most recently used.
+    /// Mark a buffer as most recently used (moves to front of MRU list).
     void touch(std::string const& name);
 
-    // Return the name of the second most recently used buffer, or empty.
+    /// Return the name of the second most recently used buffer, or empty
+    /// string if fewer than 2 entries.
     std::string secondMRU() const;
 
 private:
@@ -64,7 +72,7 @@ private:
     std::unique_ptr<BufferListBuffer> _bufferListBuffer;
     std::unordered_map<std::string, std::unique_ptr<TextBuffer>> _buffers;
     std::vector<std::string> _mru; // most recently used first
-    Screen& _screen;
+    BufferSink& _sink;
 
     // Cache for directory listings used by completions().
     struct DirCacheEntry {

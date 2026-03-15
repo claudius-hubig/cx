@@ -1,5 +1,6 @@
 #pragma once
 
+#include "buffer/buffer_sink.hpp"
 #include "types.hpp"
 
 #include <chrono>
@@ -29,11 +30,11 @@ enum class Action {
 // On construction, queries the terminal size. draw() calls Buffer::render()
 // to produce a screen image and writes it row-by-row to the terminal.
 // loop() reads raw keystrokes and forwards them to the Buffer.
-class Screen {
+class Screen : public BufferSink {
 public:
     Screen();
 
-    void setBuffer(Buffer& buf);
+    void setBuffer(Buffer& buf) override;
     void setBufferManager(BufferManager& mgr);
 
     // Render the buffer to the terminal and move the hardware cursor
