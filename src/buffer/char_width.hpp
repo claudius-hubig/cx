@@ -35,28 +35,39 @@ inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
 
 /// Decode a UTF-8 code point starting at data[0].
 /// Precondition: avail > 0 (at least one byte available).
-/// Returns {codepoint, byte_length}. For malformed or truncated sequences
-/// the raw byte value is returned with length 1.
+/// Returns {codepoint, byte_length}. For malformed, truncated, overlong,
+/// surrogate (U+D800–U+DFFF), or out-of-range (>U+10FFFF) sequences the
+/// raw byte value is returned with length 1.
 inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(
         const char* data, std::size_t avail) {
     auto u = static_cast<unsigned char>(data[0]);
     if (u < 0x80) return {u, 1};
+    auto isCont = [](unsigned char b) { return (b & 0xC0) == 0x80; };
     if ((u & 0xE0) == 0xC0 && avail >= 2) {
-        uint32_t cp = (u & 0x1F) << 6;
-        cp |= (static_cast<unsigned char>(data[1]) & 0x3F);
+        auto b1 = static_cast<unsigned char>(data[1]);
+        if (!isCont(b1)) return {u, 1};
+        uint32_t cp = ((u & 0x1F) << 6) | (b1 & 0x3F);
+        if (cp < 0x80) return {u, 1}; // overlong
         return {cp, 2};
     }
     if ((u & 0xF0) == 0xE0 && avail >= 3) {
-        uint32_t cp = (u & 0x0F) << 12;
-        cp |= (static_cast<unsigned char>(data[1]) & 0x3F) << 6;
-        cp |= (static_cast<unsigned char>(data[2]) & 0x3F);
+        auto b1 = static_cast<unsigned char>(data[1]);
+        auto b2 = static_cast<unsigned char>(data[2]);
+        if (!isCont(b1) || !isCont(b2)) return {u, 1};
+        uint32_t cp = ((u & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+        if (cp < 0x800) return {u, 1}; // overlong
+        if (cp >= 0xD800 && cp <= 0xDFFF) return {u, 1}; // surrogate
         return {cp, 3};
     }
     if ((u & 0xF8) == 0xF0 && avail >= 4) {
-        uint32_t cp = (u & 0x07) << 18;
-        cp |= (static_cast<unsigned char>(data[1]) & 0x3F) << 12;
-        cp |= (static_cast<unsigned char>(data[2]) & 0x3F) << 6;
-        cp |= (static_cast<unsigned char>(data[3]) & 0x3F);
+        auto b1 = static_cast<unsigned char>(data[1]);
+        auto b2 = static_cast<unsigned char>(data[2]);
+        auto b3 = static_cast<unsigned char>(data[3]);
+        if (!isCont(b1) || !isCont(b2) || !isCont(b3)) return {u, 1};
+        uint32_t cp = ((u & 0x07) << 18) | ((b1 & 0x3F) << 12)
+                     | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+        if (cp < 0x10000) return {u, 1}; // overlong
+        if (cp > 0x10FFFF) return {u, 1}; // out of range
         return {cp, 4};
     }
     return {u, 1}; // invalid/truncated, treat as raw byte
@@ -90,8 +101,9 @@ struct CharInfo {
 
 /// Combined decode + width for the character at data[0..avail).
 /// Precondition: avail > 0. For ASCII bytes, applies charWidth rules
-/// (tab/control → width 2, printable → 1). For multi-byte UTF-8,
-/// decodes and returns codepointWidth.
+/// (tab/control → width 2, printable → 1). For valid multi-byte UTF-8,
+/// decodes and returns codepointWidth. Invalid bytes (>= 0x80 with
+/// len == 1 from decodeUtf8) get width 2 for hex display.
 inline constexpr CharInfo charInfoAt(const char* data, std::size_t avail) {
     auto u = static_cast<unsigned char>(data[0]);
     if (u < 0x80) {
@@ -100,5 +112,6 @@ inline constexpr CharInfo charInfoAt(const char* data, std::size_t avail) {
         return {1, 1};
     }
     auto [cp, len] = decodeUtf8(data, avail);
+    if (len == 1) return {2, 1}; // invalid byte — displayed as 2-digit hex
     return {codepointWidth(cp), len};
 }

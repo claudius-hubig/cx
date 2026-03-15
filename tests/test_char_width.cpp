@@ -117,6 +117,62 @@ BOOST_AUTO_TEST_CASE(decodeUtf8_truncated) {
     BOOST_CHECK_EQUAL(len, 1u);
 }
 
+BOOST_AUTO_TEST_CASE(decodeUtf8_overlong_2byte) {
+    // C0 80 would decode to U+0000 — overlong
+    char data[] = "\xC0\x80";
+    auto [cp, len] = decodeUtf8(data, 2);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0xC0u));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(decodeUtf8_overlong_3byte) {
+    // E0 80 80 would decode to U+0000 — overlong
+    char data[] = "\xE0\x80\x80";
+    auto [cp, len] = decodeUtf8(data, 3);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0xE0u));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(decodeUtf8_overlong_4byte) {
+    // F0 80 80 80 would decode to U+0000 — overlong
+    char data[] = "\xF0\x80\x80\x80";
+    auto [cp, len] = decodeUtf8(data, 4);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0xF0u));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(decodeUtf8_surrogate) {
+    // ED A0 80 = U+D800 — surrogate
+    char data[] = "\xED\xA0\x80";
+    auto [cp, len] = decodeUtf8(data, 3);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0xEDu));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(decodeUtf8_out_of_range) {
+    // F4 90 80 80 = U+110000 — beyond Unicode
+    char data[] = "\xF4\x90\x80\x80";
+    auto [cp, len] = decodeUtf8(data, 4);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0xF4u));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(decodeUtf8_invalid_continuation) {
+    // C3 followed by non-continuation byte
+    char data[] = "\xC3\x41";
+    auto [cp, len] = decodeUtf8(data, 2);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0xC3u));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(decodeUtf8_stray_continuation) {
+    // Lone continuation byte
+    char data[] = "\x80";
+    auto [cp, len] = decodeUtf8(data, 1);
+    BOOST_CHECK_EQUAL(cp, static_cast<uint32_t>(0x80u));
+    BOOST_CHECK_EQUAL(len, 1u);
+}
+
 // --- codepointWidth ---
 
 BOOST_AUTO_TEST_CASE(codepointWidth_ascii) {
@@ -168,4 +224,20 @@ BOOST_AUTO_TEST_CASE(charInfoAt_cjk) {
     auto info = charInfoAt(data, 3);
     BOOST_CHECK_EQUAL(info.width, 2u);
     BOOST_CHECK_EQUAL(info.len, 3u);
+}
+
+BOOST_AUTO_TEST_CASE(charInfoAt_invalid_byte) {
+    // Stray continuation byte — width 2, len 1
+    char data[] = "\x80";
+    auto info = charInfoAt(data, 1);
+    BOOST_CHECK_EQUAL(info.width, 2u);
+    BOOST_CHECK_EQUAL(info.len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(charInfoAt_overlong) {
+    // C0 80 — overlong, first byte treated as invalid
+    char data[] = "\xC0\x80";
+    auto info = charInfoAt(data, 2);
+    BOOST_CHECK_EQUAL(info.width, 2u);
+    BOOST_CHECK_EQUAL(info.len, 1u);
 }

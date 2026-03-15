@@ -351,8 +351,17 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
             } else {
                 out += ch;
             }
+        } else if (info.len == 1) {
+            // Invalid byte — display as 2-digit hex.
+            out += kCtrlColor;
+            auto nibble = [](unsigned char n) -> char {
+                return n < 10 ? ('0' + n) : ('a' + n - 10);
+            };
+            out += nibble(u >> 4);
+            out += nibble(u & 0xf);
+            out += kReset;
         } else {
-            // Multi-byte UTF-8: emit the whole sequence.
+            // Valid multi-byte UTF-8: emit the whole sequence.
             out.append(_data.data() + i, info.len);
         }
         col += info.width;
