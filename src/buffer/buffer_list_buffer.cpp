@@ -175,8 +175,8 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(
             bool highlight = (lineIdx == curLine);
             if (highlight) out += kHighlight;
             out += _displayLines[lineIdx];
-            out += "\x1b[K";
             if (highlight) out += kReset;
+            out += "\x1b[K";
         } else {
             out += "\x1b[K";
         }
