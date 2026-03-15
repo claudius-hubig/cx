@@ -295,11 +295,12 @@ void Screen::loop() {
                     } else if (_prompt == Prompt::SaveAs && _buf) {
                         auto* tb = dynamic_cast<TextBuffer*>(_buf);
                         if (tb && _bufMgr) {
+                            auto targetExists = std::filesystem::exists(_prompt_input);
                             _bufMgr->rename(tb->name(), _prompt_input);
-                            if (!std::filesystem::exists(_prompt_input)) {
+                            if (targetExists) {
                                 _prompt = Prompt::ConfirmSave;
-                                _prompt_input = "File " + tb->name()
-                                    + " doesn't exist. Really save there? y/n: ";
+                                _prompt_input = "Overwrite " + tb->name()
+                                    + "? y/n: ";
                                 draw();
                                 continue;
                             }
