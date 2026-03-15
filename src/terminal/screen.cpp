@@ -511,6 +511,7 @@ void Screen::loop() {
                         setBuffer(_bufMgr->bufferListBuffer());
                     }
                 } else if (action == Action::SwitchBuffer) {
+                    _prevBuf = nullptr;
                     _prompt = Prompt::SwitchBuffer;
                     _prompt_input.clear();
                     updateCompletions();
