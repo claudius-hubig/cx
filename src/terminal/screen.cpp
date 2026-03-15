@@ -328,8 +328,13 @@ void Screen::loop() {
                             line = std::numeric_limits<std::size_t>::max();
                         else {
                             for (char ch : _prompt_input) {
-                                if (ch >= '0' && ch <= '9')
-                                    line = line * 10 + (ch - '0');
+                                if (ch < '0' || ch > '9') { line = 0; break; }
+                                auto digit = static_cast<std::size_t>(ch - '0');
+                                if (line > (std::numeric_limits<std::size_t>::max() - digit) / 10) {
+                                    line = std::numeric_limits<std::size_t>::max();
+                                    break;
+                                }
+                                line = line * 10 + digit;
                             }
                         }
                         if (line > 0)
