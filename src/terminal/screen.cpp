@@ -38,6 +38,19 @@ static void insertCharWithUtf8(Buffer& buf, char c) {
     }
 }
 
+// Write all bytes to fd, retrying on partial writes and EINTR.
+static void writeAll(int fd, const char* data, std::size_t len) {
+    while (len > 0) {
+        ssize_t n = write(fd, data, len);
+        if (n >= 0) {
+            data += n;
+            len -= static_cast<std::size_t>(n);
+        } else if (errno != EINTR) {
+            break;
+        }
+    }
+}
+
 // Set by the SIGWINCH handler; checked in loop() to trigger a resize.
 static volatile sig_atomic_t g_resized = 0;
 
@@ -180,7 +193,7 @@ void Screen::draw() {
     // Ensure the cursor is visible.
     _out += "\x1b[?25h";
 
-    write(STDOUT_FILENO, _out.data(), _out.size());
+    writeAll(STDOUT_FILENO, _out.data(), _out.size());
 }
 
 void Screen::loop() {
