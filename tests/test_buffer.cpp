@@ -214,11 +214,11 @@ BOOST_AUTO_TEST_CASE(scrollDown_past_newline) {
     BOOST_CHECK_EQUAL(buf.viewFrom(), 4u); // start of "def"
 }
 
-BOOST_AUTO_TEST_CASE(scrollDown_at_end) {
+BOOST_AUTO_TEST_CASE(scrollDown_no_newline_stays_put) {
     TextBuffer buf("test");
     insertString(buf, "abc");
-    buf.scrollDown(); // no newline to advance past
-    BOOST_CHECK_EQUAL(buf.viewFrom(), 3u);
+    buf.scrollDown(); // no newline — should stay put
+    BOOST_CHECK_EQUAL(buf.viewFrom(), 0u);
 }
 
 // --- GotoLine ---

@@ -197,11 +197,13 @@ void Buffer::moveDown() {
 }
 
 void Buffer::scrollDown() {
-    // Advance _viewFrom past the next newline.
-    while (_viewFrom < _data.size() && _data[_viewFrom] != '\n')
-        ++_viewFrom;
-    if (_viewFrom < _data.size())
-        ++_viewFrom; // skip the '\n'
+    // Find the next newline. If found, advance past it. If the last line
+    // has no trailing newline, stay put rather than advancing to the end.
+    std::size_t pos = _viewFrom;
+    while (pos < _data.size() && _data[pos] != '\n')
+        ++pos;
+    if (pos < _data.size())
+        _viewFrom = pos + 1; // skip the '\n'
 }
 
 void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
