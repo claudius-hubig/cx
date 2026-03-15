@@ -65,4 +65,11 @@ private:
     std::unordered_map<std::string, std::unique_ptr<TextBuffer>> _buffers;
     std::vector<std::string> _mru; // most recently used first
     Screen& _screen;
+
+    // Cache for directory listings used by completions().
+    struct DirCacheEntry {
+        std::string dir;
+        std::vector<std::pair<std::string, bool>> entries; // {filename, isDir}
+    };
+    mutable DirCacheEntry _dirCache;
 };

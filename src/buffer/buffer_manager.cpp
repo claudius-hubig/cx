@@ -93,7 +93,7 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
         }
     }
 
-    // Match against files on disk.
+    // Match against files on disk (cached by directory).
     if (!prefix.empty()) {
         std::filesystem::path dir = ".";
         std::string filePrefix = prefix;
@@ -105,11 +105,19 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
             filePrefix = prefix.substr(lastSlash + 1);
         }
 
-        std::error_code ec;
-        for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-            auto filename = entry.path().filename().string();
-            if (filename.starts_with("."))
-                continue;
+        auto dirStr = dir.string();
+        if (_dirCache.dir != dirStr) {
+            _dirCache.dir = dirStr;
+            _dirCache.entries.clear();
+            std::error_code ec;
+            for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                auto filename = entry.path().filename().string();
+                if (!filename.starts_with("."))
+                    _dirCache.entries.push_back({filename, entry.is_directory(ec)});
+            }
+        }
+
+        for (auto& [filename, isDir] : _dirCache.entries) {
             if (!filename.starts_with(filePrefix))
                 continue;
 
@@ -119,13 +127,14 @@ std::vector<std::pair<std::string, std::string>> BufferManager::completions(
             else
                 matchStr = filename;
 
-            if (entry.is_directory(ec))
+            if (isDir)
                 matchStr += "/";
 
             // If this file is already an open buffer, use its buffer name
             // so that find() resolves to the existing buffer.
+            auto path = dir / filename;
             auto canonical = std::filesystem::weakly_canonical(
-                std::filesystem::absolute(entry.path()));
+                std::filesystem::absolute(path));
             auto canonStr = canonical.string();
             auto bufIt = _buffers.find(canonStr);
             result.push_back({matchStr,
