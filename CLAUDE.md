@@ -10,6 +10,10 @@
 - Build: `cmake -B build && cmake --build build`
 - Binary: `./build/cx`
 
+## Formatting
+
+- Always run `clang-format -i` on every changed file before committing
+
 ## Constraints
 
 - No external libraries or dependencies — stdlib only
