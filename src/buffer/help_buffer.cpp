@@ -22,6 +22,8 @@ static constexpr std::array kCommandLines = {
 static constexpr std::array kMovementLines = {
     std::string_view{"Movement:"},
     std::string_view{"  Arrows      Move cursor"},
+    std::string_view{"  Ctrl-L/R    Move by word"},
+    std::string_view{"  Ctrl-U/D    Move by paragraph"},
     std::string_view{"  Home        Start of line"},
     std::string_view{"  End         End of line"},
     std::string_view{"  Bksp        Delete before cursor"},

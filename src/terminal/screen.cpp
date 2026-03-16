@@ -501,6 +501,45 @@ void Screen::loop() {
               if (_buf)
                 _buf->moveEnd();
               break;
+            case '1': {
+              // Modified key: ESC[1;modX (e.g. Ctrl+Arrow = ESC[1;5X)
+              char semi, mod, dir;
+              if (read(STDIN_FILENO, &semi, 1) == 1 && semi == ';' &&
+                  read(STDIN_FILENO, &mod, 1) == 1 &&
+                  read(STDIN_FILENO, &dir, 1) == 1) {
+                if (mod == '5' && _buf) {
+                  switch (dir) {
+                  case 'C':
+                    _buf->moveWordRight();
+                    {
+                      auto &[rows, cols] = _size;
+                      while (_buf->screenRow(cols) >= bufRows().value)
+                        _buf->scrollDown();
+                    }
+                    break;
+                  case 'D':
+                    _buf->moveWordLeft();
+                    while (_buf->point() < _buf->viewFrom())
+                      _buf->scrollUp();
+                    break;
+                  case 'A':
+                    _buf->moveParagraphUp();
+                    while (_buf->point() < _buf->viewFrom())
+                      _buf->scrollUp();
+                    break;
+                  case 'B':
+                    _buf->moveParagraphDown();
+                    {
+                      auto &[rows, cols] = _size;
+                      while (_buf->screenRow(cols) >= bufRows().value)
+                        _buf->scrollDown();
+                    }
+                    break;
+                  }
+                }
+              }
+              break;
+            }
             case '3': {
               char tilde;
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')

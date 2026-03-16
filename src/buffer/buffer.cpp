@@ -202,6 +202,148 @@ void Buffer::moveDown() {
   }
 }
 
+bool Buffer::isBlankLine(std::size_t ls) const {
+  for (std::size_t i = ls; i < _data.size() && _data[i] != '\n'; ++i)
+    if (_data[i] != ' ' && _data[i] != '\t')
+      return false;
+  return true;
+}
+
+void Buffer::moveWordRight() {
+  if (_point >= _data.size()) {
+    _desiredCol.reset();
+    return;
+  }
+
+  auto isSep = [](char c) { return c == ' ' || c == '\t' || c == '\n'; };
+
+  // Step forward one code point.
+  auto len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
+  _point = std::min(_point + len, _data.size());
+
+  // Skip separators forward.
+  while (_point < _data.size() && isSep(_data[_point]))
+    ++_point;
+
+  // Advance to the last char of this word.
+  while (_point < _data.size()) {
+    len = utf8SeqLen(static_cast<unsigned char>(_data[_point]));
+    auto next = std::min(_point + len, _data.size());
+    if (next >= _data.size() || isSep(_data[next]))
+      break;
+    _point = next;
+  }
+  _desiredCol.reset();
+}
+
+void Buffer::moveWordLeft() {
+  if (_point == 0) {
+    _desiredCol.reset();
+    return;
+  }
+
+  auto isSep = [](char c) { return c == ' ' || c == '\t' || c == '\n'; };
+
+  // Step back one code point.
+  --_point;
+  while (_point > 0 &&
+         isUtf8Continuation(static_cast<unsigned char>(_data[_point])))
+    --_point;
+
+  // Skip separators backward.
+  while (_point > 0 && isSep(_data[_point])) {
+    --_point;
+    while (_point > 0 &&
+           isUtf8Continuation(static_cast<unsigned char>(_data[_point])))
+      --_point;
+  }
+
+  // If stuck on a separator at position 0, done.
+  if (isSep(_data[_point])) {
+    _desiredCol.reset();
+    return;
+  }
+
+  // Walk backward to the first char of this word.
+  while (_point > 0) {
+    std::size_t prev = _point - 1;
+    while (prev > 0 &&
+           isUtf8Continuation(static_cast<unsigned char>(_data[prev])))
+      --prev;
+    if (isSep(_data[prev]))
+      break;
+    _point = prev;
+  }
+  _desiredCol.reset();
+}
+
+void Buffer::moveParagraphUp() {
+  std::size_t ls = lineStart(_point);
+  if (ls == 0) {
+    _point = 0;
+    _desiredCol.reset();
+    return;
+  }
+
+  // Go to the line above.
+  std::size_t pos = lineStart(ls - 1);
+
+  // Skip blank lines upward.
+  while (pos > 0 && isBlankLine(pos))
+    pos = lineStart(pos - 1);
+
+  // If at top and still blank, go to start.
+  if (isBlankLine(pos)) {
+    _point = 0;
+    _desiredCol.reset();
+    return;
+  }
+
+  // On a non-blank line. Find the start of this paragraph.
+  while (pos > 0) {
+    std::size_t prev = lineStart(pos - 1);
+    if (isBlankLine(prev))
+      break;
+    pos = prev;
+  }
+
+  _point = pos;
+  _desiredCol.reset();
+}
+
+void Buffer::moveParagraphDown() {
+  std::size_t ls = lineStart(_point);
+  bool onBlank = isBlankLine(ls);
+
+  // Advance to the next line.
+  std::size_t pos = _point;
+  while (pos < _data.size() && _data[pos] != '\n')
+    ++pos;
+  if (pos < _data.size())
+    ++pos;
+
+  // If current line was non-blank, skip non-blank lines (rest of paragraph).
+  if (!onBlank) {
+    while (pos < _data.size() && !isBlankLine(pos)) {
+      while (pos < _data.size() && _data[pos] != '\n')
+        ++pos;
+      if (pos < _data.size())
+        ++pos;
+    }
+  }
+
+  // Skip blank lines.
+  while (pos < _data.size() && isBlankLine(pos)) {
+    while (pos < _data.size() && _data[pos] != '\n')
+      ++pos;
+    if (pos < _data.size())
+      ++pos;
+  }
+
+  _point = std::min(pos, _data.size());
+  _desiredCol.reset();
+}
+
 void Buffer::scrollDown() {
   // Find the next newline. If found, advance past it. If the last line
   // has no trailing newline, stay put rather than advancing to the end.

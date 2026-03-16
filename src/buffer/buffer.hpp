@@ -85,6 +85,27 @@ public:
   /// Resets _desiredCol.
   void moveEnd();
 
+  /// Move point to the right end (last char) of the current word, or if
+  /// already there, to the right end of the next word. A "word" is any
+  /// run of non-separator characters; separators are spaces, tabs, and
+  /// newlines. Resets _desiredCol.
+  void moveWordRight();
+
+  /// Move point to the left end (first char) of the current word, or if
+  /// already there, to the left end of the previous word. Resets _desiredCol.
+  void moveWordLeft();
+
+  /// Move point up by one paragraph: scan upward for the first blank line,
+  /// then continue upward to the first non-blank line above it (the last
+  /// line of the previous paragraph), then find the start of that paragraph.
+  /// Blank = empty or only spaces/tabs. Resets _desiredCol.
+  void moveParagraphUp();
+
+  /// Move point down by one paragraph: skip non-blank lines (rest of
+  /// current paragraph), then blank lines, and land on the first line of
+  /// the next paragraph. Resets _desiredCol.
+  void moveParagraphDown();
+
   /// Move point to the start of the given 1-based line number and center
   /// _viewFrom so the line appears in the middle of the screen.
   /// Line 0 is treated as line 1; past-end clamps to the last line.
@@ -128,6 +149,8 @@ protected:
   std::size_t lineStart(std::size_t pos) const;
   // Sum of display widths of characters in _data[from..to).
   std::size_t visualCol(std::size_t from, std::size_t to) const;
+  // True if the line starting at ls is empty or contains only spaces/tabs.
+  bool isBlankLine(std::size_t ls) const;
 
   std::string _name;
   std::vector<char> _data;
