@@ -6,12 +6,12 @@
 // original settings on destruction. Also manages the alternate screen buffer.
 class SetupTerminal {
 public:
-    SetupTerminal();
-    ~SetupTerminal();
+  SetupTerminal();
+  ~SetupTerminal();
 
-    SetupTerminal(SetupTerminal const&) = delete;
-    SetupTerminal& operator=(SetupTerminal const&) = delete;
+  SetupTerminal(SetupTerminal const &) = delete;
+  SetupTerminal &operator=(SetupTerminal const &) = delete;
 
 private:
-    struct termios _saved_flags;
+  struct termios _saved_flags;
 };

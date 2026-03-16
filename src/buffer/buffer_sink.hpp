@@ -7,14 +7,14 @@ class Buffer;
 /// tests can supply a trivial stub instead of a real terminal.
 class BufferSink {
 public:
-    virtual ~BufferSink() = default;
+  virtual ~BufferSink() = default;
 
-    BufferSink(BufferSink const&) = delete;
-    BufferSink& operator=(BufferSink const&) = delete;
+  BufferSink(BufferSink const &) = delete;
+  BufferSink &operator=(BufferSink const &) = delete;
 
-    /// Called by BufferManager when the active buffer changes.
-    virtual void setBuffer(Buffer& buf) = 0;
+  /// Called by BufferManager when the active buffer changes.
+  virtual void setBuffer(Buffer &buf) = 0;
 
 protected:
-    BufferSink() = default;
+  BufferSink() = default;
 };
