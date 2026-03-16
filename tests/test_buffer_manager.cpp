@@ -143,11 +143,8 @@ BOOST_AUTO_TEST_CASE(touch_ordering) {
 BOOST_AUTO_TEST_CASE(secondMRU_with_fewer_than_two) {
     NullBufferSink sink;
     BufferManager mgr(sink);
-    // Only *1* exists, MRU has 1 entry
-    // But actually *1* is already in MRU. Let's kill everything except one.
-    BOOST_CHECK(mgr.secondMRU().empty() || !mgr.secondMRU().empty());
-    // With only *1*, secondMRU should be empty
-    // Actually constructor creates *1* and adds to MRU, so size is 1
+    // Only *1* exists — secondMRU should be empty.
+    BOOST_CHECK(mgr.secondMRU().empty());
 }
 
 // --- DisplayName ---

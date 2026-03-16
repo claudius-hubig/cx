@@ -78,11 +78,10 @@ BOOST_AUTO_TEST_CASE(deleteAtPoint_utf8_full_sequence) {
     buf.deleteAtPoint(); // should delete both bytes of é
     auto [line, col] = buf.lineCol();
     BOOST_CHECK_EQUAL(col, 1u);
-    // Point should be at 'x' which is the only remaining char
+    // Buffer has "x"; moveEnd puts point past it; col=2 (1-indexed).
     buf.moveEnd();
     auto [line2, col2] = buf.lineCol();
-    BOOST_CHECK_EQUAL(col2, 2u); // 'x' + 1-based = 2? No, col counts codepoints.
-    // After deleting é, buffer has "x", point is at start, moveEnd puts at end, col=2
+    BOOST_CHECK_EQUAL(col2, 2u);
 }
 
 // --- Delete before point ---

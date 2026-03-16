@@ -31,17 +31,19 @@ void insertPath(DirNode& root, std::string const& fullPath) {
 
 // Render a directory node's contents into lines/names.
 // If showHeader is true, emits a directory header line; otherwise, children
-// are rendered in-place (used for the root "/" to avoid a bare "/" header).
+// are rendered in-place with the prefix prepended to each entry (used for
+// the root "/" to avoid a bare "/" header line).
 void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent,
                 bool showHeader,
                 std::vector<std::string>& lines, std::vector<std::string>& names) {
     std::size_t total = node.files.size() + node.subdirs.size();
     if (total == 0) return;
 
-    // Single subdir, no files → collapse into prefix.
+    // Single subdir, no files → collapse into prefix. Once we pass through
+    // a collapse, subsequent nodes should show their own headers.
     if (node.files.empty() && node.subdirs.size() == 1) {
         auto& [name, child] = *node.subdirs.begin();
-        renderNode(child, prefix + name + "/", indent, showHeader, lines, names);
+        renderNode(child, prefix + name + "/", indent, true, lines, names);
         return;
     }
 
@@ -53,10 +55,14 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
     }
 
     // Multiple children → directory header (if shown) + indented entries.
+    // When header is suppressed (root), prepend prefix to each child instead.
+    std::string childPrefix;
     if (showHeader) {
         lines.push_back(std::string(indent, ' ') + prefix);
         names.push_back({});
         indent += 2;
+    } else {
+        childPrefix = prefix;
     }
 
     // Merge files and subdirs in sorted order.
@@ -66,11 +72,11 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
         bool useFile = fi != node.files.end() &&
             (di == node.subdirs.end() || fi->first < di->first);
         if (useFile) {
-            lines.push_back(std::string(indent, ' ') + fi->first);
+            lines.push_back(std::string(indent, ' ') + childPrefix + fi->first);
             names.push_back(fi->second);
             ++fi;
         } else {
-            renderNode(di->second, di->first + "/", indent, true, lines, names);
+            renderNode(di->second, childPrefix + di->first + "/", indent, true, lines, names);
             ++di;
         }
     }

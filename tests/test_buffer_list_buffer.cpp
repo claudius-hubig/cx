@@ -19,14 +19,12 @@ BOOST_AUTO_TEST_CASE(selectedName_on_file_lines) {
 }
 
 BOOST_AUTO_TEST_CASE(selectedName_empty_on_dir_headers) {
-    // Two files in the same directory — should produce a dir header
+    // Two files in the same directory — produces a dir header as first line.
     std::vector<std::string> names = {"/home/user/a.txt", "/home/user/b.txt"};
     BufferListBuffer buf(names);
-    // First line is a dir header (empty selectedName), unless collapsed
-    // Just verify it doesn't crash
-    auto sel = buf.selectedName();
-    // The trie might collapse, producing file lines. Either way, no crash.
-    BOOST_CHECK(true);
+    // The cursor starts on the first line, which is the directory header.
+    // selectedName should return empty for directory headers.
+    BOOST_CHECK(buf.selectedName().empty());
 }
 
 BOOST_AUTO_TEST_CASE(refresh_rebuilds) {
