@@ -1,5 +1,6 @@
 #define BOOST_TEST_MODULE BufferManager
-#include <boost/test/included/unit_test.hpp>
+#define BOOST_TEST_DYN_LINK
+#include <boost/test/unit_test.hpp>
 
 #include "buffer/buffer_manager.hpp"
 #include "tests/test_helpers.hpp"

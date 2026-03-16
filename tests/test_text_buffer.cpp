@@ -1,5 +1,6 @@
 #define BOOST_TEST_MODULE TextBuffer
-#include <boost/test/included/unit_test.hpp>
+#define BOOST_TEST_DYN_LINK
+#include <boost/test/unit_test.hpp>
 
 #include "buffer/text_buffer.hpp"
 #include "tests/test_helpers.hpp"

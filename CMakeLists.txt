@@ -19,9 +19,11 @@ target_include_directories(cx PRIVATE src)
 
 # --- Tests ---
 enable_testing()
+find_package(Boost REQUIRED COMPONENTS unit_test_framework)
 
 add_executable(test_char_width tests/test_char_width.cpp)
 target_include_directories(test_char_width PRIVATE src)
+target_link_libraries(test_char_width Boost::unit_test_framework)
 add_test(NAME char_width COMMAND test_char_width)
 
 add_executable(test_buffer
@@ -31,6 +33,7 @@ add_executable(test_buffer
     src/buffer/help_buffer.cpp
 )
 target_include_directories(test_buffer PRIVATE src)
+target_link_libraries(test_buffer Boost::unit_test_framework)
 add_test(NAME buffer COMMAND test_buffer)
 
 add_executable(test_text_buffer
@@ -39,6 +42,7 @@ add_executable(test_text_buffer
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_text_buffer PRIVATE src .)
+target_link_libraries(test_text_buffer Boost::unit_test_framework)
 add_test(NAME text_buffer COMMAND test_text_buffer)
 
 add_executable(test_help_buffer
@@ -47,6 +51,7 @@ add_executable(test_help_buffer
     src/buffer/help_buffer.cpp
 )
 target_include_directories(test_help_buffer PRIVATE src)
+target_link_libraries(test_help_buffer Boost::unit_test_framework)
 add_test(NAME help_buffer COMMAND test_help_buffer)
 
 add_executable(test_buffer_list_buffer
@@ -55,6 +60,7 @@ add_executable(test_buffer_list_buffer
     src/buffer/buffer_list_buffer.cpp
 )
 target_include_directories(test_buffer_list_buffer PRIVATE src)
+target_link_libraries(test_buffer_list_buffer Boost::unit_test_framework)
 add_test(NAME buffer_list_buffer COMMAND test_buffer_list_buffer)
 
 add_executable(test_buffer_manager
@@ -66,4 +72,5 @@ add_executable(test_buffer_manager
     src/buffer/buffer_manager.cpp
 )
 target_include_directories(test_buffer_manager PRIVATE src .)
+target_link_libraries(test_buffer_manager Boost::unit_test_framework)
 add_test(NAME buffer_manager COMMAND test_buffer_manager)
