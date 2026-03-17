@@ -344,6 +344,49 @@ void Buffer::moveParagraphDown() {
   _desiredCol.reset();
 }
 
+void Buffer::pageUp(RowIdx screenRows) {
+  std::size_t half = screenRows.value / 2;
+  if (half == 0)
+    half = 1;
+  for (std::size_t i = 0; i < half; ++i) {
+    moveUp();
+    scrollUp();
+  }
+}
+
+void Buffer::pageDown(RowIdx screenRows) {
+  std::size_t half = screenRows.value / 2;
+  if (half == 0)
+    half = 1;
+  for (std::size_t i = 0; i < half; ++i) {
+    moveDown();
+    scrollDown();
+  }
+  // Clamp viewport so at least half a screen of content is visible.
+  std::size_t limit = viewFromLinesBeforeEnd(half);
+  if (_viewFrom > limit)
+    _viewFrom = limit;
+}
+
+std::size_t Buffer::viewFromLinesBeforeEnd(std::size_t lines) const {
+  std::size_t pos = _data.size();
+  for (std::size_t i = 0; i < lines && pos > 0; ++i) {
+    --pos;
+    while (pos > 0 && _data[pos - 1] != '\n')
+      --pos;
+  }
+  return pos;
+}
+
+void Buffer::scrollViewNearEnd(RowIdx screenRows) {
+  std::size_t half = screenRows.value / 2;
+  if (half == 0)
+    half = 1;
+  std::size_t limit = viewFromLinesBeforeEnd(half);
+  if (_viewFrom < limit)
+    scrollDown();
+}
+
 void Buffer::scrollDown() {
   // Find the next newline. If found, advance past it. If the last line
   // has no trailing newline, stay put rather than advancing to the end.

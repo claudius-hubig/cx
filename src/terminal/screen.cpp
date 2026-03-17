@@ -479,10 +479,17 @@ void Screen::loop() {
               break;
             case 'B':
               if (_buf) {
+                auto prev = _buf->point();
                 _buf->moveDown();
-                auto &[rows, cols] = _size;
-                while (_buf->screenRow(cols) >= bufRows().value)
-                  _buf->scrollDown();
+                if (_buf->point() == prev) {
+                  // Already at end of file — scroll viewport down instead,
+                  // up to half a screen from EOF.
+                  _buf->scrollViewNearEnd(bufRows());
+                } else {
+                  auto &[rows, cols] = _size;
+                  while (_buf->screenRow(cols) >= bufRows().value)
+                    _buf->scrollDown();
+                }
               }
               break;
             case 'C':
@@ -545,6 +552,20 @@ void Screen::loop() {
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
                 if (_buf)
                   _buf->deleteAtPoint();
+              break;
+            }
+            case '5': {
+              char tilde;
+              if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
+                if (_buf)
+                  _buf->pageUp(bufRows());
+              break;
+            }
+            case '6': {
+              char tilde;
+              if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
+                if (_buf)
+                  _buf->pageDown(bufRows());
               break;
             }
             default: {

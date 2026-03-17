@@ -106,6 +106,18 @@ public:
   /// the next paragraph. Resets _desiredCol.
   void moveParagraphDown();
 
+  /// Move point up by half a screen. If already within the first
+  /// half-screen of the file, moves to the start instead. Also scrolls
+  /// the viewport by the same amount so the cursor stays at roughly the
+  /// same screen position.
+  void pageUp(RowIdx screenRows);
+
+  /// Move point down by half a screen. If already within the last
+  /// half-screen of the file, moves to the end instead. Also scrolls
+  /// the viewport by the same amount so the cursor stays at roughly the
+  /// same screen position.
+  void pageDown(RowIdx screenRows);
+
   /// Move point to the start of the given 1-based line number and center
   /// _viewFrom so the line appears in the middle of the screen.
   /// Line 0 is treated as line 1; past-end clamps to the last line.
@@ -118,6 +130,11 @@ public:
   /// Move _viewFrom back to the start of the previous line. Safe at
   /// start (_viewFrom == 0 is a no-op).
   void scrollUp();
+
+  /// Scroll _viewFrom down by one line when the cursor is at the end of
+  /// the file, but not past the position half a screen before EOF.
+  /// This lets the user push the last line toward the screen centre.
+  void scrollViewNearEnd(RowIdx screenRows);
 
   /// Compute the 0-indexed screen row of the point relative to _viewFrom,
   /// given a screen column width of cols. cols.value must be > 0.
@@ -151,6 +168,8 @@ protected:
   std::size_t visualCol(std::size_t from, std::size_t to) const;
   // True if the line starting at ls is empty or contains only spaces/tabs.
   bool isBlankLine(std::size_t ls) const;
+  // Byte offset of the line that is `lines` lines before the end of _data.
+  std::size_t viewFromLinesBeforeEnd(std::size_t lines) const;
 
   std::string _name;
   std::vector<char> _data;
