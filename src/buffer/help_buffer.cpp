@@ -9,12 +9,12 @@
 
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
-    std::string_view{"  Ctrl-b      Switch/open buffer"},
+    std::string_view{"  Ctrl-b      Buffer list"},
     std::string_view{"  Ctrl-c      Exit"},
+    std::string_view{"  Ctrl-g      Go to line"},
     std::string_view{"  Ctrl-h      Show this help"},
     std::string_view{"  Ctrl-k      Kill buffer"},
-    std::string_view{"  Ctrl-l      Go to line"},
-    std::string_view{"  Ctrl-n      Buffer list"},
+    std::string_view{"  Ctrl-o      Switch/open buffer"},
     std::string_view{"  Ctrl-s      Save file"},
     std::string_view{"  Ctrl-w      Toggle whitespace"},
 };
@@ -194,12 +194,12 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
   for (auto &l : kCommandLines) {
     text += l;
     text += '\n';
-  }             // 3-12
+  } // 3-12
   text += '\n'; // 13 blank
   for (auto &l : kMovementLines) {
     text += l;
     text += '\n';
-  }             // 14-20
+  } // 14-20
   text += '\n'; // 21 blank
   text += kFooterText;
   text += '\n'; // 22 footer

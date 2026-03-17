@@ -690,17 +690,17 @@ std::variant<std::monostate, std::string, Action>
 Screen::handleSpecialInput(char c) {
   switch (c) {
   case 0x02:
-    return Action::SwitchBuffer; // Ctrl-B
+    return Action::BufferList; // Ctrl-B
   case 0x03:
     return Action::Exit; // Ctrl-C
+  case 0x07:
+    return Action::GoToLine; // Ctrl-G
   case 0x08:
     return Action::Help; // Ctrl-H
   case 0x0b:
     return Action::KillBuffer; // Ctrl-K
-  case 0x0e:
-    return Action::BufferList; // Ctrl-N
-  case 0x0c:
-    return Action::GoToLine; // Ctrl-L
+  case 0x0f:
+    return Action::SwitchBuffer; // Ctrl-O
   case 0x13:
     return Action::Save; // Ctrl-S
   case 0x17:
