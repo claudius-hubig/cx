@@ -9,15 +9,14 @@
 
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
-    std::string_view{"  Ctrl-b      Buffer list"},
     std::string_view{"  Esc-c       Exit"},
-    std::string_view{"  Ctrl-g      Go to line"},
     std::string_view{"  Esc-?       Show this help"},
-    std::string_view{"  Ctrl-k      Kill buffer"},
-    std::string_view{"  Ctrl-l      Toggle line wrap"},
     std::string_view{"  Ctrl-o      Switch/open buffer"},
+    std::string_view{"  Ctrl-b      Buffer list"},
     std::string_view{"  Ctrl-s      Save file"},
+    std::string_view{"  Ctrl-k      Kill buffer"},
     std::string_view{"  Ctrl-w      Toggle whitespace"},
+    std::string_view{"  Ctrl-l      Toggle line wrap"},
 };
 
 static constexpr std::array kMovementLines = {
@@ -25,6 +24,7 @@ static constexpr std::array kMovementLines = {
     std::string_view{"  Arrows      Move cursor"},
     std::string_view{"  Ctrl-L/R    Move by word"},
     std::string_view{"  Ctrl-U/D    Move by paragraph"},
+    std::string_view{"  Ctrl-g      Go to line"},
     std::string_view{"  PgUp        Page up (half screen)"},
     std::string_view{"  PgDn        Page down (half screen)"},
     std::string_view{"  Home        Start of line"},
@@ -33,7 +33,6 @@ static constexpr std::array kMovementLines = {
     std::string_view{"  Ctrl-Bksp   Delete chunk before cursor"},
     std::string_view{"  Delete      Delete at cursor"},
     std::string_view{"  Ctrl-Del    Delete chunk at cursor"},
-    std::string_view{"  Enter       Insert newline"},
 };
 
 static constexpr std::string_view kFooterText =
@@ -180,9 +179,9 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
     addLine(l); // 3-11
   addLine({});  // 12 blank
   for (auto& l : kMovementLines)
-    addLine(l);         // 13-23
-  addLine({});          // 24 blank
-  addLine(kFooterText); // 25 footer
+    addLine(l);         // 13-25
+  addLine({});          // 26 blank
+  addLine(kFooterText); // 27 footer
 }
 
 std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
