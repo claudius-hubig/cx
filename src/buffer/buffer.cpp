@@ -1013,16 +1013,23 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       i += info.len;
     }
 
+    // Point at end of line (offset == line.size()).
+    // Must check before clearing pendingWrap: if the line ended exactly
+    // at cw, the cursor belongs on the next visual row.
+    if (lineIdx == _point.line && _point.offset >= line.size() && !pointFound) {
+      if (pendingWrap) {
+        cur_row = row + 1;
+        cur_col = 0;
+      } else {
+        cur_row = row;
+        cur_col = col;
+      }
+      pointFound = true;
+    }
+
     // If the line ended exactly at cw, pendingWrap is true but there's
     // no more content to wrap — clear it so the outer loop emits blank.
     pendingWrap = false;
-
-    // Point at end of line (offset == line.size()).
-    if (lineIdx == _point.line && _point.offset >= line.size() && !pointFound) {
-      cur_row = row;
-      cur_col = col;
-      pointFound = true;
-    }
 
     // End of physical line — emit newline visual and gutter (no wrap
     // indicator).

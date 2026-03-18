@@ -74,3 +74,49 @@ add_executable(test_buffer_manager
 target_include_directories(test_buffer_manager PRIVATE src .)
 target_link_libraries(test_buffer_manager Boost::unit_test_framework)
 add_test(NAME buffer_manager COMMAND test_buffer_manager)
+
+add_executable(test_render
+    tests/test_render.cpp
+    src/buffer/buffer.cpp
+    src/buffer/text_buffer.cpp
+)
+target_include_directories(test_render PRIVATE src .)
+target_link_libraries(test_render Boost::unit_test_framework)
+add_test(NAME render COMMAND test_render)
+
+add_executable(test_movement
+    tests/test_movement.cpp
+    src/buffer/buffer.cpp
+    src/buffer/text_buffer.cpp
+)
+target_include_directories(test_movement PRIVATE src .)
+target_link_libraries(test_movement Boost::unit_test_framework)
+add_test(NAME movement COMMAND test_movement)
+
+add_executable(test_chunk_delete
+    tests/test_chunk_delete.cpp
+    src/buffer/buffer.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/help_buffer.cpp
+)
+target_include_directories(test_chunk_delete PRIVATE src .)
+target_link_libraries(test_chunk_delete Boost::unit_test_framework)
+add_test(NAME chunk_delete COMMAND test_chunk_delete)
+
+add_executable(test_scroll
+    tests/test_scroll.cpp
+    src/buffer/buffer.cpp
+    src/buffer/text_buffer.cpp
+)
+target_include_directories(test_scroll PRIVATE src .)
+target_link_libraries(test_scroll Boost::unit_test_framework)
+add_test(NAME scroll COMMAND test_scroll)
+
+add_executable(test_e2e
+    tests/test_e2e.cpp
+    src/buffer/buffer.cpp
+    src/buffer/text_buffer.cpp
+)
+target_include_directories(test_e2e PRIVATE src .)
+target_link_libraries(test_e2e Boost::unit_test_framework util)
+add_test(NAME e2e COMMAND test_e2e)
