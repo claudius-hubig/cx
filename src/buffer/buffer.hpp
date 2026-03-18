@@ -157,7 +157,7 @@ public:
                                             bool showWhitespace = false) const;
 
   BufferPoint point() const { return _point; }
-  BufferPoint viewFrom() const { return {_viewFromLine, 0}; }
+  BufferPoint viewFrom() const { return {_viewFromLine, _viewFromOffset}; }
   std::string const &name() const { return _name; }
 
   /// Return the 1-indexed {line, column} of the point. Column counts
@@ -191,6 +191,10 @@ protected:
   std::vector<std::vector<char>> _lines{{}};
   BufferPoint _point;
   std::size_t _viewFromLine = 0;
+  // Byte offset within _lines[_viewFromLine] for sub-line viewport
+  // scrolling. Always at a visual-row boundary. Allows the viewport to
+  // start mid-way through a very long wrapped line.
+  std::size_t _viewFromOffset = 0;
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
 };

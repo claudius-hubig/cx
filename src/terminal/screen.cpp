@@ -103,9 +103,11 @@ void Screen::draw() {
 
   RowIdx cur_row{0};
   ColIdx cur_col{0};
-  if (_buf)
+  if (_buf) {
+    _buf->ensureVisible(br, cols);
     std::tie(cur_row, cur_col) =
         _buf->render(_renderBuf, br, cols, _showWhitespace);
+  }
 
   // Expire timed status message.
   if (_statusExpiry && std::chrono::steady_clock::now() >= *_statusExpiry) {

@@ -413,8 +413,10 @@ void Buffer::pageDown(RowIdx screenRows) {
   }
   // Clamp viewport so at least half a screen of content is visible.
   std::size_t limit = viewFromLinesBeforeEnd(half);
-  if (_viewFromLine > limit)
+  if (_viewFromLine > limit) {
     _viewFromLine = limit;
+    _viewFromOffset = 0;
+  }
 }
 
 std::size_t Buffer::viewFromLinesBeforeEnd(std::size_t lines) const {
@@ -433,8 +435,10 @@ void Buffer::scrollViewNearEnd(RowIdx screenRows) {
 }
 
 void Buffer::scrollDown() {
-  if (_viewFromLine + 1 < _lines.size())
+  if (_viewFromLine + 1 < _lines.size()) {
     ++_viewFromLine;
+    _viewFromOffset = 0;
+  }
 }
 
 void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
@@ -453,11 +457,16 @@ void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
     _viewFromLine = idx - half;
   else
     _viewFromLine = 0;
+  _viewFromOffset = 0;
 }
 
 void Buffer::scrollUp() {
-  if (_viewFromLine > 0)
+  if (_viewFromOffset > 0) {
+    _viewFromOffset = 0;
+  } else if (_viewFromLine > 0) {
     --_viewFromLine;
+    _viewFromOffset = 0;
+  }
 }
 
 std::size_t Buffer::screenRow(ColIdx cols) const {
@@ -466,9 +475,12 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
        lineIdx <= _point.line && lineIdx < _lines.size(); ++lineIdx) {
     auto &line = _lines[lineIdx];
     std::size_t end = (lineIdx == _point.line) ? _point.offset : line.size();
+    // For the viewport line, start from _viewFromOffset (sub-line scroll).
+    std::size_t start =
+        (lineIdx == _viewFromLine) ? _viewFromOffset : std::size_t{0};
 
     std::size_t col = 0;
-    for (std::size_t i = 0; i < end && i < line.size();) {
+    for (std::size_t i = start; i < end && i < line.size();) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
       if (col + info.width > cols.value) {
         ++row;
@@ -484,31 +496,63 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
     // If not the point's line, account for the newline (line break).
     if (lineIdx < _point.line) {
       ++row;
-      // col resets at newline
     }
   }
   return row;
 }
 
-void Buffer::ensureVisible(RowIdx rows, ColIdx cols) {
-  // If the point is above the viewport, scrollUp handles it cheaply.
-  // This method handles the downward case: point is below the viewport.
-  if (_point.line < _viewFromLine)
-    return;
+// Return the byte offset where the next visual row of `line` begins,
+// given that the current visual row starts at `from` with `cols` columns.
+// Returns line.size() if `from` is already on the last visual row.
+static std::size_t nextWrapOffset(std::vector<char> const &line,
+                                  std::size_t from, std::size_t cols) {
+  std::size_t col = 0;
+  std::size_t i = from;
+  while (i < line.size()) {
+    auto info = charInfoAt(line.data() + i, line.size() - i);
+    if (col + info.width > cols)
+      return i; // wrap: this char starts the next visual row
+    col += info.width;
+    i += info.len;
+    if (col >= cols)
+      return i; // exact fit: next visual row starts after this char
+  }
+  return line.size();
+}
 
-  // Quick check: if the point's line is within the viewport line range,
-  // it *might* be visible — fall through to the fine-tuning loop below.
-  // If it's far beyond, jump the viewport directly.
-  if (_point.line >= _viewFromLine + rows.value) {
-    // Jump so the point is roughly in the middle of the screen.
-    std::size_t half = rows.value / 2;
-    _viewFromLine = _point.line >= half ? _point.line - half : 0;
+void Buffer::ensureVisible(RowIdx rows, ColIdx cols) {
+  // Handle point above the viewport (including sub-line offset).
+  if (_point < viewFrom()) {
+    _viewFromLine = _point.line;
+    _viewFromOffset = 0;
+    // Point is now at or after viewFrom on the same line.
+    // If the line is very long, _viewFromOffset = 0 is correct:
+    // the point is on this line and we show it from the start.
   }
 
-  // Fine-tune: account for line wrapping. At most a few iterations
-  // since the point is now close to the viewport.
-  while (screenRow(cols) >= rows.value)
-    ++_viewFromLine;
+  // Handle point far below the viewport (line-level jump).
+  if (_point.line >= _viewFromLine + rows.value) {
+    std::size_t half = rows.value / 2;
+    _viewFromLine = _point.line >= half ? _point.line - half : 0;
+    _viewFromOffset = 0;
+  }
+
+  // Fine-tune: advance the viewport until the point is on screen.
+  // This handles both multi-line overflow and sub-line wrapping.
+  while (screenRow(cols) >= rows.value) {
+    if (_viewFromLine < _point.line) {
+      // Advance to next line.
+      ++_viewFromLine;
+      _viewFromOffset = 0;
+    } else {
+      // Same line as the point — advance by one visual row within it.
+      std::size_t next =
+          nextWrapOffset(_lines[_viewFromLine], _viewFromOffset, cols.value);
+      if (next >= _lines[_viewFromLine].size() || next == _viewFromOffset)
+        break; // safety: avoid infinite loop
+      _viewFromOffset = next;
+    }
+  }
 }
 
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
@@ -551,8 +595,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
   for (std::size_t lineIdx = _viewFromLine;
        lineIdx < _lines.size() && row < rows.value; ++lineIdx) {
     auto &line = _lines[lineIdx];
+    // For the viewport line, start from _viewFromOffset (sub-line scroll).
+    std::size_t startByte =
+        (lineIdx == _viewFromLine) ? _viewFromOffset : std::size_t{0};
 
-    for (std::size_t i = 0; i < line.size() && row < rows.value;) {
+    for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       char ch = line[i];
       auto u = static_cast<unsigned char>(ch);
       auto info = charInfoAt(line.data() + i, line.size() - i);

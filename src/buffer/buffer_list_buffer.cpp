@@ -124,6 +124,7 @@ void BufferListBuffer::refresh(std::vector<std::string> names,
   }
   _point = {startLine, 0};
   _viewFromLine = 0;
+  _viewFromOffset = 0;
   _desiredCol.reset();
 }
 

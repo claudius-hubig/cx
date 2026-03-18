@@ -290,6 +290,40 @@ BOOST_AUTO_TEST_CASE(screenRow_wrapping) {
   BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{4}), 2u);
 }
 
+BOOST_AUTO_TEST_CASE(ensureVisible_long_wrapped_line) {
+  TextBuffer buf("test");
+  // Create a line that wraps to 10 visual rows at cols=4 (40 chars).
+  for (int i = 0; i < 40; ++i)
+    buf.insert('x');
+  buf.moveEnd();
+
+  // With 3 screen rows and cols=4, the cursor is at visual row 10,
+  // way past the screen. ensureVisible should set _viewFromOffset
+  // so the cursor is on-screen.
+  buf.ensureVisible(RowIdx{3}, ColIdx{4});
+  // Cursor must be on-screen (screen row < screen rows).
+  BOOST_CHECK(buf.screenRow(ColIdx{4}) < 3u);
+  // viewFrom should be within the same line (sub-line scroll).
+  BOOST_CHECK_EQUAL(buf.viewFrom().line, 0u);
+  BOOST_CHECK(buf.viewFrom().offset > 0u);
+}
+
+BOOST_AUTO_TEST_CASE(ensureVisible_resets_for_point_above_viewport) {
+  TextBuffer buf("test");
+  // Create a long line and scroll into it.
+  for (int i = 0; i < 40; ++i)
+    buf.insert('x');
+  buf.moveEnd();
+  buf.ensureVisible(RowIdx{3}, ColIdx{4});
+  BOOST_CHECK(buf.viewFrom().offset > 0u);
+
+  // Move home — point is now before the viewport offset.
+  buf.moveHome();
+  buf.ensureVisible(RowIdx{3}, ColIdx{4});
+  BOOST_CHECK_EQUAL(buf.viewFrom().offset, 0u);
+  BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{4}), 0u);
+}
+
 // --- LineCol ---
 
 BOOST_AUTO_TEST_CASE(lineCol_empty) {
