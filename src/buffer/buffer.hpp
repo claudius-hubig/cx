@@ -72,15 +72,25 @@ public:
   /// Advances past the full UTF-8 sequence. Resets _desiredCol.
   void moveRight();
 
-  /// Move point to the same visual column on the previous line.
-  /// Maintains _desiredCol for vertical movement across lines of
-  /// different lengths. Up from line 1 moves to position 0.
-  void moveUp();
+  /// Move point up by one visual (screen) row. Within a wrapped line,
+  /// moves to the previous visual row; at the first visual row, crosses
+  /// to the last visual row of the previous physical line.
+  /// Maintains _desiredCol as a screen column. Requires cols for wrap
+  /// boundary computation.
+  void moveUp(ColIdx cols);
 
-  /// Move point to the same visual column on the next line.
-  /// Maintains _desiredCol for vertical movement. Down from the last
-  /// line moves to end of buffer.
-  void moveDown();
+  /// Move point down by one visual (screen) row. Within a wrapped line,
+  /// moves to the next visual row; at the last visual row, crosses to
+  /// the first visual row of the next physical line.
+  void moveDown(ColIdx cols);
+
+  /// Move point to the same visual column on the previous physical line.
+  /// Maintains _desiredCol. Up from line 1 moves to position 0.
+  void movePhysicalUp();
+
+  /// Move point to the same visual column on the next physical line.
+  /// Maintains _desiredCol. Down from the last line moves to end of buffer.
+  void movePhysicalDown();
 
   /// Move point to the start of the current line. Resets _desiredCol.
   void moveHome();
@@ -114,13 +124,13 @@ public:
   /// half-screen of the file, moves to the start instead. Also scrolls
   /// the viewport by the same amount so the cursor stays at roughly the
   /// same screen position.
-  void pageUp(RowIdx screenRows);
+  void pageUp(RowIdx screenRows, ColIdx cols);
 
   /// Move point down by half a screen. If already within the last
   /// half-screen of the file, moves to the end instead. Also scrolls
   /// the viewport by the same amount so the cursor stays at roughly the
   /// same screen position.
-  void pageDown(RowIdx screenRows);
+  void pageDown(RowIdx screenRows, ColIdx cols);
 
   /// Move point to the start of the given 1-based line number and center
   /// _viewFromLine so the line appears in the middle of the screen.

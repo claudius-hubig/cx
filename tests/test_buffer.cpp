@@ -162,8 +162,8 @@ BOOST_AUTO_TEST_CASE(moveUp_down_desiredCol) {
   // Point is at end of line 3 (col 6, 1-indexed)
 
   // Go to end of line 1 (col 6)
-  buf.moveUp(); // to line 2, col clamps to end of "fg"
-  buf.moveUp(); // to line 1, should restore desired col
+  buf.moveUp(ColIdx{80}); // to line 2, col clamps to end of "fg"
+  buf.moveUp(ColIdx{80}); // to line 1, should restore desired col
 
   // Move to col 5 in line 1
   buf.moveHome();
@@ -172,12 +172,12 @@ BOOST_AUTO_TEST_CASE(moveUp_down_desiredCol) {
   buf.moveRight(); // c
   buf.moveRight(); // d  — now at col 5
 
-  buf.moveDown(); // line 2, "fg" only has 2 chars, clamps
+  buf.moveDown(ColIdx{80}); // line 2, "fg" only has 2 chars, clamps
   auto [line2, col2] = buf.lineCol();
   BOOST_CHECK_EQUAL(line2, 2u);
   // desired col is preserved
 
-  buf.moveDown(); // line 3, should restore to col 5
+  buf.moveDown(ColIdx{80}); // line 3, should restore to col 5
   auto [line3, col3] = buf.lineCol();
   BOOST_CHECK_EQUAL(line3, 3u);
   BOOST_CHECK_EQUAL(col3, 5u);
@@ -186,7 +186,7 @@ BOOST_AUTO_TEST_CASE(moveUp_down_desiredCol) {
 BOOST_AUTO_TEST_CASE(moveUp_from_first_line) {
   TextBuffer buf("test");
   insertString(buf, "abc");
-  buf.moveUp(); // should go to position 0
+  buf.moveUp(ColIdx{80}); // should go to position 0
   BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
 
@@ -194,7 +194,7 @@ BOOST_AUTO_TEST_CASE(moveDown_from_last_line) {
   TextBuffer buf("test");
   insertString(buf, "abc");
   buf.moveHome();
-  buf.moveDown(); // should go to end
+  buf.moveDown(ColIdx{80}); // should go to end
   BOOST_CHECK(buf.point() == (BufferPoint{0, 3}));
 }
 
@@ -277,8 +277,8 @@ BOOST_AUTO_TEST_CASE(screenRow_two_lines_down) {
   TextBuffer buf("test");
   insertString(buf, "aaa\nbbb\nccc");
   buf.gotoLine(1, RowIdx{10});
-  buf.moveDown();
-  buf.moveDown(); // now on line 3
+  buf.moveDown(ColIdx{80});
+  buf.moveDown(ColIdx{80}); // now on line 3
   BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{80}), 2u);
 }
 

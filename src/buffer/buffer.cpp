@@ -135,21 +135,167 @@ std::size_t Buffer::visualCol(std::vector<char> const &line, std::size_t from,
   return vcol;
 }
 
-// Walk a line to find the byte offset matching a target visual column.
+// Walk a line from `from` to find the byte offset matching a target visual
+// column. Stops at `to` (or line.size() if to > line.size()).
 static std::size_t offsetForVisualCol(std::vector<char> const &line,
+                                      std::size_t from, std::size_t to,
                                       std::size_t goal) {
-  std::size_t pos = 0, v = 0;
-  while (pos < line.size()) {
+  std::size_t pos = from, v = 0;
+  std::size_t end = std::min(to, line.size());
+  while (pos < end) {
     auto info = charInfoAt(line.data() + pos, line.size() - pos);
     if (v + info.width > goal)
       break;
     v += info.width;
     pos += info.len;
   }
-  return pos;
+  return std::min(pos, end);
 }
 
-void Buffer::moveUp() {
+// Scan a line to find the visual-row boundaries around a byte offset.
+// Returns {prevRowStart, curRowStart, nextRowStart} where:
+//   curRowStart  = start of the visual row containing `byteOff`
+//   prevRowStart = start of the visual row before curRowStart (or curRowStart
+//                  if curRowStart == 0)
+//   nextRowStart = start of the visual row after curRowStart (or line.size()
+//                  if curRowStart is the last visual row)
+struct VisualRowInfo {
+  std::size_t prevRowStart;
+  std::size_t curRowStart;
+  std::size_t nextRowStart;
+};
+
+static VisualRowInfo findVisualRow(std::vector<char> const &line,
+                                   std::size_t byteOff, std::size_t cols) {
+  std::size_t prevStart = 0, curStart = 0;
+  std::size_t col = 0;
+
+  for (std::size_t i = 0; i < line.size();) {
+    auto info = charInfoAt(line.data() + i, line.size() - i);
+    if (col + info.width > cols) {
+      // Wrap: new visual row starts at i.
+      if (byteOff < i)
+        return {prevStart, curStart, i};
+      prevStart = curStart;
+      curStart = i;
+      col = 0;
+    }
+    col += info.width;
+    if (col >= cols) {
+      // Exact fit: new visual row starts at i + info.len.
+      std::size_t next = i + info.len;
+      if (byteOff < next)
+        return {prevStart, curStart, next};
+      prevStart = curStart;
+      curStart = next;
+      col = 0;
+    }
+    i += info.len;
+  }
+  // byteOff is on the last (or only) visual row.
+  return {prevStart, curStart, line.size()};
+}
+
+// Find the byte offset at the start of the last visual row of a line.
+static std::size_t lastVisualRowStart(std::vector<char> const &line,
+                                      std::size_t cols) {
+  std::size_t rowStart = 0, col = 0;
+  for (std::size_t i = 0; i < line.size();) {
+    auto info = charInfoAt(line.data() + i, line.size() - i);
+    if (col + info.width > cols) {
+      rowStart = i;
+      col = 0;
+    }
+    col += info.width;
+    if (col >= cols) {
+      rowStart = i + info.len;
+      col = 0;
+    }
+    i += info.len;
+  }
+  return rowStart;
+}
+
+void Buffer::moveUp(ColIdx cols) {
+  auto &line = _lines[_point.line];
+  auto vr = findVisualRow(line, _point.offset, cols.value);
+
+  // Screen column within the current visual row.
+  std::size_t vcol = visualCol(line, vr.curRowStart, _point.offset);
+  std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
+
+  std::size_t targetRowStart, targetRowEnd;
+  if (vr.curRowStart > 0) {
+    // Move to previous visual row of the same physical line.
+    targetRowStart = vr.prevRowStart;
+    targetRowEnd = vr.curRowStart;
+  } else if (_point.line > 0) {
+    // Move to last visual row of previous physical line.
+    --_point.line;
+    auto &prev = _lines[_point.line];
+    targetRowStart = lastVisualRowStart(prev, cols.value);
+    targetRowEnd = prev.size();
+  } else {
+    _point.offset = 0;
+    _desiredCol.reset();
+    return;
+  }
+
+  _point.offset = offsetForVisualCol(_lines[_point.line], targetRowStart,
+                                     targetRowEnd, goal);
+
+  std::size_t actual =
+      visualCol(_lines[_point.line], targetRowStart, _point.offset);
+  if (actual == goal)
+    _desiredCol.reset();
+  else if (!_desiredCol)
+    _desiredCol = ColIdx{goal};
+}
+
+void Buffer::moveDown(ColIdx cols) {
+  auto &line = _lines[_point.line];
+  auto vr = findVisualRow(line, _point.offset, cols.value);
+
+  // Screen column within the current visual row.
+  std::size_t vcol = visualCol(line, vr.curRowStart, _point.offset);
+  std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
+
+  std::size_t targetRowStart, targetRowEnd;
+  if (vr.nextRowStart < line.size()) {
+    // Move to next visual row of the same physical line.
+    targetRowStart = vr.nextRowStart;
+    // Find end of next visual row.
+    auto nextVr = findVisualRow(line, vr.nextRowStart, cols.value);
+    targetRowEnd = nextVr.nextRowStart;
+  } else if (_point.line + 1 < _lines.size()) {
+    // Move to first visual row of next physical line.
+    ++_point.line;
+    auto &next = _lines[_point.line];
+    targetRowStart = 0;
+    if (next.empty()) {
+      targetRowEnd = 0;
+    } else {
+      auto nextVr = findVisualRow(next, 0, cols.value);
+      targetRowEnd = nextVr.nextRowStart;
+    }
+  } else {
+    _point.offset = line.size();
+    _desiredCol.reset();
+    return;
+  }
+
+  _point.offset = offsetForVisualCol(_lines[_point.line], targetRowStart,
+                                     targetRowEnd, goal);
+
+  std::size_t actual =
+      visualCol(_lines[_point.line], targetRowStart, _point.offset);
+  if (actual == goal)
+    _desiredCol.reset();
+  else if (!_desiredCol)
+    _desiredCol = ColIdx{goal};
+}
+
+void Buffer::movePhysicalUp() {
   std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
   std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
@@ -160,7 +306,8 @@ void Buffer::moveUp() {
   }
 
   --_point.line;
-  _point.offset = offsetForVisualCol(_lines[_point.line], goal);
+  _point.offset = offsetForVisualCol(_lines[_point.line], 0,
+                                     _lines[_point.line].size(), goal);
 
   std::size_t actual = visualCol(_lines[_point.line], 0, _point.offset);
   if (actual == goal)
@@ -169,7 +316,7 @@ void Buffer::moveUp() {
     _desiredCol = ColIdx{goal};
 }
 
-void Buffer::moveDown() {
+void Buffer::movePhysicalDown() {
   std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
   std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
@@ -180,7 +327,8 @@ void Buffer::moveDown() {
   }
 
   ++_point.line;
-  _point.offset = offsetForVisualCol(_lines[_point.line], goal);
+  _point.offset = offsetForVisualCol(_lines[_point.line], 0,
+                                     _lines[_point.line].size(), goal);
 
   std::size_t actual = visualCol(_lines[_point.line], 0, _point.offset);
   if (actual == goal)
@@ -393,22 +541,22 @@ void Buffer::moveParagraphDown() {
   _desiredCol.reset();
 }
 
-void Buffer::pageUp(RowIdx screenRows) {
+void Buffer::pageUp(RowIdx screenRows, ColIdx cols) {
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
   for (std::size_t i = 0; i < half; ++i) {
-    moveUp();
+    moveUp(cols);
     scrollUp();
   }
 }
 
-void Buffer::pageDown(RowIdx screenRows) {
+void Buffer::pageDown(RowIdx screenRows, ColIdx cols) {
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
   for (std::size_t i = 0; i < half; ++i) {
-    moveDown();
+    moveDown(cols);
     scrollDown();
   }
   // Clamp viewport so at least half a screen of content is visible.

@@ -473,21 +473,22 @@ void Screen::loop() {
             switch (seq[1]) {
             case 'A':
               if (_buf) {
-                _buf->moveUp();
+                auto &[rows, cols] = _size;
+                _buf->moveUp(cols);
                 if (_buf->point() < _buf->viewFrom())
                   _buf->scrollUp();
               }
               break;
             case 'B':
               if (_buf) {
+                auto &[rows, cols] = _size;
                 auto prev = _buf->point();
-                _buf->moveDown();
+                _buf->moveDown(cols);
                 if (_buf->point() == prev) {
                   // Already at end of file — scroll viewport down instead,
                   // up to half a screen from EOF.
                   _buf->scrollViewNearEnd(bufRows());
                 } else {
-                  auto &[rows, cols] = _size;
                   _buf->ensureVisible(bufRows(), cols);
                 }
               }
@@ -529,12 +530,12 @@ void Screen::loop() {
                       _buf->scrollUp();
                     break;
                   case 'A':
-                    _buf->moveParagraphUp();
+                    _buf->movePhysicalUp();
                     while (_buf->point() < _buf->viewFrom())
                       _buf->scrollUp();
                     break;
                   case 'B':
-                    _buf->moveParagraphDown();
+                    _buf->movePhysicalDown();
                     {
                       auto &[rows, cols] = _size;
                       _buf->ensureVisible(bufRows(), cols);
@@ -555,15 +556,19 @@ void Screen::loop() {
             case '5': {
               char tilde;
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
-                if (_buf)
-                  _buf->pageUp(bufRows());
+                if (_buf) {
+                  auto &[rows, cols] = _size;
+                  _buf->pageUp(bufRows(), cols);
+                }
               break;
             }
             case '6': {
               char tilde;
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
-                if (_buf)
-                  _buf->pageDown(bufRows());
+                if (_buf) {
+                  auto &[rows, cols] = _size;
+                  _buf->pageDown(bufRows(), cols);
+                }
               break;
             }
             default: {
