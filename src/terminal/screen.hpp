@@ -15,7 +15,6 @@ class Buffer;
 class BufferManager;
 
 enum class Action {
-  Exit,
   GoToLine,
   Help,
   Save,
@@ -44,7 +43,7 @@ public:
 
   // Read keystrokes one character at a time, forward them to the buffer,
   // and redraw after each keystroke. Returns when stdin is closed or on
-  // Action::Exit.
+  // Esc-c exit.
   void loop();
 
   // Display a timed status message on the status line.
@@ -52,12 +51,16 @@ public:
 
 private:
   // Interpret a control character and return the appropriate response:
-  // Action::Exit on Ctrl-C, a string to insert on Ctrl-X, or monostate
+  // An Action value, a string to insert on Ctrl-X, or monostate
   // for unhandled inputs.
   std::variant<std::monostate, std::string, Action> handleSpecialInput(char c);
   // Try to dispatch an Esc-chord for the given byte. Returns true if
   // the byte was a recognised command, false otherwise.
   bool handleEscChord(char ch);
+  // Walk buffers looking for the next modified one. If found, switch to
+  // it and show a save prompt. Returns true when no modified buffers
+  // remain (caller should exit the loop).
+  bool tryExit();
   void resize();
   // Number of rows available for buffer content (total minus status line).
   RowIdx bufRows() const;
@@ -81,6 +84,7 @@ private:
   bool _showWhitespace = false;
   bool _wrap = false;
   bool _killPending = false; // kill buffer after SaveAs completes
+  bool _exitPending = false; // exit after all modified buffers are handled
 
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();

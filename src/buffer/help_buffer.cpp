@@ -10,7 +10,7 @@
 static constexpr std::array kCommandLines = {
     std::string_view{"Commands:"},
     std::string_view{"  Ctrl-b      Buffer list"},
-    std::string_view{"  Ctrl-c      Exit"},
+    std::string_view{"  Esc-c       Exit"},
     std::string_view{"  Ctrl-g      Go to line"},
     std::string_view{"  Esc-?       Show this help"},
     std::string_view{"  Ctrl-k      Kill buffer"},

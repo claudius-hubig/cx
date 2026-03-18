@@ -270,6 +270,7 @@ void Screen::loop() {
         _prompt = Prompt::None;
         _prompt_input.clear();
         _killPending = false;
+        _exitPending = false;
       }
       // Ignore all other keys.
     } else if (_prompt == Prompt::ConfirmKill) {
@@ -305,6 +306,7 @@ void Screen::loop() {
         // Cancel.
         _prompt = Prompt::None;
         _prompt_input.clear();
+        _exitPending = false;
       }
     } else if (_prompt != Prompt::None) {
       if (c == '\r' || c == '\n') {
@@ -664,9 +666,7 @@ void Screen::loop() {
       auto result = handleSpecialInput(c);
       if (std::holds_alternative<Action>(result)) {
         auto action = std::get<Action>(result);
-        if (action == Action::Exit)
-          break;
-        else if (action == Action::GoToLine) {
+        if (action == Action::GoToLine) {
           _prompt = Prompt::GoToLine;
           _prompt_input.clear();
         } else if (action == Action::Help && _bufMgr) {
@@ -746,6 +746,12 @@ void Screen::loop() {
       }
     }
 
+    // Process pending exit: walk modified buffers or break.
+    if (_exitPending && _prompt == Prompt::None) {
+      if (tryExit())
+        break;
+    }
+
     draw();
   }
 }
@@ -790,6 +796,10 @@ bool Screen::handleEscChord(char ch) {
     }
     return true;
   }
+  if (ch == 'c') {
+    _exitPending = true;
+    return true;
+  }
   if (ch == 0x7f && _buf) {
     _buf->deleteChunkBeforePoint();
     return true;
@@ -797,13 +807,38 @@ bool Screen::handleEscChord(char ch) {
   return false;
 }
 
+bool Screen::tryExit() {
+  if (!_bufMgr)
+    return true;
+
+  // Dismiss any readonly overlay first.
+  if (_buf && _buf->readonly() && _prevBuf) {
+    setBuffer(*_prevBuf);
+    _prevBuf = nullptr;
+  }
+
+  // Find the next modified, non-readonly buffer.
+  for (auto &name : _bufMgr->bufferNames()) {
+    Buffer *buf = _bufMgr->find(name);
+    if (buf && buf->modified() && !buf->readonly()) {
+      setBuffer(*buf);
+      _prompt = Prompt::ConfirmKill;
+      if (!buf->hasPath())
+        _prompt_input = "Exiting. Save temporary buffer? y/n/Esc: ";
+      else
+        _prompt_input = "Exiting. Save " + _bufMgr->displayName(buf->name()) +
+                        "? y/n/Esc: ";
+      return false;
+    }
+  }
+  return true; // no modified buffers remain
+}
+
 std::variant<std::monostate, std::string, Action>
 Screen::handleSpecialInput(char c) {
   switch (c) {
   case 0x02:
     return Action::BufferList; // Ctrl-B
-  case 0x03:
-    return Action::Exit; // Ctrl-C
   case 0x07:
     return Action::GoToLine; // Ctrl-G
   case 0x0b:
