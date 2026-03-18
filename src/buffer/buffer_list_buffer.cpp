@@ -134,11 +134,13 @@ std::string BufferListBuffer::selectedName() const {
   return {};
 }
 
-std::tuple<RowIdx, ColIdx>
-BufferListBuffer::render(std::string &out, RowIdx rows, ColIdx cols,
-                         bool /*showWhitespace*/, bool /*wrap*/) const {
+std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string &out,
+                                                    RowIdx rows, ColIdx cols,
+                                                    bool /*showWhitespace*/,
+                                                    bool /*wrap*/) const {
 
   static constexpr auto kHighlight = "\x1b[7m"; // reverse video
+  static constexpr auto kGutter = "\x1b[7m";
   static constexpr auto kReset = "\x1b[0m";
 
   std::size_t curLine = _point.line;
@@ -161,6 +163,15 @@ BufferListBuffer::render(std::string &out, RowIdx rows, ColIdx cols,
     } else {
       out += "\x1b[K";
     }
+    // Gutter column.
+    out += "\x1b[";
+    out += std::to_string(r + 1);
+    out += ";";
+    out += std::to_string(cols.value);
+    out += "H";
+    out += kGutter;
+    out += ' ';
+    out += kReset;
   }
 
   std::size_t curScreenRow = curLine >= scrollLine ? curLine - scrollLine : 0;

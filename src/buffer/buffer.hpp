@@ -64,6 +64,24 @@ public:
       doDeleteBeforePoint();
   }
 
+  /// Delete forward from _point through a contiguous run of same-class
+  /// characters. "Blank" = space/tab/newline; everything else is "non-blank".
+  /// If the character at point is blank, deletes all blanks forward until a
+  /// non-blank (or end of buffer). Otherwise deletes non-blanks forward until
+  /// a blank (or end of buffer). No-op if readonly() or at end of buffer.
+  void deleteChunkAtPoint() {
+    if (!readonly())
+      doDeleteChunkAtPoint();
+  }
+
+  /// Delete backward from _point through a contiguous run of same-class
+  /// characters. Mirrors deleteChunkAtPoint but operates in reverse.
+  /// No-op if readonly() or at start of buffer.
+  void deleteChunkBeforePoint() {
+    if (!readonly())
+      doDeleteChunkBeforePoint();
+  }
+
   /// Move point one code point to the left. Safe at start (no-op).
   /// Skips back over UTF-8 continuation bytes. Resets _desiredCol.
   void moveLeft();
@@ -162,9 +180,10 @@ public:
   /// Append a rows x cols screen image (with ANSI escapes) to `out`,
   /// starting from _viewFromLine. rows and cols must be > 0. Returns the
   /// screen {row, col} of the point for cursor positioning.
-  virtual std::tuple<RowIdx, ColIdx>
-  render(std::string &out, RowIdx rows, ColIdx cols,
-         bool showWhitespace = false, bool wrap = true) const;
+  virtual std::tuple<RowIdx, ColIdx> render(std::string &out, RowIdx rows,
+                                            ColIdx cols,
+                                            bool showWhitespace = false,
+                                            bool wrap = true) const;
 
   BufferPoint point() const { return _point; }
   BufferPoint viewFrom() const {
@@ -188,6 +207,8 @@ protected:
   void doInsert(uint32_t cp);
   void doDeleteAtPoint();
   void doDeleteBeforePoint();
+  void doDeleteChunkAtPoint();
+  void doDeleteChunkBeforePoint();
   // Sum of display widths of characters in line data[from..to).
   std::size_t visualCol(std::vector<char> const &line, std::size_t from,
                         std::size_t to) const;

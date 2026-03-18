@@ -12,6 +12,7 @@
 #include <csignal>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -213,27 +214,33 @@ void Screen::draw() {
 
 void Screen::loop() {
   char c;
+  std::optional<char> pendingChar;
   while (true) {
-    // read() returns -1 with errno == EINTR when interrupted by a signal
-    // (e.g. SIGWINCH). In that case check the resize flag and retry.
-    ssize_t n = read(STDIN_FILENO, &c, 1);
-    if (n == -1 && errno == EINTR) {
+    if (pendingChar) {
+      c = *pendingChar;
+      pendingChar.reset();
+    } else {
+      // read() returns -1 with errno == EINTR when interrupted by a signal
+      // (e.g. SIGWINCH). In that case check the resize flag and retry.
+      ssize_t n = read(STDIN_FILENO, &c, 1);
+      if (n == -1 && errno == EINTR) {
+        if (g_resized) {
+          g_resized = 0;
+          resize();
+          draw();
+        }
+        continue;
+      }
+      if (n != 1)
+        break;
+
+      // Also check after a successful read, in case the signal arrived
+      // between loop iterations rather than during a blocked read().
       if (g_resized) {
         g_resized = 0;
         resize();
         draw();
       }
-      continue;
-    }
-    if (n != 1)
-      break;
-
-    // Also check after a successful read, in case the signal arrived
-    // between loop iterations rather than during a blocked read().
-    if (g_resized) {
-      g_resized = 0;
-      resize();
-      draw();
     }
 
     // Prompt mode: keystrokes build the prompt input instead of editing
@@ -553,10 +560,22 @@ void Screen::loop() {
               break;
             }
             case '3': {
-              char tilde;
-              if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
-                if (_buf)
-                  _buf->deleteAtPoint();
+              char next;
+              if (read(STDIN_FILENO, &next, 1) == 1) {
+                if (next == '~') {
+                  // Plain Delete: ESC[3~
+                  if (_buf)
+                    _buf->deleteAtPoint();
+                } else if (next == ';') {
+                  // Modified Delete: ESC[3;mod~
+                  char mod, tilde;
+                  if (read(STDIN_FILENO, &mod, 1) == 1 &&
+                      read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~') {
+                    if (mod == '5' && _buf)
+                      _buf->deleteChunkAtPoint();
+                  }
+                }
+              }
               break;
             }
             case '5': {
@@ -588,17 +607,58 @@ void Screen::loop() {
             }
             }
           }
-        } else if (seq[0] != '[') {
-          // Not a CSI sequence — insert the byte verbatim
+        } else if (!handleEscChord(seq[0]) && seq[0] != '[') {
+          // Not a CSI sequence or known chord — insert the byte verbatim
           // (e.g. Alt+key sends ESC followed by the key).
           if (_buf && static_cast<unsigned char>(seq[0]) >= 0x20)
             insertCharWithUtf8(*_buf, seq[0]);
         }
-      } else if (_buf && _buf->readonly() && _prevBuf) {
-        // Bare Esc in help buffer: switch back.
-        setBuffer(*_prevBuf);
-        _prevBuf = nullptr;
+      } else {
+        // Bare Esc — enter prefix mode: wait for the next key.
+        setStatus("Esc-...");
+        draw();
+
+        char next = 0;
+        bool gotNext = false;
+        for (;;) {
+          ssize_t nn = read(STDIN_FILENO, &next, 1);
+          if (nn == 1) {
+            gotNext = true;
+            break;
+          }
+          if (nn == -1 && errno == EINTR) {
+            if (g_resized) {
+              g_resized = 0;
+              resize();
+            }
+            // Redraw to keep "Esc-..." visible after resize.
+            setStatus("Esc-...");
+            draw();
+            continue;
+          }
+          break; // EOF or error
+        }
+
+        if (gotNext && !handleEscChord(next)) {
+          // Not a recognised chord.
+          if (next == 0x1b) {
+            // Esc-Esc: dismiss readonly overlay if active.
+            if (_buf && _buf->readonly() && _prevBuf) {
+              setBuffer(*_prevBuf);
+              _prevBuf = nullptr;
+            }
+          } else {
+            // Push the key back to be processed normally.
+            pendingChar = next;
+          }
+        }
+        _statusMsg.clear();
+        _statusExpiry.reset();
       }
+    } else if (c == 0x08) {
+      // Ctrl-Backspace: delete chunk before point.
+      if (_buf)
+        _buf->deleteChunkBeforePoint();
     } else if (static_cast<unsigned char>(c) < 0x20) {
       // Control character: delegate to handleSpecialInput().
       auto result = handleSpecialInput(c);
@@ -719,6 +779,24 @@ void Screen::setStatus(std::string msg) {
   _statusExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 }
 
+bool Screen::handleEscChord(char ch) {
+  if (ch == '?' && _bufMgr) {
+    if (_buf && _buf->readonly() && _prevBuf) {
+      setBuffer(*_prevBuf);
+      _prevBuf = nullptr;
+    } else {
+      _prevBuf = _buf;
+      setBuffer(_bufMgr->helpBuffer());
+    }
+    return true;
+  }
+  if (ch == 0x7f && _buf) {
+    _buf->deleteChunkBeforePoint();
+    return true;
+  }
+  return false;
+}
+
 std::variant<std::monostate, std::string, Action>
 Screen::handleSpecialInput(char c) {
   switch (c) {
@@ -728,8 +806,6 @@ Screen::handleSpecialInput(char c) {
     return Action::Exit; // Ctrl-C
   case 0x07:
     return Action::GoToLine; // Ctrl-G
-  case 0x08:
-    return Action::Help; // Ctrl-H
   case 0x0b:
     return Action::KillBuffer; // Ctrl-K
   case 0x0c:

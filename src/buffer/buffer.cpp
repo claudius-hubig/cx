@@ -87,6 +87,52 @@ void Buffer::doDeleteBeforePoint() {
   }
 }
 
+void Buffer::doDeleteChunkAtPoint() {
+  if (atEnd())
+    return;
+
+  // Classify the character at point: blank (space/tab) or newline (at end of
+  // line), vs non-blank.
+  auto curIsBlank = [&]() -> bool {
+    auto &line = _lines[_point.line];
+    if (_point.offset < line.size())
+      return line[_point.offset] == ' ' || line[_point.offset] == '\t';
+    // At end of line — the implicit newline counts as blank.
+    return true;
+  };
+
+  bool startBlank = curIsBlank();
+  do {
+    doDeleteAtPoint();
+  } while (!atEnd() && curIsBlank() == startBlank);
+}
+
+void Buffer::doDeleteChunkBeforePoint() {
+  if (_point.line == 0 && _point.offset == 0)
+    return;
+
+  // Classify the character before point.
+  auto prevIsBlank = [&]() -> bool {
+    if (_point.offset > 0) {
+      auto &line = _lines[_point.line];
+      // Walk back over UTF-8 continuation bytes to find the lead byte.
+      std::size_t pos = _point.offset - 1;
+      while (pos > 0 &&
+             isUtf8Continuation(static_cast<unsigned char>(line[pos])))
+        --pos;
+      return line[pos] == ' ' || line[pos] == '\t';
+    }
+    // At start of line — the newline before this line counts as blank.
+    return true;
+  };
+
+  bool startBlank = prevIsBlank();
+  do {
+    doDeleteBeforePoint();
+  } while ((_point.line > 0 || _point.offset > 0) &&
+           prevIsBlank() == startBlank);
+}
+
 void Buffer::moveHome() {
   _point.offset = 0;
   _desiredCol.reset();
@@ -218,7 +264,9 @@ static std::size_t lastVisualRowStart(std::vector<char> const &line,
 
 void Buffer::moveUp(ColIdx cols) {
   auto &line = _lines[_point.line];
-  auto vr = findVisualRow(line, _point.offset, cols.value);
+  // Content width excludes the gutter column.
+  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  auto vr = findVisualRow(line, _point.offset, cw);
 
   // Screen column within the current visual row.
   std::size_t vcol = visualCol(line, vr.curRowStart, _point.offset);
@@ -233,7 +281,7 @@ void Buffer::moveUp(ColIdx cols) {
     // Move to last visual row of previous physical line.
     --_point.line;
     auto &prev = _lines[_point.line];
-    targetRowStart = lastVisualRowStart(prev, cols.value);
+    targetRowStart = lastVisualRowStart(prev, cw);
     targetRowEnd = prev.size();
   } else {
     _point.offset = 0;
@@ -254,7 +302,9 @@ void Buffer::moveUp(ColIdx cols) {
 
 void Buffer::moveDown(ColIdx cols) {
   auto &line = _lines[_point.line];
-  auto vr = findVisualRow(line, _point.offset, cols.value);
+  // Content width excludes the gutter column.
+  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  auto vr = findVisualRow(line, _point.offset, cw);
 
   // Screen column within the current visual row.
   std::size_t vcol = visualCol(line, vr.curRowStart, _point.offset);
@@ -265,7 +315,7 @@ void Buffer::moveDown(ColIdx cols) {
     // Move to next visual row of the same physical line.
     targetRowStart = vr.nextRowStart;
     // Find end of next visual row.
-    auto nextVr = findVisualRow(line, vr.nextRowStart, cols.value);
+    auto nextVr = findVisualRow(line, vr.nextRowStart, cw);
     targetRowEnd = nextVr.nextRowStart;
   } else if (_point.line + 1 < _lines.size()) {
     // Move to first visual row of next physical line.
@@ -275,7 +325,7 @@ void Buffer::moveDown(ColIdx cols) {
     if (next.empty()) {
       targetRowEnd = 0;
     } else {
-      auto nextVr = findVisualRow(next, 0, cols.value);
+      auto nextVr = findVisualRow(next, 0, cw);
       targetRowEnd = nextVr.nextRowStart;
     }
   } else {
@@ -624,6 +674,9 @@ void Buffer::scrollUp() {
 }
 
 std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
+  // Content width excludes the gutter column.
+  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+
   if (!wrap)
     return _point.line >= _viewFromLine ? _point.line - _viewFromLine : 0;
 
@@ -640,12 +693,12 @@ std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
     std::size_t col = 0;
     for (std::size_t i = start; i < end && i < line.size();) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
-      if (col + info.width > cols.value) {
+      if (col + info.width > cw) {
         ++row;
         col = 0;
       }
       col += info.width;
-      if (col >= cols.value) {
+      if (col >= cw) {
         col = 0;
         ++row;
       }
@@ -666,6 +719,9 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   else if (!wrap && !std::holds_alternative<HScrollOffset>(_viewOffset))
     _viewOffset = HScrollOffset{0};
 
+  // Content width excludes the gutter column.
+  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+
   if (!wrap) {
     auto &hs = std::get<HScrollOffset>(_viewOffset).cols;
 
@@ -679,8 +735,8 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
     if (vcol < hs)
       hs = vcol;
-    if (vcol >= hs + cols.value)
-      hs = vcol - cols.value + 1;
+    if (vcol >= hs + cw)
+      hs = vcol - cw + 1;
     return;
   }
 
@@ -702,8 +758,8 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   // Cheap estimate: if the point is on the viewport line and the byte
   // distance clearly exceeds the screen, skip the O(n) screenRow() check
   // and go straight to sub-line adjustment.
-  bool farOffScreen = _viewFromLine == _point.line &&
-                      _point.offset > vfo + rows.value * cols.value;
+  bool farOffScreen =
+      _viewFromLine == _point.line && _point.offset > vfo + rows.value * cw;
 
   if (!farOffScreen && screenRow(cols, wrap) < rows.value)
     return;
@@ -729,13 +785,13 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
 
   for (std::size_t i = vfo; i < _point.offset && i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
-    if (col + info.width > cols.value) {
+    if (col + info.width > cw) {
       ringPos = (ringPos + 1) % ringSize;
       ring[ringPos] = i;
       col = 0;
     }
     col += info.width;
-    if (col >= cols.value) {
+    if (col >= cw) {
       ringPos = (ringPos + 1) % ringSize;
       ring[ringPos] = i + info.len;
       col = 0;
@@ -826,6 +882,26 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
     }
   };
 
+  // Content width excludes the gutter column.
+  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+
+  // Gutter styles: reverse video matching the status bar.
+  static constexpr auto kGutter = "\x1b[7m";
+  static constexpr auto kGutterHi = "\x1b[0m"; // non-reverse for cursor line
+
+  // Emit the gutter character at column cols.value for a given row.
+  // `highlight` marks the visual row containing the cursor.
+  auto emitGutter = [&](std::size_t r, bool highlight, char const *indicator) {
+    out += "\x1b[";
+    out += std::to_string(r + 1);
+    out += ";";
+    out += std::to_string(cols.value);
+    out += "H";
+    out += highlight ? kGutterHi : kGutter;
+    out += indicator;
+    out += kReset;
+  };
+
   std::size_t cur_row = 0, cur_col = 0;
   bool pointFound = false;
 
@@ -846,6 +922,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
          lineIdx < _lines.size() && row < rows.value; ++lineIdx) {
       auto &line = _lines[lineIdx];
       std::size_t vcol = 0;
+      bool overflows = false; // content extends past visible area
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -862,8 +939,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
           i += info.len;
           continue;
         }
-        if (vcol >= hScroll + cols.value) {
-          // Past visible area — done with this line.
+        if (vcol + info.width > hScroll + cw) {
+          // Past or overflows visible area.
+          overflows = true;
           break;
         }
 
@@ -880,8 +958,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
       }
 
       // Newline indicator.
-      if (showWhitespace && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
-          vcol < hScroll + cols.value) {
+      if (showWhitespace && !overflows && lineIdx + 1 < _lines.size() &&
+          vcol >= hScroll && vcol < hScroll + cw) {
         out += kNlStyle;
         out += kWsFg;
         out += "\xe2\x86\xb5";
@@ -889,6 +967,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
       }
 
       out += "\x1b[K";
+
+      // Gutter: show ↠ if content extends past the visible area.
+      emitGutter(row, row == cur_row && pointFound,
+                 overflows ? "\xe2\x86\xa0" : " "); // ↠ or space
+
       ++row;
       if (row < rows.value)
         emitRowStart(row);
@@ -903,6 +986,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
       if (r > row)
         emitRowStart(r);
       out += "\x1b[K";
+      emitGutter(r, false, " ");
     }
 
     return {RowIdx{cur_row}, ColIdx{cur_col}};
@@ -919,14 +1003,20 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
     std::size_t startByte =
         (lineIdx == _viewFromLine) ? viewFromOffset : std::size_t{0};
 
+    // Track whether the previous row was full (deferred wrap indicator).
+    bool pendingWrap = false;
+
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
 
       // Wrap if the representation doesn't fit on the current line.
-      if (col + info.width > cols.value) {
+      if (col + info.width > cw || pendingWrap) {
         out += "\x1b[K";
+        // We know there's more content — this is a true wrap.
+        emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
         ++row;
         col = 0;
+        pendingWrap = false;
         if (row >= rows.value)
           break;
         emitRowStart(row);
@@ -941,16 +1031,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
       emitChar(line.data() + i, info);
       col += info.width;
 
-      if (col >= cols.value) {
-        out += "\x1b[K";
-        ++row;
-        col = 0;
-        if (row < rows.value)
-          emitRowStart(row);
-      }
+      if (col >= cw)
+        pendingWrap = true;
 
       i += info.len;
     }
+
+    // If the line ended exactly at cw, pendingWrap is true but there's
+    // no more content to wrap — clear it so the outer loop emits blank.
+    pendingWrap = false;
 
     // Point at end of line (offset == line.size()).
     if (lineIdx == _point.line && _point.offset >= line.size() && !pointFound) {
@@ -959,16 +1048,18 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
       pointFound = true;
     }
 
-    // Emit newline visual if not the last line.
+    // End of physical line — emit newline visual and gutter (no wrap
+    // indicator).
     if (row < rows.value) {
-      if (showWhitespace && lineIdx + 1 < _lines.size() &&
-          col + 1 <= cols.value) {
+      if (showWhitespace && lineIdx + 1 < _lines.size() && col + 1 <= cw) {
         out += kNlStyle;
         out += kWsFg;
         out += "\xe2\x86\xb5"; // down-arrow
         out += kReset;
       }
       out += "\x1b[K";
+      emitGutter(row, row == cur_row && pointFound,
+                 " "); // natural line end, no indicator
       if (lineIdx + 1 < _lines.size()) {
         ++row;
         col = 0;
@@ -989,6 +1080,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
     if (r > row)
       emitRowStart(r);
     out += "\x1b[K";
+    emitGutter(r, false, " ");
   }
 
   return {RowIdx{cur_row}, ColIdx{cur_col}};

@@ -12,7 +12,7 @@ static constexpr std::array kCommandLines = {
     std::string_view{"  Ctrl-b      Buffer list"},
     std::string_view{"  Ctrl-c      Exit"},
     std::string_view{"  Ctrl-g      Go to line"},
-    std::string_view{"  Ctrl-h      Show this help"},
+    std::string_view{"  Esc-?       Show this help"},
     std::string_view{"  Ctrl-k      Kill buffer"},
     std::string_view{"  Ctrl-l      Toggle line wrap"},
     std::string_view{"  Ctrl-o      Switch/open buffer"},
@@ -30,12 +30,14 @@ static constexpr std::array kMovementLines = {
     std::string_view{"  Home        Start of line"},
     std::string_view{"  End         End of line"},
     std::string_view{"  Bksp        Delete before cursor"},
+    std::string_view{"  Ctrl-Bksp   Delete chunk before cursor"},
     std::string_view{"  Delete      Delete at cursor"},
+    std::string_view{"  Ctrl-Del    Delete chunk at cursor"},
     std::string_view{"  Enter       Insert newline"},
 };
 
 static constexpr std::string_view kFooterText =
-    "Press 'q', Esc, or Ctrl-h to return to editing.";
+    "Press 'q', Esc-Esc, or Esc-? to return to editing.";
 static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
 
@@ -197,7 +199,11 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string &out, RowIdx rows,
                                               bool /*showWhitespace*/,
                                               bool /*wrap*/) const {
 
-  std::size_t c = cols.value;
+  // Content width excludes the gutter column.
+  std::size_t c = cols.value > 1 ? cols.value - 1 : 1;
+
+  static constexpr auto kGutter = "\x1b[7m";
+  static constexpr auto kReset = "\x1b[0m";
 
   // Cursor data-line and column within that line.
   std::size_t dataLine = _point.line;
@@ -253,6 +259,15 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string &out, RowIdx rows,
     if (vi < vlines.size())
       out += vlines[vi].content;
     out += "\x1b[K";
+    // Gutter column.
+    out += "\x1b[";
+    out += std::to_string(r + 1);
+    out += ";";
+    out += std::to_string(cols.value);
+    out += "H";
+    out += kGutter;
+    out += ' ';
+    out += kReset;
   }
 
   return {RowIdx{curScreenRow}, ColIdx{curCol}};
