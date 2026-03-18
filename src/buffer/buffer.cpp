@@ -95,7 +95,7 @@ void Buffer::doDeleteChunkAtPoint() {
   auto curIsBlank = [&]() -> bool {
     auto& line = _lines[_point.line];
     if (_point.offset < line.size())
-      return line[_point.offset] == ' ' || line[_point.offset] == '\t';
+      return isWhitespace(line[_point.offset]);
     // At end of line — the implicit newline counts as blank.
     return true;
   };
@@ -118,7 +118,7 @@ void Buffer::doDeleteChunkBeforePoint() {
       std::size_t pos = _point.offset - 1;
       while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(line[pos])))
         --pos;
-      return line[pos] == ' ' || line[pos] == '\t';
+      return isWhitespace(line[pos]);
     }
     // At start of line — the newline before this line counts as blank.
     return true;
@@ -379,7 +379,7 @@ bool Buffer::isBlankLine(std::size_t idx) const {
   if (idx >= _lines.size())
     return true;
   for (char c : _lines[idx])
-    if (c != ' ' && c != '\t')
+    if (!isWhitespace(c))
       return false;
   return true;
 }
@@ -392,7 +392,7 @@ void Buffer::moveWordRight() {
     return;
   }
 
-  auto isSep = [](char c) { return c == ' ' || c == '\t'; };
+  auto isSep = isWhitespace;
 
   // Step forward one code point (or cross to next line).
   if (_point.offset < line.size()) {
@@ -442,7 +442,7 @@ void Buffer::moveWordLeft() {
     return;
   }
 
-  auto isSep = [](char c) { return c == ' ' || c == '\t'; };
+  auto isSep = isWhitespace;
 
   // Step back one code point (or cross to previous line).
   if (_point.offset > 0) {

@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <utility>
 
+/// True if c is a horizontal whitespace character (space or tab).
+inline constexpr bool isWhitespace(char c) { return c == ' ' || c == '\t'; }
+
 /// Visual display width of a single ASCII byte (excluding newline).
 /// ASCII only: tab and control characters (including NUL and DEL) return 2
 /// (rendered as two-character sequences like ^X or \0); printable bytes
