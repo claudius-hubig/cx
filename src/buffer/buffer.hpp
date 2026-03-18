@@ -3,6 +3,7 @@
 #include "types.hpp"
 
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -37,10 +38,10 @@ public:
   /// Overridden by TextBuffer.
   virtual bool hasPath() const { return false; }
 
-  /// Write buffer contents to its file. Returns true on success.
-  /// Default returns false (unsaved/readonly buffers). Overridden by
-  /// TextBuffer.
-  virtual bool save() { return false; }
+  /// Write buffer contents to its file. Returns an empty expected on success,
+  /// or an unexpected string describing the error. Default returns an error
+  /// (unsaved/readonly buffers). Overridden by TextBuffer.
+  virtual std::expected<void, std::string> save() { return std::unexpected("buffer has no path"); }
 
   /// Insert a Unicode code point at _point, encoding it as UTF-8. No-op
   /// if readonly(). The entire multi-byte sequence is inserted atomically.

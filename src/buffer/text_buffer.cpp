@@ -1,5 +1,6 @@
 #include "text_buffer.hpp"
 
+#include <expected>
 #include <fstream>
 #include <iterator>
 
@@ -31,21 +32,20 @@ void TextBuffer::setPath(std::filesystem::path p) {
   _name = _path->string();
 }
 
-bool TextBuffer::save() {
+std::expected<void, std::string> TextBuffer::save() {
   if (!_path)
-    return false;
+    return std::unexpected("buffer has no path");
   std::ofstream file(*_path, std::ios::binary);
   if (!file)
-    return false;
+    return std::unexpected("cannot open " + _path->string());
   for (std::size_t i = 0; i < _lines.size(); ++i) {
     if (!_lines[i].empty())
       file.write(_lines[i].data(), static_cast<std::streamsize>(_lines[i].size()));
     if (i + 1 < _lines.size())
       file.put('\n');
   }
-  if (file.good()) {
-    _modified = false;
-    return true;
-  }
-  return false;
+  if (!file.good())
+    return std::unexpected("write error for " + _path->string());
+  _modified = false;
+  return {};
 }

@@ -250,22 +250,25 @@ void Screen::loop() {
     // the buffer. Enter confirms, Escape (0x1b) cancels.
     if (_prompt == Prompt::ConfirmSave) {
       if (c == 'y' || c == 'Y') {
-        if (_buf && _buf->save()) {
-          setStatus("Saved to " + _buf->name());
-          if (_killPending && _bufMgr) {
+        if (_buf) {
+          auto res = _buf->save();
+          if (res) {
+            setStatus("Saved to " + _buf->name());
+            if (_killPending && _bufMgr) {
+              _killPending = false;
+              auto name = _buf->name();
+              _prompt = Prompt::None;
+              _prompt_input.clear();
+              if (_prevBuf == _buf)
+                _prevBuf = nullptr;
+              setBuffer(_bufMgr->kill(name));
+              draw();
+              continue;
+            }
+          } else {
+            setStatus(res.error());
             _killPending = false;
-            auto name = _buf->name();
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            if (_prevBuf == _buf)
-              _prevBuf = nullptr;
-            setBuffer(_bufMgr->kill(name));
-            draw();
-            continue;
           }
-        } else if (_buf) {
-          setStatus("Error saving to " + _buf->name());
-          _killPending = false;
         }
         _prompt = Prompt::None;
         _prompt_input.clear();
@@ -281,13 +284,16 @@ void Screen::loop() {
         if (_buf && _bufMgr) {
           if (_buf->hasPath()) {
             // Modified file-backed: save then kill.
-            _buf->save();
-            auto name = _buf->name();
+            auto res = _buf->save();
             _prompt = Prompt::None;
             _prompt_input.clear();
-            if (_prevBuf == _buf)
-              _prevBuf = nullptr;
-            setBuffer(_bufMgr->kill(name));
+            if (!res) {
+              setStatus(res.error());
+            } else {
+              if (_prevBuf == _buf)
+                _prevBuf = nullptr;
+              setBuffer(_bufMgr->kill(_buf->name()));
+            }
           } else {
             // Temp buffer: enter SaveAs, then kill after save.
             _killPending = true;
@@ -359,24 +365,27 @@ void Screen::loop() {
               draw();
               continue;
             }
-            if (_buf->save()) {
-              setStatus("Saved to " + _buf->name());
-              if (_killPending) {
+            {
+              auto res = _buf->save();
+              if (res) {
+                setStatus("Saved to " + _buf->name());
+                if (_killPending) {
+                  _killPending = false;
+                  auto name = _buf->name();
+                  _prompt = Prompt::None;
+                  _prompt_input.clear();
+                  _completions.clear();
+                  _completionIdx = -1;
+                  if (_prevBuf == _buf)
+                    _prevBuf = nullptr;
+                  setBuffer(_bufMgr->kill(name));
+                  draw();
+                  continue;
+                }
+              } else {
+                setStatus(res.error());
                 _killPending = false;
-                auto name = _buf->name();
-                _prompt = Prompt::None;
-                _prompt_input.clear();
-                _completions.clear();
-                _completionIdx = -1;
-                if (_prevBuf == _buf)
-                  _prevBuf = nullptr;
-                setBuffer(_bufMgr->kill(name));
-                draw();
-                continue;
               }
-            } else {
-              setStatus("Error saving to " + _buf->name());
-              _killPending = false;
             }
           } else if (_prompt == Prompt::GoToLine && _buf) {
             std::size_t line = 0;
@@ -712,10 +721,12 @@ void Screen::loop() {
             if (!std::filesystem::exists(_buf->name())) {
               _prompt = Prompt::ConfirmSave;
               _prompt_input = "File " + _buf->name() + " doesn't exist. Really save there? y/n: ";
-            } else if (_buf->save()) {
-              setStatus("Saved to " + _buf->name());
             } else {
-              setStatus("Error saving to " + _buf->name());
+              auto res = _buf->save();
+              if (res)
+                setStatus("Saved to " + _buf->name());
+              else
+                setStatus(res.error());
             }
           } else {
             _prompt = Prompt::SaveAs;
