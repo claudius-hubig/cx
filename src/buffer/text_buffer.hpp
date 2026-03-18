@@ -26,8 +26,8 @@ public:
   /// and MRU in sync.
   void setPath(std::filesystem::path p);
 
-  /// Write _data to _path as a truncating binary write. Returns false
-  /// if no path is set or the write fails. Clears _modified on success.
+  /// Write buffer lines to _path as a truncating binary write. Returns
+  /// false if no path is set or the write fails. Clears _modified on success.
   bool save() override;
 
 private:

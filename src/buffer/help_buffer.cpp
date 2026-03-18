@@ -63,15 +63,6 @@ static std::size_t maxWidth(std::span<const std::string_view> lines) {
   return w;
 }
 
-static std::size_t countNewlinesBefore(std::vector<char> const &data,
-                                       std::size_t pos) {
-  std::size_t n = 0;
-  for (std::size_t i = 0; i < pos && i < data.size(); ++i)
-    if (data[i] == '\n')
-      ++n;
-  return n;
-}
-
 static bool isSideBySide(std::size_t cols) {
   return maxWidth(kCommandLines) + kGap + maxWidth(kMovementLines) <= cols;
 }
@@ -81,23 +72,14 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
   if (!isSideBySide(cols))
     return dataLine; // stacked: 1:1
 
-  // Side-by-side: movement block (data lines 14-20) merges into
-  // the same visual rows as the command block (data lines 3-13).
   if (dataLine < kMovStart)
     return dataLine;
   if (dataLine < kMovEnd) {
-    // Movement lines share rows with command lines.
     return kCmdStart + (dataLine - kMovStart);
   }
-  // Lines after movement block: collapse the movement range.
-  // Data lines kMovStart..kMovEnd-1 (7 lines) share rows with
-  // kCmdStart..kCmdEnd-1 (10 cmd entries). The merged block has
-  // max(10,7) = 10 rows. After that: blank + footer.
   std::size_t cmdCount = kCmdEnd - kCmdStart;
   std::size_t movCount = kMovEnd - kMovStart;
   std::size_t mergedRows = std::max(cmdCount, movCount);
-  // Data line kMovEnd (21, blank) → visual row kCmdStart + mergedRows
-  // Data line kFooter (22) → visual row kCmdStart + mergedRows + 1
   return kCmdStart + mergedRows + (dataLine - kMovEnd);
 }
 
@@ -186,33 +168,26 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
 }
 
 HelpBuffer::HelpBuffer() : Buffer("*help*") {
-  // _data holds the full content in stacked order so that base-class
-  // navigation (moveUp/Down, scrollUp/Down) and _viewFrom work correctly.
-  std::string text;
-  text += kTitle;
-  text += '\n'; // 0  title
-  text += '\n'; // 1  separator (rendered as '=')
-  text += '\n'; // 2  blank
-  for (auto &l : kCommandLines) {
-    text += l;
-    text += '\n';
-  } // 3-12
-  text += '\n'; // 13 blank
-  for (auto &l : kMovementLines) {
-    text += l;
-    text += '\n';
-  } // 14-20
-  text += '\n'; // 21 blank
-  text += kFooterText;
-  text += '\n'; // 22 footer
-  _data.assign(text.begin(), text.end());
+  // Build _lines from help content (one line per data entry, no '\n').
+  _lines.clear();
+  auto addLine = [&](std::string_view sv) {
+    _lines.emplace_back(sv.begin(), sv.end());
+  };
+  addLine(kTitle); // 0  title
+  addLine({});     // 1  separator (rendered as '=')
+  addLine({});     // 2  blank
+  for (auto &l : kCommandLines)
+    addLine(l); // 3-11
+  addLine({});  // 12 blank
+  for (auto &l : kMovementLines)
+    addLine(l);         // 13-23
+  addLine({});          // 24 blank
+  addLine(kFooterText); // 25 footer
 }
 
 std::size_t HelpBuffer::screenRow(ColIdx cols) const {
-  std::size_t pointLine = countNewlinesBefore(_data, _point);
-  std::size_t scrollLine = countNewlinesBefore(_data, _viewFrom);
-  std::size_t pointVis = dataLineToVisualRow(pointLine, cols.value);
-  std::size_t scrollVis = dataLineToVisualRow(scrollLine, cols.value);
+  std::size_t pointVis = dataLineToVisualRow(_point.line, cols.value);
+  std::size_t scrollVis = dataLineToVisualRow(_viewFromLine, cols.value);
   return pointVis >= scrollVis ? pointVis - scrollVis : 0;
 }
 
@@ -223,18 +198,11 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string &out, RowIdx rows,
   std::size_t c = cols.value;
 
   // Cursor data-line and column within that line.
-  std::size_t dataLine = 0, dataCol = 0;
-  for (std::size_t i = 0; i < _point && i < _data.size(); ++i) {
-    if (_data[i] == '\n') {
-      ++dataLine;
-      dataCol = 0;
-    } else
-      ++dataCol;
-  }
+  std::size_t dataLine = _point.line;
+  std::size_t dataCol = _point.offset;
 
-  // Scroll offset: visual row corresponding to _viewFrom.
-  std::size_t scrollLine = countNewlinesBefore(_data, _viewFrom);
-  std::size_t scrollVis = dataLineToVisualRow(scrollLine, c);
+  // Scroll offset: visual row corresponding to _viewFromLine.
+  std::size_t scrollVis = dataLineToVisualRow(_viewFromLine, c);
 
   // Cursor visual row, relative to scroll.
   std::size_t curVis = dataLineToVisualRow(dataLine, c);

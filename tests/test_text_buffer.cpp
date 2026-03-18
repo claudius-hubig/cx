@@ -15,7 +15,7 @@ BOOST_AUTO_TEST_CASE(name_only_no_path) {
   BOOST_CHECK_EQUAL(buf.name(), "scratch");
   BOOST_CHECK(!buf.hasPath());
   BOOST_CHECK(!buf.modified());
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
 
 BOOST_AUTO_TEST_CASE(from_file) {
@@ -35,7 +35,7 @@ BOOST_AUTO_TEST_CASE(from_missing_file) {
   TextBuffer buf(missing.string(), missing);
   BOOST_CHECK(buf.hasPath());
   BOOST_CHECK(!buf.modified());
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
   // Buffer should be empty
   auto [line, col] = buf.lineCol();
   BOOST_CHECK_EQUAL(line, 1u);
@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(save_truncates_existing) {
   TextBuffer buf(tmp.path().string(), tmp.path());
   // Delete all characters by backspacing from the end.
   buf.moveEnd();
-  while (buf.point() > 0)
+  while (buf.point() > (BufferPoint{0, 0}))
     buf.deleteBeforePoint();
   buf.insert('X');
   BOOST_CHECK(buf.save());

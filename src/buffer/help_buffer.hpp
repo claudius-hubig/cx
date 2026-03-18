@@ -2,13 +2,13 @@
 
 #include "buffer.hpp"
 
-/// Readonly buffer displaying help text / keybindings. Populates _data
+/// Readonly buffer displaying help text / keybindings. Populates _lines
 /// with hardcoded content on construction. Overrides screenRow() and
 /// render() to support side-by-side layout when the terminal is wide
 /// enough.
 class HelpBuffer : public Buffer {
 public:
-  /// Construct the help buffer and populate _data with help content.
+  /// Construct the help buffer and populate _lines with help content.
   HelpBuffer();
 
   bool readonly() const override { return true; }

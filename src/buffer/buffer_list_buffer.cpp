@@ -32,9 +32,6 @@ void insertPath(DirNode &root, std::string const &fullPath) {
 }
 
 // Render a directory node's contents into lines/names.
-// If showHeader is true, emits a directory header line; otherwise, children
-// are rendered in-place with the prefix prepended to each entry (used for
-// the root "/" to avoid a bare "/" header line).
 void renderNode(DirNode const &node, std::string const &prefix,
                 std::size_t indent, bool showHeader,
                 std::vector<std::string> &lines,
@@ -43,23 +40,18 @@ void renderNode(DirNode const &node, std::string const &prefix,
   if (total == 0)
     return;
 
-  // Single subdir, no files → collapse into prefix. Once we pass through
-  // a collapse, subsequent nodes should show their own headers.
   if (node.files.empty() && node.subdirs.size() == 1) {
     auto &[name, child] = *node.subdirs.begin();
     renderNode(child, prefix + name + "/", indent, true, lines, names);
     return;
   }
 
-  // Single file, no subdirs → show as one line with full prefix.
   if (node.files.size() == 1 && node.subdirs.empty()) {
     lines.push_back(std::string(indent, ' ') + prefix + node.files[0].first);
     names.push_back(node.files[0].second);
     return;
   }
 
-  // Multiple children → directory header (if shown) + indented entries.
-  // When header is suppressed (root), prepend prefix to each child instead.
   std::string childPrefix;
   if (showHeader) {
     lines.push_back(std::string(indent, ' ') + prefix);
@@ -69,7 +61,6 @@ void renderNode(DirNode const &node, std::string const &prefix,
     childPrefix = prefix;
   }
 
-  // Merge files and subdirs in sorted order.
   auto fi = node.files.begin();
   auto di = node.subdirs.begin();
   while (fi != node.files.end() || di != node.subdirs.end()) {
@@ -111,18 +102,15 @@ void BufferListBuffer::refresh(std::vector<std::string> names,
     }
   }
 
-  // Render path trie — suppress the root "/" header so it doesn't
-  // appear as a bare line.
+  // Render path trie.
   renderNode(root, "/", 0, false, _displayLines, _lineToName);
 
-  // Build _data from display lines (for base-class cursor navigation).
-  _data.clear();
-  for (std::size_t i = 0; i < _displayLines.size(); ++i) {
-    for (char c : _displayLines[i])
-      _data.push_back(c);
-    if (i + 1 < _displayLines.size())
-      _data.push_back('\n');
-  }
+  // Build _lines from display lines (for base-class cursor navigation).
+  _lines.clear();
+  for (auto &dl : _displayLines)
+    _lines.emplace_back(dl.begin(), dl.end());
+  if (_lines.empty())
+    _lines.emplace_back(); // always at least one line
 
   // Place point on the line matching startName.
   std::size_t startLine = 0;
@@ -134,30 +122,14 @@ void BufferListBuffer::refresh(std::vector<std::string> names,
       }
     }
   }
-  _point = 0;
-  for (std::size_t line = 0; line < startLine && _point < _data.size();
-       ++line) {
-    while (_point < _data.size() && _data[_point] != '\n')
-      ++_point;
-    if (_point < _data.size())
-      ++_point;
-  }
-  _viewFrom = 0;
+  _point = {startLine, 0};
+  _viewFromLine = 0;
   _desiredCol.reset();
 }
 
-std::size_t BufferListBuffer::lineAt(std::size_t pos) const {
-  std::size_t line = 0;
-  for (std::size_t i = 0; i < pos && i < _data.size(); ++i)
-    if (_data[i] == '\n')
-      ++line;
-  return line;
-}
-
 std::string BufferListBuffer::selectedName() const {
-  auto line = lineAt(_point);
-  if (line < _lineToName.size())
-    return _lineToName[line];
+  if (_point.line < _lineToName.size())
+    return _lineToName[_point.line];
   return {};
 }
 
@@ -168,8 +140,8 @@ BufferListBuffer::render(std::string &out, RowIdx rows, ColIdx cols,
   static constexpr auto kHighlight = "\x1b[7m"; // reverse video
   static constexpr auto kReset = "\x1b[0m";
 
-  std::size_t curLine = lineAt(_point);
-  std::size_t scrollLine = lineAt(_viewFrom);
+  std::size_t curLine = _point.line;
+  std::size_t scrollLine = _viewFromLine;
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;

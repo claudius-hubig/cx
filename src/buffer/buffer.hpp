@@ -11,6 +11,10 @@
 // Abstract base for all buffer types. Provides text storage, a point
 // (insertion cursor), navigation, and rendering. Editing operations are
 // guarded by readonly() so that derived classes can forbid mutation.
+//
+// Text is stored as one vector<char> per line, without '\n' delimiters.
+// An empty buffer has _lines = {{}} (one empty line). A file ending with
+// '\n' is represented by an empty trailing entry.
 class Buffer {
 public:
   virtual ~Buffer() = default;
@@ -119,42 +123,43 @@ public:
   void pageDown(RowIdx screenRows);
 
   /// Move point to the start of the given 1-based line number and center
-  /// _viewFrom so the line appears in the middle of the screen.
+  /// _viewFromLine so the line appears in the middle of the screen.
   /// Line 0 is treated as line 1; past-end clamps to the last line.
   void gotoLine(std::size_t line, RowIdx screenRows);
 
-  /// Advance _viewFrom to the start of the next line. Safe at end
-  /// (stays put if no newline found).
+  /// Advance _viewFromLine to the next line. Safe at end (stays put).
   void scrollDown();
 
-  /// Move _viewFrom back to the start of the previous line. Safe at
-  /// start (_viewFrom == 0 is a no-op).
+  /// Move _viewFromLine back one line. Safe at start (no-op).
   void scrollUp();
 
-  /// Scroll _viewFrom down by one line when the cursor is at the end of
+  /// Scroll _viewFromLine down by one line when the cursor is at the end of
   /// the file, but not past the position half a screen before EOF.
   /// This lets the user push the last line toward the screen centre.
   void scrollViewNearEnd(RowIdx screenRows);
 
-  /// Compute the 0-indexed screen row of the point relative to _viewFrom,
+  /// Compute the 0-indexed screen row of the point relative to _viewFromLine,
   /// given a screen column width of cols. cols.value must be > 0.
   /// Accounts for line wrapping.
   virtual std::size_t screenRow(ColIdx cols) const;
 
   /// Append a rows x cols screen image (with ANSI escapes) to `out`,
-  /// starting from _viewFrom. rows and cols must be > 0. Returns the
+  /// starting from _viewFromLine. rows and cols must be > 0. Returns the
   /// screen {row, col} of the point for cursor positioning.
   virtual std::tuple<RowIdx, ColIdx> render(std::string &out, RowIdx rows,
                                             ColIdx cols,
                                             bool showWhitespace = false) const;
 
   BufferPoint point() const { return _point; }
-  BufferPoint viewFrom() const { return _viewFrom; }
+  BufferPoint viewFrom() const { return {_viewFromLine, 0}; }
   std::string const &name() const { return _name; }
 
   /// Return the 1-indexed {line, column} of the point. Column counts
   /// code points, not visual width or bytes.
   std::tuple<std::size_t, std::size_t> lineCol() const;
+
+  /// Number of lines in the buffer.
+  std::size_t lineCount() const { return _lines.size(); }
 
 protected:
   explicit Buffer(std::string name);
@@ -162,19 +167,24 @@ protected:
   void doInsert(uint32_t cp);
   void doDeleteAtPoint();
   void doDeleteBeforePoint();
-  // Index of the first byte of the line containing pos (scans back for '\n').
-  std::size_t lineStart(std::size_t pos) const;
-  // Sum of display widths of characters in _data[from..to).
-  std::size_t visualCol(std::size_t from, std::size_t to) const;
-  // True if the line starting at ls is empty or contains only spaces/tabs.
-  bool isBlankLine(std::size_t ls) const;
-  // Byte offset of the line that is `lines` lines before the end of _data.
+  // Sum of display widths of characters in line data[from..to).
+  std::size_t visualCol(std::vector<char> const &line, std::size_t from,
+                        std::size_t to) const;
+  // True if line idx is empty or contains only spaces/tabs.
+  bool isBlankLine(std::size_t idx) const;
+  // Line index that is `lines` lines before the end of the buffer.
   std::size_t viewFromLinesBeforeEnd(std::size_t lines) const;
 
+  // True if point is at the very end of the buffer (last line, past all chars).
+  bool atEnd() const {
+    return _point.line == _lines.size() - 1 &&
+           _point.offset == _lines.back().size();
+  }
+
   std::string _name;
-  std::vector<char> _data;
-  BufferPoint _point = 0;
-  BufferPoint _viewFrom = 0;
+  std::vector<std::vector<char>> _lines{{}};
+  BufferPoint _point;
+  std::size_t _viewFromLine = 0;
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
 };

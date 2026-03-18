@@ -14,14 +14,14 @@ BOOST_AUTO_TEST_CASE(has_nonempty_content) {
   // The buffer has content (hardcoded help text) — moving to end
   // should place point past position 0.
   buf.moveEnd();
-  BOOST_CHECK(buf.point() > 0u);
+  BOOST_CHECK(buf.point() > (BufferPoint{0, 0}));
 }
 
 BOOST_AUTO_TEST_CASE(insert_is_noop) {
   HelpBuffer buf;
-  std::size_t before = buf.point();
+  auto before = buf.point();
   buf.insert('x');
-  BOOST_CHECK_EQUAL(buf.point(), before);
+  BOOST_CHECK(buf.point() == before);
   BOOST_CHECK(!buf.modified());
 }
 

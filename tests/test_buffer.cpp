@@ -20,7 +20,7 @@ static void insertString(Buffer &buf, std::string_view s) {
 BOOST_AUTO_TEST_CASE(insert_single_char) {
   TextBuffer buf("test");
   buf.insert('A');
-  BOOST_CHECK_EQUAL(buf.point(), 1u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 1}));
   BOOST_CHECK(buf.modified());
 }
 
@@ -65,9 +65,9 @@ BOOST_AUTO_TEST_CASE(deleteAtPoint_basic) {
 BOOST_AUTO_TEST_CASE(deleteAtPoint_at_end_noop) {
   TextBuffer buf("test");
   insertString(buf, "ab");
-  std::size_t before = buf.point();
+  auto before = buf.point();
   buf.deleteAtPoint(); // at end — no-op
-  BOOST_CHECK_EQUAL(buf.point(), before);
+  BOOST_CHECK(buf.point() == before);
 }
 
 BOOST_AUTO_TEST_CASE(deleteAtPoint_utf8_full_sequence) {
@@ -99,9 +99,9 @@ BOOST_AUTO_TEST_CASE(deleteBeforePoint_at_start_noop) {
   TextBuffer buf("test");
   insertString(buf, "ab");
   buf.moveHome();
-  std::size_t before = buf.point();
+  auto before = buf.point();
   buf.deleteBeforePoint(); // at start — no-op
-  BOOST_CHECK_EQUAL(buf.point(), before);
+  BOOST_CHECK(buf.point() == before);
 }
 
 BOOST_AUTO_TEST_CASE(deleteBeforePoint_utf8) {
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(deleteBeforePoint_utf8) {
   // Insert é (U+00E9)
   buf.insert(0x00E9u);
   buf.deleteBeforePoint(); // should delete both bytes
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
 
 // --- Movement ---
@@ -117,15 +117,15 @@ BOOST_AUTO_TEST_CASE(deleteBeforePoint_utf8) {
 BOOST_AUTO_TEST_CASE(moveLeft_at_start) {
   TextBuffer buf("test");
   buf.moveLeft(); // should be no-op
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
 
 BOOST_AUTO_TEST_CASE(moveRight_at_end) {
   TextBuffer buf("test");
   insertString(buf, "hi");
-  std::size_t before = buf.point();
+  auto before = buf.point();
   buf.moveRight(); // at end — no-op
-  BOOST_CHECK_EQUAL(buf.point(), before);
+  BOOST_CHECK(buf.point() == before);
 }
 
 BOOST_AUTO_TEST_CASE(moveLeft_utf8_skipping) {
@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(moveLeft_utf8_skipping) {
   // Insert é (U+00E9)
   buf.insert(0x00E9u);
   buf.moveLeft(); // should skip back over both bytes
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
 
 BOOST_AUTO_TEST_CASE(moveRight_utf8_skipping) {
@@ -141,16 +141,16 @@ BOOST_AUTO_TEST_CASE(moveRight_utf8_skipping) {
   buf.insert(0x00E9u);
   buf.moveHome();
   buf.moveRight(); // should advance past both bytes
-  BOOST_CHECK_EQUAL(buf.point(), 2u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 2}));
 }
 
 BOOST_AUTO_TEST_CASE(moveHome_moveEnd) {
   TextBuffer buf("test");
   insertString(buf, "hello");
   buf.moveHome();
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
   buf.moveEnd();
-  BOOST_CHECK_EQUAL(buf.point(), 5u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 5}));
 }
 
 BOOST_AUTO_TEST_CASE(moveUp_down_desiredCol) {
@@ -187,7 +187,7 @@ BOOST_AUTO_TEST_CASE(moveUp_from_first_line) {
   TextBuffer buf("test");
   insertString(buf, "abc");
   buf.moveUp(); // should go to position 0
-  BOOST_CHECK_EQUAL(buf.point(), 0u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
 
 BOOST_AUTO_TEST_CASE(moveDown_from_last_line) {
@@ -195,7 +195,7 @@ BOOST_AUTO_TEST_CASE(moveDown_from_last_line) {
   insertString(buf, "abc");
   buf.moveHome();
   buf.moveDown(); // should go to end
-  BOOST_CHECK_EQUAL(buf.point(), 3u);
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 3}));
 }
 
 // --- Scroll ---
@@ -204,21 +204,21 @@ BOOST_AUTO_TEST_CASE(scrollUp_at_zero) {
   TextBuffer buf("test");
   insertString(buf, "abc\ndef");
   buf.scrollUp(); // viewFrom is 0, should be no-op
-  BOOST_CHECK_EQUAL(buf.viewFrom(), 0u);
+  BOOST_CHECK(buf.viewFrom() == (BufferPoint{0, 0}));
 }
 
 BOOST_AUTO_TEST_CASE(scrollDown_past_newline) {
   TextBuffer buf("test");
   insertString(buf, "abc\ndef");
-  buf.scrollDown();                      // advance past "abc\n"
-  BOOST_CHECK_EQUAL(buf.viewFrom(), 4u); // start of "def"
+  buf.scrollDown();                                   // advance past "abc\n"
+  BOOST_CHECK(buf.viewFrom() == (BufferPoint{1, 0})); // start of "def"
 }
 
 BOOST_AUTO_TEST_CASE(scrollDown_no_newline_stays_put) {
   TextBuffer buf("test");
   insertString(buf, "abc");
   buf.scrollDown(); // no newline — should stay put
-  BOOST_CHECK_EQUAL(buf.viewFrom(), 0u);
+  BOOST_CHECK(buf.viewFrom() == (BufferPoint{0, 0}));
 }
 
 // --- GotoLine ---
@@ -257,7 +257,7 @@ BOOST_AUTO_TEST_CASE(gotoLine_centers_viewFrom) {
   }
   buf.gotoLine(15, RowIdx{10}); // center around line 15
   // viewFrom should be above line 15
-  BOOST_CHECK(buf.viewFrom() > 0u);
+  BOOST_CHECK(buf.viewFrom() > (BufferPoint{0, 0}));
   BOOST_CHECK(buf.viewFrom() < buf.point());
 }
 
@@ -328,9 +328,9 @@ BOOST_AUTO_TEST_CASE(lineCol_utf8_counts_codepoints) {
 
 BOOST_AUTO_TEST_CASE(readonly_ignores_insert) {
   HelpBuffer buf;
-  std::size_t before = buf.point();
+  auto before = buf.point();
   buf.insert('x');
-  BOOST_CHECK_EQUAL(buf.point(), before);
+  BOOST_CHECK(buf.point() == before);
 }
 
 BOOST_AUTO_TEST_CASE(readonly_ignores_delete) {
