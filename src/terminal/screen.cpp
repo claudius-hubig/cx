@@ -97,7 +97,7 @@ void Screen::setBufferManager(BufferManager& mgr) { _bufMgr = &mgr; }
 
 void Screen::draw() {
   auto& [rows, cols] = _size;
-  auto br = bufRows();
+  auto br = rowsForBuffer();
 
   _renderBuf.clear();
 
@@ -392,7 +392,7 @@ void Screen::loop() {
               }
             }
             if (line > 0)
-              _buf->gotoLine(line, bufRows());
+              _buf->gotoLine(line, rowsForBuffer());
           }
         }
         _prompt = Prompt::None;
@@ -458,7 +458,7 @@ void Screen::loop() {
       } else if (_buf) {
         _buf->insert('\n');
         auto& [rows, cols] = _size;
-        _buf->ensureVisible(bufRows(), cols, _wrap);
+        _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
       }
     } else if (c == 0x7f) {
       // Backspace: delete character before point.
@@ -495,9 +495,9 @@ void Screen::loop() {
                 if (_buf->point() == prev) {
                   // Already at end of file — scroll viewport down instead,
                   // up to half a screen from EOF.
-                  _buf->scrollViewNearEnd(bufRows());
+                  _buf->scrollViewNearEnd(rowsForBuffer());
                 } else {
-                  _buf->ensureVisible(bufRows(), cols, _wrap);
+                  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 }
               }
               break;
@@ -528,7 +528,7 @@ void Screen::loop() {
                     _buf->moveWordRight();
                     {
                       auto& [rows, cols] = _size;
-                      _buf->ensureVisible(bufRows(), cols, _wrap);
+                      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                     }
                     break;
                   case 'D':
@@ -545,7 +545,7 @@ void Screen::loop() {
                     _buf->movePhysicalDown();
                     {
                       auto& [rows, cols] = _size;
-                      _buf->ensureVisible(bufRows(), cols, _wrap);
+                      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                     }
                     break;
                   }
@@ -577,7 +577,7 @@ void Screen::loop() {
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
                 if (_buf) {
                   auto& [rows, cols] = _size;
-                  _buf->pageUp(bufRows(), cols, _wrap);
+                  _buf->pageUp(rowsForBuffer(), cols, _wrap);
                 }
               break;
             }
@@ -586,7 +586,7 @@ void Screen::loop() {
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
                 if (_buf) {
                   auto& [rows, cols] = _size;
-                  _buf->pageDown(bufRows(), cols, _wrap);
+                  _buf->pageDown(rowsForBuffer(), cols, _wrap);
                 }
               break;
             }
@@ -744,7 +744,7 @@ void Screen::loop() {
   }
 }
 
-RowIdx Screen::bufRows() const {
+RowIdx Screen::rowsForBuffer() const {
   auto& [rows, cols] = _size;
   return RowIdx{rows.value > 1 ? rows.value - 1 : 1};
 }

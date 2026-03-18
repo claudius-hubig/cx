@@ -63,7 +63,7 @@ private:
   bool tryExit();
   void resize();
   // Number of rows available for buffer content (total minus status line).
-  RowIdx bufRows() const;
+  RowIdx rowsForBuffer() const;
   std::tuple<RowIdx, ColIdx> _size;
   Buffer* _buf = nullptr;
   BufferManager* _bufMgr = nullptr;
