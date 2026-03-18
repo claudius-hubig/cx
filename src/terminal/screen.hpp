@@ -34,8 +34,8 @@ class Screen : public BufferSink {
 public:
   Screen();
 
-  void setBuffer(Buffer &buf) override;
-  void setBufferManager(BufferManager &mgr);
+  void setBuffer(Buffer& buf) override;
+  void setBufferManager(BufferManager& mgr);
 
   // Render the buffer to the terminal and move the hardware cursor
   // to the current buffer point position.
@@ -65,20 +65,13 @@ private:
   // Number of rows available for buffer content (total minus status line).
   RowIdx bufRows() const;
   std::tuple<RowIdx, ColIdx> _size;
-  Buffer *_buf = nullptr;
-  BufferManager *_bufMgr = nullptr;
+  Buffer* _buf = nullptr;
+  BufferManager* _bufMgr = nullptr;
   std::string _renderBuf;
-  enum class Prompt {
-    None,
-    GoToLine,
-    SaveAs,
-    SwitchBuffer,
-    ConfirmSave,
-    ConfirmKill
-  };
+  enum class Prompt { None, GoToLine, SaveAs, SwitchBuffer, ConfirmSave, ConfirmKill };
   Prompt _prompt = Prompt::None;
   std::string _prompt_input;
-  Buffer *_prevBuf = nullptr;
+  Buffer* _prevBuf = nullptr;
   std::string _statusMsg;
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
   bool _showWhitespace = false;
@@ -88,7 +81,6 @@ private:
 
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();
-  std::vector<std::pair<std::string, std::string>>
-      _completions;        // {displayName, bufName}
-  int _completionIdx = -1; // -1 = no selection, 0+ = cycling
+  std::vector<std::pair<std::string, std::string>> _completions; // {displayName, bufName}
+  int _completionIdx = -1;                                       // -1 = no selection, 0+ = cycling
 };

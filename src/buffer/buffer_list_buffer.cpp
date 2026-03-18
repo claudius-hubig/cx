@@ -11,7 +11,7 @@ struct DirNode {
   std::vector<std::pair<std::string, std::string>> files;
 };
 
-void insertPath(DirNode &root, std::string const &fullPath) {
+void insertPath(DirNode& root, std::string const& fullPath) {
   // Split on '/', skipping the leading '/'.
   std::vector<std::string> parts;
   std::size_t start = 1;
@@ -25,23 +25,21 @@ void insertPath(DirNode &root, std::string const &fullPath) {
   if (parts.empty())
     return;
 
-  DirNode *node = &root;
+  DirNode* node = &root;
   for (std::size_t i = 0; i + 1 < parts.size(); ++i)
     node = &node->subdirs[parts[i]];
   node->files.push_back({parts.back(), fullPath});
 }
 
 // Render a directory node's contents into lines/names.
-void renderNode(DirNode const &node, std::string const &prefix,
-                std::size_t indent, bool showHeader,
-                std::vector<std::string> &lines,
-                std::vector<std::string> &names) {
+void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent, bool showHeader,
+                std::vector<std::string>& lines, std::vector<std::string>& names) {
   std::size_t total = node.files.size() + node.subdirs.size();
   if (total == 0)
     return;
 
   if (node.files.empty() && node.subdirs.size() == 1) {
-    auto &[name, child] = *node.subdirs.begin();
+    auto& [name, child] = *node.subdirs.begin();
     renderNode(child, prefix + name + "/", indent, true, lines, names);
     return;
   }
@@ -64,15 +62,13 @@ void renderNode(DirNode const &node, std::string const &prefix,
   auto fi = node.files.begin();
   auto di = node.subdirs.begin();
   while (fi != node.files.end() || di != node.subdirs.end()) {
-    bool useFile = fi != node.files.end() &&
-                   (di == node.subdirs.end() || fi->first < di->first);
+    bool useFile = fi != node.files.end() && (di == node.subdirs.end() || fi->first < di->first);
     if (useFile) {
       lines.push_back(std::string(indent, ' ') + childPrefix + fi->first);
       names.push_back(fi->second);
       ++fi;
     } else {
-      renderNode(di->second, childPrefix + di->first + "/", indent, true, lines,
-                 names);
+      renderNode(di->second, childPrefix + di->first + "/", indent, true, lines, names);
       ++di;
     }
   }
@@ -80,20 +76,18 @@ void renderNode(DirNode const &node, std::string const &prefix,
 
 } // namespace
 
-BufferListBuffer::BufferListBuffer(std::vector<std::string> names,
-                                   std::string const &startName)
+BufferListBuffer::BufferListBuffer(std::vector<std::string> names, std::string const& startName)
     : Buffer("*buffers*") {
   refresh(std::move(names), startName);
 }
 
-void BufferListBuffer::refresh(std::vector<std::string> names,
-                               std::string const &startName) {
+void BufferListBuffer::refresh(std::vector<std::string> names, std::string const& startName) {
   _displayLines.clear();
   _lineToName.clear();
 
   // Separate non-path names from absolute paths.
   DirNode root;
-  for (auto &name : names) {
+  for (auto& name : names) {
     if (!name.empty() && name[0] == '/') {
       insertPath(root, name);
     } else {
@@ -107,7 +101,7 @@ void BufferListBuffer::refresh(std::vector<std::string> names,
 
   // Build _lines from display lines (for base-class cursor navigation).
   _lines.clear();
-  for (auto &dl : _displayLines)
+  for (auto& dl : _displayLines)
     _lines.emplace_back(dl.begin(), dl.end());
   if (_lines.empty())
     _lines.emplace_back(); // always at least one line
@@ -134,10 +128,8 @@ std::string BufferListBuffer::selectedName() const {
   return {};
 }
 
-std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string &out,
-                                                    RowIdx rows, ColIdx cols,
-                                                    bool /*showWhitespace*/,
-                                                    bool /*wrap*/) const {
+std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
+                                                    bool /*showWhitespace*/, bool /*wrap*/) const {
 
   static constexpr auto kHighlight = "\x1b[7m"; // reverse video
   static constexpr auto kGutter = "\x1b[7m";

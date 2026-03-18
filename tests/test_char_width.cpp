@@ -15,9 +15,7 @@ BOOST_AUTO_TEST_CASE(charWidth_control_chars) {
 
 BOOST_AUTO_TEST_CASE(charWidth_null) { BOOST_CHECK_EQUAL(charWidth('\0'), 2u); }
 
-BOOST_AUTO_TEST_CASE(charWidth_DEL) {
-  BOOST_CHECK_EQUAL(charWidth('\x7f'), 2u);
-}
+BOOST_AUTO_TEST_CASE(charWidth_DEL) { BOOST_CHECK_EQUAL(charWidth('\x7f'), 2u); }
 
 BOOST_AUTO_TEST_CASE(charWidth_printable) {
   BOOST_CHECK_EQUAL(charWidth('A'), 1u);
@@ -52,9 +50,7 @@ BOOST_AUTO_TEST_CASE(utf8SeqLen_continuation) {
   BOOST_CHECK_EQUAL(utf8SeqLen(0xBF), 1u);
 }
 
-BOOST_AUTO_TEST_CASE(utf8SeqLen_invalid_0xFF) {
-  BOOST_CHECK_EQUAL(utf8SeqLen(0xFF), 1u);
-}
+BOOST_AUTO_TEST_CASE(utf8SeqLen_invalid_0xFF) { BOOST_CHECK_EQUAL(utf8SeqLen(0xFF), 1u); }
 
 // --- isUtf8Continuation ---
 

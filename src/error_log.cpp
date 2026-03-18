@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 void logError(std::string_view msg) {
-  const char *home = std::getenv("HOME");
+  char const* home = std::getenv("HOME");
   if (!home)
     return;
 

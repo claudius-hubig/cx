@@ -3,19 +3,18 @@
 
 #include <algorithm>
 
-BufferManager::BufferManager(BufferSink &sink)
+BufferManager::BufferManager(BufferSink& sink)
     : _helpBuffer(std::make_unique<HelpBuffer>()), _sink(sink) {
   auto buf = std::make_unique<TextBuffer>("*1*");
-  auto &ref = *buf;
+  auto& ref = *buf;
   _buffers.emplace("*1*", std::move(buf));
   _mru.push_back("*1*");
   refreshDisplayNames();
   _sink.setBuffer(ref);
 }
 
-Buffer &BufferManager::open(std::filesystem::path const &path) {
-  auto canonical =
-      std::filesystem::weakly_canonical(std::filesystem::absolute(path));
+Buffer& BufferManager::open(std::filesystem::path const& path) {
+  auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(path));
   auto key = canonical.string();
   auto it = _buffers.find(key);
   if (it != _buffers.end()) {
@@ -23,26 +22,25 @@ Buffer &BufferManager::open(std::filesystem::path const &path) {
     return *it->second;
   }
   auto buf = std::make_unique<TextBuffer>(key, canonical);
-  auto &ref = *buf;
+  auto& ref = *buf;
   _buffers.emplace(key, std::move(buf));
   refreshDisplayNames();
   touch(key);
   return ref;
 }
 
-BufferListBuffer &BufferManager::bufferListBuffer() {
+BufferListBuffer& BufferManager::bufferListBuffer() {
   auto names = bufferNames();
   auto target = secondMRU();
 
   if (!_bufferListBuffer)
-    _bufferListBuffer =
-        std::make_unique<BufferListBuffer>(std::move(names), target);
+    _bufferListBuffer = std::make_unique<BufferListBuffer>(std::move(names), target);
   else
     _bufferListBuffer->refresh(std::move(names), target);
   return *_bufferListBuffer;
 }
 
-Buffer &BufferManager::create(std::string name) {
+Buffer& BufferManager::create(std::string name) {
   auto [it, inserted] = _buffers.emplace(name, nullptr);
   if (!inserted)
     return *it->second;
@@ -53,7 +51,7 @@ Buffer &BufferManager::create(std::string name) {
   return *it->second;
 }
 
-Buffer *BufferManager::find(std::string const &name) {
+Buffer* BufferManager::find(std::string const& name) {
   auto it = _buffers.find(name);
   if (it != _buffers.end())
     return it->second.get();
@@ -63,13 +61,13 @@ Buffer *BufferManager::find(std::string const &name) {
 std::vector<std::string> BufferManager::bufferNames() const {
   std::vector<std::string> names;
   names.reserve(_buffers.size());
-  for (auto &[name, _] : _buffers)
+  for (auto& [name, _] : _buffers)
     names.push_back(name);
   std::sort(names.begin(), names.end());
   return names;
 }
 
-std::string BufferManager::displayName(std::string const &name) const {
+std::string BufferManager::displayName(std::string const& name) const {
   auto it = _displayNames.find(name);
   if (it != _displayNames.end())
     return it->second;
@@ -81,12 +79,12 @@ void BufferManager::refreshDisplayNames() {
   _displayNames.reserve(_buffers.size());
   // Count filename occurrences to detect ambiguity.
   std::unordered_map<std::string, int> fnCount;
-  for (auto &[name, _] : _buffers) {
+  for (auto& [name, _] : _buffers) {
     auto fn = std::filesystem::path(name).filename().string();
     if (!fn.empty() && fn != name)
       fnCount[fn]++;
   }
-  for (auto &[name, _] : _buffers) {
+  for (auto& [name, _] : _buffers) {
     auto fn = std::filesystem::path(name).filename().string();
     if (!fn.empty() && fn != name && fnCount[fn] == 1)
       _displayNames[name] = fn;
@@ -96,11 +94,11 @@ void BufferManager::refreshDisplayNames() {
 }
 
 std::vector<std::pair<std::string, std::string>>
-BufferManager::completions(std::string const &prefix) const {
+BufferManager::completions(std::string const& prefix) const {
   std::vector<std::pair<std::string, std::string>> result;
 
   // Match against open buffers using cached display names.
-  for (auto &[name, _] : _buffers) {
+  for (auto& [name, _] : _buffers) {
     auto dn = displayName(name);
     if (dn.starts_with(prefix))
       result.push_back({dn, name});
@@ -122,8 +120,7 @@ BufferManager::completions(std::string const &prefix) const {
     auto lastSlash = prefix.rfind('/');
     if (lastSlash != std::string::npos) {
       auto dirStr = prefix.substr(0, lastSlash);
-      dir = dirStr.empty() ? std::filesystem::path("/")
-                           : std::filesystem::path(dirStr);
+      dir = dirStr.empty() ? std::filesystem::path("/") : std::filesystem::path(dirStr);
       filePrefix = prefix.substr(lastSlash + 1);
     }
 
@@ -132,7 +129,7 @@ BufferManager::completions(std::string const &prefix) const {
       _dirCache.dir = dirStr;
       _dirCache.entries.clear();
       std::error_code ec;
-      for (auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+      for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
         auto filename = entry.path().filename().string();
         if (!filename.starts_with("."))
           _dirCache.entries.push_back({filename, entry.is_directory(ec)});
@@ -140,10 +137,9 @@ BufferManager::completions(std::string const &prefix) const {
     }
 
     // Canonicalize the directory once, not per-entry.
-    auto canonDir =
-        std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
+    auto canonDir = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
 
-    for (auto &[filename, isDir] : _dirCache.entries) {
+    for (auto& [filename, isDir] : _dirCache.entries) {
       if (!filename.starts_with(filePrefix))
         continue;
 
@@ -160,22 +156,19 @@ BufferManager::completions(std::string const &prefix) const {
       // so that find() resolves to the existing buffer.
       auto canonStr = (canonDir / filename).string();
       auto bufIt = _buffers.find(canonStr);
-      result.push_back(
-          {matchStr, bufIt != _buffers.end() ? canonStr : matchStr});
+      result.push_back({matchStr, bufIt != _buffers.end() ? canonStr : matchStr});
     }
   }
 
   std::sort(result.begin(), result.end());
   // Deduplicate by match string.
-  auto last = std::unique(
-      result.begin(), result.end(),
-      [](auto const &a, auto const &b) { return a.first == b.first; });
+  auto last = std::unique(result.begin(), result.end(),
+                          [](auto const& a, auto const& b) { return a.first == b.first; });
   result.erase(last, result.end());
   return result;
 }
 
-void BufferManager::rename(std::string const &oldName,
-                           std::filesystem::path newPath) {
+void BufferManager::rename(std::string const& oldName, std::filesystem::path newPath) {
   auto it = _buffers.find(oldName);
   if (it == _buffers.end())
     return;
@@ -191,14 +184,14 @@ void BufferManager::rename(std::string const &oldName,
     *mi = newName;
 }
 
-Buffer &BufferManager::kill(std::string name) {
+Buffer& BufferManager::kill(std::string name) {
   _buffers.erase(name);
   auto it = std::find(_mru.begin(), _mru.end(), name);
   if (it != _mru.end())
     _mru.erase(it);
   if (_buffers.empty()) {
     auto buf = std::make_unique<TextBuffer>("*1*");
-    auto &ref = *buf;
+    auto& ref = *buf;
     _buffers.emplace("*1*", std::move(buf));
     _mru.push_back("*1*");
     return ref;
@@ -211,7 +204,7 @@ Buffer &BufferManager::kill(std::string name) {
   return *_buffers.begin()->second;
 }
 
-void BufferManager::touch(std::string const &name) {
+void BufferManager::touch(std::string const& name) {
   // Move name to front of MRU list.
   auto it = std::find(_mru.begin(), _mru.end(), name);
   if (it != _mru.end())

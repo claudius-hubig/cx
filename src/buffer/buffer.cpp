@@ -26,7 +26,7 @@ void Buffer::doInsert(uint32_t cp) {
     n = 4;
   }
 
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   if (cp == '\n') {
     // Split current line at point.offset.
     std::vector<char> tail(line.begin() + _point.offset, line.end());
@@ -48,7 +48,7 @@ void Buffer::doInsert(uint32_t cp) {
 }
 
 void Buffer::doDeleteAtPoint() {
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   if (_point.offset < line.size()) {
     // Delete within line.
     auto len = utf8SeqLen(static_cast<unsigned char>(line[_point.offset]));
@@ -57,7 +57,7 @@ void Buffer::doDeleteAtPoint() {
     _modified = true;
   } else if (_point.line + 1 < _lines.size()) {
     // At end of line — merge next line into this one (delete the newline).
-    auto &next = _lines[_point.line + 1];
+    auto& next = _lines[_point.line + 1];
     line.insert(line.end(), next.begin(), next.end());
     _lines.erase(_lines.begin() + _point.line + 1);
     _modified = true;
@@ -65,19 +65,18 @@ void Buffer::doDeleteAtPoint() {
 }
 
 void Buffer::doDeleteBeforePoint() {
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   if (_point.offset > 0) {
     // Walk back over continuation bytes.
     auto end = _point.offset;
     --_point.offset;
-    while (_point.offset > 0 &&
-           isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
+    while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
       --_point.offset;
     line.erase(line.begin() + _point.offset, line.begin() + end);
     _modified = true;
   } else if (_point.line > 0) {
     // At start of line — merge into end of previous line (delete the newline).
-    auto &prev = _lines[_point.line - 1];
+    auto& prev = _lines[_point.line - 1];
     std::size_t newOffset = prev.size();
     prev.insert(prev.end(), line.begin(), line.end());
     _lines.erase(_lines.begin() + _point.line);
@@ -94,7 +93,7 @@ void Buffer::doDeleteChunkAtPoint() {
   // Classify the character at point: blank (space/tab) or newline (at end of
   // line), vs non-blank.
   auto curIsBlank = [&]() -> bool {
-    auto &line = _lines[_point.line];
+    auto& line = _lines[_point.line];
     if (_point.offset < line.size())
       return line[_point.offset] == ' ' || line[_point.offset] == '\t';
     // At end of line — the implicit newline counts as blank.
@@ -114,11 +113,10 @@ void Buffer::doDeleteChunkBeforePoint() {
   // Classify the character before point.
   auto prevIsBlank = [&]() -> bool {
     if (_point.offset > 0) {
-      auto &line = _lines[_point.line];
+      auto& line = _lines[_point.line];
       // Walk back over UTF-8 continuation bytes to find the lead byte.
       std::size_t pos = _point.offset - 1;
-      while (pos > 0 &&
-             isUtf8Continuation(static_cast<unsigned char>(line[pos])))
+      while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(line[pos])))
         --pos;
       return line[pos] == ' ' || line[pos] == '\t';
     }
@@ -129,8 +127,7 @@ void Buffer::doDeleteChunkBeforePoint() {
   bool startBlank = prevIsBlank();
   do {
     doDeleteBeforePoint();
-  } while ((_point.line > 0 || _point.offset > 0) &&
-           prevIsBlank() == startBlank);
+  } while ((_point.line > 0 || _point.offset > 0) && prevIsBlank() == startBlank);
 }
 
 void Buffer::moveHome() {
@@ -145,10 +142,9 @@ void Buffer::moveEnd() {
 
 void Buffer::moveLeft() {
   if (_point.offset > 0) {
-    auto &line = _lines[_point.line];
+    auto& line = _lines[_point.line];
     --_point.offset;
-    while (_point.offset > 0 &&
-           isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
+    while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
       --_point.offset;
   } else if (_point.line > 0) {
     --_point.line;
@@ -158,7 +154,7 @@ void Buffer::moveLeft() {
 }
 
 void Buffer::moveRight() {
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   if (_point.offset < line.size()) {
     auto len = utf8SeqLen(static_cast<unsigned char>(line[_point.offset]));
     _point.offset = std::min(_point.offset + len, line.size());
@@ -170,7 +166,7 @@ void Buffer::moveRight() {
 }
 
 // Compute visual column width of bytes in line[from..to).
-std::size_t Buffer::visualCol(std::vector<char> const &line, std::size_t from,
+std::size_t Buffer::visualCol(std::vector<char> const& line, std::size_t from,
                               std::size_t to) const {
   std::size_t vcol = 0;
   for (std::size_t i = from; i < to && i < line.size();) {
@@ -183,9 +179,8 @@ std::size_t Buffer::visualCol(std::vector<char> const &line, std::size_t from,
 
 // Walk a line from `from` to find the byte offset matching a target visual
 // column. Stops at `to` (or line.size() if to > line.size()).
-static std::size_t offsetForVisualCol(std::vector<char> const &line,
-                                      std::size_t from, std::size_t to,
-                                      std::size_t goal) {
+static std::size_t offsetForVisualCol(std::vector<char> const& line, std::size_t from,
+                                      std::size_t to, std::size_t goal) {
   std::size_t pos = from, v = 0;
   std::size_t end = std::min(to, line.size());
   while (pos < end) {
@@ -211,8 +206,8 @@ struct VisualRowInfo {
   std::size_t nextRowStart;
 };
 
-static VisualRowInfo findVisualRow(std::vector<char> const &line,
-                                   std::size_t byteOff, std::size_t cols) {
+static VisualRowInfo findVisualRow(std::vector<char> const& line, std::size_t byteOff,
+                                   std::size_t cols) {
   std::size_t prevStart = 0, curStart = 0;
   std::size_t col = 0;
 
@@ -243,8 +238,7 @@ static VisualRowInfo findVisualRow(std::vector<char> const &line,
 }
 
 // Find the byte offset at the start of the last visual row of a line.
-static std::size_t lastVisualRowStart(std::vector<char> const &line,
-                                      std::size_t cols) {
+static std::size_t lastVisualRowStart(std::vector<char> const& line, std::size_t cols) {
   std::size_t rowStart = 0, col = 0;
   for (std::size_t i = 0; i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -263,7 +257,7 @@ static std::size_t lastVisualRowStart(std::vector<char> const &line,
 }
 
 void Buffer::moveUp(ColIdx cols) {
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   // Content width excludes the gutter column.
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
   auto vr = findVisualRow(line, _point.offset, cw);
@@ -280,7 +274,7 @@ void Buffer::moveUp(ColIdx cols) {
   } else if (_point.line > 0) {
     // Move to last visual row of previous physical line.
     --_point.line;
-    auto &prev = _lines[_point.line];
+    auto& prev = _lines[_point.line];
     targetRowStart = lastVisualRowStart(prev, cw);
     targetRowEnd = prev.size();
   } else {
@@ -289,11 +283,9 @@ void Buffer::moveUp(ColIdx cols) {
     return;
   }
 
-  _point.offset = offsetForVisualCol(_lines[_point.line], targetRowStart,
-                                     targetRowEnd, goal);
+  _point.offset = offsetForVisualCol(_lines[_point.line], targetRowStart, targetRowEnd, goal);
 
-  std::size_t actual =
-      visualCol(_lines[_point.line], targetRowStart, _point.offset);
+  std::size_t actual = visualCol(_lines[_point.line], targetRowStart, _point.offset);
   if (actual == goal)
     _desiredCol.reset();
   else if (!_desiredCol)
@@ -301,7 +293,7 @@ void Buffer::moveUp(ColIdx cols) {
 }
 
 void Buffer::moveDown(ColIdx cols) {
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   // Content width excludes the gutter column.
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
   auto vr = findVisualRow(line, _point.offset, cw);
@@ -320,7 +312,7 @@ void Buffer::moveDown(ColIdx cols) {
   } else if (_point.line + 1 < _lines.size()) {
     // Move to first visual row of next physical line.
     ++_point.line;
-    auto &next = _lines[_point.line];
+    auto& next = _lines[_point.line];
     targetRowStart = 0;
     if (next.empty()) {
       targetRowEnd = 0;
@@ -334,11 +326,9 @@ void Buffer::moveDown(ColIdx cols) {
     return;
   }
 
-  _point.offset = offsetForVisualCol(_lines[_point.line], targetRowStart,
-                                     targetRowEnd, goal);
+  _point.offset = offsetForVisualCol(_lines[_point.line], targetRowStart, targetRowEnd, goal);
 
-  std::size_t actual =
-      visualCol(_lines[_point.line], targetRowStart, _point.offset);
+  std::size_t actual = visualCol(_lines[_point.line], targetRowStart, _point.offset);
   if (actual == goal)
     _desiredCol.reset();
   else if (!_desiredCol)
@@ -356,8 +346,7 @@ void Buffer::movePhysicalUp() {
   }
 
   --_point.line;
-  _point.offset = offsetForVisualCol(_lines[_point.line], 0,
-                                     _lines[_point.line].size(), goal);
+  _point.offset = offsetForVisualCol(_lines[_point.line], 0, _lines[_point.line].size(), goal);
 
   std::size_t actual = visualCol(_lines[_point.line], 0, _point.offset);
   if (actual == goal)
@@ -377,8 +366,7 @@ void Buffer::movePhysicalDown() {
   }
 
   ++_point.line;
-  _point.offset = offsetForVisualCol(_lines[_point.line], 0,
-                                     _lines[_point.line].size(), goal);
+  _point.offset = offsetForVisualCol(_lines[_point.line], 0, _lines[_point.line].size(), goal);
 
   std::size_t actual = visualCol(_lines[_point.line], 0, _point.offset);
   if (actual == goal)
@@ -397,7 +385,7 @@ bool Buffer::isBlankLine(std::size_t idx) const {
 }
 
 void Buffer::moveWordRight() {
-  auto &line = _lines[_point.line];
+  auto& line = _lines[_point.line];
   // At very end of buffer?
   if (_point.line == _lines.size() - 1 && _point.offset >= line.size()) {
     _desiredCol.reset();
@@ -412,15 +400,14 @@ void Buffer::moveWordRight() {
     _point.offset = std::min(_point.offset + len, line.size());
   }
   // If at end of line, cross to next.
-  if (_point.offset >= _lines[_point.line].size() &&
-      _point.line + 1 < _lines.size()) {
+  if (_point.offset >= _lines[_point.line].size() && _point.line + 1 < _lines.size()) {
     ++_point.line;
     _point.offset = 0;
   }
 
   // Skip separators and line boundaries forward.
   for (;;) {
-    auto &cur = _lines[_point.line];
+    auto& cur = _lines[_point.line];
     while (_point.offset < cur.size() && isSep(cur[_point.offset]))
       ++_point.offset;
     if (_point.offset < cur.size())
@@ -436,7 +423,7 @@ void Buffer::moveWordRight() {
 
   // Advance to the last char of this word.
   {
-    auto &cur = _lines[_point.line];
+    auto& cur = _lines[_point.line];
     while (_point.offset < cur.size()) {
       auto len = utf8SeqLen(static_cast<unsigned char>(cur[_point.offset]));
       auto next = std::min(_point.offset + len, cur.size());
@@ -459,34 +446,32 @@ void Buffer::moveWordLeft() {
 
   // Step back one code point (or cross to previous line).
   if (_point.offset > 0) {
-    auto &line = _lines[_point.line];
+    auto& line = _lines[_point.line];
     --_point.offset;
-    while (_point.offset > 0 &&
-           isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
+    while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
       --_point.offset;
   } else if (_point.line > 0) {
     --_point.line;
     _point.offset = _lines[_point.line].size();
     // We're now at the "newline" position. Step back once more if possible.
     if (_point.offset > 0) {
-      auto &line = _lines[_point.line];
+      auto& line = _lines[_point.line];
       --_point.offset;
-      while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(
-                                      line[_point.offset])))
+      while (_point.offset > 0 &&
+             isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
         --_point.offset;
     }
   }
 
   // Skip separators and line boundaries backward.
   for (;;) {
-    auto &cur = _lines[_point.line];
+    auto& cur = _lines[_point.line];
     if (_point.offset < cur.size() && !isSep(cur[_point.offset]))
       break; // on a non-sep char
     // Skip seps backward within line.
     while (_point.offset > 0) {
       std::size_t prev = _point.offset - 1;
-      while (prev > 0 &&
-             isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
+      while (prev > 0 && isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
         --prev;
       if (!isSep(cur[prev])) {
         _point.offset = prev;
@@ -502,13 +487,12 @@ void Buffer::moveWordLeft() {
     // Cross to previous line.
     if (_point.line > 0) {
       --_point.line;
-      auto &prev = _lines[_point.line];
+      auto& prev = _lines[_point.line];
       _point.offset = prev.size();
       if (_point.offset > 0) {
         --_point.offset;
-        while (
-            _point.offset > 0 &&
-            isUtf8Continuation(static_cast<unsigned char>(prev[_point.offset])))
+        while (_point.offset > 0 &&
+               isUtf8Continuation(static_cast<unsigned char>(prev[_point.offset])))
           --_point.offset;
       }
     } else {
@@ -519,7 +503,7 @@ found:
 
   // If currently on a separator, we're done.
   {
-    auto &cur = _lines[_point.line];
+    auto& cur = _lines[_point.line];
     if (_point.offset < cur.size() && isSep(cur[_point.offset])) {
       _desiredCol.reset();
       return;
@@ -528,11 +512,10 @@ found:
 
   // Walk backward to the first char of this word.
   {
-    auto &cur = _lines[_point.line];
+    auto& cur = _lines[_point.line];
     while (_point.offset > 0) {
       std::size_t prev = _point.offset - 1;
-      while (prev > 0 &&
-             isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
+      while (prev > 0 && isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
         --prev;
       if (isSep(cur[prev]))
         break;
@@ -619,7 +602,7 @@ void Buffer::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   std::size_t limit = viewFromLinesBeforeEnd(half);
   if (_viewFromLine > limit) {
     _viewFromLine = limit;
-    std::visit([](auto &v) { v = {}; }, _viewOffset);
+    std::visit([](auto& v) { v = {}; }, _viewOffset);
   }
 }
 
@@ -641,7 +624,7 @@ void Buffer::scrollViewNearEnd(RowIdx screenRows) {
 void Buffer::scrollDown() {
   if (_viewFromLine + 1 < _lines.size()) {
     ++_viewFromLine;
-    std::visit([](auto &v) { v = {}; }, _viewOffset);
+    std::visit([](auto& v) { v = {}; }, _viewOffset);
   }
 }
 
@@ -661,15 +644,15 @@ void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
     _viewFromLine = idx - half;
   else
     _viewFromLine = 0;
-  std::visit([](auto &v) { v = {}; }, _viewOffset);
+  std::visit([](auto& v) { v = {}; }, _viewOffset);
 }
 
 void Buffer::scrollUp() {
-  if (auto *wo = std::get_if<WrapOffset>(&_viewOffset); wo && wo->bytes > 0) {
+  if (auto* wo = std::get_if<WrapOffset>(&_viewOffset); wo && wo->bytes > 0) {
     wo->bytes = 0;
   } else if (_viewFromLine > 0) {
     --_viewFromLine;
-    std::visit([](auto &v) { v = {}; }, _viewOffset);
+    std::visit([](auto& v) { v = {}; }, _viewOffset);
   }
 }
 
@@ -681,14 +664,13 @@ std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
     return _point.line >= _viewFromLine ? _point.line - _viewFromLine : 0;
 
   std::size_t row = 0;
-  for (std::size_t lineIdx = _viewFromLine;
-       lineIdx <= _point.line && lineIdx < _lines.size(); ++lineIdx) {
-    auto &line = _lines[lineIdx];
+  for (std::size_t lineIdx = _viewFromLine; lineIdx <= _point.line && lineIdx < _lines.size();
+       ++lineIdx) {
+    auto& line = _lines[lineIdx];
     std::size_t end = (lineIdx == _point.line) ? _point.offset : line.size();
     // For the viewport line, start from the sub-line wrap offset.
-    auto *wo = std::get_if<WrapOffset>(&_viewOffset);
-    std::size_t start =
-        (lineIdx == _viewFromLine && wo) ? wo->bytes : std::size_t{0};
+    auto* wo = std::get_if<WrapOffset>(&_viewOffset);
+    std::size_t start = (lineIdx == _viewFromLine && wo) ? wo->bytes : std::size_t{0};
 
     std::size_t col = 0;
     for (std::size_t i = start; i < end && i < line.size();) {
@@ -723,7 +705,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
 
   if (!wrap) {
-    auto &hs = std::get<HScrollOffset>(_viewOffset).cols;
+    auto& hs = std::get<HScrollOffset>(_viewOffset).cols;
 
     // Vertical: simple line-based scrolling.
     if (_point.line < _viewFromLine)
@@ -740,7 +722,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     return;
   }
 
-  auto &vfo = std::get<WrapOffset>(_viewOffset).bytes;
+  auto& vfo = std::get<WrapOffset>(_viewOffset).bytes;
 
   // Handle point above the viewport (including sub-line offset).
   if (_point < viewFrom()) {
@@ -758,8 +740,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   // Cheap estimate: if the point is on the viewport line and the byte
   // distance clearly exceeds the screen, skip the O(n) screenRow() check
   // and go straight to sub-line adjustment.
-  bool farOffScreen =
-      _viewFromLine == _point.line && _point.offset > vfo + rows.value * cw;
+  bool farOffScreen = _viewFromLine == _point.line && _point.offset > vfo + rows.value * cw;
 
   if (!farOffScreen && screenRow(cols, wrap) < rows.value)
     return;
@@ -777,7 +758,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   // keeping a ring buffer of the last `rows` visual-row start offsets.
   // At the end, the oldest entry in the ring is where the viewport should
   // start so the cursor ends up on the last visible screen row.
-  auto &line = _lines[_viewFromLine];
+  auto& line = _lines[_viewFromLine];
   std::size_t ringSize = rows.value;
   std::vector<std::size_t> ring(ringSize, vfo);
   std::size_t ringPos = 0;
@@ -808,7 +789,7 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
   std::size_t line = _point.line + 1;
   // Column counts code points, not bytes.
   std::size_t col = 1;
-  auto &curLine = _lines[_point.line];
+  auto& curLine = _lines[_point.line];
   for (std::size_t i = 0; i < _point.offset && i < curLine.size();) {
     auto len = utf8SeqLen(static_cast<unsigned char>(curLine[i]));
     ++col;
@@ -817,9 +798,8 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
   return {line, col};
 }
 
-std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
-                                          ColIdx cols, bool showWhitespace,
-                                          bool wrap) const {
+std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
+                                          bool showWhitespace, bool wrap) const {
   static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
   static constexpr auto kReset = "\x1b[0m";
   static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
@@ -834,7 +814,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
     out += ";1H";
   };
 
-  auto emitChar = [&](char const *data, CharInfo info) {
+  auto emitChar = [&](char const* data, CharInfo info) {
     auto u = static_cast<unsigned char>(*data);
     if (u < 0x80) {
       if (*data == '\t') {
@@ -871,9 +851,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
       }
     } else if (info.len == 1) {
       out += kCtrlColor;
-      auto nibble = [](unsigned char n) -> char {
-        return n < 10 ? ('0' + n) : ('a' + n - 10);
-      };
+      auto nibble = [](unsigned char n) -> char { return n < 10 ? ('0' + n) : ('a' + n - 10); };
       out += nibble(u >> 4);
       out += nibble(u & 0xf);
       out += kReset;
@@ -891,7 +869,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
 
   // Emit the gutter character at column cols.value for a given row.
   // `highlight` marks the visual row containing the cursor.
-  auto emitGutter = [&](std::size_t r, bool highlight, char const *indicator) {
+  auto emitGutter = [&](std::size_t r, bool highlight, char const* indicator) {
     out += "\x1b[";
     out += std::to_string(r + 1);
     out += ";";
@@ -918,9 +896,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
     std::size_t row = 0;
     emitRowStart(0);
 
-    for (std::size_t lineIdx = _viewFromLine;
-         lineIdx < _lines.size() && row < rows.value; ++lineIdx) {
-      auto &line = _lines[lineIdx];
+    for (std::size_t lineIdx = _viewFromLine; lineIdx < _lines.size() && row < rows.value;
+         ++lineIdx) {
+      auto& line = _lines[lineIdx];
       std::size_t vcol = 0;
       bool overflows = false; // content extends past visible area
 
@@ -950,16 +928,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
         i += info.len;
       }
 
-      if (lineIdx == _point.line && _point.offset >= line.size() &&
-          !pointFound) {
+      if (lineIdx == _point.line && _point.offset >= line.size() && !pointFound) {
         cur_row = row;
         cur_col = vcol >= hScroll ? vcol - hScroll : 0;
         pointFound = true;
       }
 
       // Newline indicator.
-      if (showWhitespace && !overflows && lineIdx + 1 < _lines.size() &&
-          vcol >= hScroll && vcol < hScroll + cw) {
+      if (showWhitespace && !overflows && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
+          vcol < hScroll + cw) {
         out += kNlStyle;
         out += kWsFg;
         out += "\xe2\x86\xb5";
@@ -996,12 +973,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
   std::size_t row = 0, col = 0;
   emitRowStart(0);
 
-  for (std::size_t lineIdx = _viewFromLine;
-       lineIdx < _lines.size() && row < rows.value; ++lineIdx) {
-    auto &line = _lines[lineIdx];
+  for (std::size_t lineIdx = _viewFromLine; lineIdx < _lines.size() && row < rows.value;
+       ++lineIdx) {
+    auto& line = _lines[lineIdx];
     // For the viewport line, start from viewFromOffset (sub-line scroll).
-    std::size_t startByte =
-        (lineIdx == _viewFromLine) ? viewFromOffset : std::size_t{0};
+    std::size_t startByte = (lineIdx == _viewFromLine) ? viewFromOffset : std::size_t{0};
 
     // Track whether the previous row was full (deferred wrap indicator).
     bool pendingWrap = false;

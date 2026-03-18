@@ -62,8 +62,7 @@ BOOST_AUTO_TEST_CASE(save_writes_and_clears_modified) {
 
   // Verify file content
   std::ifstream f(tmp.path(), std::ios::binary);
-  std::string content((std::istreambuf_iterator<char>(f)),
-                      std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   BOOST_CHECK_EQUAL(content, "AB");
 }
 
@@ -78,8 +77,7 @@ BOOST_AUTO_TEST_CASE(save_truncates_existing) {
   BOOST_CHECK(buf.save());
 
   std::ifstream f(tmp.path(), std::ios::binary);
-  std::string content((std::istreambuf_iterator<char>(f)),
-                      std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   BOOST_CHECK_EQUAL(content, "X");
 }
 

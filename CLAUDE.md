@@ -12,7 +12,7 @@
 
 ## Formatting
 
-- Always run `clang-format -i` on every changed file before committing
+- Always run `clang-format --style=file -i` on every changed file before committing
 
 ## Constraints
 

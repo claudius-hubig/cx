@@ -59,9 +59,9 @@ static constexpr std::size_t kMovStart = kCmdEnd + 1; // +1 for blank
 static constexpr std::size_t kMovEnd = kMovStart + kMovementLines.size();
 static constexpr std::size_t kFooter = kMovEnd + 1; // +1 for blank
 
-static std::size_t maxWidth(std::span<const std::string_view> lines) {
+static std::size_t maxWidth(std::span<std::string_view const> lines) {
   std::size_t w = 0;
-  for (auto &l : lines)
+  for (auto& l : lines)
     w = std::max(w, l.size());
   return w;
 }
@@ -160,8 +160,7 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
 
   // Footer centered.
   {
-    std::size_t fpad =
-        (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
+    std::size_t fpad = (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
     std::string s(fpad, ' ');
     s += kFooterText;
     vlines.push_back({s});
@@ -173,16 +172,14 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
 HelpBuffer::HelpBuffer() : Buffer("*help*") {
   // Build _lines from help content (one line per data entry, no '\n').
   _lines.clear();
-  auto addLine = [&](std::string_view sv) {
-    _lines.emplace_back(sv.begin(), sv.end());
-  };
+  auto addLine = [&](std::string_view sv) { _lines.emplace_back(sv.begin(), sv.end()); };
   addLine(kTitle); // 0  title
   addLine({});     // 1  separator (rendered as '=')
   addLine({});     // 2  blank
-  for (auto &l : kCommandLines)
+  for (auto& l : kCommandLines)
     addLine(l); // 3-11
   addLine({});  // 12 blank
-  for (auto &l : kMovementLines)
+  for (auto& l : kMovementLines)
     addLine(l);         // 13-23
   addLine({});          // 24 blank
   addLine(kFooterText); // 25 footer
@@ -194,10 +191,8 @@ std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
   return pointVis >= scrollVis ? pointVis - scrollVis : 0;
 }
 
-std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string &out, RowIdx rows,
-                                              ColIdx cols,
-                                              bool /*showWhitespace*/,
-                                              bool /*wrap*/) const {
+std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
+                                              bool /*showWhitespace*/, bool /*wrap*/) const {
 
   // Content width excludes the gutter column.
   std::size_t c = cols.value > 1 ? cols.value - 1 : 1;
@@ -243,8 +238,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string &out, RowIdx rows,
     else
       curCol = leftPad + dataCol;
   } else if (dataLine == kFooter) {
-    std::size_t fpad =
-        (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
+    std::size_t fpad = (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
     curCol = fpad + dataCol;
   }
 

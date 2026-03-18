@@ -28,7 +28,7 @@ BOOST_AUTO_TEST_CASE(open_creates_buffer) {
   NullBufferSink sink;
   BufferManager mgr(sink);
   TempFile tmp("content");
-  auto &buf = mgr.open(tmp.path());
+  auto& buf = mgr.open(tmp.path());
   BOOST_CHECK(!buf.readonly());
   BOOST_CHECK(buf.hasPath());
 }
@@ -37,8 +37,8 @@ BOOST_AUTO_TEST_CASE(open_returns_existing) {
   NullBufferSink sink;
   BufferManager mgr(sink);
   TempFile tmp("content");
-  auto &buf1 = mgr.open(tmp.path());
-  auto &buf2 = mgr.open(tmp.path());
+  auto& buf1 = mgr.open(tmp.path());
+  auto& buf2 = mgr.open(tmp.path());
   BOOST_CHECK_EQUAL(&buf1, &buf2);
 }
 
@@ -46,9 +46,9 @@ BOOST_AUTO_TEST_CASE(open_canonicalizes_paths) {
   NullBufferSink sink;
   BufferManager mgr(sink);
   TempFile tmp("content");
-  auto &buf1 = mgr.open(tmp.path());
+  auto& buf1 = mgr.open(tmp.path());
   // Open with a relative-ish path to the same file
-  auto &buf2 = mgr.open(tmp.path().parent_path() / "." / tmp.path().filename());
+  auto& buf2 = mgr.open(tmp.path().parent_path() / "." / tmp.path().filename());
   BOOST_CHECK_EQUAL(&buf1, &buf2);
 }
 
@@ -57,7 +57,7 @@ BOOST_AUTO_TEST_CASE(open_canonicalizes_paths) {
 BOOST_AUTO_TEST_CASE(create_new_buffer) {
   NullBufferSink sink;
   BufferManager mgr(sink);
-  auto &buf = mgr.create("scratch");
+  auto& buf = mgr.create("scratch");
   BOOST_CHECK_EQUAL(buf.name(), "scratch");
   BOOST_CHECK(!buf.hasPath());
 }
@@ -65,8 +65,8 @@ BOOST_AUTO_TEST_CASE(create_new_buffer) {
 BOOST_AUTO_TEST_CASE(create_idempotent) {
   NullBufferSink sink;
   BufferManager mgr(sink);
-  auto &buf1 = mgr.create("scratch");
-  auto &buf2 = mgr.create("scratch");
+  auto& buf1 = mgr.create("scratch");
+  auto& buf2 = mgr.create("scratch");
   BOOST_CHECK_EQUAL(&buf1, &buf2);
 }
 
@@ -100,7 +100,7 @@ BOOST_AUTO_TEST_CASE(kill_last_recreates_default) {
   NullBufferSink sink;
   BufferManager mgr(sink);
   // Kill the default *1*
-  auto &next = mgr.kill("*1*");
+  auto& next = mgr.kill("*1*");
   // Should have created a new *1*
   BOOST_CHECK(mgr.find("*1*") != nullptr);
   BOOST_CHECK_EQUAL(next.name(), "*1*");
@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE(kill_returns_next) {
   mgr.create("b");
   mgr.touch("b"); // b is MRU, a is second
   mgr.touch("a"); // a is MRU, b is second
-  auto &next = mgr.kill("a");
+  auto& next = mgr.kill("a");
   // Should return b (next MRU)
   BOOST_CHECK_EQUAL(next.name(), "b");
 }
@@ -162,8 +162,7 @@ BOOST_AUTO_TEST_CASE(displayName_unique_filename) {
   TempFile tmp("data");
   mgr.open(tmp.path());
   auto canonical =
-      std::filesystem::weakly_canonical(std::filesystem::absolute(tmp.path()))
-          .string();
+      std::filesystem::weakly_canonical(std::filesystem::absolute(tmp.path())).string();
   auto display = mgr.displayName(canonical);
   // Should be just the filename since no other buffer shares it
   BOOST_CHECK_EQUAL(display, tmp.path().filename().string());
@@ -181,12 +180,8 @@ BOOST_AUTO_TEST_CASE(displayName_ambiguous_full_path) {
   // Actually let's just verify the displayName logic for non-colliding paths.
   mgr.open(tmp1.path());
   mgr.open(tmp2.path());
-  auto c1 =
-      std::filesystem::weakly_canonical(std::filesystem::absolute(tmp1.path()))
-          .string();
-  auto c2 =
-      std::filesystem::weakly_canonical(std::filesystem::absolute(tmp2.path()))
-          .string();
+  auto c1 = std::filesystem::weakly_canonical(std::filesystem::absolute(tmp1.path())).string();
+  auto c2 = std::filesystem::weakly_canonical(std::filesystem::absolute(tmp2.path())).string();
   // Different filenames, so both should show short names
   BOOST_CHECK_NE(mgr.displayName(c1), c1);
   BOOST_CHECK_NE(mgr.displayName(c2), c2);
@@ -209,7 +204,7 @@ BOOST_AUTO_TEST_CASE(bufferNames_excludes_special) {
   BufferManager mgr(sink);
   auto names = mgr.bufferNames();
   // Should not include *help* or *buffers*
-  for (auto &n : names) {
+  for (auto& n : names) {
     BOOST_CHECK_NE(n, "*help*");
     BOOST_CHECK_NE(n, "*buffers*");
   }
@@ -220,15 +215,15 @@ BOOST_AUTO_TEST_CASE(bufferNames_excludes_special) {
 BOOST_AUTO_TEST_CASE(bufferListBuffer_lazy_creation) {
   NullBufferSink sink;
   BufferManager mgr(sink);
-  auto &blb = mgr.bufferListBuffer();
+  auto& blb = mgr.bufferListBuffer();
   BOOST_CHECK(blb.readonly());
 }
 
 BOOST_AUTO_TEST_CASE(bufferListBuffer_refreshes) {
   NullBufferSink sink;
   BufferManager mgr(sink);
-  auto &blb1 = mgr.bufferListBuffer();
+  auto& blb1 = mgr.bufferListBuffer();
   mgr.create("new_buf");
-  auto &blb2 = mgr.bufferListBuffer();
+  auto& blb2 = mgr.bufferListBuffer();
   BOOST_CHECK_EQUAL(&blb1, &blb2); // same object, just refreshed
 }

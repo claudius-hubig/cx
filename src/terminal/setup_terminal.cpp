@@ -5,8 +5,7 @@
 
 #include <string_view>
 
-static constexpr std::string_view kAltScreenOn =
-    "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q";
+static constexpr std::string_view kAltScreenOn = "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q";
 static constexpr std::string_view kAltScreenOff = "\x1b[?1049l";
 
 SetupTerminal::SetupTerminal() {

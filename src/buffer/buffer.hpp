@@ -19,10 +19,10 @@ class Buffer {
 public:
   virtual ~Buffer() = default;
 
-  Buffer(Buffer const &) = delete;
-  Buffer &operator=(Buffer const &) = delete;
-  Buffer(Buffer &&) = delete;
-  Buffer &operator=(Buffer &&) = delete;
+  Buffer(Buffer const&) = delete;
+  Buffer& operator=(Buffer const&) = delete;
+  Buffer(Buffer&&) = delete;
+  Buffer& operator=(Buffer&&) = delete;
 
   /// Pure virtual — true for readonly buffers (HelpBuffer, BufferListBuffer).
   /// All mutation methods (insert, deleteAtPoint, deleteBeforePoint) are
@@ -180,10 +180,8 @@ public:
   /// Append a rows x cols screen image (with ANSI escapes) to `out`,
   /// starting from _viewFromLine. rows and cols must be > 0. Returns the
   /// screen {row, col} of the point for cursor positioning.
-  virtual std::tuple<RowIdx, ColIdx> render(std::string &out, RowIdx rows,
-                                            ColIdx cols,
-                                            bool showWhitespace = false,
-                                            bool wrap = true) const;
+  virtual std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
+                                            bool showWhitespace = false, bool wrap = true) const;
 
   BufferPoint point() const { return _point; }
   BufferPoint viewFrom() const {
@@ -192,7 +190,7 @@ public:
                    : std::size_t{0};
     return {_viewFromLine, off};
   }
-  std::string const &name() const { return _name; }
+  std::string const& name() const { return _name; }
 
   /// Return the 1-indexed {line, column} of the point. Column counts
   /// code points, not visual width or bytes.
@@ -210,8 +208,7 @@ protected:
   void doDeleteChunkAtPoint();
   void doDeleteChunkBeforePoint();
   // Sum of display widths of characters in line data[from..to).
-  std::size_t visualCol(std::vector<char> const &line, std::size_t from,
-                        std::size_t to) const;
+  std::size_t visualCol(std::vector<char> const& line, std::size_t from, std::size_t to) const;
   // True if line idx is empty or contains only spaces/tabs.
   bool isBlankLine(std::size_t idx) const;
   // Line index that is `lines` lines before the end of the buffer.
@@ -219,8 +216,7 @@ protected:
 
   // True if point is at the very end of the buffer (last line, past all chars).
   bool atEnd() const {
-    return _point.line == _lines.size() - 1 &&
-           _point.offset == _lines.back().size();
+    return _point.line == _lines.size() - 1 && _point.offset == _lines.back().size();
   }
 
   std::string _name;

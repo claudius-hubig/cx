@@ -20,9 +20,7 @@ inline constexpr std::size_t charWidth(char ch) {
 
 /// Return true if b is a UTF-8 continuation byte: (b & 0xC0) == 0x80.
 /// Pure predicate — works on any unsigned char value.
-inline constexpr bool isUtf8Continuation(unsigned char b) {
-  return (b & 0xC0) == 0x80;
-}
+inline constexpr bool isUtf8Continuation(unsigned char b) { return (b & 0xC0) == 0x80; }
 
 /// Number of bytes in a UTF-8 sequence starting with the given lead byte.
 /// Returns 1 for ASCII (<0x80), 2-4 for valid multi-byte lead bytes, and
@@ -44,8 +42,7 @@ inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
 /// Returns {codepoint, byte_length}. For malformed, truncated, overlong,
 /// surrogate (U+D800–U+DFFF), or out-of-range (>U+10FFFF) sequences the
 /// raw byte value is returned with length 1.
-inline constexpr std::pair<uint32_t, std::size_t>
-decodeUtf8(const char *data, std::size_t avail) {
+inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   if (u < 0x80)
     return {u, 1};
@@ -77,8 +74,7 @@ decodeUtf8(const char *data, std::size_t avail) {
     auto b3 = static_cast<unsigned char>(data[3]);
     if (!isCont(b1) || !isCont(b2) || !isCont(b3))
       return {u, 1};
-    uint32_t cp = ((u & 0x07) << 18) | ((b1 & 0x3F) << 12) |
-                  ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+    uint32_t cp = ((u & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
     if (cp < 0x10000)
       return {u, 1}; // overlong
     if (cp > 0x10FFFF)
@@ -131,7 +127,7 @@ struct CharInfo {
 /// (tab/control → width 2, printable → 1). For valid multi-byte UTF-8,
 /// decodes and returns codepointWidth. Invalid bytes (>= 0x80 with
 /// len == 1 from decodeUtf8) get width 2 for hex display.
-inline constexpr CharInfo charInfoAt(const char *data, std::size_t avail) {
+inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   if (u < 0x80)
     return {charWidth(static_cast<char>(u)), 1};

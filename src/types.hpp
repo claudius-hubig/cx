@@ -20,18 +20,16 @@ struct BufferPoint {
   std::size_t line = 0;
   std::size_t offset = 0;
 
-  bool operator==(BufferPoint const &) const = default;
+  bool operator==(BufferPoint const&) const = default;
 
-  auto operator<(BufferPoint const &o) const {
+  auto operator<(BufferPoint const& o) const {
     if (line != o.line)
       return line < o.line;
     return offset < o.offset;
   }
-  auto operator<=(BufferPoint const &o) const {
-    return *this == o || *this < o;
-  }
-  auto operator>(BufferPoint const &o) const { return o < *this; }
-  auto operator>=(BufferPoint const &o) const { return o <= *this; }
+  auto operator<=(BufferPoint const& o) const { return *this == o || *this < o; }
+  auto operator>(BufferPoint const& o) const { return o < *this; }
+  auto operator>=(BufferPoint const& o) const { return o <= *this; }
 };
 
 // Sub-line viewport offset for wrap mode: byte offset within the viewport's

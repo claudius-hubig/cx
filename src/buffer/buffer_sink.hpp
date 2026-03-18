@@ -9,11 +9,11 @@ class BufferSink {
 public:
   virtual ~BufferSink() = default;
 
-  BufferSink(BufferSink const &) = delete;
-  BufferSink &operator=(BufferSink const &) = delete;
+  BufferSink(BufferSink const&) = delete;
+  BufferSink& operator=(BufferSink const&) = delete;
 
   /// Called by BufferManager when the active buffer changes.
-  virtual void setBuffer(Buffer &buf) = 0;
+  virtual void setBuffer(Buffer& buf) = 0;
 
 protected:
   BufferSink() = default;

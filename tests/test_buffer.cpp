@@ -7,7 +7,7 @@
 #include "buffer/text_buffer.hpp"
 
 // Helper: insert a string as UTF-8 codepoints into a buffer.
-static void insertString(Buffer &buf, std::string_view s) {
+static void insertString(Buffer& buf, std::string_view s) {
   for (std::size_t i = 0; i < s.size();) {
     auto [cp, len] = decodeUtf8(s.data() + i, s.size() - i);
     buf.insert(cp);

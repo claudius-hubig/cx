@@ -15,7 +15,7 @@ public:
   /// Construct a buffer that reads its initial content from path.
   /// If the file is missing or unreadable the buffer is empty but
   /// hasPath() still returns true so save() can write to it.
-  TextBuffer(std::string name, std::filesystem::path const &path);
+  TextBuffer(std::string name, std::filesystem::path const& path);
 
   bool readonly() const override { return false; }
 

@@ -5,14 +5,13 @@
 
 TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) {}
 
-TextBuffer::TextBuffer(std::string name, std::filesystem::path const &path)
+TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
     : Buffer(std::move(name)), _path(path) {
   std::ifstream file(path, std::ios::binary);
   if (!file)
     return;
   // Read file into flat buffer, then split into lines.
-  std::vector<char> data{std::istreambuf_iterator<char>(file),
-                         std::istreambuf_iterator<char>()};
+  std::vector<char> data{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
   if (data.empty())
     return; // _lines stays as {{}}, correct for empty file.
 
@@ -40,8 +39,7 @@ bool TextBuffer::save() {
     return false;
   for (std::size_t i = 0; i < _lines.size(); ++i) {
     if (!_lines[i].empty())
-      file.write(_lines[i].data(),
-                 static_cast<std::streamsize>(_lines[i].size()));
+      file.write(_lines[i].data(), static_cast<std::streamsize>(_lines[i].size()));
     if (i + 1 < _lines.size())
       file.put('\n');
   }
