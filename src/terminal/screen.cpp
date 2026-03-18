@@ -722,13 +722,6 @@ void Screen::loop() {
             _prompt_input.clear();
           }
         }
-      } else if (std::holds_alternative<std::string>(result) && _buf) {
-        auto& s = std::get<std::string>(result);
-        for (std::size_t j = 0; j < s.size();) {
-          auto [cp, len] = decodeUtf8(s.data() + j, s.size() - j);
-          _buf->insert(cp);
-          j += len;
-        }
       }
     } else {
       if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
@@ -823,7 +816,7 @@ bool Screen::tryExit() {
   return true; // no modified buffers remain
 }
 
-std::variant<std::monostate, std::string, Action> Screen::handleSpecialInput(char c) {
+std::variant<std::monostate, Action> Screen::handleSpecialInput(char c) {
   switch (c) {
   case 0x02:
     return Action::BufferList; // Ctrl-B

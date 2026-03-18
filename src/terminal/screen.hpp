@@ -50,10 +50,9 @@ public:
   void setStatus(std::string msg);
 
 private:
-  // Interpret a control character and return the appropriate response:
-  // An Action value, a string to insert on Ctrl-X, or monostate
-  // for unhandled inputs.
-  std::variant<std::monostate, std::string, Action> handleSpecialInput(char c);
+  // Interpret a control character and return the appropriate Action,
+  // or monostate for unhandled inputs.
+  std::variant<std::monostate, Action> handleSpecialInput(char c);
   // Try to dispatch an Esc-chord for the given byte. Returns true if
   // the byte was a recognised command, false otherwise.
   bool handleEscChord(char ch);
