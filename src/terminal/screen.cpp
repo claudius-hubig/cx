@@ -454,8 +454,7 @@ void Screen::loop() {
       } else if (_buf) {
         _buf->insert('\n');
         auto &[rows, cols] = _size;
-        while (_buf->screenRow(cols) >= bufRows().value)
-          _buf->scrollDown();
+        _buf->ensureVisible(bufRows(), cols);
       }
     } else if (c == 0x7f) {
       // Backspace: delete character before point.
@@ -487,8 +486,7 @@ void Screen::loop() {
                   _buf->scrollViewNearEnd(bufRows());
                 } else {
                   auto &[rows, cols] = _size;
-                  while (_buf->screenRow(cols) >= bufRows().value)
-                    _buf->scrollDown();
+                  _buf->ensureVisible(bufRows(), cols);
                 }
               }
               break;
@@ -520,8 +518,7 @@ void Screen::loop() {
                     _buf->moveWordRight();
                     {
                       auto &[rows, cols] = _size;
-                      while (_buf->screenRow(cols) >= bufRows().value)
-                        _buf->scrollDown();
+                      _buf->ensureVisible(bufRows(), cols);
                     }
                     break;
                   case 'D':
@@ -538,8 +535,7 @@ void Screen::loop() {
                     _buf->moveParagraphDown();
                     {
                       auto &[rows, cols] = _size;
-                      while (_buf->screenRow(cols) >= bufRows().value)
-                        _buf->scrollDown();
+                      _buf->ensureVisible(bufRows(), cols);
                     }
                     break;
                   }

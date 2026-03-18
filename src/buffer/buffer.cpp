@@ -490,6 +490,27 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
   return row;
 }
 
+void Buffer::ensureVisible(RowIdx rows, ColIdx cols) {
+  // If the point is above the viewport, scrollUp handles it cheaply.
+  // This method handles the downward case: point is below the viewport.
+  if (_point.line < _viewFromLine)
+    return;
+
+  // Quick check: if the point's line is within the viewport line range,
+  // it *might* be visible — fall through to the fine-tuning loop below.
+  // If it's far beyond, jump the viewport directly.
+  if (_point.line >= _viewFromLine + rows.value) {
+    // Jump so the point is roughly in the middle of the screen.
+    std::size_t half = rows.value / 2;
+    _viewFromLine = _point.line >= half ? _point.line - half : 0;
+  }
+
+  // Fine-tune: account for line wrapping. At most a few iterations
+  // since the point is now close to the viewport.
+  while (screenRow(cols) >= rows.value)
+    ++_viewFromLine;
+}
+
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
   // Line is 1-indexed.
   std::size_t line = _point.line + 1;

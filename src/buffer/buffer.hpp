@@ -143,6 +143,12 @@ public:
   /// Accounts for line wrapping.
   virtual std::size_t screenRow(ColIdx cols) const;
 
+  /// Scroll the viewport down just enough so the point is visible on
+  /// screen (within rows). Jumps _viewFromLine directly when the point
+  /// is far off-screen, avoiding the O(N²) cost of one-line-at-a-time
+  /// scrolling followed by screenRow() recomputation.
+  void ensureVisible(RowIdx rows, ColIdx cols);
+
   /// Append a rows x cols screen image (with ANSI escapes) to `out`,
   /// starting from _viewFromLine. rows and cols must be > 0. Returns the
   /// screen {row, col} of the point for cursor positioning.
