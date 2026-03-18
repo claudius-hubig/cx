@@ -83,6 +83,11 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
   sa.sa_handler = handle_sigwinch;
   sigaction(SIGWINCH, &sa, nullptr);
 
+  // Set the terminal title.
+  auto cwd = std::filesystem::current_path().string();
+  std::string title = "\x1b]0;cx@" + cwd + "\x07";
+  writeAll(STDOUT_FILENO, title.data(), title.size());
+
   draw();
 }
 
