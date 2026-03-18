@@ -753,8 +753,6 @@ void Screen::resize() {
   struct winsize ws = {};
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0)
     _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
-  // No buffer to resize — render() produces a fresh screen image each time.
-  // No cursor to clamp — it's derived from the buffer point.
 }
 
 void Screen::updateCompletions() {
