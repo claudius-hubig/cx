@@ -541,29 +541,35 @@ void Buffer::moveParagraphDown() {
   _desiredCol.reset();
 }
 
-void Buffer::pageUp(RowIdx screenRows, ColIdx cols) {
+void Buffer::pageUp(RowIdx screenRows, ColIdx cols, bool wrap) {
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
   for (std::size_t i = 0; i < half; ++i) {
-    moveUp(cols);
+    if (wrap)
+      moveUp(cols);
+    else
+      movePhysicalUp();
     scrollUp();
   }
 }
 
-void Buffer::pageDown(RowIdx screenRows, ColIdx cols) {
+void Buffer::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
   for (std::size_t i = 0; i < half; ++i) {
-    moveDown(cols);
+    if (wrap)
+      moveDown(cols);
+    else
+      movePhysicalDown();
     scrollDown();
   }
   // Clamp viewport so at least half a screen of content is visible.
   std::size_t limit = viewFromLinesBeforeEnd(half);
   if (_viewFromLine > limit) {
     _viewFromLine = limit;
-    _viewFromOffset = 0;
+    std::visit([](auto &v) { v = {}; }, _viewOffset);
   }
 }
 
@@ -585,7 +591,7 @@ void Buffer::scrollViewNearEnd(RowIdx screenRows) {
 void Buffer::scrollDown() {
   if (_viewFromLine + 1 < _lines.size()) {
     ++_viewFromLine;
-    _viewFromOffset = 0;
+    std::visit([](auto &v) { v = {}; }, _viewOffset);
   }
 }
 
@@ -605,27 +611,31 @@ void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
     _viewFromLine = idx - half;
   else
     _viewFromLine = 0;
-  _viewFromOffset = 0;
+  std::visit([](auto &v) { v = {}; }, _viewOffset);
 }
 
 void Buffer::scrollUp() {
-  if (_viewFromOffset > 0) {
-    _viewFromOffset = 0;
+  if (auto *wo = std::get_if<WrapOffset>(&_viewOffset); wo && wo->bytes > 0) {
+    wo->bytes = 0;
   } else if (_viewFromLine > 0) {
     --_viewFromLine;
-    _viewFromOffset = 0;
+    std::visit([](auto &v) { v = {}; }, _viewOffset);
   }
 }
 
-std::size_t Buffer::screenRow(ColIdx cols) const {
+std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
+  if (!wrap)
+    return _point.line >= _viewFromLine ? _point.line - _viewFromLine : 0;
+
   std::size_t row = 0;
   for (std::size_t lineIdx = _viewFromLine;
        lineIdx <= _point.line && lineIdx < _lines.size(); ++lineIdx) {
     auto &line = _lines[lineIdx];
     std::size_t end = (lineIdx == _point.line) ? _point.offset : line.size();
-    // For the viewport line, start from _viewFromOffset (sub-line scroll).
+    // For the viewport line, start from the sub-line wrap offset.
+    auto *wo = std::get_if<WrapOffset>(&_viewOffset);
     std::size_t start =
-        (lineIdx == _viewFromLine) ? _viewFromOffset : std::size_t{0};
+        (lineIdx == _viewFromLine && wo) ? wo->bytes : std::size_t{0};
 
     std::size_t col = 0;
     for (std::size_t i = start; i < end && i < line.size();) {
@@ -649,49 +659,75 @@ std::size_t Buffer::screenRow(ColIdx cols) const {
   return row;
 }
 
-void Buffer::ensureVisible(RowIdx rows, ColIdx cols) {
+void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
+  // Ensure the variant alternative matches the current wrap mode.
+  if (wrap && !std::holds_alternative<WrapOffset>(_viewOffset))
+    _viewOffset = WrapOffset{0};
+  else if (!wrap && !std::holds_alternative<HScrollOffset>(_viewOffset))
+    _viewOffset = HScrollOffset{0};
+
+  if (!wrap) {
+    auto &hs = std::get<HScrollOffset>(_viewOffset).cols;
+
+    // Vertical: simple line-based scrolling.
+    if (_point.line < _viewFromLine)
+      _viewFromLine = _point.line;
+    if (_point.line >= _viewFromLine + rows.value)
+      _viewFromLine = _point.line - rows.value + 1;
+
+    // Horizontal: keep cursor within visible columns.
+    std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
+    if (vcol < hs)
+      hs = vcol;
+    if (vcol >= hs + cols.value)
+      hs = vcol - cols.value + 1;
+    return;
+  }
+
+  auto &vfo = std::get<WrapOffset>(_viewOffset).bytes;
+
   // Handle point above the viewport (including sub-line offset).
   if (_point < viewFrom()) {
     _viewFromLine = _point.line;
-    _viewFromOffset = 0;
+    vfo = 0;
   }
 
   // Handle point far below the viewport (line-level jump).
   if (_point.line >= _viewFromLine + rows.value) {
     std::size_t half = rows.value / 2;
     _viewFromLine = _point.line >= half ? _point.line - half : 0;
-    _viewFromOffset = 0;
+    vfo = 0;
   }
 
   // Cheap estimate: if the point is on the viewport line and the byte
   // distance clearly exceeds the screen, skip the O(n) screenRow() check
   // and go straight to sub-line adjustment.
   bool farOffScreen = _viewFromLine == _point.line &&
-                      _point.offset > _viewFromOffset + rows.value * cols.value;
+                      _point.offset > vfo + rows.value * cols.value;
 
-  if (!farOffScreen && screenRow(cols) < rows.value)
+  if (!farOffScreen && screenRow(cols, wrap) < rows.value)
     return;
 
   // Advance past lines that are entirely before the point.
-  while (_viewFromLine < _point.line && screenRow(cols) >= rows.value) {
+  while (_viewFromLine < _point.line && screenRow(cols, wrap) >= rows.value) {
     ++_viewFromLine;
-    _viewFromOffset = 0;
+    vfo = 0;
   }
 
   if (_viewFromLine != _point.line)
     return; // point is on a later line; fine-tune not needed
 
-  // Sub-line scrolling: single scan from _viewFromOffset to _point.offset,
+  // Sub-line scrolling: single scan from vfo to _point.offset,
   // keeping a ring buffer of the last `rows` visual-row start offsets.
   // At the end, the oldest entry in the ring is where the viewport should
   // start so the cursor ends up on the last visible screen row.
   auto &line = _lines[_viewFromLine];
   std::size_t ringSize = rows.value;
-  std::vector<std::size_t> ring(ringSize, _viewFromOffset);
+  std::vector<std::size_t> ring(ringSize, vfo);
   std::size_t ringPos = 0;
   std::size_t col = 0;
 
-  for (std::size_t i = _viewFromOffset; i < _point.offset && i < line.size();) {
+  for (std::size_t i = vfo; i < _point.offset && i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
     if (col + info.width > cols.value) {
       ringPos = (ringPos + 1) % ringSize;
@@ -708,7 +744,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols) {
   }
 
   std::size_t readIdx = (ringPos + 1) % ringSize;
-  _viewFromOffset = ring[readIdx];
+  vfo = ring[readIdx];
 }
 
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
@@ -726,8 +762,8 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
 }
 
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
-                                          ColIdx cols,
-                                          bool showWhitespace) const {
+                                          ColIdx cols, bool showWhitespace,
+                                          bool wrap) const {
   static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
   static constexpr auto kReset = "\x1b[0m";
   static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
@@ -742,22 +778,148 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
     out += ";1H";
   };
 
-  std::size_t row = 0, col = 0;
+  auto emitChar = [&](char const *data, CharInfo info) {
+    auto u = static_cast<unsigned char>(*data);
+    if (u < 0x80) {
+      if (*data == '\t') {
+        if (showWhitespace) {
+          out += kTabWsStyle;
+          out += kWsFg;
+          out += "\xe2\x96\xa0\xe2\x96\xba";
+          out += kReset;
+        } else {
+          out += kTabStyle;
+          out += "  ";
+          out += kReset;
+        }
+      } else if (*data == ' ' && showWhitespace) {
+        out += kSpaceStyle;
+        out += kWsFg;
+        out += "\xc2\xb7";
+        out += kReset;
+      } else if (u == 0) {
+        out += kCtrlColor;
+        out += "\\0";
+        out += kReset;
+      } else if (u == 0x7f) {
+        out += kCtrlColor;
+        out += "^?";
+        out += kReset;
+      } else if (u < 0x20) {
+        out += kCtrlColor;
+        out += '^';
+        out += static_cast<char>('@' + u);
+        out += kReset;
+      } else {
+        out += *data;
+      }
+    } else if (info.len == 1) {
+      out += kCtrlColor;
+      auto nibble = [](unsigned char n) -> char {
+        return n < 10 ? ('0' + n) : ('a' + n - 10);
+      };
+      out += nibble(u >> 4);
+      out += nibble(u & 0xf);
+      out += kReset;
+    } else {
+      out.append(data, info.len);
+    }
+  };
+
   std::size_t cur_row = 0, cur_col = 0;
   bool pointFound = false;
 
+  // Extract viewport offset from variant.
+  std::size_t hScroll = std::holds_alternative<HScrollOffset>(_viewOffset)
+                            ? std::get<HScrollOffset>(_viewOffset).cols
+                            : std::size_t{0};
+  std::size_t viewFromOffset = std::holds_alternative<WrapOffset>(_viewOffset)
+                                   ? std::get<WrapOffset>(_viewOffset).bytes
+                                   : std::size_t{0};
+
+  if (!wrap) {
+    // No-wrap: each physical line is one screen row, horizontally scrolled.
+    std::size_t row = 0;
+    emitRowStart(0);
+
+    for (std::size_t lineIdx = _viewFromLine;
+         lineIdx < _lines.size() && row < rows.value; ++lineIdx) {
+      auto &line = _lines[lineIdx];
+      std::size_t vcol = 0;
+
+      for (std::size_t i = 0; i < line.size();) {
+        auto info = charInfoAt(line.data() + i, line.size() - i);
+
+        if (lineIdx == _point.line && i == _point.offset && !pointFound) {
+          cur_row = row;
+          cur_col = vcol >= hScroll ? vcol - hScroll : 0;
+          pointFound = true;
+        }
+
+        if (vcol + info.width <= hScroll) {
+          // Before visible area.
+          vcol += info.width;
+          i += info.len;
+          continue;
+        }
+        if (vcol >= hScroll + cols.value) {
+          // Past visible area — done with this line.
+          break;
+        }
+
+        emitChar(line.data() + i, info);
+        vcol += info.width;
+        i += info.len;
+      }
+
+      if (lineIdx == _point.line && _point.offset >= line.size() &&
+          !pointFound) {
+        cur_row = row;
+        cur_col = vcol >= hScroll ? vcol - hScroll : 0;
+        pointFound = true;
+      }
+
+      // Newline indicator.
+      if (showWhitespace && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
+          vcol < hScroll + cols.value) {
+        out += kNlStyle;
+        out += kWsFg;
+        out += "\xe2\x86\xb5";
+        out += kReset;
+      }
+
+      out += "\x1b[K";
+      ++row;
+      if (row < rows.value)
+        emitRowStart(row);
+    }
+
+    if (!pointFound) {
+      cur_row = row;
+      cur_col = 0;
+    }
+
+    for (std::size_t r = row; r < rows.value; ++r) {
+      if (r > row)
+        emitRowStart(r);
+      out += "\x1b[K";
+    }
+
+    return {RowIdx{cur_row}, ColIdx{cur_col}};
+  }
+
+  // Wrap mode.
+  std::size_t row = 0, col = 0;
   emitRowStart(0);
 
   for (std::size_t lineIdx = _viewFromLine;
        lineIdx < _lines.size() && row < rows.value; ++lineIdx) {
     auto &line = _lines[lineIdx];
-    // For the viewport line, start from _viewFromOffset (sub-line scroll).
+    // For the viewport line, start from viewFromOffset (sub-line scroll).
     std::size_t startByte =
-        (lineIdx == _viewFromLine) ? _viewFromOffset : std::size_t{0};
+        (lineIdx == _viewFromLine) ? viewFromOffset : std::size_t{0};
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
-      char ch = line[i];
-      auto u = static_cast<unsigned char>(ch);
       auto info = charInfoAt(line.data() + i, line.size() - i);
 
       // Wrap if the representation doesn't fit on the current line.
@@ -776,50 +938,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string &out, RowIdx rows,
         pointFound = true;
       }
 
-      if (u < 0x80) {
-        if (ch == '\t') {
-          if (showWhitespace) {
-            out += kTabWsStyle;
-            out += kWsFg;
-            out += "\xe2\x96\xa0\xe2\x96\xba";
-            out += kReset;
-          } else {
-            out += kTabStyle;
-            out += "  ";
-            out += kReset;
-          }
-        } else if (ch == ' ' && showWhitespace) {
-          out += kSpaceStyle;
-          out += kWsFg;
-          out += "\xc2\xb7";
-          out += kReset;
-        } else if (u == 0) {
-          out += kCtrlColor;
-          out += "\\0";
-          out += kReset;
-        } else if (u == 0x7f) {
-          out += kCtrlColor;
-          out += "^?";
-          out += kReset;
-        } else if (u < 0x20) {
-          out += kCtrlColor;
-          out += '^';
-          out += static_cast<char>('@' + u);
-          out += kReset;
-        } else {
-          out += ch;
-        }
-      } else if (info.len == 1) {
-        out += kCtrlColor;
-        auto nibble = [](unsigned char n) -> char {
-          return n < 10 ? ('0' + n) : ('a' + n - 10);
-        };
-        out += nibble(u >> 4);
-        out += nibble(u & 0xf);
-        out += kReset;
-      } else {
-        out.append(line.data() + i, info.len);
-      }
+      emitChar(line.data() + i, info);
       col += info.width;
 
       if (col >= cols.value) {

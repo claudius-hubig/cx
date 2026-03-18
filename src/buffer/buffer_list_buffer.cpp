@@ -124,7 +124,7 @@ void BufferListBuffer::refresh(std::vector<std::string> names,
   }
   _point = {startLine, 0};
   _viewFromLine = 0;
-  _viewFromOffset = 0;
+  _viewOffset = WrapOffset{0};
   _desiredCol.reset();
 }
 
@@ -136,7 +136,7 @@ std::string BufferListBuffer::selectedName() const {
 
 std::tuple<RowIdx, ColIdx>
 BufferListBuffer::render(std::string &out, RowIdx rows, ColIdx cols,
-                         bool /*showWhitespace*/) const {
+                         bool /*showWhitespace*/, bool /*wrap*/) const {
 
   static constexpr auto kHighlight = "\x1b[7m"; // reverse video
   static constexpr auto kReset = "\x1b[0m";

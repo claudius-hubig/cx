@@ -14,6 +14,7 @@ static constexpr std::array kCommandLines = {
     std::string_view{"  Ctrl-g      Go to line"},
     std::string_view{"  Ctrl-h      Show this help"},
     std::string_view{"  Ctrl-k      Kill buffer"},
+    std::string_view{"  Ctrl-l      Toggle line wrap"},
     std::string_view{"  Ctrl-o      Switch/open buffer"},
     std::string_view{"  Ctrl-s      Save file"},
     std::string_view{"  Ctrl-w      Toggle whitespace"},
@@ -185,7 +186,7 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
   addLine(kFooterText); // 25 footer
 }
 
-std::size_t HelpBuffer::screenRow(ColIdx cols) const {
+std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
   std::size_t pointVis = dataLineToVisualRow(_point.line, cols.value);
   std::size_t scrollVis = dataLineToVisualRow(_viewFromLine, cols.value);
   return pointVis >= scrollVis ? pointVis - scrollVis : 0;
@@ -193,7 +194,8 @@ std::size_t HelpBuffer::screenRow(ColIdx cols) const {
 
 std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string &out, RowIdx rows,
                                               ColIdx cols,
-                                              bool /*showWhitespace*/) const {
+                                              bool /*showWhitespace*/,
+                                              bool /*wrap*/) const {
 
   std::size_t c = cols.value;
 

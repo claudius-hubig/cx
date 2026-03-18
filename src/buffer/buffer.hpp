@@ -124,13 +124,13 @@ public:
   /// half-screen of the file, moves to the start instead. Also scrolls
   /// the viewport by the same amount so the cursor stays at roughly the
   /// same screen position.
-  void pageUp(RowIdx screenRows, ColIdx cols);
+  void pageUp(RowIdx screenRows, ColIdx cols, bool wrap);
 
   /// Move point down by half a screen. If already within the last
   /// half-screen of the file, moves to the end instead. Also scrolls
   /// the viewport by the same amount so the cursor stays at roughly the
   /// same screen position.
-  void pageDown(RowIdx screenRows, ColIdx cols);
+  void pageDown(RowIdx screenRows, ColIdx cols, bool wrap);
 
   /// Move point to the start of the given 1-based line number and center
   /// _viewFromLine so the line appears in the middle of the screen.
@@ -151,23 +151,28 @@ public:
   /// Compute the 0-indexed screen row of the point relative to _viewFromLine,
   /// given a screen column width of cols. cols.value must be > 0.
   /// Accounts for line wrapping.
-  virtual std::size_t screenRow(ColIdx cols) const;
+  virtual std::size_t screenRow(ColIdx cols, bool wrap = true) const;
 
   /// Scroll the viewport down just enough so the point is visible on
   /// screen (within rows). Jumps _viewFromLine directly when the point
   /// is far off-screen, avoiding the O(N²) cost of one-line-at-a-time
   /// scrolling followed by screenRow() recomputation.
-  void ensureVisible(RowIdx rows, ColIdx cols);
+  void ensureVisible(RowIdx rows, ColIdx cols, bool wrap);
 
   /// Append a rows x cols screen image (with ANSI escapes) to `out`,
   /// starting from _viewFromLine. rows and cols must be > 0. Returns the
   /// screen {row, col} of the point for cursor positioning.
-  virtual std::tuple<RowIdx, ColIdx> render(std::string &out, RowIdx rows,
-                                            ColIdx cols,
-                                            bool showWhitespace = false) const;
+  virtual std::tuple<RowIdx, ColIdx>
+  render(std::string &out, RowIdx rows, ColIdx cols,
+         bool showWhitespace = false, bool wrap = true) const;
 
   BufferPoint point() const { return _point; }
-  BufferPoint viewFrom() const { return {_viewFromLine, _viewFromOffset}; }
+  BufferPoint viewFrom() const {
+    auto off = std::holds_alternative<WrapOffset>(_viewOffset)
+                   ? std::get<WrapOffset>(_viewOffset).bytes
+                   : std::size_t{0};
+    return {_viewFromLine, off};
+  }
   std::string const &name() const { return _name; }
 
   /// Return the 1-indexed {line, column} of the point. Column counts
@@ -201,10 +206,7 @@ protected:
   std::vector<std::vector<char>> _lines{{}};
   BufferPoint _point;
   std::size_t _viewFromLine = 0;
-  // Byte offset within _lines[_viewFromLine] for sub-line viewport
-  // scrolling. Always at a visual-row boundary. Allows the viewport to
-  // start mid-way through a very long wrapped line.
-  std::size_t _viewFromOffset = 0;
+  ViewOffset _viewOffset;
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
 };

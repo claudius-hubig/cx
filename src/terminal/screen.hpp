@@ -23,6 +23,7 @@ enum class Action {
   BufferList,
   SwitchBuffer,
   ToggleWhitespace,
+  ToggleWrap,
 };
 
 // Manages terminal I/O and the main input loop.
@@ -75,6 +76,7 @@ private:
   std::string _statusMsg;
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
   bool _showWhitespace = false;
+  bool _wrap = false;
   bool _killPending = false; // kill buffer after SaveAs completes
 
   // Auto-completion state for SwitchBuffer prompt.

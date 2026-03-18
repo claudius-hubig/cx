@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <variant>
 
 struct RowIdx {
   explicit RowIdx(std::size_t value) : value(value) {}
@@ -32,3 +33,20 @@ struct BufferPoint {
   auto operator>(BufferPoint const &o) const { return o < *this; }
   auto operator>=(BufferPoint const &o) const { return o <= *this; }
 };
+
+// Sub-line viewport offset for wrap mode: byte offset within the viewport's
+// first line. Used to start rendering mid-way through a very long wrapped line.
+struct WrapOffset {
+  std::size_t bytes = 0;
+};
+
+// Horizontal scroll for no-wrap mode: visual-column offset applied to all
+// lines. Must be visual columns (not bytes) because the same visual position
+// maps to different byte offsets in different lines.
+struct HScrollOffset {
+  std::size_t cols = 0;
+};
+
+// The viewport's horizontal offset. Only one interpretation is active at a
+// time, determined by the wrap parameter passed to render/ensureVisible.
+using ViewOffset = std::variant<WrapOffset, HScrollOffset>;

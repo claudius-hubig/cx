@@ -104,9 +104,9 @@ void Screen::draw() {
   RowIdx cur_row{0};
   ColIdx cur_col{0};
   if (_buf) {
-    _buf->ensureVisible(br, cols);
+    _buf->ensureVisible(br, cols, _wrap);
     std::tie(cur_row, cur_col) =
-        _buf->render(_renderBuf, br, cols, _showWhitespace);
+        _buf->render(_renderBuf, br, cols, _showWhitespace, _wrap);
   }
 
   // Expire timed status message.
@@ -456,7 +456,7 @@ void Screen::loop() {
       } else if (_buf) {
         _buf->insert('\n');
         auto &[rows, cols] = _size;
-        _buf->ensureVisible(bufRows(), cols);
+        _buf->ensureVisible(bufRows(), cols, _wrap);
       }
     } else if (c == 0x7f) {
       // Backspace: delete character before point.
@@ -474,7 +474,10 @@ void Screen::loop() {
             case 'A':
               if (_buf) {
                 auto &[rows, cols] = _size;
-                _buf->moveUp(cols);
+                if (_wrap)
+                  _buf->moveUp(cols);
+                else
+                  _buf->movePhysicalUp();
                 if (_buf->point() < _buf->viewFrom())
                   _buf->scrollUp();
               }
@@ -483,13 +486,16 @@ void Screen::loop() {
               if (_buf) {
                 auto &[rows, cols] = _size;
                 auto prev = _buf->point();
-                _buf->moveDown(cols);
+                if (_wrap)
+                  _buf->moveDown(cols);
+                else
+                  _buf->movePhysicalDown();
                 if (_buf->point() == prev) {
                   // Already at end of file — scroll viewport down instead,
                   // up to half a screen from EOF.
                   _buf->scrollViewNearEnd(bufRows());
                 } else {
-                  _buf->ensureVisible(bufRows(), cols);
+                  _buf->ensureVisible(bufRows(), cols, _wrap);
                 }
               }
               break;
@@ -521,7 +527,7 @@ void Screen::loop() {
                     _buf->moveWordRight();
                     {
                       auto &[rows, cols] = _size;
-                      _buf->ensureVisible(bufRows(), cols);
+                      _buf->ensureVisible(bufRows(), cols, _wrap);
                     }
                     break;
                   case 'D':
@@ -538,7 +544,7 @@ void Screen::loop() {
                     _buf->movePhysicalDown();
                     {
                       auto &[rows, cols] = _size;
-                      _buf->ensureVisible(bufRows(), cols);
+                      _buf->ensureVisible(bufRows(), cols, _wrap);
                     }
                     break;
                   }
@@ -558,7 +564,7 @@ void Screen::loop() {
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
                 if (_buf) {
                   auto &[rows, cols] = _size;
-                  _buf->pageUp(bufRows(), cols);
+                  _buf->pageUp(bufRows(), cols, _wrap);
                 }
               break;
             }
@@ -567,7 +573,7 @@ void Screen::loop() {
               if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~')
                 if (_buf) {
                   auto &[rows, cols] = _size;
-                  _buf->pageDown(bufRows(), cols);
+                  _buf->pageDown(bufRows(), cols, _wrap);
                 }
               break;
             }
@@ -644,6 +650,9 @@ void Screen::loop() {
           }
         } else if (action == Action::ToggleWhitespace) {
           _showWhitespace = !_showWhitespace;
+        } else if (action == Action::ToggleWrap) {
+          _wrap = !_wrap;
+          setStatus(_wrap ? "Wrap on" : "Wrap off");
         } else if (action == Action::Save && _buf && !_buf->readonly()) {
           if (_buf->hasPath()) {
             if (!std::filesystem::exists(_buf->name())) {
@@ -723,6 +732,8 @@ Screen::handleSpecialInput(char c) {
     return Action::Help; // Ctrl-H
   case 0x0b:
     return Action::KillBuffer; // Ctrl-K
+  case 0x0c:
+    return Action::ToggleWrap; // Ctrl-L
   case 0x0f:
     return Action::SwitchBuffer; // Ctrl-O
   case 0x13:
