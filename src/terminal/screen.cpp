@@ -2,7 +2,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
-#include "buffer/char_width.hpp"
+#include "utf8.hpp"
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
