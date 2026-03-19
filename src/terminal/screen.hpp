@@ -60,6 +60,14 @@ private:
   // it and show a save prompt. Returns true when no modified buffers
   // remain (caller should exit the loop).
   bool tryExit();
+
+  // Loop sub-handlers. Each returns true if it already called draw()
+  // (so the caller should skip its trailing draw()).
+  bool handleConfirmSave(char c);
+  bool handleConfirmKill(char c);
+  bool handleTextPrompt(char c);
+  bool handleEscapeInput(std::optional<char>& pendingChar);
+  bool handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
   // Number of rows available for buffer content (total minus status line).
   RowIdx rowsForBuffer() const;
