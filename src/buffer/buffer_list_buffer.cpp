@@ -117,8 +117,7 @@ void BufferListBuffer::refresh(std::vector<std::string> names, std::string const
     }
   }
   _point = {startLine, 0};
-  _viewFromLine = 0;
-  _viewOffset = WrapOffset{0};
+  _viewFrom = ViewFrom{};
   _desiredCol.reset();
 }
 
@@ -136,7 +135,7 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx row
   static constexpr auto kReset = "\x1b[0m";
 
   std::size_t curLine = _point.line;
-  std::size_t scrollLine = _viewFromLine;
+  std::size_t scrollLine = _viewFrom.line.value;
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;

@@ -159,8 +159,10 @@ public:
   /// Advance _viewFromLine to the next line. Safe at end (stays put).
   void scrollDown();
 
-  /// Move _viewFromLine back one line. Safe at start (no-op).
-  void scrollUp();
+  /// Move _viewFrom back one line. In wrap mode, first clears the sub-line
+  /// col offset if non-zero (go to start of current physical line) before
+  /// decrementing the line. Safe at start (no-op).
+  void scrollUp(bool wrap = false);
 
   /// Scroll _viewFromLine down by one line when the cursor is at the end of
   /// the file, but not past the position half a screen before EOF.
@@ -185,12 +187,13 @@ public:
                                             bool showWhitespace = false, bool wrap = true) const;
 
   BufferPoint point() const { return _point; }
-  BufferPoint viewFrom() const {
-    auto off = std::holds_alternative<WrapOffset>(_viewOffset)
-                   ? std::get<WrapOffset>(_viewOffset).bytes
-                   : std::size_t{0};
-    return {_viewFromLine, off};
-  }
+  // Returns the viewport origin as a BufferPoint. In wrap mode the offset
+  // field is the byte offset into the first visible line (sub-line scroll);
+  // in no-wrap mode it is 0 (horizontal scroll is kept in ViewFrom::col but
+  // is not part of the cursor-position comparison).
+  BufferPoint viewFrom() const;
+  // Direct access to the viewport struct for callers that need both fields.
+  ViewFrom const& viewFromRaw() const { return _viewFrom; }
   std::string const& name() const { return _name; }
 
   /// Return the 1-indexed {line, column} of the point. Column counts
@@ -223,8 +226,8 @@ protected:
   std::string _name;
   std::vector<std::vector<char>> _lines{{}};
   BufferPoint _point;
-  std::size_t _viewFromLine = 0;
-  ViewOffset _viewOffset;
+  ViewFrom _viewFrom;
+  bool _wrapMode = false; // tracks last wrap mode seen by ensureVisible
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
 };

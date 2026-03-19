@@ -583,7 +583,7 @@ void Buffer::pageUp(RowIdx screenRows, ColIdx cols, bool wrap) {
       moveUp(cols);
     else
       movePhysicalUp();
-    scrollUp();
+    scrollUp(wrap);
   }
 }
 
@@ -600,9 +600,9 @@ void Buffer::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   }
   // Clamp viewport so at least half a screen of content is visible.
   std::size_t limit = viewFromLinesBeforeEnd(half);
-  if (_viewFromLine > limit) {
-    _viewFromLine = limit;
-    std::visit([](auto& v) { v = {}; }, _viewOffset);
+  if (_viewFrom.line.value > limit) {
+    _viewFrom.line = RowIdx{limit};
+    _viewFrom.col = ColIdx{0};
   }
 }
 
@@ -617,14 +617,14 @@ void Buffer::scrollViewNearEnd(RowIdx screenRows) {
   if (half == 0)
     half = 1;
   std::size_t limit = viewFromLinesBeforeEnd(half);
-  if (_viewFromLine < limit)
+  if (_viewFrom.line.value < limit)
     scrollDown();
 }
 
 void Buffer::scrollDown() {
-  if (_viewFromLine + 1 < _lines.size()) {
-    ++_viewFromLine;
-    std::visit([](auto& v) { v = {}; }, _viewOffset);
+  if (_viewFrom.line.value + 1 < _lines.size()) {
+    _viewFrom.line = RowIdx{_viewFrom.line.value + 1};
+    _viewFrom.col = ColIdx{0};
   }
 }
 
@@ -638,21 +638,18 @@ void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
 
   _point = {idx, 0};
 
-  // Center _viewFromLine so the target line is in the middle of the screen.
+  // Center _viewFrom so the target line is in the middle of the screen.
   std::size_t half = screenRows.value / 2;
-  if (idx >= half)
-    _viewFromLine = idx - half;
-  else
-    _viewFromLine = 0;
-  std::visit([](auto& v) { v = {}; }, _viewOffset);
+  _viewFrom.line = RowIdx{idx >= half ? idx - half : 0};
+  _viewFrom.col = ColIdx{0};
 }
 
-void Buffer::scrollUp() {
-  if (auto* wo = std::get_if<WrapOffset>(&_viewOffset); wo && wo->bytes > 0) {
-    wo->bytes = 0;
-  } else if (_viewFromLine > 0) {
-    --_viewFromLine;
-    std::visit([](auto& v) { v = {}; }, _viewOffset);
+void Buffer::scrollUp(bool wrap) {
+  if (wrap && _viewFrom.col.value > 0) {
+    _viewFrom.col = ColIdx{0};
+  } else if (_viewFrom.line.value > 0) {
+    _viewFrom.line = RowIdx{_viewFrom.line.value - 1};
+    _viewFrom.col = ColIdx{0};
   }
 }
 
@@ -661,16 +658,16 @@ std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
 
   if (!wrap)
-    return _point.line >= _viewFromLine ? _point.line - _viewFromLine : 0;
+    return _point.line >= _viewFrom.line.value ? _point.line - _viewFrom.line.value : 0;
 
   std::size_t row = 0;
-  for (std::size_t lineIdx = _viewFromLine; lineIdx <= _point.line && lineIdx < _lines.size();
-       ++lineIdx) {
+  for (std::size_t lineIdx = _viewFrom.line.value;
+       lineIdx <= _point.line && lineIdx < _lines.size(); ++lineIdx) {
     auto& line = _lines[lineIdx];
     std::size_t end = (lineIdx == _point.line) ? _point.offset : line.size();
     // For the viewport line, start from the sub-line wrap offset.
-    auto* wo = std::get_if<WrapOffset>(&_viewOffset);
-    std::size_t start = (lineIdx == _viewFromLine && wo) ? wo->bytes : std::size_t{0};
+    std::size_t start =
+        (lineIdx == _viewFrom.line.value && wrap) ? _viewFrom.col.value : std::size_t{0};
 
     std::size_t col = 0;
     for (std::size_t i = start; i < end && i < line.size();) {
@@ -695,23 +692,23 @@ std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
 }
 
 void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
-  // Ensure the variant alternative matches the current wrap mode.
-  if (wrap && !std::holds_alternative<WrapOffset>(_viewOffset))
-    _viewOffset = WrapOffset{0};
-  else if (!wrap && !std::holds_alternative<HScrollOffset>(_viewOffset))
-    _viewOffset = HScrollOffset{0};
+  // Reset col offset when switching wrap mode, to avoid stale scroll state.
+  if (_wrapMode != wrap) {
+    _wrapMode = wrap;
+    _viewFrom.col = ColIdx{0};
+  }
 
   // Content width excludes the gutter column.
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
 
   if (!wrap) {
-    auto& hs = std::get<HScrollOffset>(_viewOffset).cols;
+    auto& hs = _viewFrom.col.value;
 
     // Vertical: simple line-based scrolling.
-    if (_point.line < _viewFromLine)
-      _viewFromLine = _point.line;
-    if (_point.line >= _viewFromLine + rows.value)
-      _viewFromLine = _point.line - rows.value + 1;
+    if (_point.line < _viewFrom.line.value)
+      _viewFrom.line = RowIdx{_point.line};
+    if (_point.line >= _viewFrom.line.value + rows.value)
+      _viewFrom.line = RowIdx{_point.line - rows.value + 1};
 
     // Horizontal: keep cursor within visible columns.
     std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
@@ -722,43 +719,43 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     return;
   }
 
-  auto& vfo = std::get<WrapOffset>(_viewOffset).bytes;
+  auto& vfo = _viewFrom.col.value;
 
   // Handle point above the viewport (including sub-line offset).
   if (_point < viewFrom()) {
-    _viewFromLine = _point.line;
+    _viewFrom.line = RowIdx{_point.line};
     vfo = 0;
   }
 
   // Handle point far below the viewport (line-level jump).
-  if (_point.line >= _viewFromLine + rows.value) {
+  if (_point.line >= _viewFrom.line.value + rows.value) {
     std::size_t half = rows.value / 2;
-    _viewFromLine = _point.line >= half ? _point.line - half : 0;
+    _viewFrom.line = RowIdx{_point.line >= half ? _point.line - half : 0};
     vfo = 0;
   }
 
   // Cheap estimate: if the point is on the viewport line and the byte
   // distance clearly exceeds the screen, skip the O(n) screenRow() check
   // and go straight to sub-line adjustment.
-  bool farOffScreen = _viewFromLine == _point.line && _point.offset > vfo + rows.value * cw;
+  bool farOffScreen = _viewFrom.line.value == _point.line && _point.offset > vfo + rows.value * cw;
 
   if (!farOffScreen && screenRow(cols, wrap) < rows.value)
     return;
 
   // Advance past lines that are entirely before the point.
-  while (_viewFromLine < _point.line && screenRow(cols, wrap) >= rows.value) {
-    ++_viewFromLine;
+  while (_viewFrom.line.value < _point.line && screenRow(cols, wrap) >= rows.value) {
+    _viewFrom.line = RowIdx{_viewFrom.line.value + 1};
     vfo = 0;
   }
 
-  if (_viewFromLine != _point.line)
+  if (_viewFrom.line.value != _point.line)
     return; // point is on a later line; fine-tune not needed
 
   // Sub-line scrolling: single scan from vfo to _point.offset,
   // keeping a ring buffer of the last `rows` visual-row start offsets.
   // At the end, the oldest entry in the ring is where the viewport should
   // start so the cursor ends up on the last visible screen row.
-  auto& line = _lines[_viewFromLine];
+  auto& line = _lines[_viewFrom.line.value];
   std::size_t ringSize = rows.value;
   std::vector<std::size_t> ring(ringSize, vfo);
   std::size_t ringPos = 0;
@@ -782,6 +779,13 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
 
   std::size_t readIdx = (ringPos + 1) % ringSize;
   vfo = ring[readIdx];
+}
+
+BufferPoint Buffer::viewFrom() const {
+  // In wrap mode the col field is a byte offset into the first visible line;
+  // in no-wrap mode horizontal scroll does not affect line/byte comparisons.
+  std::size_t off = _wrapMode ? _viewFrom.col.value : 0;
+  return {_viewFrom.line.value, off};
 }
 
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
@@ -883,20 +887,16 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   std::size_t cur_row = 0, cur_col = 0;
   bool pointFound = false;
 
-  // Extract viewport offset from variant.
-  std::size_t hScroll = std::holds_alternative<HScrollOffset>(_viewOffset)
-                            ? std::get<HScrollOffset>(_viewOffset).cols
-                            : std::size_t{0};
-  std::size_t viewFromOffset = std::holds_alternative<WrapOffset>(_viewOffset)
-                                   ? std::get<WrapOffset>(_viewOffset).bytes
-                                   : std::size_t{0};
+  // Extract viewport offsets from _viewFrom.
+  std::size_t hScroll = wrap ? std::size_t{0} : _viewFrom.col.value;
+  std::size_t viewFromOffset = wrap ? _viewFrom.col.value : std::size_t{0};
 
   if (!wrap) {
     // No-wrap: each physical line is one screen row, horizontally scrolled.
     std::size_t row = 0;
     emitRowStart(0);
 
-    for (std::size_t lineIdx = _viewFromLine; lineIdx < _lines.size() && row < rows.value;
+    for (std::size_t lineIdx = _viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
          ++lineIdx) {
       auto& line = _lines[lineIdx];
       std::size_t vcol = 0;
@@ -973,11 +973,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   std::size_t row = 0, col = 0;
   emitRowStart(0);
 
-  for (std::size_t lineIdx = _viewFromLine; lineIdx < _lines.size() && row < rows.value;
+  for (std::size_t lineIdx = _viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
        ++lineIdx) {
     auto& line = _lines[lineIdx];
     // For the viewport line, start from viewFromOffset (sub-line scroll).
-    std::size_t startByte = (lineIdx == _viewFromLine) ? viewFromOffset : std::size_t{0};
+    std::size_t startByte = (lineIdx == _viewFrom.line.value) ? viewFromOffset : std::size_t{0};
 
     // Track whether the previous row was full (deferred wrap indicator).
     bool pendingWrap = false;

@@ -186,7 +186,7 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
 
 std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
   std::size_t pointVis = dataLineToVisualRow(_point.line, cols.value);
-  std::size_t scrollVis = dataLineToVisualRow(_viewFromLine, cols.value);
+  std::size_t scrollVis = dataLineToVisualRow(_viewFrom.line.value, cols.value);
   return pointVis >= scrollVis ? pointVis - scrollVis : 0;
 }
 
@@ -203,8 +203,8 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t dataLine = _point.line;
   std::size_t dataCol = _point.offset;
 
-  // Scroll offset: visual row corresponding to _viewFromLine.
-  std::size_t scrollVis = dataLineToVisualRow(_viewFromLine, c);
+  // Scroll offset: visual row corresponding to _viewFrom.line.value.
+  std::size_t scrollVis = dataLineToVisualRow(_viewFrom.line.value, c);
 
   // Cursor visual row, relative to scroll.
   std::size_t curVis = dataLineToVisualRow(dataLine, c);
