@@ -93,6 +93,7 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
 
 void Screen::setBuffer(Buffer& buf) {
   _buf = &buf;
+  _pasteState.reset();
   if (_bufMgr && !buf.readonly())
     _bufMgr->touch(buf.name());
   draw();
@@ -568,8 +569,13 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
           if (read(STDIN_FILENO, &next, 1) == 1) {
             if (next == '~') {
               // Plain Delete: ESC[3~
-              if (_buf)
+              if (_buf && _buf->mark()) {
+                _buf->deleteRegion(_buf->mark().value(), _buf->point());
+                _pasteState.reset();
+              } else if (_buf) {
                 _buf->deleteAtPoint();
+                _pasteState.reset();
+              }
             } else if (next == ';') {
               // Modified Delete: ESC[3;mod~
               char mod, tilde;
@@ -649,8 +655,12 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         pendingChar = next;
       }
     }
-    _statusMsg.clear();
-    _statusExpiry.reset();
+    // Clear the "Esc-..." prompt, but only if the chord handler didn't
+    // set its own status message.
+    if (_statusMsg == "Esc-...") {
+      _statusMsg.clear();
+      _statusExpiry.reset();
+    }
   }
   return false;
 }
@@ -670,11 +680,17 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     } else if (_buf) {
       _buf->insert('\n');
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _pasteState.reset();
     }
   } else if (c == 0x7f) {
-    // Backspace: delete character before point.
-    if (_buf)
+    // Backspace: if mark active, delete region (no recycle bin push).
+    if (_buf && _buf->mark()) {
+      _buf->deleteRegion(_buf->mark().value(), _buf->point());
+      _pasteState.reset();
+    } else if (_buf) {
       _buf->deleteBeforePoint();
+      _pasteState.reset();
+    }
   } else if (c == 0x1b) {
     return handleEscapeInput(pendingChar);
   } else if (c == 0x08) {
@@ -697,14 +713,6 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
           _prevBuf = _buf;
           setBuffer(_bufMgr->helpBuffer());
         }
-      } else if (action == Action::BufferList && _bufMgr) {
-        if (_buf && _buf->readonly() && _prevBuf) {
-          setBuffer(*_prevBuf);
-          _prevBuf = nullptr;
-        } else {
-          _prevBuf = _buf;
-          setBuffer(_bufMgr->bufferListBuffer());
-        }
       } else if (action == Action::SwitchBuffer) {
         _prevBuf = nullptr;
         _prompt = Prompt::SwitchBuffer;
@@ -723,11 +731,29 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
           _prompt = Prompt::ConfirmKill;
           _prompt_input = "Killing modified buffer. Save to file first? y/n: ";
         }
-      } else if (action == Action::ToggleWhitespace) {
-        _showWhitespace = !_showWhitespace;
-      } else if (action == Action::ToggleWrap) {
-        _wrap = !_wrap;
-        setStatus(_wrap ? "Wrap on" : "Wrap off");
+      } else if (action == Action::ToggleMark) {
+        if (_buf) {
+          _buf->toggleMark();
+          setStatus(_buf->mark() ? "Mark set" : "Mark cleared");
+          _pasteState.reset();
+        }
+      } else if (action == Action::Cut) {
+        if (_buf && _buf->mark()) {
+          auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
+          _recycleBin.push(std::move(text));
+          _buf->deleteRegion(_buf->mark().value(), _buf->point());
+          setStatus("Region cut");
+          _pasteState.reset();
+        } else {
+          setStatus("No mark set");
+        }
+      } else if (action == Action::Paste) {
+        if (_buf && !_buf->readonly() && !_recycleBin.empty()) {
+          auto start = _buf->point();
+          auto end = _buf->insertText(_recycleBin.at(0));
+          _pasteState = PasteState{start, end, 0};
+          _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+        }
       } else if (action == Action::Save && _buf && !_buf->readonly()) {
         if (_buf->hasPath()) {
           if (!std::filesystem::exists(_buf->name())) {
@@ -752,6 +778,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _prevBuf = nullptr;
     } else if (_buf) {
       insertCharWithUtf8(*_buf, c);
+      _pasteState.reset();
     }
   }
   return false;
@@ -784,6 +811,7 @@ void Screen::setStatus(std::string msg) {
 }
 
 bool Screen::handleEscChord(char ch) {
+  auto& [rows, cols] = _size;
   if (ch == '?' && _bufMgr) {
     if (_buf && _buf->readonly() && _prevBuf) {
       setBuffer(*_prevBuf);
@@ -800,6 +828,67 @@ bool Screen::handleEscChord(char ch) {
   }
   if (ch == 0x7f && _buf) {
     _buf->deleteChunkBeforePoint();
+    return true;
+  }
+  if (ch == 'w') {
+    // Copy region.
+    if (_buf && _buf->mark()) {
+      auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
+      _recycleBin.push(std::move(text));
+      _buf->clearMark();
+      setStatus("Region copied");
+      _pasteState.reset();
+    } else {
+      setStatus("No mark set");
+    }
+    return true;
+  }
+  if (ch == 'y') {
+    // Paste-cycle: replace previous paste with next recycle bin entry.
+    if (_buf && !_buf->readonly() && _pasteState && !_recycleBin.empty()) {
+      auto nextIdx = (_pasteState->rbIdx + 1) % _recycleBin.size();
+      _buf->deleteRegion(_pasteState->start, _pasteState->end);
+      auto start = _buf->point();
+      auto end = _buf->insertText(_recycleBin.at(nextIdx));
+      _pasteState = PasteState{start, end, nextIdx};
+      setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
+                std::to_string(_recycleBin.size()));
+      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+    } else {
+      setStatus("Can't cycle paste if last command was not a paste");
+    }
+    return true;
+  }
+  if (ch == 'b' && _bufMgr) {
+    // Buffer list.
+    if (_buf && _buf->readonly() && _prevBuf) {
+      setBuffer(*_prevBuf);
+      _prevBuf = nullptr;
+    } else {
+      _prevBuf = _buf;
+      setBuffer(_bufMgr->bufferListBuffer());
+    }
+    return true;
+  }
+  if (ch == 'r' && _bufMgr) {
+    // Show recycle bin viewer.
+    if (_buf && _buf->readonly() && _prevBuf) {
+      setBuffer(*_prevBuf);
+      _prevBuf = nullptr;
+    } else {
+      _prevBuf = _buf;
+      setBuffer(_bufMgr->recycleBinBuffer(_recycleBin));
+    }
+    return true;
+  }
+  if (ch == 's') {
+    _showWhitespace = !_showWhitespace;
+    setStatus(_showWhitespace ? "Whitespace on" : "Whitespace off");
+    return true;
+  }
+  if (ch == 'l') {
+    _wrap = !_wrap;
+    setStatus(_wrap ? "Wrap on" : "Wrap off");
     return true;
   }
   return false;
@@ -833,20 +922,20 @@ bool Screen::tryExit() {
 
 std::variant<std::monostate, Action> Screen::handleSpecialInput(char c) {
   switch (c) {
-  case 0x02:
-    return Action::BufferList; // Ctrl-B
+  case 0x00:
+    return Action::ToggleMark; // Ctrl-Space
   case 0x07:
     return Action::GoToLine; // Ctrl-G
   case 0x0b:
     return Action::KillBuffer; // Ctrl-K
-  case 0x0c:
-    return Action::ToggleWrap; // Ctrl-L
   case 0x0f:
     return Action::SwitchBuffer; // Ctrl-O
   case 0x13:
     return Action::Save; // Ctrl-S
   case 0x17:
-    return Action::ToggleWhitespace; // Ctrl-W
+    return Action::Cut; // Ctrl-W
+  case 0x19:
+    return Action::Paste; // Ctrl-Y
   default:
     return std::monostate{};
   }

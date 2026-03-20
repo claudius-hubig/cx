@@ -4,6 +4,7 @@
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
 void Buffer::doInsert(uint32_t cp) {
+  _mark.reset();
   char buf[4];
   std::size_t n;
   if (cp < 0x80) {
@@ -48,6 +49,7 @@ void Buffer::doInsert(uint32_t cp) {
 }
 
 void Buffer::doDeleteAtPoint() {
+  _mark.reset();
   auto& line = _lines[_point.line];
   if (_point.offset < line.size()) {
     // Delete within line.
@@ -65,6 +67,7 @@ void Buffer::doDeleteAtPoint() {
 }
 
 void Buffer::doDeleteBeforePoint() {
+  _mark.reset();
   auto& line = _lines[_point.line];
   if (_point.offset > 0) {
     // Walk back over continuation bytes.
@@ -87,6 +90,7 @@ void Buffer::doDeleteBeforePoint() {
 }
 
 void Buffer::doDeleteChunkAtPoint() {
+  _mark.reset();
   if (atEnd())
     return;
 
@@ -107,6 +111,7 @@ void Buffer::doDeleteChunkAtPoint() {
 }
 
 void Buffer::doDeleteChunkBeforePoint() {
+  _mark.reset();
   if (_point.line == 0 && _point.offset == 0)
     return;
 
@@ -802,6 +807,79 @@ std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
   return {line, col};
 }
 
+void Buffer::toggleMark() {
+  if (_mark)
+    _mark.reset();
+  else
+    _mark = _point;
+}
+
+std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
+  if (to < from)
+    std::swap(from, to);
+  if (from.line >= _lines.size())
+    return {};
+
+  std::string result;
+  for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
+    auto& line = _lines[l];
+    std::size_t start = (l == from.line) ? from.offset : 0;
+    std::size_t end = (l == to.line) ? to.offset : line.size();
+    start = std::min(start, line.size());
+    end = std::min(end, line.size());
+    result.append(line.begin() + start, line.begin() + end);
+    if (l < to.line)
+      result += '\n';
+  }
+  return result;
+}
+
+void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
+  if (to < from)
+    std::swap(from, to);
+  if (from.line >= _lines.size())
+    return;
+
+  to.line = std::min(to.line, _lines.size() - 1);
+  to.offset = std::min(to.offset, _lines[to.line].size());
+  from.offset = std::min(from.offset, _lines[from.line].size());
+
+  // Splice: head of from-line + tail of to-line.
+  auto& fromLine = _lines[from.line];
+  auto& toLine = _lines[to.line];
+  std::vector<char> merged(fromLine.begin(), fromLine.begin() + from.offset);
+  merged.insert(merged.end(), toLine.begin() + to.offset, toLine.end());
+
+  // Erase lines [from.line .. to.line], replace with merged.
+  _lines.erase(_lines.begin() + from.line, _lines.begin() + to.line + 1);
+  _lines.insert(_lines.begin() + from.line, std::move(merged));
+
+  _point = from;
+  _mark.reset();
+  _modified = true;
+}
+
+BufferPoint Buffer::insertText(std::string_view text) {
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    if (text[i] == '\n') {
+      // Split current line at _point.
+      auto& line = _lines[_point.line];
+      std::vector<char> tail(line.begin() + _point.offset, line.end());
+      line.erase(line.begin() + _point.offset, line.end());
+      _lines.insert(_lines.begin() + _point.line + 1, std::move(tail));
+      _point.line++;
+      _point.offset = 0;
+    } else {
+      auto& line = _lines[_point.line];
+      line.insert(line.begin() + _point.offset, text[i]);
+      _point.offset++;
+    }
+  }
+  _mark.reset();
+  _modified = true;
+  return _point;
+}
+
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
                                           bool showWhitespace, bool wrap) const {
   static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
@@ -884,6 +962,24 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     out += kReset;
   };
 
+  // Region highlighting: compute normalized start/end from mark and point.
+  static constexpr auto kRegionOn = "\x1b[7m";
+  static constexpr auto kRegionOff = "\x1b[0m";
+  bool hasRegion = _mark.has_value();
+  BufferPoint regionStart, regionEnd;
+  if (hasRegion) {
+    regionStart = std::min(_mark.value(), _point);
+    regionEnd = std::max(_mark.value(), _point);
+  }
+
+  // Helper: is position {lineIdx, byteOffset} within [regionStart, regionEnd)?
+  auto inRegion = [&](std::size_t lineIdx, std::size_t byteOffset) -> bool {
+    if (!hasRegion)
+      return false;
+    BufferPoint p{lineIdx, byteOffset};
+    return regionStart <= p && p < regionEnd;
+  };
+
   std::size_t cur_row = 0, cur_col = 0;
   bool pointFound = false;
 
@@ -901,6 +997,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       auto& line = _lines[lineIdx];
       std::size_t vcol = 0;
       bool overflows = false; // content extends past visible area
+      bool regionActive = false;
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -923,6 +1020,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           break;
         }
 
+        bool wantRegion = inRegion(lineIdx, i);
+        if (wantRegion && !regionActive) {
+          out += kRegionOn;
+          regionActive = true;
+        } else if (!wantRegion && regionActive) {
+          out += kRegionOff;
+          regionActive = false;
+        }
+
         emitChar(line.data() + i, info);
         vcol += info.width;
         i += info.len;
@@ -934,9 +1040,24 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         pointFound = true;
       }
 
+      // Highlight end-of-line newline position if region spans it.
+      if (hasRegion && !overflows && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
+          vcol < hScroll + cw && inRegion(lineIdx, line.size())) {
+        if (!regionActive) {
+          out += kRegionOn;
+          regionActive = true;
+        }
+        out += ' ';
+      }
+
+      if (regionActive) {
+        out += kRegionOff;
+        regionActive = false;
+      }
+
       // Newline indicator.
       if (showWhitespace && !overflows && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
-          vcol < hScroll + cw) {
+          vcol < hScroll + cw && !inRegion(lineIdx, line.size())) {
         out += kNlStyle;
         out += kWsFg;
         out += "\xe2\x86\xb5";
@@ -981,12 +1102,17 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
     // Track whether the previous row was full (deferred wrap indicator).
     bool pendingWrap = false;
+    bool regionActive = false;
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
 
       // Wrap if the representation doesn't fit on the current line.
       if (col + info.width > cw || pendingWrap) {
+        if (regionActive) {
+          out += kRegionOff;
+          regionActive = false;
+        }
         out += "\x1b[K";
         // We know there's more content — this is a true wrap.
         emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
@@ -1002,6 +1128,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         cur_row = row;
         cur_col = col;
         pointFound = true;
+      }
+
+      bool wantRegion = inRegion(lineIdx, i);
+      if (wantRegion && !regionActive) {
+        out += kRegionOn;
+        regionActive = true;
+      } else if (!wantRegion && regionActive) {
+        out += kRegionOff;
+        regionActive = false;
       }
 
       emitChar(line.data() + i, info);
@@ -1034,7 +1169,21 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // End of physical line — emit newline visual and gutter (no wrap
     // indicator).
     if (row < rows.value) {
-      if (showWhitespace && lineIdx + 1 < _lines.size() && col + 1 <= cw) {
+      // Highlight end-of-line newline position if region spans it.
+      if (hasRegion && lineIdx + 1 < _lines.size() && col + 1 <= cw &&
+          inRegion(lineIdx, line.size())) {
+        if (!regionActive) {
+          out += kRegionOn;
+          regionActive = true;
+        }
+        out += ' ';
+      }
+      if (regionActive) {
+        out += kRegionOff;
+        regionActive = false;
+      }
+      if (showWhitespace && lineIdx + 1 < _lines.size() && col + 1 <= cw &&
+          !inRegion(lineIdx, line.size())) {
         out += kNlStyle;
         out += kWsFg;
         out += "\xe2\x86\xb5"; // down-arrow

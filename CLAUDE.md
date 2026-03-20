@@ -4,6 +4,8 @@
 
 `cx` is a simple terminal text editor written in C++. It uses **only the C++ standard library** — no external dependencies.
 
+See docs/architecture.md for a summary of the codebase.
+
 ## Build System
 
 - CMake (minimum 3.10), C++23

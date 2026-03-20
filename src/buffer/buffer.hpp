@@ -6,6 +6,7 @@
 #include <expected>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -186,6 +187,17 @@ public:
   virtual std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
                                             bool showWhitespace = false, bool wrap = true) const;
 
+  // Mark
+  std::optional<BufferPoint> mark() const { return _mark; }
+  void setMark(BufferPoint p) { _mark = p; }
+  void clearMark() { _mark.reset(); }
+  void toggleMark(); // set at _point if unset, else clear
+
+  // Region operations (normalize from/to internally)
+  std::string extractRegion(BufferPoint from, BufferPoint to) const;
+  void deleteRegion(BufferPoint from, BufferPoint to); // moves _point to min(from,to)
+  BufferPoint insertText(std::string_view text);       // returns point after insertion
+
   BufferPoint point() const { return _point; }
   // Returns the viewport origin as a BufferPoint. In wrap mode the offset
   // field is the byte offset into the first visible line (sub-line scroll);
@@ -226,6 +238,7 @@ protected:
   std::string _name;
   std::vector<std::vector<char>> _lines{{}};
   BufferPoint _point;
+  std::optional<BufferPoint> _mark;
   ViewFrom _viewFrom;
   bool _wrapMode = false; // tracks last wrap mode seen by ensureVisible
   std::optional<ColIdx> _desiredCol;

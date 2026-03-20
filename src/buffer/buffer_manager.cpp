@@ -40,6 +40,13 @@ BufferListBuffer& BufferManager::bufferListBuffer() {
   return *_bufferListBuffer;
 }
 
+RecycleBinBuffer& BufferManager::recycleBinBuffer(RecycleBin const& rb) {
+  if (!_recycleBinBuffer)
+    _recycleBinBuffer = std::make_unique<RecycleBinBuffer>();
+  _recycleBinBuffer->refresh(rb);
+  return *_recycleBinBuffer;
+}
+
 Buffer& BufferManager::create(std::string name) {
   auto [it, inserted] = _buffers.emplace(name, nullptr);
   if (!inserted)

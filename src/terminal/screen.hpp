@@ -1,6 +1,7 @@
 #pragma once
 
 #include "buffer/buffer_sink.hpp"
+#include "recycle_bin.hpp"
 #include "types.hpp"
 
 #include <chrono>
@@ -19,10 +20,10 @@ enum class Action {
   Help,
   Save,
   KillBuffer,
-  BufferList,
   SwitchBuffer,
-  ToggleWhitespace,
-  ToggleWrap,
+  ToggleMark,
+  Cut,
+  Paste,
 };
 
 // Manages terminal I/O and the main input loop.
@@ -85,6 +86,14 @@ private:
   bool _wrap = false;
   bool _killPending = false; // kill buffer after SaveAs completes
   bool _exitPending = false; // exit after all modified buffers are handled
+
+  RecycleBin _recycleBin;
+  struct PasteState {
+    BufferPoint start;
+    BufferPoint end;
+    std::size_t rbIdx;
+  };
+  std::optional<PasteState> _pasteState;
 
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();
