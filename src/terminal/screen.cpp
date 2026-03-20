@@ -549,14 +549,18 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                   _buf->scrollUp(_wrap);
                 break;
               case 'A':
-                // TODO: only movePhysicalUp/Down if currently in the wrapped part of a long line.
-                // If not in the wrapped part of a long line, instead moveParagraphUp/Down
-                _buf->movePhysicalUp();
+                if (_wrap && _buf->currentLineWraps(cols))
+                  _buf->movePhysicalUp();
+                else
+                  _buf->moveParagraphUp();
                 while (_buf->point() < _buf->viewFrom())
                   _buf->scrollUp(_wrap);
                 break;
               case 'B':
-                _buf->movePhysicalDown();
+                if (_wrap && _buf->currentLineWraps(cols))
+                  _buf->movePhysicalDown();
+                else
+                  _buf->moveParagraphDown();
                 _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
               }

@@ -170,6 +170,11 @@ void Buffer::moveRight() {
   _desiredCol.reset();
 }
 
+bool Buffer::currentLineWraps(ColIdx cols) const {
+  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  return visualCol(_lines[_point.line], 0, _lines[_point.line].size()) > cw;
+}
+
 // Compute visual column width of bytes in line[from..to).
 std::size_t Buffer::visualCol(std::vector<char> const& line, std::size_t from,
                               std::size_t to) const {

@@ -170,6 +170,10 @@ public:
   /// This lets the user push the last line toward the screen centre.
   void scrollViewNearEnd(RowIdx screenRows);
 
+  /// True if the line containing the point occupies more than one visual
+  /// row at the given column width. Always false when cols <= 1.
+  bool currentLineWraps(ColIdx cols) const;
+
   /// Compute the 0-indexed screen row of the point relative to _viewFromLine,
   /// given a screen column width of cols. cols.value must be > 0.
   /// Accounts for line wrapping.
