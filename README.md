@@ -34,42 +34,58 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 
 ## Keyboard Shortcuts
 
-### Commands
+### Files & Buffers
 
-| Key | Action |
-|-----|--------|
-| Esc-? | Show help |
-| Esc-c | Exit |
+| Key    | Action                       |
+|--------|------------------------------|
+| Esc-?  | Show help                    |
+| Esc-c  | Exit                         |
 | Ctrl-o | Switch to buffer / open file |
-| Esc-b | Buffer list |
-| Ctrl-s | Save file |
-| Ctrl-k | Kill buffer |
-| Esc-r | Revert buffer from file |
-| Ctrl-f | Find forward |
-| Ctrl-r | Find backward |
-| Esc-s | Toggle whitespace |
-| Esc-l | Toggle line wrap |
+| Esc-b  | Buffer list                  |
+| Ctrl-s | Save file                    |
+| Ctrl-k | Kill buffer                  |
+| Esc-r  | Revert buffer from file      |
+
+### Search & Edit
+
+| Key        | Action           |
+|------------|------------------|
 | Ctrl-Space | Set / clear mark |
-| Ctrl-w | Cut region |
-| Esc-w | Copy region |
-| Ctrl-y | Paste |
-| Esc-y | Paste cycle |
-| Esc-p | Paste ring |
+| Ctrl-w     | Cut region       |
+| Esc-w      | Copy region      |
+| Ctrl-y     | Paste            |
+| Esc-y      | Paste cycle      |
+| Esc-p      | Paste ring       |
 
 ### Movement
 
-| Key | Action |
-|-----|--------|
-| Arrows | Move cursor |
-| Ctrl-Left/Right | Move by word |
-| Ctrl-Up/Down | Move by paragraph |
-| Ctrl-g | Go to line |
-| PgUp / PgDn | Page up / down (half screen) |
-| Home / End | Start / end of line |
-| Bksp | Delete before cursor |
-| Ctrl-Bksp | Delete chunk before cursor |
-| Delete | Delete at cursor |
-| Ctrl-Del | Delete chunk at cursor |
+| Key             | Action                       |
+|-----------------|------------------------------|
+| Ctrl-f          | Find forward                 |
+| Ctrl-r          | Find backward                |
+| Arrows          | Move cursor                  |
+| Ctrl-Left/Right | Move by word                 |
+| Ctrl-Up/Down    | Move by paragraph            |
+| Ctrl-g          | Go to line                   |
+| PgUp / PgDn     | Page up / down (half screen) |
+| Home / End      | Start / end of line          |
+| Ctrl-Home/End   | Start / end of file          |
+
+### Display
+
+| Key   | Action              |
+|-------|---------------------|
+| Esc-s | Toggle whitespace   |
+| Esc-l | Toggle line wrap    |
+
+### Deletion
+
+| Key       | Action                    |
+|-----------|---------------------------|
+| Bksp      | Delete before cursor      |
+| Ctrl-Bksp | Delete chunk before cursor|
+| Delete    | Delete at cursor          |
+| Ctrl-Del  | Delete chunk at cursor    |
 
 ## Goals
 

@@ -39,8 +39,6 @@ static std::vector<std::string> const& leftColumn() {
       v.push_back(formatHelpLine(a));
     v.emplace_back("");
     v.emplace_back("Search & Edit:");
-    v.push_back(formatHelpLine(Action::Find));
-    v.push_back(formatHelpLine(Action::FindBackward));
     v.push_back(formatHelpLine(Action::ToggleMark));
     for (auto a : {Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
@@ -53,6 +51,8 @@ static std::vector<std::string> const& rightColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
     v.emplace_back("Movement:");
+    v.push_back(formatHelpLine(Action::Find));
+    v.push_back(formatHelpLine(Action::FindBackward));
     v.push_back(
         formatRawLine("\xe2\x86\x90/\xe2\x86\x91/\xe2\x86\x92/\xe2\x86\x93", "Move cursor"));
     v.push_back(formatRawLine("Ctrl-\xe2\x86\x90/\xe2\x86\x92", "Move by word"));
@@ -60,6 +60,7 @@ static std::vector<std::string> const& rightColumn() {
     v.push_back(formatHelpLine(Action::GoToLine));
     v.push_back(formatRawLine("PgUp/PgDn", "Page up/down (half screen)"));
     v.push_back(formatRawLine("Home/End", "Start/end of line"));
+    v.push_back(formatRawLine("Ctrl-Home/End", "Start/end of file"));
     v.emplace_back("");
     v.emplace_back("Display:");
     v.push_back(formatHelpLine(Action::ToggleWhitespace));

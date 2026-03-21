@@ -21,3 +21,7 @@ See docs/architecture.md for a summary of the codebase.
 - No external libraries or dependencies — stdlib only
 - Target: C++23
 - POSIX headers (`<termios.h>`, `<sys/ioctl.h>`, `<unistd.h>`) are a necessary exception for terminal I/O; there is no stdlib alternative
+
+## Keyboard Shortcuts
+
+- When adding or changing a keyboard shortcut, always update both the help text (`src/buffer/help_buffer.cpp`) and `README.md` to match
