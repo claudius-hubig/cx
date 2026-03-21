@@ -49,3 +49,27 @@ std::expected<void, std::string> TextBuffer::save() {
   _modified = false;
   return {};
 }
+
+std::expected<void, std::string> TextBuffer::revert() {
+  if (!_path)
+    return std::unexpected("buffer has no path");
+  std::ifstream file(*_path, std::ios::binary);
+  if (!file)
+    return std::unexpected("cannot open " + _path->string());
+
+  _lines.clear();
+  _lines.emplace_back();
+  std::vector<char> data{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  for (char c : data) {
+    if (c == '\n')
+      _lines.emplace_back();
+    else
+      _lines.back().push_back(c);
+  }
+  _point = {};
+  _mark.reset();
+  _viewFrom = {};
+  _desiredCol.reset();
+  _modified = false;
+  return {};
+}

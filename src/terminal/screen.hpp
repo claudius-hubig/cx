@@ -54,6 +54,7 @@ private:
   // (so the caller should skip its trailing draw()).
   bool handleConfirmSave(char c);
   bool handleConfirmKill(char c);
+  bool handleConfirmRevert(char c);
   bool handleTextPrompt(char c);
   bool handleEscapeInput(std::optional<char>& pendingChar);
   bool handleNormalInput(char c, std::optional<char>& pendingChar);
@@ -64,7 +65,15 @@ private:
   Buffer* _buf = nullptr;
   BufferManager* _bufMgr = nullptr;
   std::string _renderBuf;
-  enum class Prompt { None, GoToLine, SaveAs, SwitchBuffer, ConfirmSave, ConfirmKill };
+  enum class Prompt {
+    None,
+    GoToLine,
+    SaveAs,
+    SwitchBuffer,
+    ConfirmSave,
+    ConfirmKill,
+    ConfirmRevert
+  };
   Prompt _prompt = Prompt::None;
   std::string _prompt_input;
   Buffer* _prevBuf = nullptr;

@@ -17,6 +17,7 @@ enum class Action {
   Paste,
   PasteCycle,
   DeleteChunkBefore,
+  Revert,
   BufferList,
   RecycleBin,
   ToggleWhitespace,

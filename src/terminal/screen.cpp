@@ -251,6 +251,8 @@ void Screen::loop() {
       drew = handleConfirmSave(c);
     else if (_prompt == Prompt::ConfirmKill)
       drew = handleConfirmKill(c);
+    else if (_prompt == Prompt::ConfirmRevert)
+      drew = handleConfirmRevert(c);
     else if (_prompt != Prompt::None)
       drew = handleTextPrompt(c);
     else
@@ -337,6 +339,24 @@ bool Screen::handleConfirmKill(char c) {
     _prompt = Prompt::None;
     _prompt_input.clear();
     _exitPending = false;
+  }
+  return false;
+}
+
+bool Screen::handleConfirmRevert(char c) {
+  if (c == 'y' || c == 'Y') {
+    if (_buf) {
+      auto res = _buf->revert();
+      if (res)
+        setStatus("Reverted from " + _buf->name());
+      else
+        setStatus(res.error());
+    }
+    _prompt = Prompt::None;
+    _prompt_input.clear();
+  } else if (c == 'n' || c == 'N' || c == 0x1b) {
+    _prompt = Prompt::None;
+    _prompt_input.clear();
   }
   return false;
 }
@@ -890,6 +910,16 @@ void Screen::dispatchAction(Action action) {
   case Action::DeleteChunkBefore:
     if (_buf)
       _buf->deleteChunkBeforePoint();
+    break;
+  case Action::Revert:
+    if (_buf && !_buf->readonly()) {
+      if (!_buf->hasPath()) {
+        setStatus("Can't revert from file in temporary buffers.");
+      } else {
+        _prompt = Prompt::ConfirmRevert;
+        _prompt_input = "Really revert buffer from file " + _buf->name() + "? y/n: ";
+      }
+    }
     break;
   case Action::BufferList:
     if (_bufMgr) {

@@ -44,6 +44,12 @@ public:
   /// (unsaved/readonly buffers). Overridden by TextBuffer.
   virtual std::expected<void, std::string> save() { return std::unexpected("buffer has no path"); }
 
+  /// Reload buffer contents from its backing file. Default returns an error.
+  /// Overridden by TextBuffer.
+  virtual std::expected<void, std::string> revert() {
+    return std::unexpected("buffer has no path");
+  }
+
   /// Insert a Unicode code point at _point, encoding it as UTF-8. No-op
   /// if readonly(). The entire multi-byte sequence is inserted atomically.
   void insert(uint32_t cp) {

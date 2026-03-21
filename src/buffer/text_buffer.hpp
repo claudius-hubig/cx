@@ -31,6 +31,10 @@ public:
   /// Clears _modified on success.
   std::expected<void, std::string> save() override;
 
+  /// Reload buffer contents from the backing file. Resets point and
+  /// viewport to the start. Returns an error if the file cannot be read.
+  std::expected<void, std::string> revert();
+
 private:
   std::optional<std::filesystem::path> _path;
 };
