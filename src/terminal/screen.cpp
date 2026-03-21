@@ -168,7 +168,8 @@ void Screen::draw() {
         status_vwidth += hint.size() + cnt.size();
       }
     }
-  } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill) {
+  } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
+             _prompt == Prompt::ConfirmRevert) {
     status = _prompt_input;
     status_vwidth = status.size();
   } else if (_buf) {
