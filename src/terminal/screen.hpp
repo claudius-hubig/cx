@@ -2,6 +2,7 @@
 
 #include "buffer/buffer_sink.hpp"
 #include "recycle_bin.hpp"
+#include "shortcut.hpp"
 #include "types.hpp"
 
 #include <chrono>
@@ -9,22 +10,10 @@
 #include <string>
 #include <tuple>
 #include <utility>
-#include <variant>
 #include <vector>
 
 class Buffer;
 class BufferManager;
-
-enum class Action {
-  GoToLine,
-  Help,
-  Save,
-  KillBuffer,
-  SwitchBuffer,
-  ToggleMark,
-  Cut,
-  Paste,
-};
 
 // Manages terminal I/O and the main input loop.
 //
@@ -51,9 +40,8 @@ public:
   void setStatus(std::string msg);
 
 private:
-  // Interpret a control character and return the appropriate Action,
-  // or monostate for unhandled inputs.
-  std::variant<std::monostate, Action> handleSpecialInput(char c);
+  // Centralised action handler: executes the effect of the given Action.
+  void dispatchAction(Action action);
   // Try to dispatch an Esc-chord for the given byte. Returns true if
   // the byte was a recognised command, false otherwise.
   bool handleEscChord(char ch);

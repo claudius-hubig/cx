@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 23)
 add_executable(cx
     src/main.cpp
     src/error_log.cpp
+    src/shortcut.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
     src/buffer/buffer.cpp
@@ -32,6 +33,7 @@ add_executable(test_buffer
     src/buffer/buffer.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
+    src/shortcut.cpp
 )
 target_include_directories(test_buffer PRIVATE src)
 target_link_libraries(test_buffer Boost::unit_test_framework)
@@ -50,6 +52,7 @@ add_executable(test_help_buffer
     tests/test_help_buffer.cpp
     src/buffer/buffer.cpp
     src/buffer/help_buffer.cpp
+    src/shortcut.cpp
 )
 target_include_directories(test_help_buffer PRIVATE src)
 target_link_libraries(test_help_buffer Boost::unit_test_framework)
@@ -72,6 +75,7 @@ add_executable(test_buffer_manager
     src/buffer/buffer_list_buffer.cpp
     src/buffer/recycle_bin_buffer.cpp
     src/buffer/buffer_manager.cpp
+    src/shortcut.cpp
 )
 target_include_directories(test_buffer_manager PRIVATE src .)
 target_link_libraries(test_buffer_manager Boost::unit_test_framework)
@@ -100,6 +104,7 @@ add_executable(test_chunk_delete
     src/buffer/buffer.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
+    src/shortcut.cpp
 )
 target_include_directories(test_chunk_delete PRIVATE src .)
 target_link_libraries(test_chunk_delete Boost::unit_test_framework)

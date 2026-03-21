@@ -14,7 +14,6 @@
 #include <limits>
 #include <optional>
 #include <string>
-#include <variant>
 
 // Read remaining bytes of a UTF-8 sequence from stdin, given the lead byte.
 // Appends continuation bytes to `dest`.
@@ -655,8 +654,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
           _prevBuf = nullptr;
         }
       } else {
-        // Push the key back to be processed normally.
-        pendingChar = next;
+        setStatus(formatShortcut(shortcutFromEscChar(next)) + " not recognised.");
       }
     }
     // Clear the "Esc-..." prompt, but only if the chord handler didn't
@@ -697,85 +695,12 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     }
   } else if (c == 0x1b) {
     return handleEscapeInput(pendingChar);
-  } else if (c == 0x08) {
-    // Ctrl-Backspace: delete chunk before point.
-    if (_buf)
-      _buf->deleteChunkBeforePoint();
   } else if (static_cast<unsigned char>(c) < 0x20) {
-    // Control character: delegate to handleSpecialInput().
-    auto result = handleSpecialInput(c);
-    if (std::holds_alternative<Action>(result)) {
-      auto action = std::get<Action>(result);
-      if (action == Action::GoToLine) {
-        _prompt = Prompt::GoToLine;
-        _prompt_input.clear();
-      } else if (action == Action::Help && _bufMgr) {
-        if (_buf && _buf->readonly() && _prevBuf) {
-          setBuffer(*_prevBuf);
-          _prevBuf = nullptr;
-        } else {
-          _prevBuf = _buf;
-          setBuffer(_bufMgr->helpBuffer());
-        }
-      } else if (action == Action::SwitchBuffer) {
-        _prevBuf = nullptr;
-        _prompt = Prompt::SwitchBuffer;
-        _prompt_input.clear();
-        updateCompletions();
-      } else if (action == Action::KillBuffer && _buf && _bufMgr && !_buf->readonly()) {
-        if (!_buf->modified()) {
-          auto name = _buf->name();
-          if (_prevBuf == _buf)
-            _prevBuf = nullptr;
-          setBuffer(_bufMgr->kill(name));
-        } else if (!_buf->hasPath()) {
-          _prompt = Prompt::ConfirmKill;
-          _prompt_input = "Killing temporary buffer. Save to file first? y/n: ";
-        } else {
-          _prompt = Prompt::ConfirmKill;
-          _prompt_input = "Killing modified buffer. Save to file first? y/n: ";
-        }
-      } else if (action == Action::ToggleMark) {
-        if (_buf) {
-          _buf->toggleMark();
-          setStatus(_buf->mark() ? "Mark set" : "Mark cleared");
-          _pasteState.reset();
-        }
-      } else if (action == Action::Cut) {
-        if (_buf && _buf->mark()) {
-          auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
-          _recycleBin.push(std::move(text));
-          _buf->deleteRegion(_buf->mark().value(), _buf->point());
-          setStatus("Region cut");
-          _pasteState.reset();
-        } else {
-          setStatus("No mark set");
-        }
-      } else if (action == Action::Paste) {
-        if (_buf && !_buf->readonly() && !_recycleBin.empty()) {
-          auto start = _buf->point();
-          auto end = _buf->insertText(_recycleBin.at(0));
-          _pasteState = PasteState{start, end, 0};
-          _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
-        }
-      } else if (action == Action::Save && _buf && !_buf->readonly()) {
-        if (_buf->hasPath()) {
-          if (!std::filesystem::exists(_buf->name())) {
-            _prompt = Prompt::ConfirmSave;
-            _prompt_input = "File " + _buf->name() + " doesn't exist. Really save there? y/n: ";
-          } else {
-            auto res = _buf->save();
-            if (res)
-              setStatus("Saved to " + _buf->name());
-            else
-              setStatus(res.error());
-          }
-        } else {
-          _prompt = Prompt::SaveAs;
-          _prompt_input.clear();
-        }
-      }
-    }
+    auto s = shortcutFromCtrlChar(c);
+    if (auto action = handleShortcut(s))
+      dispatchAction(*action);
+    else
+      setStatus(formatShortcut(s) + " not recognised.");
   } else {
     if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
       setBuffer(*_prevBuf);
@@ -815,84 +740,9 @@ void Screen::setStatus(std::string msg) {
 }
 
 bool Screen::handleEscChord(char ch) {
-  auto& [rows, cols] = _size;
-  if (ch == '?' && _bufMgr) {
-    if (_buf && _buf->readonly() && _prevBuf) {
-      setBuffer(*_prevBuf);
-      _prevBuf = nullptr;
-    } else {
-      _prevBuf = _buf;
-      setBuffer(_bufMgr->helpBuffer());
-    }
-    return true;
-  }
-  if (ch == 'c') {
-    _exitPending = true;
-    return true;
-  }
-  if (ch == 0x7f && _buf) {
-    _buf->deleteChunkBeforePoint();
-    return true;
-  }
-  if (ch == 'w') {
-    // Copy region.
-    if (_buf && _buf->mark()) {
-      auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
-      _recycleBin.push(std::move(text));
-      _buf->clearMark();
-      setStatus("Region copied");
-      _pasteState.reset();
-    } else {
-      setStatus("No mark set");
-    }
-    return true;
-  }
-  if (ch == 'y') {
-    // Paste-cycle: replace previous paste with next recycle bin entry.
-    if (_buf && !_buf->readonly() && _pasteState && !_recycleBin.empty()) {
-      auto nextIdx = (_pasteState->rbIdx + 1) % _recycleBin.size();
-      _buf->deleteRegion(_pasteState->start, _pasteState->end);
-      auto start = _buf->point();
-      auto end = _buf->insertText(_recycleBin.at(nextIdx));
-      _pasteState = PasteState{start, end, nextIdx};
-      setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
-                std::to_string(_recycleBin.size()));
-      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
-    } else {
-      setStatus("Can't cycle paste if last command was not a paste");
-    }
-    return true;
-  }
-  if (ch == 'b' && _bufMgr) {
-    // Buffer list.
-    if (_buf && _buf->readonly() && _prevBuf) {
-      setBuffer(*_prevBuf);
-      _prevBuf = nullptr;
-    } else {
-      _prevBuf = _buf;
-      setBuffer(_bufMgr->bufferListBuffer());
-    }
-    return true;
-  }
-  if (ch == 'r' && _bufMgr) {
-    // Show recycle bin viewer.
-    if (_buf && _buf->readonly() && _prevBuf) {
-      setBuffer(*_prevBuf);
-      _prevBuf = nullptr;
-    } else {
-      _prevBuf = _buf;
-      setBuffer(_bufMgr->recycleBinBuffer(_recycleBin));
-    }
-    return true;
-  }
-  if (ch == 's') {
-    _showWhitespace = !_showWhitespace;
-    setStatus(_showWhitespace ? "Whitespace on" : "Whitespace off");
-    return true;
-  }
-  if (ch == 'l') {
-    _wrap = !_wrap;
-    setStatus(_wrap ? "Wrap on" : "Wrap off");
+  auto s = shortcutFromEscChar(ch);
+  if (auto action = handleShortcut(s)) {
+    dispatchAction(*action);
     return true;
   }
   return false;
@@ -924,23 +774,152 @@ bool Screen::tryExit() {
   return true; // no modified buffers remain
 }
 
-std::variant<std::monostate, Action> Screen::handleSpecialInput(char c) {
-  switch (c) {
-  case 0x00:
-    return Action::ToggleMark; // Ctrl-Space
-  case 0x07:
-    return Action::GoToLine; // Ctrl-G
-  case 0x0b:
-    return Action::KillBuffer; // Ctrl-K
-  case 0x0f:
-    return Action::SwitchBuffer; // Ctrl-O
-  case 0x13:
-    return Action::Save; // Ctrl-S
-  case 0x17:
-    return Action::Cut; // Ctrl-W
-  case 0x19:
-    return Action::Paste; // Ctrl-Y
-  default:
-    return std::monostate{};
+void Screen::dispatchAction(Action action) {
+  auto& [rows, cols] = _size;
+  switch (action) {
+  case Action::Help:
+    if (_bufMgr) {
+      if (_buf && _buf->readonly() && _prevBuf) {
+        setBuffer(*_prevBuf);
+        _prevBuf = nullptr;
+      } else {
+        _prevBuf = _buf;
+        setBuffer(_bufMgr->helpBuffer());
+      }
+    }
+    break;
+  case Action::Exit:
+    _exitPending = true;
+    break;
+  case Action::GoToLine:
+    _prompt = Prompt::GoToLine;
+    _prompt_input.clear();
+    break;
+  case Action::SwitchBuffer:
+    _prevBuf = nullptr;
+    _prompt = Prompt::SwitchBuffer;
+    _prompt_input.clear();
+    updateCompletions();
+    break;
+  case Action::KillBuffer:
+    if (_buf && _bufMgr && !_buf->readonly()) {
+      if (!_buf->modified()) {
+        auto name = _buf->name();
+        if (_prevBuf == _buf)
+          _prevBuf = nullptr;
+        setBuffer(_bufMgr->kill(name));
+      } else if (!_buf->hasPath()) {
+        _prompt = Prompt::ConfirmKill;
+        _prompt_input = "Killing temporary buffer. Save to file first? y/n: ";
+      } else {
+        _prompt = Prompt::ConfirmKill;
+        _prompt_input = "Killing modified buffer. Save to file first? y/n: ";
+      }
+    }
+    break;
+  case Action::Save:
+    if (_buf && !_buf->readonly()) {
+      if (_buf->hasPath()) {
+        if (!std::filesystem::exists(_buf->name())) {
+          _prompt = Prompt::ConfirmSave;
+          _prompt_input = "File " + _buf->name() + " doesn't exist. Really save there? y/n: ";
+        } else {
+          auto res = _buf->save();
+          if (res)
+            setStatus("Saved to " + _buf->name());
+          else
+            setStatus(res.error());
+        }
+      } else {
+        _prompt = Prompt::SaveAs;
+        _prompt_input.clear();
+      }
+    }
+    break;
+  case Action::ToggleMark:
+    if (_buf) {
+      _buf->toggleMark();
+      setStatus(_buf->mark() ? "Mark set" : "Mark cleared");
+      _pasteState.reset();
+    }
+    break;
+  case Action::Cut:
+    if (_buf && _buf->mark()) {
+      auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
+      _recycleBin.push(std::move(text));
+      _buf->deleteRegion(_buf->mark().value(), _buf->point());
+      setStatus("Region cut");
+      _pasteState.reset();
+    } else {
+      setStatus("No mark set");
+    }
+    break;
+  case Action::Copy:
+    if (_buf && _buf->mark()) {
+      auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
+      _recycleBin.push(std::move(text));
+      _buf->clearMark();
+      setStatus("Region copied");
+      _pasteState.reset();
+    } else {
+      setStatus("No mark set");
+    }
+    break;
+  case Action::Paste:
+    if (_buf && !_buf->readonly() && !_recycleBin.empty()) {
+      auto start = _buf->point();
+      auto end = _buf->insertText(_recycleBin.at(0));
+      _pasteState = PasteState{start, end, 0};
+      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+    }
+    break;
+  case Action::PasteCycle:
+    if (_buf && !_buf->readonly() && _pasteState && !_recycleBin.empty()) {
+      auto nextIdx = (_pasteState->rbIdx + 1) % _recycleBin.size();
+      _buf->deleteRegion(_pasteState->start, _pasteState->end);
+      auto start = _buf->point();
+      auto end = _buf->insertText(_recycleBin.at(nextIdx));
+      _pasteState = PasteState{start, end, nextIdx};
+      setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
+                std::to_string(_recycleBin.size()));
+      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+    } else {
+      setStatus("Can't cycle paste if last command was not a paste");
+    }
+    break;
+  case Action::DeleteChunkBefore:
+    if (_buf)
+      _buf->deleteChunkBeforePoint();
+    break;
+  case Action::BufferList:
+    if (_bufMgr) {
+      if (_buf && _buf->readonly() && _prevBuf) {
+        setBuffer(*_prevBuf);
+        _prevBuf = nullptr;
+      } else {
+        _prevBuf = _buf;
+        setBuffer(_bufMgr->bufferListBuffer());
+      }
+    }
+    break;
+  case Action::RecycleBin:
+    if (_bufMgr) {
+      if (_buf && _buf->readonly() && _prevBuf) {
+        setBuffer(*_prevBuf);
+        _prevBuf = nullptr;
+      } else {
+        _prevBuf = _buf;
+        setBuffer(_bufMgr->recycleBinBuffer(_recycleBin));
+      }
+    }
+    break;
+  case Action::ToggleWhitespace:
+    _showWhitespace = !_showWhitespace;
+    setStatus(_showWhitespace ? "Whitespace on" : "Whitespace off");
+    break;
+  case Action::ToggleWrap:
+    _wrap = !_wrap;
+    setStatus(_wrap ? "Wrap on" : "Wrap off");
+    break;
   }
 }

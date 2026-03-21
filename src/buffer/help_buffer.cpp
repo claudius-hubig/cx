@@ -1,70 +1,67 @@
 #include "help_buffer.hpp"
+#include "shortcut.hpp"
 
 #include <algorithm>
-#include <array>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
-static constexpr std::array kCommandLines = {
-    std::string_view{"Commands:"},
-    std::string_view{"  Esc-?       Show this help"},
-    std::string_view{"  Esc-c       Exit"},
-    std::string_view{"  Ctrl-o      Switch to buffer/open file"},
-    std::string_view{"  Esc-b       Buffer list"},
-    std::string_view{"  Ctrl-s      Save file"},
-    std::string_view{"  Ctrl-k      Kill buffer"},
-    std::string_view{"  Esc-s       Toggle whitespace"},
-    std::string_view{"  Esc-l       Toggle line wrap"},
-    std::string_view{"  Ctrl-Space  Set/clear mark"},
-    std::string_view{"  Ctrl-w      Cut region"},
-    std::string_view{"  Esc-w       Copy region"},
-    std::string_view{"  Ctrl-y      Paste"},
-    std::string_view{"  Esc-y       Paste cycle"},
-    std::string_view{"  Esc-r       Recycle bin"},
-};
+// Generate a help line: "  <shortcut>  <description>" with consistent padding.
+static std::string formatHelpLine(Action a) {
+  auto s = shortcutForAction(a);
+  auto label = formatShortcut(s);
+  auto desc = descriptionForAction(a);
+  std::string line = "  ";
+  line += label;
+  while (line.size() < 14)
+    line += ' ';
+  line += desc;
+  return line;
+}
 
-static constexpr std::array kMovementLines = {
-    std::string_view{"Movement:"},
-    std::string_view{"  ←/↑/→/↓     Move cursor"},
-    std::string_view{"  Ctrl-←/→    Move by word"},
-    std::string_view{"  Ctrl-↑/↓    Move by paragraph"},
-    std::string_view{"  Ctrl-g      Go to line"},
-    std::string_view{"  PgUp        Page up (half screen)"},
-    std::string_view{"  PgDn        Page down (half screen)"},
-    std::string_view{"  Home        Start of line"},
-    std::string_view{"  End         End of line"},
-    std::string_view{"  Bksp        Delete before cursor"},
-    std::string_view{"  Ctrl-Bksp   Delete chunk before cursor"},
-    std::string_view{"  Delete      Delete at cursor"},
-    std::string_view{"  Ctrl-Del    Delete chunk at cursor"},
-};
+static std::vector<std::string> const& commandLines() {
+  static std::vector<std::string> lines = [] {
+    std::vector<std::string> v;
+    v.emplace_back("Commands:");
+    for (auto a :
+         {Action::Help, Action::Exit, Action::SwitchBuffer, Action::BufferList, Action::Save,
+          Action::KillBuffer, Action::ToggleWhitespace, Action::ToggleWrap, Action::ToggleMark,
+          Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::RecycleBin})
+      v.push_back(formatHelpLine(a));
+    return v;
+  }();
+  return lines;
+}
+
+static std::vector<std::string> const& movementLines() {
+  static std::vector<std::string> lines = [] {
+    std::vector<std::string> v;
+    v.emplace_back("Movement:");
+    v.emplace_back("  \xe2\x86\x90/\xe2\x86\x91/\xe2\x86\x92/\xe2\x86\x93     Move cursor");
+    v.emplace_back("  Ctrl-\xe2\x86\x90/\xe2\x86\x92    Move by word");
+    v.emplace_back("  Ctrl-\xe2\x86\x91/\xe2\x86\x93    Move by paragraph");
+    v.push_back(formatHelpLine(Action::GoToLine));
+    v.emplace_back("  PgUp        Page up (half screen)");
+    v.emplace_back("  PgDn        Page down (half screen)");
+    v.emplace_back("  Home        Start of line");
+    v.emplace_back("  End         End of line");
+    v.emplace_back("  Bksp        Delete before cursor");
+    v.push_back(formatHelpLine(Action::DeleteChunkBefore));
+    v.emplace_back("  Delete      Delete at cursor");
+    v.emplace_back("  Ctrl-Del    Delete chunk at cursor");
+    return v;
+  }();
+  return lines;
+}
 
 static constexpr std::string_view kFooterText =
     "Press 'q', Esc-Esc, or Esc-? to return to editing.";
 static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
-
-// Data layout (one line per entry), derived from array sizes:
-//   0..2             header (title, separator, blank)
-//   kCmdStart..      command lines (kCommandLines)
-//   kCmdEnd          blank
-//   kMovStart..      movement lines (kMovementLines)
-//   kMovEnd          blank
-//   kFooter          footer
-//
-// In stacked mode the visual rows are 1:1 with data lines.
-// In side-by-side mode the movement block occupies the right column
-// alongside the command block.
 static constexpr std::size_t kHeaderLines = 3;
-static constexpr std::size_t kCmdStart = kHeaderLines;
-static constexpr std::size_t kCmdEnd = kCmdStart + kCommandLines.size();
-static constexpr std::size_t kMovStart = kCmdEnd + 1; // +1 for blank
-static constexpr std::size_t kMovEnd = kMovStart + kMovementLines.size();
-static constexpr std::size_t kFooter = kMovEnd + 1; // +1 for blank
 
-static std::size_t maxWidth(std::span<std::string_view const> lines) {
+static std::size_t maxWidth(std::span<std::string const> lines) {
   std::size_t w = 0;
   for (auto& l : lines)
     w = std::max(w, l.size());
@@ -72,23 +69,26 @@ static std::size_t maxWidth(std::span<std::string_view const> lines) {
 }
 
 static bool isSideBySide(std::size_t cols) {
-  return maxWidth(kCommandLines) + kGap + maxWidth(kMovementLines) <= cols;
+  return maxWidth(commandLines()) + kGap + maxWidth(movementLines()) <= cols;
 }
 
 // Map a data-line index to an absolute visual row.
 static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
+  auto cmdCount = commandLines().size();
+  auto movCount = movementLines().size();
+  std::size_t cmdEnd = kHeaderLines + cmdCount;
+  std::size_t movStart = cmdEnd + 1;
+  std::size_t movEnd = movStart + movCount;
+
   if (!isSideBySide(cols))
     return dataLine; // stacked: 1:1
 
-  if (dataLine < kMovStart)
+  if (dataLine < movStart)
     return dataLine;
-  if (dataLine < kMovEnd) {
-    return kCmdStart + (dataLine - kMovStart);
-  }
-  std::size_t cmdCount = kCmdEnd - kCmdStart;
-  std::size_t movCount = kMovEnd - kMovStart;
+  if (dataLine < movEnd)
+    return kHeaderLines + (dataLine - movStart);
   std::size_t mergedRows = std::max(cmdCount, movCount);
-  return kCmdStart + mergedRows + (dataLine - kMovEnd);
+  return kHeaderLines + mergedRows + (dataLine - movEnd);
 }
 
 // Build all visual lines for a given column width.
@@ -97,6 +97,9 @@ struct VisualLine {
 };
 
 static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
+  auto const& cmdLines = commandLines();
+  auto const& movLines = movementLines();
+
   std::vector<VisualLine> vlines;
   std::size_t c = cols;
 
@@ -114,12 +117,12 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   // Row 2: blank.
   vlines.push_back({""});
 
-  std::size_t leftW = maxWidth(kCommandLines);
-  std::size_t rightW = maxWidth(kMovementLines);
+  std::size_t leftW = maxWidth(cmdLines);
+  std::size_t rightW = maxWidth(movLines);
   std::size_t totalW = leftW + kGap + rightW;
   bool sbs = isSideBySide(c);
-  std::size_t cmdCount = kCommandLines.size();
-  std::size_t movCount = kMovementLines.size();
+  std::size_t cmdCount = cmdLines.size();
+  std::size_t movCount = movLines.size();
 
   std::size_t leftPad = 0;
   if (sbs)
@@ -134,7 +137,7 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
     for (std::size_t i = 0; i < blockRows; ++i) {
       std::string line(leftPad, ' ');
       if (i < cmdCount) {
-        line += kCommandLines[i];
+        line += cmdLines[i];
         std::size_t cur = line.size() - leftPad;
         if (cur < leftW)
           line.append(leftW - cur, ' ');
@@ -143,19 +146,19 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
       }
       line.append(kGap, ' ');
       if (i < movCount)
-        line += kMovementLines[i];
+        line += movLines[i];
       vlines.push_back({line});
     }
   } else {
     for (std::size_t i = 0; i < cmdCount; ++i) {
       std::string line(leftPad, ' ');
-      line += kCommandLines[i];
+      line += cmdLines[i];
       vlines.push_back({line});
     }
     vlines.push_back({""}); // blank between blocks
     for (std::size_t i = 0; i < movCount; ++i) {
       std::string line(leftPad, ' ');
-      line += kMovementLines[i];
+      line += movLines[i];
       vlines.push_back({line});
     }
   }
@@ -175,19 +178,18 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
 }
 
 HelpBuffer::HelpBuffer() : Buffer("*help*") {
-  // Build _lines from help content (one line per data entry, no '\n').
   _lines.clear();
   auto addLine = [&](std::string_view sv) { _lines.emplace_back(sv.begin(), sv.end()); };
-  addLine(kTitle); // 0  title
-  addLine({});     // 1  separator (rendered as '=')
-  addLine({});     // 2  blank
-  for (auto& l : kCommandLines)
-    addLine(l); // 3-11
-  addLine({});  // 12 blank
-  for (auto& l : kMovementLines)
-    addLine(l);         // 13-25
-  addLine({});          // 26 blank
-  addLine(kFooterText); // 27 footer
+  addLine(kTitle);
+  addLine({});
+  addLine({});
+  for (auto& l : commandLines())
+    addLine(l);
+  addLine({});
+  for (auto& l : movementLines())
+    addLine(l);
+  addLine({});
+  addLine(kFooterText);
 }
 
 std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
@@ -209,6 +211,12 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t dataLine = _point.line;
   std::size_t dataCol = _point.offset;
 
+  // Layout indices computed from generated vectors.
+  std::size_t cmdEnd = kHeaderLines + commandLines().size();
+  std::size_t movStart = cmdEnd + 1;
+  std::size_t movEnd = movStart + movementLines().size();
+  std::size_t footer = movEnd + 1;
+
   // Scroll offset: visual row corresponding to _viewFrom.line.value.
   std::size_t scrollVis = dataLineToVisualRow(_viewFrom.line.value, c);
 
@@ -217,8 +225,8 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t curScreenRow = curVis >= scrollVis ? curVis - scrollVis : 0;
 
   // Cursor column with centering.
-  std::size_t leftW = maxWidth(kCommandLines);
-  std::size_t rightW = maxWidth(kMovementLines);
+  std::size_t leftW = maxWidth(commandLines());
+  std::size_t rightW = maxWidth(movementLines());
   std::size_t totalW = leftW + kGap + rightW;
   bool sbs = isSideBySide(c);
 
@@ -235,14 +243,14 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
     // Title: centered.
     std::size_t tpad = (c > kTitle.size()) ? (c - kTitle.size()) / 2 : 0;
     curCol = tpad + dataCol;
-  } else if (dataLine >= kCmdStart && dataLine < kCmdEnd) {
+  } else if (dataLine >= kHeaderLines && dataLine < cmdEnd) {
     curCol = leftPad + dataCol;
-  } else if (dataLine >= kMovStart && dataLine < kMovEnd) {
+  } else if (dataLine >= movStart && dataLine < movEnd) {
     if (sbs)
       curCol = leftPad + leftW + kGap + dataCol;
     else
       curCol = leftPad + dataCol;
-  } else if (dataLine == kFooter) {
+  } else if (dataLine == footer) {
     std::size_t fpad = (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
     curCol = fpad + dataCol;
   }
