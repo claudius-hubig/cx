@@ -119,6 +119,13 @@ void Screen::draw() {
     _statusExpiry.reset();
   }
 
+  // Expire find highlight.
+  if (_highlightExpiry && std::chrono::steady_clock::now() >= *_highlightExpiry) {
+    if (_buf)
+      _buf->clearHighlight();
+    _highlightExpiry.reset();
+  }
+
   // Status line on the last row, with inverted colours.
   std::string status;
   std::size_t status_vwidth = 0; // visual width (excludes ANSI escapes)
@@ -167,6 +174,13 @@ void Screen::draw() {
         status += "\x1b[2m" + hint + cnt + "\x1b[22m";
         status_vwidth += hint.size() + cnt.size();
       }
+    }
+  } else if (_prompt == Prompt::Find) {
+    status = "Find: " + _prompt_input;
+    status_vwidth = status.size();
+    if (_prompt_input.empty() && !_lastSearch.empty()) {
+      status += "\x1b[2m" + _lastSearch + "\x1b[22m";
+      status_vwidth += _lastSearch.size();
     }
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
              _prompt == Prompt::ConfirmRevert) {
@@ -429,6 +443,9 @@ bool Screen::handleTextPrompt(char c) {
           setStatus(res.error());
           _killPending = false;
         }
+      } else if (_prompt == Prompt::Find && _buf) {
+        _lastSearch = _prompt_input;
+        findNext();
       } else if (_prompt == Prompt::GoToLine && _buf) {
         std::size_t line = 0;
         if (_prompt_input == "last") {
@@ -493,6 +510,14 @@ bool Screen::handleTextPrompt(char c) {
     _prompt_input.pop_back();
     if (_prompt == Prompt::SwitchBuffer)
       updateCompletions();
+  } else if (_prompt == Prompt::Find && c == 0x06) {
+    // Ctrl-F while in Find prompt: advance to next match.
+    if (!_prompt_input.empty()) {
+      _lastSearch = _prompt_input;
+      _prompt_input.clear();
+    }
+    if (!_lastSearch.empty())
+      findNext();
   } else if (static_cast<unsigned char>(c) >= 0x20) {
     _prompt_input += c;
     auto u = static_cast<unsigned char>(c);
@@ -689,6 +714,10 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
 }
 
 bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
+  if (_buf && _highlightExpiry) {
+    _buf->clearHighlight();
+    _highlightExpiry.reset();
+  }
   auto& [rows, cols] = _size;
   if (c == '\r' || c == '\n') {
     // Buffer list: Enter selects the highlighted buffer.
@@ -795,7 +824,138 @@ bool Screen::tryExit() {
   return true; // no modified buffers remain
 }
 
+// Check if `pattern` matches `line` starting at byte offset `off`.
+// Ignored characters in the buffer line are skipped between matched chars,
+// but the first pattern character must match directly at `off`.
+// Returns the byte offset past the last matched character, or nullopt on no match.
+static std::optional<std::size_t> matchAt(std::vector<char> const& line, std::size_t off,
+                                          std::string const& pattern, bool caseSensitive,
+                                          bool matchDigits, bool matchSpecial) {
+  if (pattern.empty())
+    return off;
+  auto lower = [](char c) -> char {
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+  };
+
+  std::size_t pi = 0, li = off;
+
+  // First character must match directly (no skipping).
+  if (li >= line.size())
+    return std::nullopt;
+  if (caseSensitive ? (pattern[pi] != line[li]) : (lower(pattern[pi]) != lower(line[li])))
+    return std::nullopt;
+  ++pi;
+  ++li;
+
+  // Remaining characters: skip ignored chars between matches.
+  while (pi < pattern.size()) {
+    while (li < line.size()) {
+      auto u = static_cast<unsigned char>(line[li]);
+      if (u >= 0x80) {
+        if (!matchSpecial) {
+          li += utf8SeqLen(u);
+          continue;
+        }
+        break;
+      }
+      bool isLetter = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
+      bool isDigit = (u >= '0' && u <= '9');
+      if (!matchDigits && isDigit) {
+        ++li;
+        continue;
+      }
+      if (!matchSpecial && !isLetter && !isDigit) {
+        ++li;
+        continue;
+      }
+      break;
+    }
+    if (li >= line.size())
+      return std::nullopt;
+    if (caseSensitive ? (pattern[pi] != line[li]) : (lower(pattern[pi]) != lower(line[li])))
+      return std::nullopt;
+    ++pi;
+    ++li;
+  }
+  return li;
+}
+
+void Screen::findNext() {
+  if (!_buf || _lastSearch.empty())
+    return;
+  auto& [rows, cols] = _size;
+
+  // Determine matching flags from the search string.
+  bool caseSensitive = false, matchDigits = false, matchSpecial = false;
+  for (auto c : _lastSearch) {
+    auto u = static_cast<unsigned char>(c);
+    if (u >= 'A' && u <= 'Z')
+      caseSensitive = true;
+    if (u >= '0' && u <= '9')
+      matchDigits = true;
+    bool isLetter = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
+    bool isDigit = (u >= '0' && u <= '9');
+    if (!isLetter && !isDigit)
+      matchSpecial = true;
+  }
+
+  std::size_t lineCount = _buf->lineCount();
+  std::size_t startLine = _buf->point().line;
+  std::size_t startOff = _buf->point().offset;
+  bool wrapped = false;
+
+  auto found = [&](std::size_t li, std::size_t matchStart, std::size_t matchEnd, bool didWrap) {
+    _buf->setPoint(li, matchEnd);
+    _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+    _buf->setHighlight({li, matchStart}, {li, matchEnd});
+    _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    _pasteState.reset();
+    if (didWrap)
+      setStatus("Found (wrapped)");
+    else {
+      _statusMsg.clear();
+      _statusExpiry.reset();
+    }
+  };
+
+  // Search forward from current position, wrapping around.
+  for (std::size_t count = 0; count < lineCount; ++count) {
+    std::size_t li = (startLine + count) % lineCount;
+    if (count > 0 && li <= startLine)
+      wrapped = true;
+    auto const& line = _buf->lineContent(li);
+    std::size_t from = (count == 0) ? startOff : 0;
+
+    for (std::size_t off = from; off < line.size(); ++off) {
+      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
+        found(li, off, *end, wrapped);
+        return;
+      }
+    }
+  }
+
+  // Check the start of the starting line (before original cursor).
+  {
+    auto const& line = _buf->lineContent(startLine);
+    std::size_t limit = std::min(startOff, line.size());
+    for (std::size_t off = 0; off < limit; ++off) {
+      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
+        found(startLine, off, *end, true);
+        return;
+      }
+    }
+  }
+
+  _buf->clearHighlight();
+  _highlightExpiry.reset();
+  setStatus("Not found");
+}
+
 void Screen::dispatchAction(Action action) {
+  if (action != Action::Find && _buf) {
+    _buf->clearHighlight();
+    _highlightExpiry.reset();
+  }
   auto& [rows, cols] = _size;
   switch (action) {
   case Action::Help:
@@ -911,6 +1071,12 @@ void Screen::dispatchAction(Action action) {
   case Action::DeleteChunkBefore:
     if (_buf)
       _buf->deleteChunkBeforePoint();
+    break;
+  case Action::Find:
+    if (!_lastSearch.empty() && _buf)
+      findNext();
+    _prompt = Prompt::Find;
+    _prompt_input.clear();
     break;
   case Action::Revert:
     if (_buf && !_buf->readonly()) {

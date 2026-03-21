@@ -354,3 +354,87 @@ BOOST_AUTO_TEST_CASE(render_cursor_on_second_line) {
   BOOST_CHECK_EQUAL(row.value, 1u);
   BOOST_CHECK_EQUAL(col.value, 3u);
 }
+
+// --- Highlight rendering ---
+
+BOOST_AUTO_TEST_CASE(render_highlight_emits_ansi) {
+  TextBuffer buf("test");
+  insertString(buf, "hello world");
+  buf.moveHome();
+  // Highlight "hello" (bytes 0..5).
+  buf.setHighlight({0, 0}, {0, 5});
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20});
+  // The highlight escape (light blue bg) should appear in the output.
+  BOOST_CHECK(out.find("\x1b[48;2;60;100;160m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_highlight_cleared_no_ansi) {
+  TextBuffer buf("test");
+  insertString(buf, "hello world");
+  buf.moveHome();
+  buf.setHighlight({0, 0}, {0, 5});
+  buf.clearHighlight();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20});
+  // No highlight escape should appear.
+  BOOST_CHECK(out.find("\x1b[48;2;60;100;160m") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_highlight_partial_line) {
+  TextBuffer buf("test");
+  insertString(buf, "abcdefgh");
+  buf.moveHome();
+  // Highlight "cde" (bytes 2..5).
+  buf.setHighlight({0, 2}, {0, 5});
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20});
+  // Highlight should appear.
+  BOOST_CHECK(out.find("\x1b[48;2;60;100;160m") != std::string::npos);
+  // Content should still be present.
+  auto grid = renderToGrid(out, 5, 20);
+  BOOST_CHECK(grid[0].find("abcdefgh") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_highlight_on_second_line) {
+  TextBuffer buf("test");
+  insertString(buf, "aaa\nbbb\nccc");
+  buf.moveHome();
+  // Highlight "bbb" on line 1.
+  buf.setHighlight({1, 0}, {1, 3});
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20});
+  BOOST_CHECK(out.find("\x1b[48;2;60;100;160m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_highlight_nowrap) {
+  TextBuffer buf("test");
+  insertString(buf, "hello world");
+  buf.moveHome();
+  buf.setHighlight({0, 6}, {0, 11}); // "world"
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20}, false, false); // no-wrap mode
+  BOOST_CHECK(out.find("\x1b[48;2;60;100;160m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_highlight_does_not_affect_cursor_pos) {
+  TextBuffer buf("test");
+  insertString(buf, "hello world");
+  buf.moveHome();
+  buf.moveRight(); // at 'e'
+  buf.moveRight(); // at 'l'
+
+  // Render without highlight.
+  std::string out1;
+  auto [row1, col1] = buf.render(out1, RowIdx{5}, ColIdx{20});
+
+  // Render with highlight.
+  buf.setHighlight({0, 0}, {0, 5});
+  std::string out2;
+  auto [row2, col2] = buf.render(out2, RowIdx{5}, ColIdx{20});
+
+  // Cursor position should be the same.
+  BOOST_CHECK_EQUAL(row1.value, row2.value);
+  BOOST_CHECK_EQUAL(col1.value, col2.value);
+  buf.clearHighlight();
+}

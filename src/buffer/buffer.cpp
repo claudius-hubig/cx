@@ -654,6 +654,12 @@ void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
   _viewFrom.col = ColIdx{0};
 }
 
+void Buffer::setPoint(std::size_t line, std::size_t offset) {
+  _point.line = std::min(line, _lines.size() - 1);
+  _point.offset = std::min(offset, _lines[_point.line].size());
+  _desiredCol.reset();
+}
+
 void Buffer::scrollUp(bool wrap) {
   if (wrap && _viewFrom.col.value > 0) {
     _viewFrom.col = ColIdx{0};
@@ -977,12 +983,23 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     regionEnd = std::max(_mark.value(), _point);
   }
 
+  // Find highlight (light blue background).
+  static constexpr auto kHighlightOn = "\x1b[48;2;60;100;160m";
+  static constexpr auto kHighlightOff = "\x1b[0m";
+
   // Helper: is position {lineIdx, byteOffset} within [regionStart, regionEnd)?
   auto inRegion = [&](std::size_t lineIdx, std::size_t byteOffset) -> bool {
     if (!hasRegion)
       return false;
     BufferPoint p{lineIdx, byteOffset};
     return regionStart <= p && p < regionEnd;
+  };
+
+  auto inHighlight = [&](std::size_t lineIdx, std::size_t byteOffset) -> bool {
+    if (!_highlight)
+      return false;
+    BufferPoint p{lineIdx, byteOffset};
+    return _highlight->from <= p && p < _highlight->to;
   };
 
   std::size_t cur_row = 0, cur_col = 0;
@@ -1003,6 +1020,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       std::size_t vcol = 0;
       bool overflows = false; // content extends past visible area
       bool regionActive = false;
+      bool highlightActive = false;
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -1025,7 +1043,19 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           break;
         }
 
-        bool wantRegion = inRegion(lineIdx, i);
+        bool wantHl = inHighlight(lineIdx, i);
+        bool wantRegion = !wantHl && inRegion(lineIdx, i);
+        if (wantHl && !highlightActive) {
+          if (regionActive) {
+            out += kRegionOff;
+            regionActive = false;
+          }
+          out += kHighlightOn;
+          highlightActive = true;
+        } else if (!wantHl && highlightActive) {
+          out += kHighlightOff;
+          highlightActive = false;
+        }
         if (wantRegion && !regionActive) {
           out += kRegionOn;
           regionActive = true;
@@ -1055,6 +1085,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         out += ' ';
       }
 
+      if (highlightActive) {
+        out += kHighlightOff;
+        highlightActive = false;
+      }
       if (regionActive) {
         out += kRegionOff;
         regionActive = false;
@@ -1108,12 +1142,17 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // Track whether the previous row was full (deferred wrap indicator).
     bool pendingWrap = false;
     bool regionActive = false;
+    bool highlightActive = false;
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
 
       // Wrap if the representation doesn't fit on the current line.
       if (col + info.width > cw || pendingWrap) {
+        if (highlightActive) {
+          out += kHighlightOff;
+          highlightActive = false;
+        }
         if (regionActive) {
           out += kRegionOff;
           regionActive = false;
@@ -1135,7 +1174,19 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         pointFound = true;
       }
 
-      bool wantRegion = inRegion(lineIdx, i);
+      bool wantHl = inHighlight(lineIdx, i);
+      bool wantRegion = !wantHl && inRegion(lineIdx, i);
+      if (wantHl && !highlightActive) {
+        if (regionActive) {
+          out += kRegionOff;
+          regionActive = false;
+        }
+        out += kHighlightOn;
+        highlightActive = true;
+      } else if (!wantHl && highlightActive) {
+        out += kHighlightOff;
+        highlightActive = false;
+      }
       if (wantRegion && !regionActive) {
         out += kRegionOn;
         regionActive = true;
@@ -1182,6 +1233,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           regionActive = true;
         }
         out += ' ';
+      }
+      if (highlightActive) {
+        out += kHighlightOff;
+        highlightActive = false;
       }
       if (regionActive) {
         out += kRegionOff;

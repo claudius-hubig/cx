@@ -225,6 +225,17 @@ public:
   /// Number of lines in the buffer.
   std::size_t lineCount() const { return _lines.size(); }
 
+  /// Access the raw content of a line by 0-based index.
+  std::vector<char> const& lineContent(std::size_t idx) const { return _lines[idx]; }
+
+  /// Set point to (line, offset). Clamps to valid range. Resets _desiredCol.
+  void setPoint(std::size_t line, std::size_t offset);
+
+  /// Set a temporary highlight range (used by find). render() will display
+  /// characters in [from, to) with a highlight style.
+  void setHighlight(BufferPoint from, BufferPoint to) { _highlight = Highlight{from, to}; }
+  void clearHighlight() { _highlight.reset(); }
+
 protected:
   explicit Buffer(std::string name);
 
@@ -253,4 +264,10 @@ protected:
   bool _wrapMode = false; // tracks last wrap mode seen by ensureVisible
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
+
+  struct Highlight {
+    BufferPoint from;
+    BufferPoint to;
+  };
+  std::optional<Highlight> _highlight;
 };

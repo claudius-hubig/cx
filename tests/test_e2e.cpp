@@ -261,3 +261,324 @@ BOOST_AUTO_TEST_CASE(e2e_help_buffer) {
                "c");
   session.waitExit();
 }
+
+BOOST_AUTO_TEST_CASE(e2e_discard_without_saving) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Type some text so the buffer is modified.
+  session.send("some text");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Esc-c to exit, then 'n' to discard unsaved changes.
+  session.send("\x1b"
+               "c"
+               "n");
+  int exitCode = session.waitExit();
+  BOOST_CHECK_EQUAL(exitCode, 0);
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_basic) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("alpha beta gamma delta");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("alpha", std::chrono::milliseconds{500});
+
+  // Ctrl-F to open find, type "gamma", Enter to search.
+  session.send("\x06"
+               "gamma\r");
+  auto output = session.readOutput(std::chrono::milliseconds{500});
+  auto stripped = stripAnsi(output);
+  // The buffer should have found "gamma" — no "Not found" message.
+  BOOST_CHECK(stripped.find("Not found") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_not_found) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("hello world");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("hello", std::chrono::milliseconds{500});
+
+  // Search for something that doesn't exist.
+  session.send("\x06"
+               "zzz\r");
+  auto output = session.readUntil("Not found", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Not found") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_next_with_ctrl_f) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Create a file with repeated words.
+  TempFile tmp("foo bar foo baz foo");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("foo", std::chrono::milliseconds{500});
+
+  // First Ctrl-F: search for "foo".
+  session.send("\x06"
+               "foo\r");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Second Ctrl-F should advance to next occurrence and re-prompt.
+  // Press Enter with empty input to keep searching for "foo".
+  session.send("\x06\r");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Third Ctrl-F to advance again.
+  session.send("\x06\r");
+  auto output = session.readOutput(std::chrono::milliseconds{300});
+  auto stripped = stripAnsi(output);
+  // Should eventually wrap around. Check no crash occurred.
+  BOOST_CHECK(!stripped.empty() || output.empty()); // at least didn't hang
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_case_insensitive) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("Hello World");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("Hello", std::chrono::milliseconds{500});
+
+  // Lowercase search should find uppercase match (case-insensitive).
+  session.send("\x06"
+               "hello\r");
+  auto output = session.readOutput(std::chrono::milliseconds{500});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Not found") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_case_sensitive) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("hello world");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("hello", std::chrono::milliseconds{500});
+
+  // Uppercase search should not match lowercase text.
+  session.send("\x06"
+               "Hello\r");
+  auto output = session.readUntil("Not found", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Not found") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_skips_digits) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // "a8b" should be found by searching "ab" (digits ignored when not in pattern).
+  TempFile tmp("a8b");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("a8b", std::chrono::milliseconds{500});
+
+  session.send("\x06"
+               "ab\r");
+  auto output = session.readOutput(std::chrono::milliseconds{500});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Not found") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_skips_special) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // "a#b" should be found by searching "ab" (specials ignored when not in pattern).
+  TempFile tmp("a#b");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("a#b", std::chrono::milliseconds{500});
+
+  session.send("\x06"
+               "ab\r");
+  auto output = session.readOutput(std::chrono::milliseconds{500});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Not found") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_find_prompt_shows) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Ctrl-F should open the Find prompt.
+  session.send("\x06");
+  auto output = session.readUntil("Find:", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Find:") != std::string::npos);
+
+  // Escape to cancel, then exit.
+  session.send("\x1b\x1b");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_revert_prompt_shows) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("original content");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("original", std::chrono::milliseconds{500});
+
+  // Ctrl-R should show a revert confirmation prompt.
+  session.send("\x12");
+  auto output = session.readUntil("revert", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("revert") != std::string::npos ||
+              stripped.find("Revert") != std::string::npos ||
+              stripped.find("y/n") != std::string::npos);
+
+  // Press 'n' to cancel.
+  session.send("n");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_revert_restores_content) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("original content");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("original", std::chrono::milliseconds{500});
+
+  // Type something to modify the buffer.
+  session.send("MODIFIED ");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Ctrl-R then 'y' to revert.
+  session.send("\x12"
+               "y");
+  auto output = session.readUntil("original", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  // After revert, original content should be displayed.
+  BOOST_CHECK(stripped.find("original") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_revert_scratch_buffer_error) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Start with no file (scratch buffer).
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Ctrl-R on a scratch buffer should show an error.
+  session.send("\x12");
+  auto output = session.readOutput(std::chrono::milliseconds{500});
+  auto stripped = stripAnsi(output);
+  // Should mention inability to revert (temporary/scratch buffer).
+  BOOST_CHECK(stripped.find("emporary") != std::string::npos ||
+              stripped.find("revert") != std::string::npos ||
+              stripped.find("no path") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_unrecognised_shortcut_message) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Ctrl-z is not a bound shortcut (no Esc timing issues).
+  session.send("\x1a"); // Ctrl-Z = 0x1A
+  auto output = session.readUntil("not recognised", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("not recognised") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}

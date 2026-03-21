@@ -28,6 +28,7 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 - **Word and paragraph navigation** — move by word, paragraph, or go to a specific line
 - **Chunk deletion** — delete contiguous runs of whitespace or non-whitespace in either direction
 - **Save / Save As** — write to the backing file or choose a new path
+- **Find** — smart search: case-insensitive when pattern is lowercase; digits and special characters in the buffer are skipped unless they appear in the pattern
 - **Revert** — reload a buffer's contents from disk
 - **Built-in help** — adaptive side-by-side or stacked layout depending on terminal width
 
@@ -44,6 +45,7 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 | Ctrl-s | Save file |
 | Ctrl-k | Kill buffer |
 | Ctrl-r | Revert buffer from file |
+| Ctrl-f | Find |
 | Esc-s | Toggle whitespace |
 | Esc-l | Toggle line wrap |
 | Ctrl-Space | Set / clear mark |

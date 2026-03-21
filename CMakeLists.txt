@@ -119,6 +119,14 @@ target_include_directories(test_scroll PRIVATE src .)
 target_link_libraries(test_scroll Boost::unit_test_framework)
 add_test(NAME scroll COMMAND test_scroll)
 
+add_executable(test_shortcut
+    tests/test_shortcut.cpp
+    src/shortcut.cpp
+)
+target_include_directories(test_shortcut PRIVATE src)
+target_link_libraries(test_shortcut Boost::unit_test_framework)
+add_test(NAME shortcut COMMAND test_shortcut)
+
 add_executable(test_e2e
     tests/test_e2e.cpp
     src/buffer/buffer.cpp

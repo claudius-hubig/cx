@@ -72,7 +72,8 @@ private:
     SwitchBuffer,
     ConfirmSave,
     ConfirmKill,
-    ConfirmRevert
+    ConfirmRevert,
+    Find
   };
   Prompt _prompt = Prompt::None;
   std::string _prompt_input;
@@ -91,6 +92,11 @@ private:
     std::size_t rbIdx;
   };
   std::optional<PasteState> _pasteState;
+
+  // Find state.
+  void findNext();
+  std::string _lastSearch;
+  std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
 
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();
