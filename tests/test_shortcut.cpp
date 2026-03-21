@@ -24,10 +24,22 @@ BOOST_AUTO_TEST_CASE(ctrl_f_maps_to_find) {
   BOOST_CHECK(*action == Action::Find);
 }
 
-BOOST_AUTO_TEST_CASE(ctrl_r_maps_to_revert) {
+BOOST_AUTO_TEST_CASE(ctrl_r_maps_to_find_backward) {
   auto action = handleShortcut({.ctrl = true, .key = 'r'});
   BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::FindBackward);
+}
+
+BOOST_AUTO_TEST_CASE(esc_r_maps_to_revert) {
+  auto action = handleShortcut({.esc = true, .key = 'r'});
+  BOOST_REQUIRE(action.has_value());
   BOOST_CHECK(*action == Action::Revert);
+}
+
+BOOST_AUTO_TEST_CASE(esc_p_maps_to_paste_ring) {
+  auto action = handleShortcut({.esc = true, .key = 'p'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::PasteRing);
 }
 
 BOOST_AUTO_TEST_CASE(esc_c_maps_to_exit) {
@@ -89,6 +101,12 @@ BOOST_AUTO_TEST_CASE(reverse_lookup_find) {
 
 BOOST_AUTO_TEST_CASE(reverse_lookup_revert) {
   auto s = shortcutForAction(Action::Revert);
+  BOOST_CHECK(s.esc);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('r'));
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_find_backward) {
+  auto s = shortcutForAction(Action::FindBackward);
   BOOST_CHECK(s.ctrl);
   BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('r'));
 }
@@ -130,7 +148,11 @@ BOOST_AUTO_TEST_CASE(description_save) {
 }
 
 BOOST_AUTO_TEST_CASE(description_find) {
-  BOOST_CHECK_EQUAL(descriptionForAction(Action::Find), "Find");
+  BOOST_CHECK_EQUAL(descriptionForAction(Action::Find), "Find forward");
+}
+
+BOOST_AUTO_TEST_CASE(description_find_backward) {
+  BOOST_CHECK_EQUAL(descriptionForAction(Action::FindBackward), "Find backward");
 }
 
 BOOST_AUTO_TEST_CASE(description_revert) {
@@ -168,6 +190,10 @@ BOOST_AUTO_TEST_CASE(ctrl_char_0x12_is_ctrl_r) {
   auto s = shortcutFromCtrlChar(0x12);
   BOOST_CHECK(s.ctrl);
   BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('r'));
+  // Ctrl-R is now FindBackward.
+  auto action = handleShortcut(s);
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::FindBackward);
 }
 
 BOOST_AUTO_TEST_CASE(ctrl_char_roundtrip_finds_action) {
@@ -197,11 +223,11 @@ BOOST_AUTO_TEST_CASE(esc_char_roundtrip_finds_action) {
 // --- All actions have descriptions ---
 
 BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
-  for (auto a :
-       {Action::Help, Action::Exit, Action::GoToLine, Action::Save, Action::KillBuffer,
-        Action::SwitchBuffer, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
-        Action::PasteCycle, Action::DeleteChunkBefore, Action::Revert, Action::Find,
-        Action::BufferList, Action::PasteRing, Action::ToggleWhitespace, Action::ToggleWrap}) {
+  for (auto a : {Action::Help, Action::Exit, Action::GoToLine, Action::Save, Action::KillBuffer,
+                 Action::SwitchBuffer, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
+                 Action::PasteCycle, Action::DeleteChunkBefore, Action::Revert, Action::Find,
+                 Action::FindBackward, Action::BufferList, Action::PasteRing,
+                 Action::ToggleWhitespace, Action::ToggleWrap}) {
     BOOST_CHECK(!descriptionForAction(a).empty());
   }
 }
@@ -209,11 +235,11 @@ BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
 // --- All actions have shortcuts ---
 
 BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
-  for (auto a :
-       {Action::Help, Action::Exit, Action::GoToLine, Action::Save, Action::KillBuffer,
-        Action::SwitchBuffer, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
-        Action::PasteCycle, Action::DeleteChunkBefore, Action::Revert, Action::Find,
-        Action::BufferList, Action::PasteRing, Action::ToggleWhitespace, Action::ToggleWrap}) {
+  for (auto a : {Action::Help, Action::Exit, Action::GoToLine, Action::Save, Action::KillBuffer,
+                 Action::SwitchBuffer, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
+                 Action::PasteCycle, Action::DeleteChunkBefore, Action::Revert, Action::Find,
+                 Action::FindBackward, Action::BufferList, Action::PasteRing,
+                 Action::ToggleWhitespace, Action::ToggleWrap}) {
     auto s = shortcutForAction(a);
     // Every action should have either ctrl or esc set.
     BOOST_CHECK(s.ctrl || s.esc);

@@ -19,18 +19,18 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 
 ## Features
 
-- **UTF-8 support** — full Unicode text editing and display
+- **UTF-8 support** — full Unicode text editing and display, including CJK wide characters
 - **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion
-- **Buffer list** — interactive tree view of open buffers
-- **Line wrapping** — toggle soft line wrap on/off
-- **Whitespace display** — toggle visible whitespace markers
+- **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
+- **Find** — smart incremental search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. Ctrl-F again advances to the next match while re-prompting for a new search string. Matched text is temporarily highlighted.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Word and paragraph navigation** — move by word, paragraph, or go to a specific line
 - **Chunk deletion** — delete contiguous runs of whitespace or non-whitespace in either direction
+- **Line wrapping** — toggle soft line wrap on/off
+- **Whitespace display** — toggle visible whitespace markers (spaces, tabs, newlines)
 - **Save / Save As** — write to the backing file or choose a new path
-- **Find** — smart search: case-insensitive when pattern is lowercase; digits and special characters in the buffer are skipped unless they appear in the pattern
-- **Revert** — reload a buffer's contents from disk
-- **Built-in help** — adaptive side-by-side or stacked layout depending on terminal width
+- **Revert** — reload a buffer's contents from disk with confirmation
+- **Built-in help** — adaptive side-by-side or stacked layout depending on terminal width; generated from the keybinding table so it is always up to date
 
 ## Keyboard Shortcuts
 
@@ -44,8 +44,9 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 | Esc-b | Buffer list |
 | Ctrl-s | Save file |
 | Ctrl-k | Kill buffer |
-| Ctrl-r | Revert buffer from file |
-| Ctrl-f | Find |
+| Esc-r | Revert buffer from file |
+| Ctrl-f | Find forward |
+| Ctrl-r | Find backward |
 | Esc-s | Toggle whitespace |
 | Esc-l | Toggle line wrap |
 | Ctrl-Space | Set / clear mark |
@@ -53,7 +54,7 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 | Esc-w | Copy region |
 | Ctrl-y | Paste |
 | Esc-y | Paste cycle |
-| Esc-r | Paste ring |
+| Esc-p | Paste ring |
 
 ### Movement
 

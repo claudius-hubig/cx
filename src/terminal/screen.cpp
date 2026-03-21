@@ -127,16 +127,22 @@ void Screen::draw() {
   }
 
   // Status line on the last row, with inverted colours.
+  // Always show line:col when a buffer is available.
   std::string status;
   std::size_t status_vwidth = 0; // visual width (excludes ANSI escapes)
+  if (_buf) {
+    auto [line, col] = _buf->lineCol();
+    status = std::to_string(line) + ":" + std::to_string(col);
+    status_vwidth = status.size();
+  }
   if (_prompt == Prompt::GoToLine) {
-    status = "Go to line: " + _prompt_input;
+    status += " | Go to line: " + _prompt_input;
     status_vwidth = status.size();
   } else if (_prompt == Prompt::SaveAs) {
-    status = "Save as: " + _prompt_input;
+    status += " | Save as: " + _prompt_input;
     status_vwidth = status.size();
   } else if (_prompt == Prompt::SwitchBuffer) {
-    status = "Buffer: " + _prompt_input;
+    status += " | Buffer: " + _prompt_input;
     status_vwidth = status.size();
     // Append completion hints (dim text). A completion's match
     // string may or may not share the typed prefix (e.g. filename
@@ -176,7 +182,7 @@ void Screen::draw() {
       }
     }
   } else if (_prompt == Prompt::Find) {
-    status = "Find: " + _prompt_input;
+    status += " | Find: " + _prompt_input;
     status_vwidth = status.size();
     if (_prompt_input.empty() && !_lastSearch.empty()) {
       status += "\x1b[2m" + _lastSearch + "\x1b[22m";
@@ -184,14 +190,13 @@ void Screen::draw() {
     }
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
              _prompt == Prompt::ConfirmRevert) {
-    status = _prompt_input;
+    status += " | " + _prompt_input;
     status_vwidth = status.size();
-  } else if (_buf) {
-    auto [line, col] = _buf->lineCol();
-    status = std::to_string(line) + ":" + std::to_string(col);
-    if (!_statusMsg.empty())
+  } else {
+    if (!_statusMsg.empty()) {
       status += " | " + _statusMsg;
-    status_vwidth = status.size();
+      status_vwidth = status.size();
+    }
   }
 
   // Right-align the buffer name + modification indicator on the status line.
@@ -511,13 +516,21 @@ bool Screen::handleTextPrompt(char c) {
     if (_prompt == Prompt::SwitchBuffer)
       updateCompletions();
   } else if (_prompt == Prompt::Find && c == 0x06) {
-    // Ctrl-F while in Find prompt: advance to next match.
+    // Ctrl-F while in Find prompt: advance to next match forward.
     if (!_prompt_input.empty()) {
       _lastSearch = _prompt_input;
       _prompt_input.clear();
     }
     if (!_lastSearch.empty())
       findNext();
+  } else if (_prompt == Prompt::Find && c == 0x12) {
+    // Ctrl-R while in Find prompt: advance to next match backward.
+    if (!_prompt_input.empty()) {
+      _lastSearch = _prompt_input;
+      _prompt_input.clear();
+    }
+    if (!_lastSearch.empty())
+      findPrev();
   } else if (static_cast<unsigned char>(c) >= 0x20) {
     _prompt_input += c;
     auto u = static_cast<unsigned char>(c);
@@ -951,8 +964,102 @@ void Screen::findNext() {
   setStatus("Not found");
 }
 
+void Screen::findPrev() {
+  if (!_buf || _lastSearch.empty())
+    return;
+  auto& [rows, cols] = _size;
+
+  // Determine matching flags from the search string.
+  bool caseSensitive = false, matchDigits = false, matchSpecial = false;
+  for (auto c : _lastSearch) {
+    auto u = static_cast<unsigned char>(c);
+    if (u >= 'A' && u <= 'Z')
+      caseSensitive = true;
+    if (u >= '0' && u <= '9')
+      matchDigits = true;
+    bool isLetter = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
+    bool isDigit = (u >= '0' && u <= '9');
+    if (!isLetter && !isDigit)
+      matchSpecial = true;
+  }
+
+  std::size_t lineCount = _buf->lineCount();
+  std::size_t startLine = _buf->point().line;
+  std::size_t startOff = _buf->point().offset;
+  bool wrapped = false;
+
+  auto found = [&](std::size_t li, std::size_t matchStart, std::size_t matchEnd, bool didWrap) {
+    _buf->setPoint(li, matchEnd);
+    _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+    _buf->setHighlight({li, matchStart}, {li, matchEnd});
+    _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    _pasteState.reset();
+    if (didWrap)
+      setStatus("Found (wrapped)");
+    else {
+      _statusMsg.clear();
+      _statusExpiry.reset();
+    }
+  };
+
+  // Search backward on the current line before the cursor.
+  {
+    auto const& line = _buf->lineContent(startLine);
+    std::size_t limit = std::min(startOff, line.size());
+    // Scan forward but track the last match ending before the cursor.
+    // Strict < so we skip the current match (whose end == startOff).
+    std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
+    for (std::size_t off = 0; off < limit; ++off) {
+      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
+        if (*end < startOff)
+          lastMatch = {off, *end};
+      }
+    }
+    if (lastMatch) {
+      found(startLine, lastMatch->first, lastMatch->second, false);
+      return;
+    }
+  }
+
+  // Search backward through preceding lines, wrapping around.
+  for (std::size_t count = 1; count < lineCount; ++count) {
+    std::size_t li = (startLine + lineCount - count) % lineCount;
+    if (li >= startLine)
+      wrapped = true;
+    auto const& line = _buf->lineContent(li);
+    // Find the last match on this line.
+    std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
+    for (std::size_t off = 0; off < line.size(); ++off) {
+      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial))
+        lastMatch = {off, *end};
+    }
+    if (lastMatch) {
+      found(li, lastMatch->first, lastMatch->second, wrapped);
+      return;
+    }
+  }
+
+  // Check the current line after the cursor (wrapped).
+  {
+    auto const& line = _buf->lineContent(startLine);
+    std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
+    for (std::size_t off = startOff; off < line.size(); ++off) {
+      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial))
+        lastMatch = {off, *end};
+    }
+    if (lastMatch) {
+      found(startLine, lastMatch->first, lastMatch->second, true);
+      return;
+    }
+  }
+
+  _buf->clearHighlight();
+  _highlightExpiry.reset();
+  setStatus("Not found");
+}
+
 void Screen::dispatchAction(Action action) {
-  if (action != Action::Find && _buf) {
+  if (action != Action::Find && action != Action::FindBackward && _buf) {
     _buf->clearHighlight();
     _highlightExpiry.reset();
   }
@@ -1075,6 +1182,12 @@ void Screen::dispatchAction(Action action) {
   case Action::Find:
     if (!_lastSearch.empty() && _buf)
       findNext();
+    _prompt = Prompt::Find;
+    _prompt_input.clear();
+    break;
+  case Action::FindBackward:
+    if (!_lastSearch.empty() && _buf)
+      findPrev();
     _prompt = Prompt::Find;
     _prompt_input.clear();
     break;

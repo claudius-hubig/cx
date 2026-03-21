@@ -14,42 +14,62 @@ static std::string formatHelpLine(Action a) {
   auto desc = descriptionForAction(a);
   std::string line = "  ";
   line += label;
-  while (line.size() < 14)
+  while (line.size() < 16)
     line += ' ';
   line += desc;
   return line;
 }
 
-static std::vector<std::string> const& commandLines() {
+// A hardcoded line with the same padding convention.
+static std::string formatRawLine(std::string_view key, std::string_view desc) {
+  std::string line = "  ";
+  line += key;
+  while (line.size() < 16)
+    line += ' ';
+  line += desc;
+  return line;
+}
+
+static std::vector<std::string> const& leftColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
-    v.emplace_back("Commands:");
+    v.emplace_back("Files & Buffers:");
     for (auto a : {Action::Help, Action::Exit, Action::SwitchBuffer, Action::BufferList,
-                   Action::Save, Action::KillBuffer, Action::Revert, Action::Find,
-                   Action::ToggleWhitespace, Action::ToggleWrap, Action::ToggleMark, Action::Cut,
-                   Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
+                   Action::Save, Action::KillBuffer, Action::Revert})
+      v.push_back(formatHelpLine(a));
+    v.emplace_back("");
+    v.emplace_back("Search & Edit:");
+    v.push_back(formatHelpLine(Action::Find));
+    v.push_back(formatHelpLine(Action::FindBackward));
+    v.push_back(formatHelpLine(Action::ToggleMark));
+    for (auto a : {Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
     return v;
   }();
   return lines;
 }
 
-static std::vector<std::string> const& movementLines() {
+static std::vector<std::string> const& rightColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
     v.emplace_back("Movement:");
-    v.emplace_back("  \xe2\x86\x90/\xe2\x86\x91/\xe2\x86\x92/\xe2\x86\x93     Move cursor");
-    v.emplace_back("  Ctrl-\xe2\x86\x90/\xe2\x86\x92    Move by word");
-    v.emplace_back("  Ctrl-\xe2\x86\x91/\xe2\x86\x93    Move by paragraph");
+    v.push_back(
+        formatRawLine("\xe2\x86\x90/\xe2\x86\x91/\xe2\x86\x92/\xe2\x86\x93", "Move cursor"));
+    v.push_back(formatRawLine("Ctrl-\xe2\x86\x90/\xe2\x86\x92", "Move by word"));
+    v.push_back(formatRawLine("Ctrl-\xe2\x86\x91/\xe2\x86\x93", "Move by paragraph"));
     v.push_back(formatHelpLine(Action::GoToLine));
-    v.emplace_back("  PgUp        Page up (half screen)");
-    v.emplace_back("  PgDn        Page down (half screen)");
-    v.emplace_back("  Home        Start of line");
-    v.emplace_back("  End         End of line");
-    v.emplace_back("  Bksp        Delete before cursor");
+    v.push_back(formatRawLine("PgUp/PgDn", "Page up/down (half screen)"));
+    v.push_back(formatRawLine("Home/End", "Start/end of line"));
+    v.emplace_back("");
+    v.emplace_back("Display:");
+    v.push_back(formatHelpLine(Action::ToggleWhitespace));
+    v.push_back(formatHelpLine(Action::ToggleWrap));
+    v.emplace_back("");
+    v.emplace_back("Deletion:");
+    v.push_back(formatRawLine("Bksp", "Delete before cursor"));
     v.push_back(formatHelpLine(Action::DeleteChunkBefore));
-    v.emplace_back("  Delete      Delete at cursor");
-    v.emplace_back("  Ctrl-Del    Delete chunk at cursor");
+    v.push_back(formatRawLine("Delete", "Delete at cursor"));
+    v.push_back(formatRawLine("Ctrl-Del", "Delete chunk at cursor"));
     return v;
   }();
   return lines;
@@ -69,26 +89,26 @@ static std::size_t maxWidth(std::span<std::string const> lines) {
 }
 
 static bool isSideBySide(std::size_t cols) {
-  return maxWidth(commandLines()) + kGap + maxWidth(movementLines()) <= cols;
+  return maxWidth(leftColumn()) + kGap + maxWidth(rightColumn()) <= cols;
 }
 
 // Map a data-line index to an absolute visual row.
 static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
-  auto cmdCount = commandLines().size();
-  auto movCount = movementLines().size();
-  std::size_t cmdEnd = kHeaderLines + cmdCount;
-  std::size_t movStart = cmdEnd + 1;
-  std::size_t movEnd = movStart + movCount;
+  auto leftCount = leftColumn().size();
+  auto rightCount = rightColumn().size();
+  std::size_t leftEnd = kHeaderLines + leftCount;
+  std::size_t rightStart = leftEnd + 1;
+  std::size_t rightEnd = rightStart + rightCount;
 
   if (!isSideBySide(cols))
     return dataLine; // stacked: 1:1
 
-  if (dataLine < movStart)
+  if (dataLine < rightStart)
     return dataLine;
-  if (dataLine < movEnd)
-    return kHeaderLines + (dataLine - movStart);
-  std::size_t mergedRows = std::max(cmdCount, movCount);
-  return kHeaderLines + mergedRows + (dataLine - movEnd);
+  if (dataLine < rightEnd)
+    return kHeaderLines + (dataLine - rightStart);
+  std::size_t mergedRows = std::max(leftCount, rightCount);
+  return kHeaderLines + mergedRows + (dataLine - rightEnd);
 }
 
 // Build all visual lines for a given column width.
@@ -97,8 +117,8 @@ struct VisualLine {
 };
 
 static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
-  auto const& cmdLines = commandLines();
-  auto const& movLines = movementLines();
+  auto const& leftLines = leftColumn();
+  auto const& rightLines = rightColumn();
 
   std::vector<VisualLine> vlines;
   std::size_t c = cols;
@@ -117,12 +137,12 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   // Row 2: blank.
   vlines.push_back({""});
 
-  std::size_t leftW = maxWidth(cmdLines);
-  std::size_t rightW = maxWidth(movLines);
+  std::size_t leftW = maxWidth(leftLines);
+  std::size_t rightW = maxWidth(rightLines);
   std::size_t totalW = leftW + kGap + rightW;
   bool sbs = isSideBySide(c);
-  std::size_t cmdCount = cmdLines.size();
-  std::size_t movCount = movLines.size();
+  std::size_t leftCount = leftLines.size();
+  std::size_t rightCount = rightLines.size();
 
   std::size_t leftPad = 0;
   if (sbs)
@@ -133,11 +153,11 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   }
 
   if (sbs) {
-    std::size_t blockRows = std::max(cmdCount, movCount);
+    std::size_t blockRows = std::max(leftCount, rightCount);
     for (std::size_t i = 0; i < blockRows; ++i) {
       std::string line(leftPad, ' ');
-      if (i < cmdCount) {
-        line += cmdLines[i];
+      if (i < leftCount) {
+        line += leftLines[i];
         std::size_t cur = line.size() - leftPad;
         if (cur < leftW)
           line.append(leftW - cur, ' ');
@@ -145,20 +165,20 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
         line.append(leftW, ' ');
       }
       line.append(kGap, ' ');
-      if (i < movCount)
-        line += movLines[i];
+      if (i < rightCount)
+        line += rightLines[i];
       vlines.push_back({line});
     }
   } else {
-    for (std::size_t i = 0; i < cmdCount; ++i) {
+    for (std::size_t i = 0; i < leftCount; ++i) {
       std::string line(leftPad, ' ');
-      line += cmdLines[i];
+      line += leftLines[i];
       vlines.push_back({line});
     }
     vlines.push_back({""}); // blank between blocks
-    for (std::size_t i = 0; i < movCount; ++i) {
+    for (std::size_t i = 0; i < rightCount; ++i) {
       std::string line(leftPad, ' ');
-      line += movLines[i];
+      line += rightLines[i];
       vlines.push_back({line});
     }
   }
@@ -183,10 +203,10 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
   addLine(kTitle);
   addLine({});
   addLine({});
-  for (auto& l : commandLines())
+  for (auto& l : leftColumn())
     addLine(l);
   addLine({});
-  for (auto& l : movementLines())
+  for (auto& l : rightColumn())
     addLine(l);
   addLine({});
   addLine(kFooterText);
@@ -206,16 +226,17 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
 
   static constexpr auto kGutter = "\x1b[7m";
   static constexpr auto kReset = "\x1b[0m";
+  static constexpr auto kDim = "\x1b[2m";
 
   // Cursor data-line and column within that line.
   std::size_t dataLine = _point.line;
   std::size_t dataCol = _point.offset;
 
   // Layout indices computed from generated vectors.
-  std::size_t cmdEnd = kHeaderLines + commandLines().size();
-  std::size_t movStart = cmdEnd + 1;
-  std::size_t movEnd = movStart + movementLines().size();
-  std::size_t footer = movEnd + 1;
+  std::size_t leftEnd = kHeaderLines + leftColumn().size();
+  std::size_t rightStart = leftEnd + 1;
+  std::size_t rightEnd = rightStart + rightColumn().size();
+  std::size_t footer = rightEnd + 1;
 
   // Scroll offset: visual row corresponding to _viewFrom.line.value.
   std::size_t scrollVis = dataLineToVisualRow(_viewFrom.line.value, c);
@@ -225,8 +246,8 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t curScreenRow = curVis >= scrollVis ? curVis - scrollVis : 0;
 
   // Cursor column with centering.
-  std::size_t leftW = maxWidth(commandLines());
-  std::size_t rightW = maxWidth(movementLines());
+  std::size_t leftW = maxWidth(leftColumn());
+  std::size_t rightW = maxWidth(rightColumn());
   std::size_t totalW = leftW + kGap + rightW;
   bool sbs = isSideBySide(c);
 
@@ -243,9 +264,9 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
     // Title: centered.
     std::size_t tpad = (c > kTitle.size()) ? (c - kTitle.size()) / 2 : 0;
     curCol = tpad + dataCol;
-  } else if (dataLine >= kHeaderLines && dataLine < cmdEnd) {
+  } else if (dataLine >= kHeaderLines && dataLine < leftEnd) {
     curCol = leftPad + dataCol;
-  } else if (dataLine >= movStart && dataLine < movEnd) {
+  } else if (dataLine >= rightStart && dataLine < rightEnd) {
     if (sbs)
       curCol = leftPad + leftW + kGap + dataCol;
     else
@@ -258,13 +279,86 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   // Build visual lines and emit from scroll offset.
   auto vlines = buildVisualLines(c);
 
+  // Section headers that should be rendered dimmed.
+  auto isSectionHeader = [](std::string_view line) {
+    return !line.empty() && line.back() == ':' && line.front() != ' ';
+  };
+
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t vi = scrollVis + r;
     out += "\x1b[";
     out += std::to_string(r + 1);
     out += ";1H";
-    if (vi < vlines.size())
-      out += vlines[vi].content;
+    if (vi < vlines.size()) {
+      auto& content = vlines[vi].content;
+      // Check if any section header appears in this visual line.
+      // In side-by-side mode, a line can contain headers from both columns.
+      bool hasDim = false;
+      if (sbs && vi >= kHeaderLines) {
+        std::size_t idx = vi - kHeaderLines;
+        bool leftIsHeader = idx < leftColumn().size() && isSectionHeader(leftColumn()[idx]);
+        bool rightIsHeader = idx < rightColumn().size() && isSectionHeader(rightColumn()[idx]);
+        if (leftIsHeader || rightIsHeader) {
+          // Emit with dim applied to header portions.
+          // The line is: leftPad + leftContent + gap + rightContent.
+          // We'll emit it in parts.
+          std::size_t pos = 0;
+          // Left pad.
+          if (leftPad > 0 && leftPad <= content.size()) {
+            out.append(content, 0, leftPad);
+            pos = leftPad;
+          }
+          // Left content.
+          std::size_t leftContentEnd = leftPad + leftW;
+          if (leftContentEnd > content.size())
+            leftContentEnd = content.size();
+          if (leftIsHeader && pos < leftContentEnd) {
+            out += kDim;
+            out.append(content, pos, leftContentEnd - pos);
+            out += kReset;
+          } else if (pos < leftContentEnd) {
+            out.append(content, pos, leftContentEnd - pos);
+          }
+          pos = leftContentEnd;
+          // Gap.
+          std::size_t gapEnd = leftPad + leftW + kGap;
+          if (gapEnd > content.size())
+            gapEnd = content.size();
+          if (pos < gapEnd) {
+            out.append(content, pos, gapEnd - pos);
+            pos = gapEnd;
+          }
+          // Right content.
+          if (rightIsHeader && pos < content.size()) {
+            out += kDim;
+            out.append(content, pos, content.size() - pos);
+            out += kReset;
+          } else if (pos < content.size()) {
+            out.append(content, pos, content.size() - pos);
+          }
+          hasDim = true;
+        }
+      } else if (!sbs && vi >= kHeaderLines) {
+        // Stacked mode: check if this line is a section header.
+        // The content is leftPad + section text.
+        std::size_t dataIdx = vi - kHeaderLines; // approximate
+        // For stacked, the visual line maps 1:1 to data lines.
+        // Trim leading pad and check.
+        auto trimmed = content;
+        auto firstNonSpace = trimmed.find_first_not_of(' ');
+        if (firstNonSpace != std::string::npos) {
+          auto inner = std::string_view(trimmed).substr(firstNonSpace);
+          if (isSectionHeader(inner)) {
+            out += kDim;
+            out += content;
+            out += kReset;
+            hasDim = true;
+          }
+        }
+      }
+      if (!hasDim)
+        out += content;
+    }
     out += "\x1b[K";
     // Gutter column.
     out += "\x1b[";

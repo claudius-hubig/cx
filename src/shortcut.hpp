@@ -19,6 +19,7 @@ enum class Action {
   DeleteChunkBefore,
   Revert,
   Find,
+  FindBackward,
   BufferList,
   PasteRing,
   ToggleWhitespace,

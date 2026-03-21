@@ -95,6 +95,7 @@ private:
 
   // Find state.
   void findNext();
+  void findPrev();
   std::string _lastSearch;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
 

@@ -492,8 +492,9 @@ BOOST_AUTO_TEST_CASE(e2e_revert_prompt_shows) {
   PtySession session(24, 80, bin, {std::string(tmp.path())});
   session.readUntil("original", std::chrono::milliseconds{500});
 
-  // Ctrl-R should show a revert confirmation prompt.
-  session.send("\x12");
+  // Esc-r should show a revert confirmation prompt.
+  session.send("\x1b"
+               "r");
   auto output = session.readUntil("revert", std::chrono::milliseconds{1000});
   auto stripped = stripAnsi(output);
   BOOST_CHECK(stripped.find("revert") != std::string::npos ||
@@ -524,8 +525,9 @@ BOOST_AUTO_TEST_CASE(e2e_revert_restores_content) {
   session.send("MODIFIED ");
   session.readOutput(std::chrono::milliseconds{200});
 
-  // Ctrl-R then 'y' to revert.
-  session.send("\x12"
+  // Esc-r then 'y' to revert.
+  session.send("\x1b"
+               "r"
                "y");
   auto output = session.readUntil("original", std::chrono::milliseconds{1000});
   auto stripped = stripAnsi(output);
@@ -548,8 +550,9 @@ BOOST_AUTO_TEST_CASE(e2e_revert_scratch_buffer_error) {
   PtySession session(24, 80, bin);
   session.readOutput(std::chrono::milliseconds{200});
 
-  // Ctrl-R on a scratch buffer should show an error.
-  session.send("\x12");
+  // Esc-r on a scratch buffer should show an error.
+  session.send("\x1b"
+               "r");
   auto output = session.readOutput(std::chrono::milliseconds{500});
   auto stripped = stripAnsi(output);
   // Should mention inability to revert (temporary/scratch buffer).

@@ -9,15 +9,16 @@ struct Binding {
 
 // The single source of truth for all keybindings. Help display and input
 // dispatch both read from this table. Order matches the help screen layout.
-static constexpr auto kBindings = std::array<Binding, 19>{{
+static constexpr auto kBindings = std::array<Binding, 20>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},
     {{.ctrl = true, .key = 'o'}, Action::SwitchBuffer, "Switch to buffer/open file"},
     {{.esc = true, .key = 'b'}, Action::BufferList, "Buffer list"},
     {{.ctrl = true, .key = 's'}, Action::Save, "Save file"},
     {{.ctrl = true, .key = 'k'}, Action::KillBuffer, "Kill buffer"},
-    {{.ctrl = true, .key = 'r'}, Action::Revert, "Revert buffer from file"},
-    {{.ctrl = true, .key = 'f'}, Action::Find, "Find"},
+    {{.esc = true, .key = 'r'}, Action::Revert, "Revert buffer from file"},
+    {{.ctrl = true, .key = 'f'}, Action::Find, "Find forward"},
+    {{.ctrl = true, .key = 'r'}, Action::FindBackward, "Find backward"},
     {{.esc = true, .key = 's'}, Action::ToggleWhitespace, "Toggle whitespace"},
     {{.esc = true, .key = 'l'}, Action::ToggleWrap, "Toggle line wrap"},
     {{.ctrl = true, .key = ' '}, Action::ToggleMark, "Set/clear mark"},
@@ -25,7 +26,7 @@ static constexpr auto kBindings = std::array<Binding, 19>{{
     {{.esc = true, .key = 'w'}, Action::Copy, "Copy region"},
     {{.ctrl = true, .key = 'y'}, Action::Paste, "Paste"},
     {{.esc = true, .key = 'y'}, Action::PasteCycle, "Paste cycle"},
-    {{.esc = true, .key = 'r'}, Action::PasteRing, "Paste ring"},
+    {{.esc = true, .key = 'p'}, Action::PasteRing, "Paste ring"},
     {{.ctrl = true, .key = 'g'}, Action::GoToLine, "Go to line"},
     {{.ctrl = true, .key = 'h'}, Action::DeleteChunkBefore, "Delete chunk before cursor"},
     {{.esc = true, .key = 0x7F}, Action::DeleteChunkBefore, "Delete chunk before cursor"},
