@@ -621,6 +621,15 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                   _buf->moveParagraphDown();
                 _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
+              case 'H':
+                _buf->setPoint(0, 0);
+                _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+                break;
+              case 'F':
+                _buf->setPoint(_buf->lineCount() - 1,
+                               _buf->lineContent(_buf->lineCount() - 1).size());
+                _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+                break;
               }
             }
           }
