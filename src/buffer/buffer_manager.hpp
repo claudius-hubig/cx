@@ -3,7 +3,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/help_buffer.hpp"
-#include "buffer/recycle_bin_buffer.hpp"
+#include "buffer/paste_ring_buffer.hpp"
 #include "buffer/text_buffer.hpp"
 
 #include <filesystem>
@@ -32,9 +32,9 @@ public:
   /// Always refreshes the display with current buffer names.
   BufferListBuffer& bufferListBuffer();
 
-  /// Return the recycle bin buffer, creating it lazily on first call.
-  /// Always refreshes the display with current recycle bin contents.
-  RecycleBinBuffer& recycleBinBuffer(RecycleBin const& rb);
+  /// Return the paste ring buffer, creating it lazily on first call.
+  /// Always refreshes the display with current paste ring contents.
+  PasteRingBuffer& pasteRingBuffer(PasteRing const& pr);
 
   /// Find a buffer by exact name. Returns nullptr if not found.
   Buffer* find(std::string const& name);
@@ -79,7 +79,7 @@ private:
 
   std::unique_ptr<HelpBuffer> _helpBuffer;
   std::unique_ptr<BufferListBuffer> _bufferListBuffer;
-  std::unique_ptr<RecycleBinBuffer> _recycleBinBuffer;
+  std::unique_ptr<PasteRingBuffer> _pasteRingBuffer;
   std::unordered_map<std::string, std::unique_ptr<TextBuffer>> _buffers;
   std::unordered_map<std::string, std::string> _displayNames;
   std::vector<std::string> _mru; // most recently used first

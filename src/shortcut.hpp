@@ -19,7 +19,7 @@ enum class Action {
   DeleteChunkBefore,
   Revert,
   BufferList,
-  RecycleBin,
+  PasteRing,
   ToggleWhitespace,
   ToggleWrap,
 };

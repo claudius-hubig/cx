@@ -13,7 +13,7 @@ add_executable(cx
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
-    src/buffer/recycle_bin_buffer.cpp
+    src/buffer/paste_ring_buffer.cpp
     src/buffer/buffer_manager.cpp
 )
 
@@ -73,7 +73,7 @@ add_executable(test_buffer_manager
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
-    src/buffer/recycle_bin_buffer.cpp
+    src/buffer/paste_ring_buffer.cpp
     src/buffer/buffer_manager.cpp
     src/shortcut.cpp
 )

@@ -27,7 +27,7 @@ static std::vector<std::string> const& commandLines() {
     for (auto a : {Action::Help, Action::Exit, Action::SwitchBuffer, Action::BufferList,
                    Action::Save, Action::KillBuffer, Action::Revert, Action::ToggleWhitespace,
                    Action::ToggleWrap, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
-                   Action::PasteCycle, Action::RecycleBin})
+                   Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
     return v;
   }();

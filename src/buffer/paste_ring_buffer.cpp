@@ -1,21 +1,21 @@
-#include "recycle_bin_buffer.hpp"
+#include "paste_ring_buffer.hpp"
 
-RecycleBinBuffer::RecycleBinBuffer() : Buffer("*recycle bin*") {}
+PasteRingBuffer::PasteRingBuffer() : Buffer("*paste ring*") {}
 
-void RecycleBinBuffer::refresh(RecycleBin const& rb) {
+void PasteRingBuffer::refresh(PasteRing const& pr) {
   _lines.clear();
 
-  if (rb.empty()) {
+  if (pr.empty()) {
     auto sv = std::string_view{"(empty)"};
     _lines.emplace_back(sv.begin(), sv.end());
   } else {
-    for (std::size_t i = 0; i < rb.size(); ++i) {
+    for (std::size_t i = 0; i < pr.size(); ++i) {
       // Header line.
       std::string header = "--- Entry " + std::to_string(i + 1) + " ---";
       _lines.emplace_back(header.begin(), header.end());
 
       // Entry content, split on '\n'.
-      auto const& text = rb.at(i);
+      auto const& text = pr.at(i);
       std::size_t pos = 0;
       while (pos <= text.size()) {
         auto nl = text.find('\n', pos);
@@ -28,7 +28,7 @@ void RecycleBinBuffer::refresh(RecycleBin const& rb) {
       }
 
       // Blank line between entries.
-      if (i + 1 < rb.size())
+      if (i + 1 < pr.size())
         _lines.emplace_back();
     }
   }

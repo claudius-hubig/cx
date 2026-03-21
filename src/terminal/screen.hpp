@@ -1,7 +1,7 @@
 #pragma once
 
 #include "buffer/buffer_sink.hpp"
-#include "recycle_bin.hpp"
+#include "paste_ring.hpp"
 #include "shortcut.hpp"
 #include "types.hpp"
 
@@ -84,7 +84,7 @@ private:
   bool _killPending = false; // kill buffer after SaveAs completes
   bool _exitPending = false; // exit after all modified buffers are handled
 
-  RecycleBin _recycleBin;
+  PasteRing _pasteRing;
   struct PasteState {
     BufferPoint start;
     BufferPoint end;

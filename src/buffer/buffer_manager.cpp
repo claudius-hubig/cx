@@ -40,11 +40,11 @@ BufferListBuffer& BufferManager::bufferListBuffer() {
   return *_bufferListBuffer;
 }
 
-RecycleBinBuffer& BufferManager::recycleBinBuffer(RecycleBin const& rb) {
-  if (!_recycleBinBuffer)
-    _recycleBinBuffer = std::make_unique<RecycleBinBuffer>();
-  _recycleBinBuffer->refresh(rb);
-  return *_recycleBinBuffer;
+PasteRingBuffer& BufferManager::pasteRingBuffer(PasteRing const& pr) {
+  if (!_pasteRingBuffer)
+    _pasteRingBuffer = std::make_unique<PasteRingBuffer>();
+  _pasteRingBuffer->refresh(pr);
+  return *_pasteRingBuffer;
 }
 
 Buffer& BufferManager::create(std::string name) {

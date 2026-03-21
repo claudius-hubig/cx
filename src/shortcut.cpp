@@ -24,7 +24,7 @@ static constexpr auto kBindings = std::array<Binding, 18>{{
     {{.esc = true, .key = 'w'}, Action::Copy, "Copy region"},
     {{.ctrl = true, .key = 'y'}, Action::Paste, "Paste"},
     {{.esc = true, .key = 'y'}, Action::PasteCycle, "Paste cycle"},
-    {{.esc = true, .key = 'r'}, Action::RecycleBin, "Recycle bin"},
+    {{.esc = true, .key = 'r'}, Action::PasteRing, "Paste ring"},
     {{.ctrl = true, .key = 'g'}, Action::GoToLine, "Go to line"},
     {{.ctrl = true, .key = 'h'}, Action::DeleteChunkBefore, "Delete chunk before cursor"},
     {{.esc = true, .key = 0x7F}, Action::DeleteChunkBefore, "Delete chunk before cursor"},

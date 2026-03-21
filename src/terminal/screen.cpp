@@ -706,7 +706,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _pasteState.reset();
     }
   } else if (c == 0x7f) {
-    // Backspace: if mark active, delete region (no recycle bin push).
+    // Backspace: if mark active, delete region (no paste ring push).
     if (_buf && _buf->mark()) {
       _buf->deleteRegion(_buf->mark().value(), _buf->point());
       _pasteState.reset();
@@ -867,7 +867,7 @@ void Screen::dispatchAction(Action action) {
   case Action::Cut:
     if (_buf && _buf->mark()) {
       auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
-      _recycleBin.push(std::move(text));
+      _pasteRing.push(std::move(text));
       _buf->deleteRegion(_buf->mark().value(), _buf->point());
       setStatus("Region cut");
       _pasteState.reset();
@@ -878,7 +878,7 @@ void Screen::dispatchAction(Action action) {
   case Action::Copy:
     if (_buf && _buf->mark()) {
       auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
-      _recycleBin.push(std::move(text));
+      _pasteRing.push(std::move(text));
       _buf->clearMark();
       setStatus("Region copied");
       _pasteState.reset();
@@ -887,22 +887,22 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::Paste:
-    if (_buf && !_buf->readonly() && !_recycleBin.empty()) {
+    if (_buf && !_buf->readonly() && !_pasteRing.empty()) {
       auto start = _buf->point();
-      auto end = _buf->insertText(_recycleBin.at(0));
+      auto end = _buf->insertText(_pasteRing.at(0));
       _pasteState = PasteState{start, end, 0};
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
     }
     break;
   case Action::PasteCycle:
-    if (_buf && !_buf->readonly() && _pasteState && !_recycleBin.empty()) {
-      auto nextIdx = (_pasteState->rbIdx + 1) % _recycleBin.size();
+    if (_buf && !_buf->readonly() && _pasteState && !_pasteRing.empty()) {
+      auto nextIdx = (_pasteState->rbIdx + 1) % _pasteRing.size();
       _buf->deleteRegion(_pasteState->start, _pasteState->end);
       auto start = _buf->point();
-      auto end = _buf->insertText(_recycleBin.at(nextIdx));
+      auto end = _buf->insertText(_pasteRing.at(nextIdx));
       _pasteState = PasteState{start, end, nextIdx};
       setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
-                std::to_string(_recycleBin.size()));
+                std::to_string(_pasteRing.size()));
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
     } else {
       setStatus("Can't cycle paste if last command was not a paste");
@@ -933,14 +933,14 @@ void Screen::dispatchAction(Action action) {
       }
     }
     break;
-  case Action::RecycleBin:
+  case Action::PasteRing:
     if (_bufMgr) {
       if (_buf && _buf->readonly() && _prevBuf) {
         setBuffer(*_prevBuf);
         _prevBuf = nullptr;
       } else {
         _prevBuf = _buf;
-        setBuffer(_bufMgr->recycleBinBuffer(_recycleBin));
+        setBuffer(_bufMgr->pasteRingBuffer(_pasteRing));
       }
     }
     break;

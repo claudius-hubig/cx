@@ -7,7 +7,7 @@
 // Global ring buffer for cut/copied text. Stores entries as std::string
 // with embedded '\n' for line breaks. Fixed capacity (default 20).
 // Index 0 = most recent.
-class RecycleBin {
+class PasteRing {
 public:
   static constexpr std::size_t kDefaultCapacity = 20;
 
