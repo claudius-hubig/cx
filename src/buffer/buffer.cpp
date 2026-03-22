@@ -226,7 +226,7 @@ void Buffer::moveRight() {
 }
 
 bool Buffer::currentLineWraps(ColIdx cols) const {
-  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t cw = contentWidth(cols);
   return visualCol(_lines[_point.line], 0, _lines[_point.line].size()) > cw;
 }
 
@@ -385,7 +385,7 @@ static VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStar
 void Buffer::moveUp(ColIdx cols) {
   auto& line = _lines[_point.line];
   // Content width excludes the gutter column.
-  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t cw = contentWidth(cols);
   auto& bounds = ensureRowBounds(_point.line, cw);
   auto vr = findVisualRowCached(bounds, _point.offset, line.size());
 
@@ -422,7 +422,7 @@ void Buffer::moveUp(ColIdx cols) {
 void Buffer::moveDown(ColIdx cols) {
   auto& line = _lines[_point.line];
   // Content width excludes the gutter column.
-  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t cw = contentWidth(cols);
   auto& bounds = ensureRowBounds(_point.line, cw);
   auto vr = findVisualRowCached(bounds, _point.offset, line.size());
 
@@ -791,7 +791,7 @@ void Buffer::scrollUp(bool wrap) {
 
 std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
   // Content width excludes the gutter column.
-  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t cw = contentWidth(cols);
 
   if (!wrap)
     return _point.line >= _viewFrom.line.value ? _point.line - _viewFrom.line.value : 0;
@@ -840,7 +840,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     _viewFrom.col = VisualCol{0};
 
   // Content width excludes the gutter column.
-  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t cw = contentWidth(cols);
 
   if (!wrap) {
     auto& hs = _viewFrom.hScroll();
@@ -1117,7 +1117,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   };
 
   // Content width excludes the gutter column.
-  std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t cw = contentWidth(cols);
 
   // Gutter styles: reverse video matching the status bar.
   static constexpr auto kGutter = "\x1b[7m";

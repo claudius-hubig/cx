@@ -13,6 +13,9 @@ struct ColIdx {
   std::size_t value;
 };
 
+// Content width: terminal columns minus the gutter column, minimum 1.
+inline std::size_t contentWidth(ColIdx cols) { return cols.value > 1 ? cols.value - 1 : 1; }
+
 // Position within a Buffer: line index (0-based) + byte offset within that
 // line. An offset equal to the line's size represents the "newline position"
 // (logically past the last character of the line).

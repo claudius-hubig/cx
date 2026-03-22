@@ -223,7 +223,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
                                               bool /*showWhitespace*/, bool /*wrap*/) const {
 
   // Content width excludes the gutter column.
-  std::size_t c = cols.value > 1 ? cols.value - 1 : 1;
+  std::size_t c = contentWidth(cols);
 
   static constexpr auto kGutter = "\x1b[7m";
   static constexpr auto kReset = "\x1b[0m";
