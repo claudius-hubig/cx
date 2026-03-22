@@ -732,7 +732,7 @@ void Buffer::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   std::size_t limit = viewFromLinesBeforeEnd(half);
   if (_viewFrom.line.value > limit) {
     _viewFrom.line = RowIdx{limit};
-    _viewFrom.col = ColIdx{0};
+    _viewFrom.col = ByteOffset{0};
   }
 }
 
@@ -754,7 +754,7 @@ void Buffer::scrollViewNearEnd(RowIdx screenRows) {
 void Buffer::scrollDown() {
   if (_viewFrom.line.value + 1 < _lines.size()) {
     _viewFrom.line = RowIdx{_viewFrom.line.value + 1};
-    _viewFrom.col = ColIdx{0};
+    _viewFrom.col = ByteOffset{0};
   }
 }
 
@@ -771,7 +771,7 @@ void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
   // Center _viewFrom so the target line is in the middle of the screen.
   std::size_t half = screenRows.value / 2;
   _viewFrom.line = RowIdx{idx >= half ? idx - half : 0};
-  _viewFrom.col = ColIdx{0};
+  _viewFrom.col = ByteOffset{0};
 }
 
 void Buffer::setPoint(std::size_t line, std::size_t offset) {
@@ -781,11 +781,11 @@ void Buffer::setPoint(std::size_t line, std::size_t offset) {
 }
 
 void Buffer::scrollUp(bool wrap) {
-  if (wrap && _viewFrom.col.value > 0) {
-    _viewFrom.col = ColIdx{0};
+  if (wrap && std::holds_alternative<ByteOffset>(_viewFrom.col) && _viewFrom.byteOffset() > 0) {
+    _viewFrom.col = ByteOffset{0};
   } else if (_viewFrom.line.value > 0) {
     _viewFrom.line = RowIdx{_viewFrom.line.value - 1};
-    _viewFrom.col = ColIdx{0};
+    _viewFrom.col = ByteOffset{0};
   }
 }
 
@@ -803,7 +803,7 @@ std::size_t Buffer::screenRow(ColIdx cols, bool wrap) const {
     std::size_t end = (lineIdx == _point.line) ? _point.offset : line.size();
     // For the viewport line, start from the sub-line wrap offset.
     std::size_t start =
-        (lineIdx == _viewFrom.line.value && wrap) ? _viewFrom.col.value : std::size_t{0};
+        (lineIdx == _viewFrom.line.value && wrap) ? _viewFrom.byteOffset() : std::size_t{0};
 
     std::size_t col = 0;
     for (std::size_t i = start; i < end && i < line.size();) {
@@ -831,14 +831,19 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   // Reset col offset when switching wrap mode, to avoid stale scroll state.
   if (_wrapMode != wrap) {
     _wrapMode = wrap;
-    _viewFrom.col = ColIdx{0};
+    _viewFrom.resetCol(wrap);
   }
+  // Ensure the variant holds the correct type for the current mode.
+  if (wrap && !std::holds_alternative<ByteOffset>(_viewFrom.col))
+    _viewFrom.col = ByteOffset{0};
+  else if (!wrap && !std::holds_alternative<VisualCol>(_viewFrom.col))
+    _viewFrom.col = VisualCol{0};
 
   // Content width excludes the gutter column.
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
 
   if (!wrap) {
-    auto& hs = _viewFrom.col.value;
+    auto& hs = _viewFrom.hScroll();
 
     // Vertical: simple line-based scrolling.
     if (_point.line < _viewFrom.line.value)
@@ -855,7 +860,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     return;
   }
 
-  auto& vfo = _viewFrom.col.value;
+  auto& vfo = _viewFrom.byteOffset();
 
   // Handle point above the viewport (including sub-line offset).
   if (_point < viewFrom()) {
@@ -931,9 +936,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
 }
 
 BufferPoint Buffer::viewFrom() const {
-  // In wrap mode the col field is a byte offset into the first visible line;
-  // in no-wrap mode horizontal scroll does not affect line/byte comparisons.
-  std::size_t off = _wrapMode ? _viewFrom.col.value : 0;
+  std::size_t off = std::holds_alternative<ByteOffset>(_viewFrom.col) ? _viewFrom.byteOffset() : 0;
   return {_viewFrom.line.value, off};
 }
 
@@ -1166,8 +1169,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   bool pointFound = false;
 
   // Extract viewport offsets from _viewFrom.
-  std::size_t hScroll = wrap ? std::size_t{0} : _viewFrom.col.value;
-  std::size_t viewFromOffset = wrap ? _viewFrom.col.value : std::size_t{0};
+  std::size_t hScroll =
+      (!wrap && std::holds_alternative<VisualCol>(_viewFrom.col)) ? _viewFrom.hScroll() : 0;
+  std::size_t viewFromOffset =
+      (wrap && std::holds_alternative<ByteOffset>(_viewFrom.col)) ? _viewFrom.byteOffset() : 0;
 
   // Shared highlight/region toggle logic. Updates active state and emits
   // ANSI escapes when transitioning in/out of highlighted/region spans.
