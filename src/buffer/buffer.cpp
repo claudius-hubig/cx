@@ -800,51 +800,64 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     vfo = 0;
   }
 
-  // Cheap estimate: if the point is on the viewport line and the byte
-  // distance clearly exceeds the screen, skip the O(n) screenRow() check
-  // and go straight to sub-line adjustment.
-  bool farOffScreen = _viewFrom.line.value == _point.line && _point.offset > vfo + rows.value * cw;
+  // Single forward scan from the viewport to the point, counting visual
+  // rows. We maintain a ring buffer of the last `rows` viewport-start
+  // candidates {line, byteOffset}. When the scan finishes, the oldest
+  // entry in the ring is the viewport position that places the cursor on
+  // the last visible screen row.
+  //
+  // This replaces the previous while-loop that called screenRow() on each
+  // iteration, avoiding the O(N²) cost of re-scanning from the viewport
+  // on every line advance.
 
-  if (!farOffScreen && screenRow(cols, wrap) < rows.value)
-    return;
-
-  // Advance past lines that are entirely before the point.
-  while (_viewFrom.line.value < _point.line && screenRow(cols, wrap) >= rows.value) {
-    _viewFrom.line = RowIdx{_viewFrom.line.value + 1};
-    vfo = 0;
-  }
-
-  if (_viewFrom.line.value != _point.line)
-    return; // point is on a later line; fine-tune not needed
-
-  // Sub-line scrolling: single scan from vfo to _point.offset,
-  // keeping a ring buffer of the last `rows` visual-row start offsets.
-  // At the end, the oldest entry in the ring is where the viewport should
-  // start so the cursor ends up on the last visible screen row.
-  auto& line = _lines[_viewFrom.line.value];
+  struct ViewPos {
+    std::size_t line;
+    std::size_t byteOff;
+  };
   std::size_t ringSize = rows.value;
-  std::vector<std::size_t> ring(ringSize, vfo);
+  std::vector<ViewPos> ring(ringSize, {_viewFrom.line.value, vfo});
   std::size_t ringPos = 0;
-  std::size_t col = 0;
+  std::size_t visRow = 0;
 
-  for (std::size_t i = vfo; i < _point.offset && i < line.size();) {
-    auto info = charInfoAt(line.data() + i, line.size() - i);
-    if (col + info.width > cw) {
-      ringPos = (ringPos + 1) % ringSize;
-      ring[ringPos] = i;
-      col = 0;
+  auto pushRing = [&](std::size_t line, std::size_t off) {
+    ringPos = (ringPos + 1) % ringSize;
+    ring[ringPos] = {line, off};
+  };
+
+  for (std::size_t lineIdx = _viewFrom.line.value;
+       lineIdx <= _point.line && lineIdx < _lines.size(); ++lineIdx) {
+    auto& line = _lines[lineIdx];
+    std::size_t end = (lineIdx == _point.line) ? _point.offset : line.size();
+    std::size_t start = (lineIdx == _viewFrom.line.value) ? vfo : std::size_t{0};
+    std::size_t col = 0;
+
+    for (std::size_t i = start; i < end && i < line.size();) {
+      auto info = charInfoAt(line.data() + i, line.size() - i);
+      if (col + info.width > cw) {
+        ++visRow;
+        pushRing(lineIdx, i);
+        col = 0;
+      }
+      col += info.width;
+      if (col >= cw) {
+        ++visRow;
+        pushRing(lineIdx, i + info.len);
+        col = 0;
+      }
+      i += info.len;
     }
-    col += info.width;
-    if (col >= cw) {
-      ringPos = (ringPos + 1) % ringSize;
-      ring[ringPos] = i + info.len;
-      col = 0;
+    if (lineIdx < _point.line) {
+      ++visRow;
+      pushRing(lineIdx + 1, 0);
     }
-    i += info.len;
   }
+
+  if (visRow < rows.value)
+    return; // point is already on screen
 
   std::size_t readIdx = (ringPos + 1) % ringSize;
-  vfo = ring[readIdx];
+  _viewFrom.line = RowIdx{ring[readIdx].line};
+  vfo = ring[readIdx].byteOff;
 }
 
 BufferPoint Buffer::viewFrom() const {
