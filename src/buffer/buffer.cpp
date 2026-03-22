@@ -953,7 +953,16 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
   if (from.line >= _lines.size())
     return {};
 
+  // Rough size estimate to avoid repeated reallocations.
+  std::size_t estimate = 0;
+  for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
+    auto& line = _lines[l];
+    std::size_t start = (l == from.line) ? std::min(from.offset, line.size()) : 0;
+    std::size_t end = (l == to.line) ? std::min(to.offset, line.size()) : line.size();
+    estimate += end - start + 1; // +1 for newline
+  }
   std::string result;
+  result.reserve(estimate);
   for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
     auto& line = _lines[l];
     std::size_t start = (l == from.line) ? from.offset : 0;
