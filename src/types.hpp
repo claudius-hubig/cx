@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <cstddef>
 #include <variant>
 
@@ -23,16 +24,7 @@ struct BufferPoint {
   std::size_t line = 0;
   std::size_t offset = 0;
 
-  bool operator==(BufferPoint const&) const = default;
-
-  auto operator<(BufferPoint const& o) const {
-    if (line != o.line)
-      return line < o.line;
-    return offset < o.offset;
-  }
-  auto operator<=(BufferPoint const& o) const { return *this == o || *this < o; }
-  auto operator>(BufferPoint const& o) const { return o < *this; }
-  auto operator>=(BufferPoint const& o) const { return o <= *this; }
+  auto operator<=>(BufferPoint const&) const = default;
 };
 
 // Byte offset into a line (used as sub-line scroll position in wrap mode).
