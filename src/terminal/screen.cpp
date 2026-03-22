@@ -914,86 +914,115 @@ static std::optional<std::size_t> matchAt(std::vector<char> const& line, std::si
   return li;
 }
 
+// Determine matching flags from the search pattern. Case-insensitive
+// unless the pattern contains uppercase; digits and special chars in the
+// buffer are skipped unless they appear in the pattern (ASCII-only).
+struct FindFlags {
+  bool caseSensitive = false;
+  bool matchDigits = false;
+  bool matchSpecial = false;
+  char firstChar = 0;  // exact first char of pattern
+  char firstLower = 0; // lowercased
+  char firstUpper = 0; // uppercased
+
+  explicit FindFlags(std::string_view pattern) {
+    for (auto c : pattern) {
+      auto u = static_cast<unsigned char>(c);
+      if (u >= 'A' && u <= 'Z')
+        caseSensitive = true;
+      if (u >= '0' && u <= '9')
+        matchDigits = true;
+      bool isLetter = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
+      bool isDigit = (u >= '0' && u <= '9');
+      if (!isLetter && !isDigit)
+        matchSpecial = true;
+    }
+    firstChar = pattern[0];
+    auto lower = [](char c) -> char {
+      return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+    };
+    firstLower = lower(firstChar);
+    firstUpper =
+        (firstLower >= 'a' && firstLower <= 'z') ? static_cast<char>(firstLower - 32) : firstLower;
+  }
+
+  bool firstCharCanMatch(char c) const {
+    if (caseSensitive)
+      return c == firstChar;
+    return c == firstLower || c == firstUpper;
+  }
+};
+
+// Scan a line for the first match starting at or after `from`.
+static std::optional<std::pair<std::size_t, std::size_t>>
+findFirstMatch(std::vector<char> const& line, std::size_t from, std::string const& pattern,
+               FindFlags const& f) {
+  for (std::size_t off = from; off < line.size(); ++off) {
+    if (!f.firstCharCanMatch(line[off]))
+      continue;
+    if (auto end = matchAt(line, off, pattern, f.caseSensitive, f.matchDigits, f.matchSpecial))
+      return std::pair{off, *end};
+  }
+  return std::nullopt;
+}
+
+// Scan a line for the last match within [from, limit).
+static std::optional<std::pair<std::size_t, std::size_t>>
+findLastMatch(std::vector<char> const& line, std::size_t from, std::size_t limit,
+              std::string const& pattern, FindFlags const& f) {
+  std::optional<std::pair<std::size_t, std::size_t>> last;
+  for (std::size_t off = from; off < limit && off < line.size(); ++off) {
+    if (!f.firstCharCanMatch(line[off]))
+      continue;
+    if (auto end = matchAt(line, off, pattern, f.caseSensitive, f.matchDigits, f.matchSpecial))
+      last = {off, *end};
+  }
+  return last;
+}
+
+void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd,
+                         bool wrapped) {
+  auto& [rows, cols] = _size;
+  _buf->setPoint(line, matchEnd);
+  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _buf->setHighlight({line, matchStart}, {line, matchEnd});
+  _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  _pasteState.reset();
+  if (wrapped)
+    setStatus("Found (wrapped)");
+  else {
+    _statusMsg.clear();
+    _statusExpiry.reset();
+  }
+}
+
 void Screen::findNext() {
   if (!_buf || _lastSearch.empty())
     return;
-  auto& [rows, cols] = _size;
-
-  // Determine matching flags from the search string.
-  bool caseSensitive = false, matchDigits = false, matchSpecial = false;
-  for (auto c : _lastSearch) {
-    auto u = static_cast<unsigned char>(c);
-    if (u >= 'A' && u <= 'Z')
-      caseSensitive = true;
-    if (u >= '0' && u <= '9')
-      matchDigits = true;
-    bool isLetter = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
-    bool isDigit = (u >= '0' && u <= '9');
-    if (!isLetter && !isDigit)
-      matchSpecial = true;
-  }
+  FindFlags f(_lastSearch);
 
   std::size_t lineCount = _buf->lineCount();
   std::size_t startLine = _buf->point().line;
   std::size_t startOff = _buf->point().offset;
   bool wrapped = false;
 
-  // Pre-compute first-character filter for early-out.
-  auto lower = [](char c) -> char {
-    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
-  };
-  char firstLower = lower(_lastSearch[0]);
-  char firstUpper =
-      (firstLower >= 'a' && firstLower <= 'z') ? static_cast<char>(firstLower - 32) : firstLower;
-  auto firstCharCanMatch = [&](char c) -> bool {
-    if (caseSensitive)
-      return c == _lastSearch[0];
-    return c == firstLower || c == firstUpper;
-  };
-
-  auto found = [&](std::size_t li, std::size_t matchStart, std::size_t matchEnd, bool didWrap) {
-    _buf->setPoint(li, matchEnd);
-    _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
-    _buf->setHighlight({li, matchStart}, {li, matchEnd});
-    _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    _pasteState.reset();
-    if (didWrap)
-      setStatus("Found (wrapped)");
-    else {
-      _statusMsg.clear();
-      _statusExpiry.reset();
-    }
-  };
-
   // Search forward from current position, wrapping around.
   for (std::size_t count = 0; count < lineCount; ++count) {
     std::size_t li = (startLine + count) % lineCount;
     if (count > 0 && li <= startLine)
       wrapped = true;
-    auto const& line = _buf->lineContent(li);
     std::size_t from = (count == 0) ? startOff : 0;
-
-    for (std::size_t off = from; off < line.size(); ++off) {
-      if (!firstCharCanMatch(line[off]))
-        continue;
-      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
-        found(li, off, *end, wrapped);
-        return;
-      }
+    if (auto m = findFirstMatch(_buf->lineContent(li), from, _lastSearch, f)) {
+      onFindMatch(li, m->first, m->second, wrapped);
+      return;
     }
   }
 
   // Check the start of the starting line (before original cursor).
-  {
-    auto const& line = _buf->lineContent(startLine);
-    std::size_t limit = std::min(startOff, line.size());
-    for (std::size_t off = 0; off < limit; ++off) {
-      if (!firstCharCanMatch(line[off]))
-        continue;
-      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
-        found(startLine, off, *end, true);
-        return;
-      }
+  if (auto m = findFirstMatch(_buf->lineContent(startLine), 0, _lastSearch, f)) {
+    if (m->first < startOff) {
+      onFindMatch(startLine, m->first, m->second, true);
+      return;
     }
   }
 
@@ -1005,71 +1034,18 @@ void Screen::findNext() {
 void Screen::findPrev() {
   if (!_buf || _lastSearch.empty())
     return;
-  auto& [rows, cols] = _size;
-
-  // Determine matching flags from the search string.
-  bool caseSensitive = false, matchDigits = false, matchSpecial = false;
-  for (auto c : _lastSearch) {
-    auto u = static_cast<unsigned char>(c);
-    if (u >= 'A' && u <= 'Z')
-      caseSensitive = true;
-    if (u >= '0' && u <= '9')
-      matchDigits = true;
-    bool isLetter = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
-    bool isDigit = (u >= '0' && u <= '9');
-    if (!isLetter && !isDigit)
-      matchSpecial = true;
-  }
+  FindFlags f(_lastSearch);
 
   std::size_t lineCount = _buf->lineCount();
   std::size_t startLine = _buf->point().line;
   std::size_t startOff = _buf->point().offset;
   bool wrapped = false;
 
-  // Pre-compute first-character filter for early-out.
-  auto lower = [](char c) -> char {
-    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
-  };
-  char firstLower = lower(_lastSearch[0]);
-  char firstUpper =
-      (firstLower >= 'a' && firstLower <= 'z') ? static_cast<char>(firstLower - 32) : firstLower;
-  auto firstCharCanMatch = [&](char c) -> bool {
-    if (caseSensitive)
-      return c == _lastSearch[0];
-    return c == firstLower || c == firstUpper;
-  };
-
-  auto found = [&](std::size_t li, std::size_t matchStart, std::size_t matchEnd, bool didWrap) {
-    _buf->setPoint(li, matchEnd);
-    _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
-    _buf->setHighlight({li, matchStart}, {li, matchEnd});
-    _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    _pasteState.reset();
-    if (didWrap)
-      setStatus("Found (wrapped)");
-    else {
-      _statusMsg.clear();
-      _statusExpiry.reset();
-    }
-  };
-
   // Search backward on the current line before the cursor.
-  {
-    auto const& line = _buf->lineContent(startLine);
-    std::size_t limit = std::min(startOff, line.size());
-    // Scan forward but track the last match ending before the cursor.
-    // Strict < so we skip the current match (whose end == startOff).
-    std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
-    for (std::size_t off = 0; off < limit; ++off) {
-      if (!firstCharCanMatch(line[off]))
-        continue;
-      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
-        if (*end < startOff)
-          lastMatch = {off, *end};
-      }
-    }
-    if (lastMatch) {
-      found(startLine, lastMatch->first, lastMatch->second, false);
+  // Strict < on end so we skip the current match (whose end == startOff).
+  if (auto m = findLastMatch(_buf->lineContent(startLine), 0, startOff, _lastSearch, f)) {
+    if (m->second < startOff) {
+      onFindMatch(startLine, m->first, m->second, false);
       return;
     }
   }
@@ -1080,16 +1056,8 @@ void Screen::findPrev() {
     if (count > startLine)
       wrapped = true;
     auto const& line = _buf->lineContent(li);
-    // Find the last match on this line.
-    std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
-    for (std::size_t off = 0; off < line.size(); ++off) {
-      if (!firstCharCanMatch(line[off]))
-        continue;
-      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial))
-        lastMatch = {off, *end};
-    }
-    if (lastMatch) {
-      found(li, lastMatch->first, lastMatch->second, wrapped);
+    if (auto m = findLastMatch(line, 0, line.size(), _lastSearch, f)) {
+      onFindMatch(li, m->first, m->second, wrapped);
       return;
     }
   }
@@ -1097,15 +1065,8 @@ void Screen::findPrev() {
   // Check the current line after the cursor (wrapped).
   {
     auto const& line = _buf->lineContent(startLine);
-    std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
-    for (std::size_t off = startOff; off < line.size(); ++off) {
-      if (!firstCharCanMatch(line[off]))
-        continue;
-      if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial))
-        lastMatch = {off, *end};
-    }
-    if (lastMatch) {
-      found(startLine, lastMatch->first, lastMatch->second, true);
+    if (auto m = findLastMatch(line, startOff, line.size(), _lastSearch, f)) {
+      onFindMatch(startLine, m->first, m->second, true);
       return;
     }
   }

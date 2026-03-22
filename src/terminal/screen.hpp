@@ -96,6 +96,7 @@ private:
   // Find state.
   void findNext();
   void findPrev();
+  void onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd, bool wrapped);
   std::string _lastSearch;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
 
