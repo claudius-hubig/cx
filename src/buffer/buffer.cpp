@@ -4,7 +4,6 @@
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
 void Buffer::doInsert(uint32_t cp) {
-  _mark.reset();
   char buf[4];
   std::size_t n;
   if (cp < 0x80) {
@@ -27,6 +26,9 @@ void Buffer::doInsert(uint32_t cp) {
     n = 4;
   }
 
+  auto insertLine = _point.line;
+  auto insertOff = _point.offset;
+
   auto& line = _lines[_point.line];
   if (cp == '\n') {
     // Split current line at point.offset.
@@ -41,6 +43,22 @@ void Buffer::doInsert(uint32_t cp) {
   }
   _modified = true;
 
+  // Adjust mark to track its original position.
+  if (_mark) {
+    auto& m = *_mark;
+    if (cp == '\n') {
+      if (m.line == insertLine && m.offset >= insertOff) {
+        m.line = insertLine + 1;
+        m.offset -= insertOff;
+      } else if (m.line > insertLine) {
+        m.line++;
+      }
+    } else {
+      if (m.line == insertLine && m.offset >= insertOff)
+        m.offset += n;
+    }
+  }
+
   if (_desiredCol) {
     std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
     if (vcol >= _desiredCol->value)
@@ -49,25 +67,41 @@ void Buffer::doInsert(uint32_t cp) {
 }
 
 void Buffer::doDeleteAtPoint() {
-  _mark.reset();
   auto& line = _lines[_point.line];
   if (_point.offset < line.size()) {
     // Delete within line.
     auto len = utf8SeqLen(static_cast<unsigned char>(line[_point.offset]));
     auto end = std::min(_point.offset + len, line.size());
+    auto delBytes = end - _point.offset;
     line.erase(line.begin() + _point.offset, line.begin() + end);
     _modified = true;
+    // Adjust mark.
+    if (_mark && _mark->line == _point.line && _mark->offset > _point.offset) {
+      if (_mark->offset >= _point.offset + delBytes)
+        _mark->offset -= delBytes;
+      else
+        _mark->offset = _point.offset;
+    }
   } else if (_point.line + 1 < _lines.size()) {
     // At end of line — merge next line into this one (delete the newline).
+    auto lineLen = line.size();
     auto& next = _lines[_point.line + 1];
     line.insert(line.end(), next.begin(), next.end());
     _lines.erase(_lines.begin() + _point.line + 1);
     _modified = true;
+    // Adjust mark.
+    if (_mark) {
+      if (_mark->line == _point.line + 1) {
+        _mark->line = _point.line;
+        _mark->offset += lineLen;
+      } else if (_mark->line > _point.line + 1) {
+        _mark->line--;
+      }
+    }
   }
 }
 
 void Buffer::doDeleteBeforePoint() {
-  _mark.reset();
   auto& line = _lines[_point.line];
   if (_point.offset > 0) {
     // Walk back over continuation bytes.
@@ -75,10 +109,19 @@ void Buffer::doDeleteBeforePoint() {
     --_point.offset;
     while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
       --_point.offset;
+    auto delBytes = end - _point.offset;
     line.erase(line.begin() + _point.offset, line.begin() + end);
     _modified = true;
+    // Adjust mark.
+    if (_mark && _mark->line == _point.line && _mark->offset > _point.offset) {
+      if (_mark->offset >= _point.offset + delBytes)
+        _mark->offset -= delBytes;
+      else
+        _mark->offset = _point.offset;
+    }
   } else if (_point.line > 0) {
     // At start of line — merge into end of previous line (delete the newline).
+    auto curLine = _point.line;
     auto& prev = _lines[_point.line - 1];
     std::size_t newOffset = prev.size();
     prev.insert(prev.end(), line.begin(), line.end());
@@ -86,11 +129,19 @@ void Buffer::doDeleteBeforePoint() {
     _point.line--;
     _point.offset = newOffset;
     _modified = true;
+    // Adjust mark.
+    if (_mark) {
+      if (_mark->line == curLine) {
+        _mark->line = _point.line;
+        _mark->offset += newOffset;
+      } else if (_mark->line > curLine) {
+        _mark->line--;
+      }
+    }
   }
 }
 
 void Buffer::doDeleteChunkAtPoint() {
-  _mark.reset();
   if (atEnd())
     return;
 
@@ -111,7 +162,6 @@ void Buffer::doDeleteChunkAtPoint() {
 }
 
 void Buffer::doDeleteChunkBeforePoint() {
-  _mark.reset();
   if (_point.line == 0 && _point.offset == 0)
     return;
 
@@ -871,6 +921,9 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
 }
 
 BufferPoint Buffer::insertText(std::string_view text) {
+  auto startLine = _point.line;
+  auto startOff = _point.offset;
+
   std::size_t i = 0;
   while (i < text.size()) {
     if (text[i] == '\n') {
@@ -893,8 +946,22 @@ BufferPoint Buffer::insertText(std::string_view text) {
       i = end;
     }
   }
-  _mark.reset();
   _modified = true;
+
+  // Adjust mark to track its original position.
+  if (_mark) {
+    auto linesAdded = _point.line - startLine;
+    if (_mark->line == startLine && _mark->offset >= startOff) {
+      _mark->line += linesAdded;
+      if (linesAdded > 0)
+        _mark->offset = _mark->offset - startOff + _point.offset;
+      else
+        _mark->offset += _point.offset - startOff;
+    } else if (_mark->line > startLine) {
+      _mark->line += linesAdded;
+    }
+  }
+
   return _point;
 }
 
