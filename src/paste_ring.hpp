@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <deque>
 #include <string>
-#include <vector>
 
 // Global ring buffer for cut/copied text. Stores entries as std::string
 // with embedded '\n' for line breaks. Fixed capacity (default 20).
@@ -12,7 +12,7 @@ public:
   static constexpr std::size_t kDefaultCapacity = 20;
 
   void push(std::string text) {
-    _entries.insert(_entries.begin(), std::move(text));
+    _entries.push_front(std::move(text));
     if (_entries.size() > _capacity)
       _entries.pop_back();
   }
@@ -23,6 +23,6 @@ public:
   bool empty() const { return _entries.empty(); }
 
 private:
-  std::vector<std::string> _entries;
+  std::deque<std::string> _entries;
   std::size_t _capacity = kDefaultCapacity;
 };
