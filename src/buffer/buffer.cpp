@@ -1,9 +1,12 @@
 #include "buffer.hpp"
 #include "char_width.hpp"
 
+#include <algorithm>
+
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
 void Buffer::doInsert(uint32_t cp) {
+  _rowBoundsCache.lineIdx = SIZE_MAX;
   char buf[4];
   std::size_t n;
   if (cp < 0x80) {
@@ -67,6 +70,7 @@ void Buffer::doInsert(uint32_t cp) {
 }
 
 void Buffer::doDeleteAtPoint() {
+  _rowBoundsCache.lineIdx = SIZE_MAX;
   auto& line = _lines[_point.line];
   if (_point.offset < line.size()) {
     // Delete within line.
@@ -102,6 +106,7 @@ void Buffer::doDeleteAtPoint() {
 }
 
 void Buffer::doDeleteBeforePoint() {
+  _rowBoundsCache.lineIdx = SIZE_MAX;
   auto& line = _lines[_point.line];
   if (_point.offset > 0) {
     // Walk back over continuation bytes.
@@ -334,11 +339,55 @@ static std::size_t lastVisualRowStart(std::vector<char> const& line, std::size_t
   return rowStart;
 }
 
+std::vector<std::size_t> const& Buffer::ensureRowBounds(std::size_t lineIdx,
+                                                        std::size_t cols) const {
+  if (_rowBoundsCache.lineIdx == lineIdx && _rowBoundsCache.cols == cols)
+    return _rowBoundsCache.rowStarts;
+
+  _rowBoundsCache.lineIdx = lineIdx;
+  _rowBoundsCache.cols = cols;
+  _rowBoundsCache.rowStarts.clear();
+  _rowBoundsCache.rowStarts.push_back(0);
+
+  auto& line = _lines[lineIdx];
+  std::size_t col = 0;
+  for (std::size_t i = 0; i < line.size();) {
+    auto info = charInfoAt(line.data() + i, line.size() - i);
+    if (col + info.width > cols) {
+      _rowBoundsCache.rowStarts.push_back(i);
+      col = 0;
+    }
+    col += info.width;
+    if (col >= cols) {
+      _rowBoundsCache.rowStarts.push_back(i + info.len);
+      col = 0;
+    }
+    i += info.len;
+  }
+  return _rowBoundsCache.rowStarts;
+}
+
+// Look up VisualRowInfo from cached row boundaries using binary search.
+static VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts,
+                                         std::size_t byteOff, std::size_t lineSize) {
+  // Find the last row whose start <= byteOff.
+  // upper_bound gives first element > byteOff; back up one.
+  auto it = std::upper_bound(rowStarts.begin(), rowStarts.end(), byteOff);
+  std::size_t rowIdx = static_cast<std::size_t>(it - rowStarts.begin()) - 1;
+
+  std::size_t curStart = rowStarts[rowIdx];
+  std::size_t prevStart = rowIdx > 0 ? rowStarts[rowIdx - 1] : curStart;
+  std::size_t nextStart = rowIdx + 1 < rowStarts.size() ? rowStarts[rowIdx + 1] : lineSize;
+
+  return {prevStart, curStart, nextStart};
+}
+
 void Buffer::moveUp(ColIdx cols) {
   auto& line = _lines[_point.line];
   // Content width excludes the gutter column.
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
-  auto vr = findVisualRow(line, _point.offset, cw);
+  auto& bounds = ensureRowBounds(_point.line, cw);
+  auto vr = findVisualRowCached(bounds, _point.offset, line.size());
 
   // Screen column within the current visual row.
   std::size_t vcol = visualCol(line, vr.curRowStart, _point.offset);
@@ -352,9 +401,9 @@ void Buffer::moveUp(ColIdx cols) {
   } else if (_point.line > 0) {
     // Move to last visual row of previous physical line.
     --_point.line;
-    auto& prev = _lines[_point.line];
-    targetRowStart = lastVisualRowStart(prev, cw);
-    targetRowEnd = prev.size();
+    auto& prevBounds = ensureRowBounds(_point.line, cw);
+    targetRowStart = prevBounds.back();
+    targetRowEnd = _lines[_point.line].size();
   } else {
     _point.offset = 0;
     _desiredCol.reset();
@@ -374,7 +423,8 @@ void Buffer::moveDown(ColIdx cols) {
   auto& line = _lines[_point.line];
   // Content width excludes the gutter column.
   std::size_t cw = cols.value > 1 ? cols.value - 1 : 1;
-  auto vr = findVisualRow(line, _point.offset, cw);
+  auto& bounds = ensureRowBounds(_point.line, cw);
+  auto vr = findVisualRowCached(bounds, _point.offset, line.size());
 
   // Screen column within the current visual row.
   std::size_t vcol = visualCol(line, vr.curRowStart, _point.offset);
@@ -384,8 +434,7 @@ void Buffer::moveDown(ColIdx cols) {
   if (vr.nextRowStart < line.size()) {
     // Move to next visual row of the same physical line.
     targetRowStart = vr.nextRowStart;
-    // Find end of next visual row.
-    auto nextVr = findVisualRow(line, vr.nextRowStart, cw);
+    auto nextVr = findVisualRowCached(bounds, vr.nextRowStart, line.size());
     targetRowEnd = nextVr.nextRowStart;
   } else if (_point.line + 1 < _lines.size()) {
     // Move to first visual row of next physical line.
@@ -395,8 +444,8 @@ void Buffer::moveDown(ColIdx cols) {
     if (next.empty()) {
       targetRowEnd = 0;
     } else {
-      auto nextVr = findVisualRow(next, 0, cw);
-      targetRowEnd = nextVr.nextRowStart;
+      auto& nextBounds = ensureRowBounds(_point.line, cw);
+      targetRowEnd = nextBounds.size() > 1 ? nextBounds[1] : next.size();
     }
   } else {
     _point.offset = line.size();
@@ -919,6 +968,7 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
 }
 
 void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
+  _rowBoundsCache.lineIdx = SIZE_MAX;
   if (to < from)
     std::swap(from, to);
   if (from.line >= _lines.size())
@@ -944,6 +994,7 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
 }
 
 BufferPoint Buffer::insertText(std::string_view text) {
+  _rowBoundsCache.lineIdx = SIZE_MAX;
   auto startLine = _point.line;
   auto startOff = _point.offset;
 

@@ -286,4 +286,17 @@ protected:
     BufferPoint to;
   };
   std::optional<Highlight> _highlight;
+
+  // Cached visual-row boundary offsets for a single line. Populated on
+  // first findVisualRow() call for that line+cols combination; invalidated
+  // by edits (which set lineIdx = SIZE_MAX).
+  struct RowBoundsCache {
+    std::size_t lineIdx = SIZE_MAX;
+    std::size_t cols = 0;
+    std::vector<std::size_t> rowStarts; // byte offset of each visual row
+  };
+  mutable RowBoundsCache _rowBoundsCache;
+  // Ensure the row bounds cache is populated for the given line and cols.
+  // Returns a const reference to _rowBoundsCache.rowStarts.
+  std::vector<std::size_t> const& ensureRowBounds(std::size_t lineIdx, std::size_t cols) const;
 };
