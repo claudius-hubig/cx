@@ -105,6 +105,10 @@ void Screen::draw() {
   auto br = rowsForBuffer();
 
   _renderBuf.clear();
+  // Rough estimate: ~2 bytes per cell for content + ANSI escapes.
+  std::size_t estimate = rows.value * cols.value * 2;
+  if (_renderBuf.capacity() < estimate)
+    _renderBuf.reserve(estimate);
 
   RowIdx cur_row{0};
   ColIdx cur_col{0};
