@@ -850,6 +850,10 @@ bool Screen::tryExit() {
 // Ignored characters in the buffer line are skipped between matched chars,
 // but the first pattern character must match directly at `off`.
 // Returns the byte offset past the last matched character, or nullopt on no match.
+//
+// Case folding is ASCII-only: non-ASCII uppercase letters (e.g. Ü) will not
+// match their lowercase counterparts. Multi-byte UTF-8 patterns match by raw
+// byte comparison, which works for exact matches but not case-insensitive ones.
 static std::optional<std::size_t> matchAt(std::vector<char> const& line, std::size_t off,
                                           std::string const& pattern, bool caseSensitive,
                                           bool matchDigits, bool matchSpecial) {
