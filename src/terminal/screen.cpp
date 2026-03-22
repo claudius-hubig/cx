@@ -1033,7 +1033,7 @@ void Screen::findPrev() {
   // Search backward through preceding lines, wrapping around.
   for (std::size_t count = 1; count < lineCount; ++count) {
     std::size_t li = (startLine + lineCount - count) % lineCount;
-    if (li >= startLine)
+    if (count > startLine)
       wrapped = true;
     auto const& line = _buf->lineContent(li);
     // Find the last match on this line.
