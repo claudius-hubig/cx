@@ -56,6 +56,10 @@ private:
   bool handleConfirmKill(char c);
   bool handleConfirmRevert(char c);
   bool handleTextPrompt(char c);
+  void submitSwitchBuffer();
+  void submitSaveAs();
+  void submitFind();
+  void submitGoToLine();
   bool handleEscapeInput(std::optional<char>& pendingChar);
   bool handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();

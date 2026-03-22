@@ -385,96 +385,127 @@ bool Screen::handleConfirmRevert(char c) {
   return false;
 }
 
+void Screen::submitSwitchBuffer() {
+  if (!_bufMgr)
+    return;
+  // Resolve target from completion or typed input.
+  std::string resolved;
+  if (_completionIdx >= 0 && _completionIdx < static_cast<int>(_completions.size()))
+    resolved = _completions[_completionIdx].second;
+  else if (_completions.size() == 1)
+    resolved = _completions[0].second;
+  Buffer* target = nullptr;
+  if (!resolved.empty())
+    target = _bufMgr->find(resolved);
+  if (!target)
+    target = _bufMgr->find(_prompt_input);
+  if (target) {
+    setBuffer(*target);
+  } else if (_prompt_input[0] == '*') {
+    std::string name = _prompt_input;
+    if (name.back() != '*')
+      name += '*';
+    target = _bufMgr->find(name);
+    if (target)
+      setBuffer(*target);
+    else
+      setBuffer(_bufMgr->create(name));
+  } else {
+    // Not an existing buffer — try opening as a file.
+    std::error_code fec;
+    if (std::filesystem::is_directory(_prompt_input, fec)) {
+      if (!_prompt_input.ends_with('/'))
+        _prompt_input += '/';
+      updateCompletions();
+      return; // stay in prompt
+    }
+    setBuffer(_bufMgr->open(_prompt_input));
+  }
+}
+
+void Screen::submitSaveAs() {
+  if (!_buf || !_bufMgr)
+    return;
+  auto targetExists = std::filesystem::exists(_prompt_input);
+  _bufMgr->rename(_buf->name(), _prompt_input);
+  if (targetExists) {
+    _prompt = Prompt::ConfirmSave;
+    _prompt_input = "Overwrite " + _buf->name() + "? y/n: ";
+    return; // transition to confirm prompt
+  }
+  auto res = _buf->save();
+  if (res) {
+    setStatus("Saved to " + _buf->name());
+    if (_killPending) {
+      _killPending = false;
+      auto name = _buf->name();
+      _prompt = Prompt::None;
+      _prompt_input.clear();
+      _completions.clear();
+      _completionIdx = -1;
+      if (_prevBuf == _buf)
+        _prevBuf = nullptr;
+      setBuffer(_bufMgr->kill(name));
+      return;
+    }
+  } else {
+    setStatus(res.error());
+    _killPending = false;
+  }
+}
+
+void Screen::submitFind() {
+  if (!_buf)
+    return;
+  _lastSearch = _prompt_input;
+  findNext();
+}
+
+void Screen::submitGoToLine() {
+  if (!_buf)
+    return;
+  std::size_t line = 0;
+  if (_prompt_input == "last") {
+    line = std::numeric_limits<std::size_t>::max();
+  } else {
+    for (char ch : _prompt_input) {
+      if (ch < '0' || ch > '9') {
+        line = 0;
+        break;
+      }
+      auto digit = static_cast<std::size_t>(ch - '0');
+      if (line > (std::numeric_limits<std::size_t>::max() - digit) / 10) {
+        line = std::numeric_limits<std::size_t>::max();
+        break;
+      }
+      line = line * 10 + digit;
+    }
+  }
+  if (line > 0)
+    _buf->gotoLine(line, rowsForBuffer());
+}
+
 bool Screen::handleTextPrompt(char c) {
   if (c == '\r' || c == '\n') {
     if (!_prompt_input.empty()) {
-      if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
-        // Resolve target from completion or typed input.
-        std::string resolved;
-        if (_completionIdx >= 0 && _completionIdx < static_cast<int>(_completions.size()))
-          resolved = _completions[_completionIdx].second;
-        else if (_completions.size() == 1)
-          resolved = _completions[0].second;
-        Buffer* target = nullptr;
-        if (!resolved.empty())
-          target = _bufMgr->find(resolved);
-        if (!target)
-          target = _bufMgr->find(_prompt_input);
-        if (target) {
-          setBuffer(*target);
-        } else if (_prompt_input[0] == '*') {
-          std::string name = _prompt_input;
-          if (name.back() != '*')
-            name += '*';
-          target = _bufMgr->find(name);
-          if (target)
-            setBuffer(*target);
-          else
-            setBuffer(_bufMgr->create(name));
-        } else {
-          // Not an existing buffer — try opening as a file.
-          std::error_code fec;
-          if (std::filesystem::is_directory(_prompt_input, fec)) {
-            if (!_prompt_input.ends_with('/'))
-              _prompt_input += '/';
-            updateCompletions();
-            draw();
-            return true;
-          }
-          setBuffer(_bufMgr->open(_prompt_input));
-        }
-      } else if (_prompt == Prompt::SaveAs && _buf && _bufMgr) {
-        auto targetExists = std::filesystem::exists(_prompt_input);
-        _bufMgr->rename(_buf->name(), _prompt_input);
-        if (targetExists) {
-          _prompt = Prompt::ConfirmSave;
-          _prompt_input = "Overwrite " + _buf->name() + "? y/n: ";
+      if (_prompt == Prompt::SwitchBuffer) {
+        submitSwitchBuffer();
+        // submitSwitchBuffer may stay in prompt (directory navigation).
+        if (_prompt != Prompt::None) {
           draw();
           return true;
         }
-        auto res = _buf->save();
-        if (res) {
-          setStatus("Saved to " + _buf->name());
-          if (_killPending) {
-            _killPending = false;
-            auto name = _buf->name();
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            _completions.clear();
-            _completionIdx = -1;
-            if (_prevBuf == _buf)
-              _prevBuf = nullptr;
-            setBuffer(_bufMgr->kill(name));
-            draw();
-            return true;
-          }
-        } else {
-          setStatus(res.error());
-          _killPending = false;
+      } else if (_prompt == Prompt::SaveAs) {
+        submitSaveAs();
+        // submitSaveAs may transition to ConfirmSave or kill-after-save.
+        if (_prompt != Prompt::None) {
+          draw();
+          return true;
         }
-      } else if (_prompt == Prompt::Find && _buf) {
-        _lastSearch = _prompt_input;
-        findNext();
-      } else if (_prompt == Prompt::GoToLine && _buf) {
-        std::size_t line = 0;
-        if (_prompt_input == "last") {
-          line = std::numeric_limits<std::size_t>::max();
-        } else {
-          for (char ch : _prompt_input) {
-            if (ch < '0' || ch > '9') {
-              line = 0;
-              break;
-            }
-            auto digit = static_cast<std::size_t>(ch - '0');
-            if (line > (std::numeric_limits<std::size_t>::max() - digit) / 10) {
-              line = std::numeric_limits<std::size_t>::max();
-              break;
-            }
-            line = line * 10 + digit;
-          }
-        }
-        if (line > 0)
-          _buf->gotoLine(line, rowsForBuffer());
+      } else if (_prompt == Prompt::Find) {
+        submitFind();
+      } else if (_prompt == Prompt::GoToLine) {
+        submitGoToLine();
       }
     }
     _prompt = Prompt::None;
