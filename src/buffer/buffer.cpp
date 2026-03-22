@@ -871,7 +871,8 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
 }
 
 BufferPoint Buffer::insertText(std::string_view text) {
-  for (std::size_t i = 0; i < text.size(); ++i) {
+  std::size_t i = 0;
+  while (i < text.size()) {
     if (text[i] == '\n') {
       // Split current line at _point.
       auto& line = _lines[_point.line];
@@ -880,10 +881,16 @@ BufferPoint Buffer::insertText(std::string_view text) {
       _lines.insert(_lines.begin() + _point.line + 1, std::move(tail));
       _point.line++;
       _point.offset = 0;
+      ++i;
     } else {
+      // Batch-insert all bytes up to the next newline or end of text.
+      auto end = text.find('\n', i);
+      if (end == std::string_view::npos)
+        end = text.size();
       auto& line = _lines[_point.line];
-      line.insert(line.begin() + _point.offset, text[i]);
-      _point.offset++;
+      line.insert(line.begin() + _point.offset, text.begin() + i, text.begin() + end);
+      _point.offset += end - i;
+      i = end;
     }
   }
   _mark.reset();
