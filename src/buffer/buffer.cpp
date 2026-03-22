@@ -60,7 +60,7 @@ void Buffer::doInsert(uint32_t cp) {
   }
 
   if (_desiredCol) {
-    std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
+    std::size_t vcol = pointVisualCol();
     if (vcol >= _desiredCol->value)
       _desiredCol.reset();
   }
@@ -237,6 +237,24 @@ std::size_t Buffer::visualCol(std::vector<char> const& line, std::size_t from,
   return vcol;
 }
 
+std::size_t Buffer::pointVisualCol() const {
+  if (_pointColCache.line == _point.line && _pointColCache.offset == _point.offset)
+    return _pointColCache.visualCol;
+  // Compute both visual and codepoint columns in a single scan.
+  _pointColCache.line = _point.line;
+  _pointColCache.offset = _point.offset;
+  _pointColCache.visualCol = 0;
+  _pointColCache.codepointCol = 0;
+  auto& line = _lines[_point.line];
+  for (std::size_t i = 0; i < _point.offset && i < line.size();) {
+    auto info = charInfoAt(line.data() + i, line.size() - i);
+    _pointColCache.visualCol += info.width;
+    i += info.len;
+    ++_pointColCache.codepointCol;
+  }
+  return _pointColCache.visualCol;
+}
+
 // Walk a line from `from` to find the byte offset matching a target visual
 // column. Stops at `to` (or line.size() if to > line.size()).
 static std::size_t offsetForVisualCol(std::vector<char> const& line, std::size_t from,
@@ -396,7 +414,7 @@ void Buffer::moveDown(ColIdx cols) {
 }
 
 void Buffer::movePhysicalUp() {
-  std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
+  std::size_t vcol = pointVisualCol();
   std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
   if (_point.line == 0) {
@@ -408,7 +426,7 @@ void Buffer::movePhysicalUp() {
   --_point.line;
   _point.offset = offsetForVisualCol(_lines[_point.line], 0, _lines[_point.line].size(), goal);
 
-  std::size_t actual = visualCol(_lines[_point.line], 0, _point.offset);
+  std::size_t actual = pointVisualCol();
   if (actual == goal)
     _desiredCol.reset();
   else if (!_desiredCol)
@@ -416,7 +434,7 @@ void Buffer::movePhysicalUp() {
 }
 
 void Buffer::movePhysicalDown() {
-  std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
+  std::size_t vcol = pointVisualCol();
   std::size_t goal = _desiredCol ? _desiredCol->value : vcol;
 
   if (_point.line + 1 >= _lines.size()) {
@@ -428,7 +446,7 @@ void Buffer::movePhysicalDown() {
   ++_point.line;
   _point.offset = offsetForVisualCol(_lines[_point.line], 0, _lines[_point.line].size(), goal);
 
-  std::size_t actual = visualCol(_lines[_point.line], 0, _point.offset);
+  std::size_t actual = pointVisualCol();
   if (actual == goal)
     _desiredCol.reset();
   else if (!_desiredCol)
@@ -777,7 +795,7 @@ void Buffer::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
       _viewFrom.line = RowIdx{_point.line - rows.value + 1};
 
     // Horizontal: keep cursor within visible columns.
-    std::size_t vcol = visualCol(_lines[_point.line], 0, _point.offset);
+    std::size_t vcol = pointVisualCol();
     if (vcol < hs)
       hs = vcol;
     if (vcol >= hs + cw)
@@ -868,17 +886,9 @@ BufferPoint Buffer::viewFrom() const {
 }
 
 std::tuple<std::size_t, std::size_t> Buffer::lineCol() const {
-  // Line is 1-indexed.
-  std::size_t line = _point.line + 1;
-  // Column counts code points, not bytes.
-  std::size_t col = 1;
-  auto& curLine = _lines[_point.line];
-  for (std::size_t i = 0; i < _point.offset && i < curLine.size();) {
-    auto len = utf8SeqLen(static_cast<unsigned char>(curLine[i]));
-    ++col;
-    i += std::min(len, curLine.size() - i);
-  }
-  return {line, col};
+  // Ensure the cache is populated (also computes codepointCol).
+  pointVisualCol();
+  return {_point.line + 1, _pointColCache.codepointCol + 1};
 }
 
 void Buffer::toggleMark() {

@@ -256,6 +256,10 @@ protected:
     return _point.line == _lines.size() - 1 && _point.offset == _lines.back().size();
   }
 
+  // Visual column of the point from byte 0, cached. All edits change
+  // _point, so {line, offset} is a valid cache key.
+  std::size_t pointVisualCol() const;
+
   std::string _name;
   std::vector<std::vector<char>> _lines{{}};
   BufferPoint _point;
@@ -264,6 +268,18 @@ protected:
   bool _wrapMode = false; // tracks last wrap mode seen by ensureVisible
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
+
+  // Memoisation cache for point column computations. Both lineCol() and
+  // pointVisualCol() scan from byte 0 to _point.offset on the current
+  // line; this cache ensures the scan happens at most once per point
+  // position.
+  struct PointColCache {
+    std::size_t line = SIZE_MAX;
+    std::size_t offset = SIZE_MAX;
+    std::size_t visualCol = 0;
+    std::size_t codepointCol = 0;
+  };
+  mutable PointColCache _pointColCache;
 
   struct Highlight {
     BufferPoint from;
