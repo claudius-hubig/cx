@@ -2,7 +2,6 @@
 
 #include <expected>
 #include <fstream>
-#include <iterator>
 
 TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) {}
 
@@ -11,19 +10,24 @@ TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
   std::ifstream file(path, std::ios::binary);
   if (!file)
     return;
-  // Read file into flat buffer, then split into lines.
-  std::vector<char> data{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-  if (data.empty())
-    return; // _lines stays as {{}}, correct for empty file.
-
+  // Stream the file in chunks to avoid a full intermediate copy.
   _lines.clear();
   _lines.emplace_back();
-  for (char c : data) {
-    if (c == '\n') {
-      _lines.emplace_back(); // start a new line
-    } else {
-      _lines.back().push_back(c);
+  char buf[8192];
+  bool anyData = false;
+  while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
+    auto n = static_cast<std::size_t>(file.gcount());
+    anyData = true;
+    for (std::size_t i = 0; i < n; ++i) {
+      if (buf[i] == '\n')
+        _lines.emplace_back();
+      else
+        _lines.back().push_back(buf[i]);
     }
+  }
+  if (!anyData) {
+    // Empty file: restore the default single empty line.
+    _lines = {{}};
   }
 }
 
@@ -59,12 +63,15 @@ std::expected<void, std::string> TextBuffer::revert() {
 
   _lines.clear();
   _lines.emplace_back();
-  std::vector<char> data{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-  for (char c : data) {
-    if (c == '\n')
-      _lines.emplace_back();
-    else
-      _lines.back().push_back(c);
+  char buf[8192];
+  while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
+    auto n = static_cast<std::size_t>(file.gcount());
+    for (std::size_t i = 0; i < n; ++i) {
+      if (buf[i] == '\n')
+        _lines.emplace_back();
+      else
+        _lines.back().push_back(buf[i]);
+    }
   }
   _point = {};
   _mark.reset();
