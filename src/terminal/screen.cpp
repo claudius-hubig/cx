@@ -512,7 +512,11 @@ bool Screen::handleTextPrompt(char c) {
     if (_prompt_input.ends_with('/') && _completions.size() == 1)
       updateCompletions();
   } else if (c == 0x7f && !_prompt_input.empty()) {
+    // Remove one full UTF-8 code point (walk back over continuation bytes).
     _prompt_input.pop_back();
+    while (!_prompt_input.empty() &&
+           isUtf8Continuation(static_cast<unsigned char>(_prompt_input.back())))
+      _prompt_input.pop_back();
     if (_prompt == Prompt::SwitchBuffer)
       updateCompletions();
   } else if (_prompt == Prompt::Find && c == 0x06) {
