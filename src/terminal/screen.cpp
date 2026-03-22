@@ -934,6 +934,19 @@ void Screen::findNext() {
   std::size_t startOff = _buf->point().offset;
   bool wrapped = false;
 
+  // Pre-compute first-character filter for early-out.
+  auto lower = [](char c) -> char {
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+  };
+  char firstLower = lower(_lastSearch[0]);
+  char firstUpper =
+      (firstLower >= 'a' && firstLower <= 'z') ? static_cast<char>(firstLower - 32) : firstLower;
+  auto firstCharCanMatch = [&](char c) -> bool {
+    if (caseSensitive)
+      return c == _lastSearch[0];
+    return c == firstLower || c == firstUpper;
+  };
+
   auto found = [&](std::size_t li, std::size_t matchStart, std::size_t matchEnd, bool didWrap) {
     _buf->setPoint(li, matchEnd);
     _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
@@ -957,6 +970,8 @@ void Screen::findNext() {
     std::size_t from = (count == 0) ? startOff : 0;
 
     for (std::size_t off = from; off < line.size(); ++off) {
+      if (!firstCharCanMatch(line[off]))
+        continue;
       if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
         found(li, off, *end, wrapped);
         return;
@@ -969,6 +984,8 @@ void Screen::findNext() {
     auto const& line = _buf->lineContent(startLine);
     std::size_t limit = std::min(startOff, line.size());
     for (std::size_t off = 0; off < limit; ++off) {
+      if (!firstCharCanMatch(line[off]))
+        continue;
       if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
         found(startLine, off, *end, true);
         return;
@@ -1005,6 +1022,19 @@ void Screen::findPrev() {
   std::size_t startOff = _buf->point().offset;
   bool wrapped = false;
 
+  // Pre-compute first-character filter for early-out.
+  auto lower = [](char c) -> char {
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+  };
+  char firstLower = lower(_lastSearch[0]);
+  char firstUpper =
+      (firstLower >= 'a' && firstLower <= 'z') ? static_cast<char>(firstLower - 32) : firstLower;
+  auto firstCharCanMatch = [&](char c) -> bool {
+    if (caseSensitive)
+      return c == _lastSearch[0];
+    return c == firstLower || c == firstUpper;
+  };
+
   auto found = [&](std::size_t li, std::size_t matchStart, std::size_t matchEnd, bool didWrap) {
     _buf->setPoint(li, matchEnd);
     _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
@@ -1027,6 +1057,8 @@ void Screen::findPrev() {
     // Strict < so we skip the current match (whose end == startOff).
     std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
     for (std::size_t off = 0; off < limit; ++off) {
+      if (!firstCharCanMatch(line[off]))
+        continue;
       if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial)) {
         if (*end < startOff)
           lastMatch = {off, *end};
@@ -1047,6 +1079,8 @@ void Screen::findPrev() {
     // Find the last match on this line.
     std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
     for (std::size_t off = 0; off < line.size(); ++off) {
+      if (!firstCharCanMatch(line[off]))
+        continue;
       if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial))
         lastMatch = {off, *end};
     }
@@ -1061,6 +1095,8 @@ void Screen::findPrev() {
     auto const& line = _buf->lineContent(startLine);
     std::optional<std::pair<std::size_t, std::size_t>> lastMatch;
     for (std::size_t off = startOff; off < line.size(); ++off) {
+      if (!firstCharCanMatch(line[off]))
+        continue;
       if (auto end = matchAt(line, off, _lastSearch, caseSensitive, matchDigits, matchSpecial))
         lastMatch = {off, *end};
     }
