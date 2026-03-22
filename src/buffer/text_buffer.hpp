@@ -33,7 +33,7 @@ public:
 
   /// Reload buffer contents from the backing file. Resets point and
   /// viewport to the start. Returns an error if the file cannot be read.
-  std::expected<void, std::string> revert();
+  std::expected<void, std::string> revert() override;
 
 private:
   std::optional<std::filesystem::path> _path;
