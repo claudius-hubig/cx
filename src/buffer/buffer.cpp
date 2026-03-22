@@ -596,16 +596,20 @@ void Buffer::moveWordLeft() {
     if (_point.offset < cur.size() && !isSep(cur[_point.offset]))
       break; // on a non-sep char
     // Skip seps backward within line.
+    bool foundNonSep = false;
     while (_point.offset > 0) {
       std::size_t prev = _point.offset - 1;
       while (prev > 0 && isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
         --prev;
       if (!isSep(cur[prev])) {
         _point.offset = prev;
-        goto found; // found non-sep
+        foundNonSep = true;
+        break;
       }
       _point.offset = prev;
     }
+    if (foundNonSep)
+      break;
     // Check position 0.
     if (!cur.empty() && !isSep(cur[0])) {
       _point.offset = 0;
@@ -626,7 +630,6 @@ void Buffer::moveWordLeft() {
       break;
     }
   }
-found:
 
   // If currently on a separator, we're done.
   {
