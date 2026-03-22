@@ -107,5 +107,5 @@ private:
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();
   std::vector<std::pair<std::string, std::string>> _completions; // {displayName, bufName}
-  int _completionIdx = -1;                                       // -1 = no selection, 0+ = cycling
+  std::optional<std::size_t> _completionIdx;
 };

@@ -156,7 +156,7 @@ void Screen::draw() {
         return match.substr(_prompt_input.size());
       return match;
     };
-    if (_completionIdx < 0 && !_completions.empty()) {
+    if (!_completionIdx && !_completions.empty()) {
       auto hint = hintFor(_completions[0].first);
       if (_completions.size() == 1) {
         if (!hint.empty()) {
@@ -390,8 +390,8 @@ void Screen::submitSwitchBuffer() {
     return;
   // Resolve target from completion or typed input.
   std::string resolved;
-  if (_completionIdx >= 0 && _completionIdx < static_cast<int>(_completions.size()))
-    resolved = _completions[_completionIdx].second;
+  if (_completionIdx && *_completionIdx < _completions.size())
+    resolved = _completions[*_completionIdx].second;
   else if (_completions.size() == 1)
     resolved = _completions[0].second;
   Buffer* target = nullptr;
@@ -442,7 +442,7 @@ void Screen::submitSaveAs() {
       _prompt = Prompt::None;
       _prompt_input.clear();
       _completions.clear();
-      _completionIdx = -1;
+      _completionIdx.reset();
       if (_prevBuf == _buf)
         _prevBuf = nullptr;
       setBuffer(_bufMgr->kill(name));
@@ -511,7 +511,7 @@ bool Screen::handleTextPrompt(char c) {
     _prompt = Prompt::None;
     _prompt_input.clear();
     _completions.clear();
-    _completionIdx = -1;
+    _completionIdx.reset();
   } else if (c == 0x1b) {
     // Distinguish bare Esc (cancel) from escape sequences.
     struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
@@ -521,8 +521,8 @@ bool Screen::handleTextPrompt(char c) {
           read(STDIN_FILENO, &seq[1], 1) == 1) {
         if (seq[1] == 'C' && _prompt == Prompt::SwitchBuffer && !_completions.empty()) {
           // Right arrow: accept the current completion.
-          if (_completionIdx >= 0)
-            _prompt_input = _completions[_completionIdx].first;
+          if (_completionIdx)
+            _prompt_input = _completions[*_completionIdx].first;
           else if (_completions.size() == 1)
             _prompt_input = _completions[0].first;
           updateCompletions();
@@ -534,15 +534,15 @@ bool Screen::handleTextPrompt(char c) {
       _prompt = Prompt::None;
       _prompt_input.clear();
       _completions.clear();
-      _completionIdx = -1;
+      _completionIdx.reset();
       _killPending = false;
     }
   } else if (c == '\t' && _prompt == Prompt::SwitchBuffer && !_completions.empty()) {
-    if (_completionIdx < 0)
+    if (!_completionIdx)
       _completionIdx = 0;
     else
-      _completionIdx = (_completionIdx + 1) % static_cast<int>(_completions.size());
-    _prompt_input = _completions[_completionIdx].first;
+      _completionIdx = (*_completionIdx + 1) % _completions.size();
+    _prompt_input = _completions[*_completionIdx].first;
     // Directory: navigate into it only when unambiguous.
     if (_prompt_input.ends_with('/') && _completions.size() == 1)
       updateCompletions();
@@ -838,10 +838,10 @@ void Screen::resize() {
 void Screen::updateCompletions() {
   if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
     _completions = _bufMgr->completions(_prompt_input);
-    _completionIdx = -1;
+    _completionIdx.reset();
   } else {
     _completions.clear();
-    _completionIdx = -1;
+    _completionIdx.reset();
   }
 }
 
