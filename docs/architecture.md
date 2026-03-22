@@ -222,3 +222,27 @@ knows about `Screen` concretely.
 | `src/utf8.hpp`                         | UTF-8 encoding helpers: `utf8Len`, `encodeUtf8`                                                                              |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `cx_error.log` for post-mortem inspection                                                     |
+
+---
+
+### Performance characteristics
+
+The text storage model (`vector<vector<char>>`, one heap allocation per
+line) is simple but has known scalability limits:
+
+- **Per-line overhead**: each line is a separate `vector<char>` with its
+  own heap allocation (~24 bytes overhead + allocator metadata). A file
+  with millions of short lines wastes significant memory and fragments the
+  heap.
+- **Line splits/joins are O(N)**: inserting or deleting a newline calls
+  `_lines.insert()`/`_lines.erase()`, which shifts all subsequent line
+  vectors. On a multi-million-line file this is noticeable.
+- **Region deletion is O(N)**: `deleteRegion()` creates a temporary merged
+  line and erases a range of `_lines`, both proportional to file size.
+- **Rendering is full-redraw**: `render()` rebuilds the entire screen
+  string on every keystroke. This is adequate for typical terminal sizes
+  but may cause lag on very large terminals over slow connections.
+
+For a production editor handling 100 MB+ files, a gap buffer, rope, or
+piece table would be more appropriate. The current model is chosen for
+simplicity and readability.
