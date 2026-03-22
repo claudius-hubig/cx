@@ -1169,6 +1169,61 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   std::size_t hScroll = wrap ? std::size_t{0} : _viewFrom.col.value;
   std::size_t viewFromOffset = wrap ? _viewFrom.col.value : std::size_t{0};
 
+  // Shared highlight/region toggle logic. Updates active state and emits
+  // ANSI escapes when transitioning in/out of highlighted/region spans.
+  auto updateStyle = [&](std::size_t lineIdx, std::size_t byteOff, bool& regionActive,
+                         bool& highlightActive) {
+    bool wantHl = inHighlight(lineIdx, byteOff);
+    bool wantRegion = !wantHl && inRegion(lineIdx, byteOff);
+    if (wantHl && !highlightActive) {
+      if (regionActive) {
+        out += kRegionOff;
+        regionActive = false;
+      }
+      out += kHighlightOn;
+      highlightActive = true;
+    } else if (!wantHl && highlightActive) {
+      out += kHighlightOff;
+      highlightActive = false;
+    }
+    if (wantRegion && !regionActive) {
+      out += kRegionOn;
+      regionActive = true;
+    } else if (!wantRegion && regionActive) {
+      out += kRegionOff;
+      regionActive = false;
+    }
+  };
+
+  // End-of-line: highlight the newline position if region spans it, show
+  // whitespace indicator, then reset active styles.
+  auto emitLineEnd = [&](std::size_t lineIdx, std::size_t lineSize, std::size_t visCol,
+                         std::size_t maxCol, bool& regionActive, bool& highlightActive) {
+    if (hasRegion && lineIdx + 1 < _lines.size() && visCol < maxCol &&
+        inRegion(lineIdx, lineSize)) {
+      if (!regionActive) {
+        out += kRegionOn;
+        regionActive = true;
+      }
+      out += ' ';
+    }
+    if (highlightActive) {
+      out += kHighlightOff;
+      highlightActive = false;
+    }
+    if (regionActive) {
+      out += kRegionOff;
+      regionActive = false;
+    }
+    if (showWhitespace && lineIdx + 1 < _lines.size() && visCol < maxCol &&
+        !inRegion(lineIdx, lineSize)) {
+      out += kNlStyle;
+      out += kWsFg;
+      out += "\xe2\x86\xb5";
+      out += kReset;
+    }
+  };
+
   if (!wrap) {
     // No-wrap: each physical line is one screen row, horizontally scrolled.
     std::size_t row = 0;
@@ -1203,27 +1258,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           break;
         }
 
-        bool wantHl = inHighlight(lineIdx, i);
-        bool wantRegion = !wantHl && inRegion(lineIdx, i);
-        if (wantHl && !highlightActive) {
-          if (regionActive) {
-            out += kRegionOff;
-            regionActive = false;
-          }
-          out += kHighlightOn;
-          highlightActive = true;
-        } else if (!wantHl && highlightActive) {
-          out += kHighlightOff;
-          highlightActive = false;
-        }
-        if (wantRegion && !regionActive) {
-          out += kRegionOn;
-          regionActive = true;
-        } else if (!wantRegion && regionActive) {
-          out += kRegionOff;
-          regionActive = false;
-        }
-
+        updateStyle(lineIdx, i, regionActive, highlightActive);
         emitChar(line.data() + i, info);
         vcol += info.width;
         i += info.len;
@@ -1235,33 +1270,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         pointFound = true;
       }
 
-      // Highlight end-of-line newline position if region spans it.
-      if (hasRegion && !overflows && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
-          vcol < hScroll + cw && inRegion(lineIdx, line.size())) {
-        if (!regionActive) {
-          out += kRegionOn;
-          regionActive = true;
-        }
-        out += ' ';
-      }
-
-      if (highlightActive) {
-        out += kHighlightOff;
-        highlightActive = false;
-      }
-      if (regionActive) {
-        out += kRegionOff;
-        regionActive = false;
-      }
-
-      // Newline indicator.
-      if (showWhitespace && !overflows && lineIdx + 1 < _lines.size() && vcol >= hScroll &&
-          vcol < hScroll + cw && !inRegion(lineIdx, line.size())) {
-        out += kNlStyle;
-        out += kWsFg;
-        out += "\xe2\x86\xb5";
-        out += kReset;
-      }
+      if (!overflows && vcol >= hScroll)
+        emitLineEnd(lineIdx, line.size(), vcol - hScroll, cw, regionActive, highlightActive);
 
       out += "\x1b[K";
 
@@ -1334,27 +1344,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         pointFound = true;
       }
 
-      bool wantHl = inHighlight(lineIdx, i);
-      bool wantRegion = !wantHl && inRegion(lineIdx, i);
-      if (wantHl && !highlightActive) {
-        if (regionActive) {
-          out += kRegionOff;
-          regionActive = false;
-        }
-        out += kHighlightOn;
-        highlightActive = true;
-      } else if (!wantHl && highlightActive) {
-        out += kHighlightOff;
-        highlightActive = false;
-      }
-      if (wantRegion && !regionActive) {
-        out += kRegionOn;
-        regionActive = true;
-      } else if (!wantRegion && regionActive) {
-        out += kRegionOff;
-        regionActive = false;
-      }
-
+      updateStyle(lineIdx, i, regionActive, highlightActive);
       emitChar(line.data() + i, info);
       col += info.width;
 
@@ -1385,30 +1375,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // End of physical line — emit newline visual and gutter (no wrap
     // indicator).
     if (row < rows.value) {
-      // Highlight end-of-line newline position if region spans it.
-      if (hasRegion && lineIdx + 1 < _lines.size() && col + 1 <= cw &&
-          inRegion(lineIdx, line.size())) {
-        if (!regionActive) {
-          out += kRegionOn;
-          regionActive = true;
-        }
-        out += ' ';
-      }
-      if (highlightActive) {
-        out += kHighlightOff;
-        highlightActive = false;
-      }
-      if (regionActive) {
-        out += kRegionOff;
-        regionActive = false;
-      }
-      if (showWhitespace && lineIdx + 1 < _lines.size() && col + 1 <= cw &&
-          !inRegion(lineIdx, line.size())) {
-        out += kNlStyle;
-        out += kWsFg;
-        out += "\xe2\x86\xb5"; // down-arrow
-        out += kReset;
-      }
+      emitLineEnd(lineIdx, line.size(), col, cw, regionActive, highlightActive);
       out += "\x1b[K";
       emitGutter(row, row == cur_row && pointFound,
                  " "); // natural line end, no indicator
