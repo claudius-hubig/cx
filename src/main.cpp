@@ -13,10 +13,10 @@ int main(int argc, char* argv[]) {
     screen.setBufferManager(bufferManager);
 
     if (argc > 1) {
+      Buffer* last = nullptr;
       for (int i = 1; i < argc; ++i)
-        bufferManager.open(argv[i]);
-      auto& last = bufferManager.open(argv[argc - 1]);
-      screen.setBuffer(last);
+        last = &bufferManager.open(argv[i]);
+      screen.setBuffer(*last);
       screen.setStatus("Opened " + std::to_string(argc - 1) + (argc - 1 == 1 ? " file" : " files"));
       screen.draw();
     }
