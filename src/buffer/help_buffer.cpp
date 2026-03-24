@@ -42,6 +42,8 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatHelpLine(Action::ToggleMark));
     for (auto a : {Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
+    v.push_back(formatHelpLine(Action::Format));
+    v.push_back(formatRawLine("Tab", "Format line (C/C++)"));
     return v;
   }();
   return lines;

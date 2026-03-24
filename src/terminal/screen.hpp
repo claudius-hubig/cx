@@ -104,6 +104,12 @@ private:
   std::string _lastSearch;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
 
+  // Format the current buffer via clang-format. If lineRange is set,
+  // only the given 1-based line range is formatted (via --lines=M:N);
+  // otherwise the entire buffer is formatted.
+  void formatBuffer(std::optional<std::pair<std::size_t, std::size_t>> lineRange);
+  static bool isCppFile(std::string const& name);
+
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();
   std::vector<std::pair<std::string, std::string>> _completions; // {displayName, bufName}

@@ -24,6 +24,7 @@ enum class Action {
   PasteRing,
   ToggleWhitespace,
   ToggleWrap,
+  Format,
 };
 
 struct Shortcut {

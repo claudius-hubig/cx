@@ -56,6 +56,8 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 | Ctrl-y     | Paste            |
 | Esc-y      | Paste cycle      |
 | Esc-p      | Paste ring       |
+| Esc-f      | Format buffer/region (C/C++) |
+| Tab        | Format line (C/C++) |
 
 ### Movement
 

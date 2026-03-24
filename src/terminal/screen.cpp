@@ -2,11 +2,13 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
+#include "subprocess.hpp"
 #include "utf8.hpp"
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -791,7 +793,17 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         setBuffer(*target);
       }
     } else if (_buf) {
+      // In C/C++ files, copy leading spaces from the current line onto the
+      // new line so indentation carries over.
+      std::size_t indent = 0;
+      if (!_buf->readonly() && _buf->hasPath() && isCppFile(_buf->name())) {
+        auto& prev = _buf->lineContent(_buf->point().line);
+        while (indent < prev.size() && prev[indent] == ' ')
+          ++indent;
+      }
       _buf->insert('\n');
+      for (std::size_t i = 0; i < indent; ++i)
+        _buf->insert(' ');
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
@@ -806,6 +818,22 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     }
   } else if (c == 0x1b) {
     return handleEscapeInput(pendingChar);
+  } else if (c == '\t') {
+    // Tab: format current line in C/C++ files, insert tab otherwise.
+    if (_buf && !_buf->readonly() && _buf->hasPath() && isCppFile(_buf->name())) {
+      auto line = _buf->point().line + 1; // 1-based
+      formatBuffer(std::make_pair(line, line));
+      // If cursor is before the first non-space character, move it there.
+      auto& content = _buf->lineContent(_buf->point().line);
+      std::size_t firstNonSpace = 0;
+      while (firstNonSpace < content.size() && content[firstNonSpace] == ' ')
+        ++firstNonSpace;
+      if (_buf->point().offset < firstNonSpace)
+        _buf->setPoint(_buf->point().line, firstNonSpace);
+    } else if (_buf) {
+      _buf->insert('\t');
+      _pasteState.reset();
+    }
   } else if (static_cast<unsigned char>(c) < 0x20) {
     auto s = shortcutFromCtrlChar(c);
     if (auto action = handleShortcut(s))
@@ -1107,6 +1135,63 @@ void Screen::findPrev() {
   setStatus("Not found");
 }
 
+bool Screen::isCppFile(std::string const& name) {
+  auto ext = std::filesystem::path(name).extension().string();
+  return ext == ".c" || ext == ".h" || ext == ".cpp" || ext == ".hpp";
+}
+
+void Screen::formatBuffer(std::optional<std::pair<std::size_t, std::size_t>> lineRange) {
+  if (!_buf || _buf->readonly())
+    return;
+  if (!_buf->hasPath()) {
+    setStatus("Save file first to determine format");
+    return;
+  }
+  if (!isCppFile(_buf->name())) {
+    setStatus("No formatter for this file type");
+    return;
+  }
+
+  // Extract entire buffer content.
+  auto lc = _buf->lineCount();
+  BufferPoint endPt{lc - 1, _buf->lineContent(lc - 1).size()};
+  auto allText = _buf->extractRegion({0, 0}, endPt);
+
+  // Build clang-format command.
+  std::vector<std::string> args = {"clang-format", "--assume-filename=" + _buf->name()};
+  if (lineRange) {
+    auto [startLine, endLine] = *lineRange;
+    args.push_back("--lines=" + std::to_string(startLine) + ":" + std::to_string(endLine));
+  }
+
+  auto result = runSubprocess(args, allText);
+  if (!result) {
+    setStatus(result.error());
+    return;
+  }
+  if (result->exitCode != 0) {
+    // Show first line of stderr.
+    auto& err = result->stderrData;
+    auto nl = err.find('\n');
+    setStatus(nl != std::string::npos ? err.substr(0, nl) : err);
+    return;
+  }
+  if (result->stdoutData == allText) {
+    setStatus("Already formatted");
+    return;
+  }
+
+  // Replace buffer contents, preserving cursor position.
+  auto [savedLine, savedOffset] = std::make_pair(_buf->point().line, _buf->point().offset);
+  _buf->clearMark();
+  _buf->deleteRegion({0, 0}, endPt);
+  _buf->insertText(result->stdoutData);
+  _buf->setPoint(savedLine, savedOffset);
+  auto& [rows, cols] = _size;
+  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+  setStatus("Formatted");
+}
+
 void Screen::dispatchAction(Action action) {
   if (action != Action::Find && action != Action::FindBackward && _buf) {
     _buf->clearHighlight();
@@ -1279,6 +1364,17 @@ void Screen::dispatchAction(Action action) {
   case Action::ToggleWrap:
     _wrap = !_wrap;
     setStatus(_wrap ? "Wrap on" : "Wrap off");
+    break;
+  case Action::Format:
+    if (_buf && _buf->mark()) {
+      auto markLine = _buf->mark()->line;
+      auto pointLine = _buf->point().line;
+      auto startLine = std::min(markLine, pointLine) + 1; // 1-based
+      auto endLine = std::max(markLine, pointLine) + 1;
+      formatBuffer(std::make_pair(startLine, endLine));
+    } else {
+      formatBuffer(std::nullopt);
+    }
     break;
   }
 }

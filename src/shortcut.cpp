@@ -9,7 +9,7 @@ struct Binding {
 
 // The single source of truth for all keybindings. Help display and input
 // dispatch both read from this table. Order matches the help screen layout.
-static constexpr auto kBindings = std::array<Binding, 20>{{
+static constexpr auto kBindings = std::array<Binding, 21>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},
     {{.ctrl = true, .key = 'o'}, Action::SwitchBuffer, "Switch to buffer/open file"},
@@ -30,6 +30,7 @@ static constexpr auto kBindings = std::array<Binding, 20>{{
     {{.ctrl = true, .key = 'g'}, Action::GoToLine, "Go to line"},
     {{.ctrl = true, .key = 'h'}, Action::DeleteChunkBefore, "Delete chunk before cursor"},
     {{.esc = true, .key = 0x7F}, Action::DeleteChunkBefore, "Delete chunk before cursor"},
+    {{.esc = true, .key = 'f'}, Action::Format, "Format buffer/region"},
 }};
 
 std::optional<Action> handleShortcut(Shortcut s) {
