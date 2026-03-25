@@ -2,6 +2,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
+#include "byte_constants.hpp"
 #include "subprocess.hpp"
 #include "utf8.hpp"
 #include <poll.h>
@@ -406,7 +407,7 @@ bool Screen::handleConfirm(char c, std::function<bool()> onAccept, std::function
     return onAccept();
   if (c == 'n' || c == 'N')
     return onDecline();
-  if (c == 0x1b)
+  if (c == key::Escape)
     return onAbort();
   // Ignore all other keys.
   return false;
@@ -530,7 +531,7 @@ void Screen::submitSetMode() {
 }
 
 bool Screen::handleTextPrompt(char c) {
-  if (c == '\r' || c == '\n') {
+  if (c == key::Enter || c == key::Newline) {
     if (!_prompt_input.empty()) {
       if (_prompt == Prompt::SwitchBuffer) {
         submitSwitchBuffer();
@@ -558,14 +559,15 @@ bool Screen::handleTextPrompt(char c) {
     _prompt_input.clear();
     _completions.clear();
     _completionIdx.reset();
-  } else if (c == 0x1b) {
+  } else if (c == key::Escape) {
     // Distinguish bare Esc (cancel) from escape sequences.
     struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
     if (poll(&pfd, 1, 50) > 0) {
       char seq[2];
-      if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[' &&
+      if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == ansi::CsiIntro &&
           read(STDIN_FILENO, &seq[1], 1) == 1) {
-        if (seq[1] == 'C' && _prompt == Prompt::SwitchBuffer && !_completions.empty()) {
+        if (seq[1] == ansi::RightArrow && _prompt == Prompt::SwitchBuffer &&
+            !_completions.empty()) {
           // Right arrow: accept the current completion.
           if (_completionIdx)
             _prompt_input = _completions[*_completionIdx].first;
@@ -583,7 +585,7 @@ bool Screen::handleTextPrompt(char c) {
       _completionIdx.reset();
       _killPending = false;
     }
-  } else if (c == '\t' && _prompt == Prompt::SwitchBuffer && !_completions.empty()) {
+  } else if (c == key::Tab && _prompt == Prompt::SwitchBuffer && !_completions.empty()) {
     if (!_completionIdx)
       _completionIdx = 0;
     else
@@ -592,7 +594,7 @@ bool Screen::handleTextPrompt(char c) {
     // Directory: navigate into it only when unambiguous.
     if (_prompt_input.ends_with('/') && _completions.size() == 1)
       updateCompletions();
-  } else if (c == 0x7f && !_prompt_input.empty()) {
+  } else if (c == key::Backspace && !_prompt_input.empty()) {
     // Remove one full UTF-8 code point (walk back over continuation bytes).
     _prompt_input.pop_back();
     while (!_prompt_input.empty() &&
@@ -600,7 +602,7 @@ bool Screen::handleTextPrompt(char c) {
       _prompt_input.pop_back();
     if (_prompt == Prompt::SwitchBuffer)
       updateCompletions();
-  } else if (_prompt == Prompt::Find && c == 0x06) {
+  } else if (_prompt == Prompt::Find && c == key::CtrlF) {
     // Ctrl-F while in Find prompt: advance to next match forward.
     if (!_prompt_input.empty()) {
       _lastSearch = _prompt_input;
@@ -608,7 +610,7 @@ bool Screen::handleTextPrompt(char c) {
     }
     if (!_lastSearch.empty())
       findNext();
-  } else if (_prompt == Prompt::Find && c == 0x12) {
+  } else if (_prompt == Prompt::Find && c == key::CtrlR) {
     // Ctrl-R while in Find prompt: advance to next match backward.
     if (!_prompt_input.empty()) {
       _lastSearch = _prompt_input;
@@ -616,7 +618,7 @@ bool Screen::handleTextPrompt(char c) {
     }
     if (!_lastSearch.empty())
       findPrev();
-  } else if (static_cast<unsigned char>(c) >= 0x20) {
+  } else if (static_cast<unsigned char>(c) >= key::PrintableMin) {
     _prompt_input += c;
     auto u = static_cast<unsigned char>(c);
     if (u >= 0x80)
@@ -633,10 +635,10 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
   if (poll(&pfd, 1, 50) > 0) {
     // Escape sequence: read the next bytes to identify the key.
     char seq[2];
-    if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[') {
+    if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == ansi::CsiIntro) {
       if (read(STDIN_FILENO, &seq[1], 1) == 1) {
         switch (seq[1]) {
-        case 'A':
+        case ansi::UpArrow:
           if (_buf) {
             if (_wrap)
               _buf->moveUp(cols);
@@ -646,7 +648,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
               _buf->scrollUp(_wrap);
           }
           break;
-        case 'B':
+        case ansi::DownArrow:
           if (_buf) {
             auto prev = _buf->point();
             if (_wrap)
@@ -659,39 +661,39 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
               _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
           }
           break;
-        case 'C':
+        case ansi::RightArrow:
           if (_buf)
             _buf->moveRight();
           break;
-        case 'D':
+        case ansi::LeftArrow:
           if (_buf)
             _buf->moveLeft();
           break;
-        case 'H':
+        case ansi::Home:
           if (_buf)
             _buf->moveHome();
           break;
-        case 'F':
+        case ansi::End:
           if (_buf)
             _buf->moveEnd();
           break;
-        case '1': {
+        case ansi::ModifiedKey: {
           // Modified key: ESC[1;modX (e.g. Ctrl+Arrow = ESC[1;5X)
           char semi, mod, dir;
-          if (read(STDIN_FILENO, &semi, 1) == 1 && semi == ';' &&
+          if (read(STDIN_FILENO, &semi, 1) == 1 && semi == ansi::Separator &&
               read(STDIN_FILENO, &mod, 1) == 1 && read(STDIN_FILENO, &dir, 1) == 1) {
-            if (mod == '5' && _buf) {
+            if (mod == ansi::ModCtrl && _buf) {
               switch (dir) {
-              case 'C':
+              case ansi::RightArrow:
                 _buf->moveWordRight();
                 _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
-              case 'D':
+              case ansi::LeftArrow:
                 _buf->moveWordLeft();
                 while (_buf->point() < _buf->viewFrom())
                   _buf->scrollUp(_wrap);
                 break;
-              case 'A':
+              case ansi::UpArrow:
                 if (_wrap && _buf->currentLineWraps(cols))
                   _buf->movePhysicalUp();
                 else
@@ -699,18 +701,18 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                 while (_buf->point() < _buf->viewFrom())
                   _buf->scrollUp(_wrap);
                 break;
-              case 'B':
+              case ansi::DownArrow:
                 if (_wrap && _buf->currentLineWraps(cols))
                   _buf->movePhysicalDown();
                 else
                   _buf->moveParagraphDown();
                 _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
-              case 'H':
+              case ansi::Home:
                 _buf->setPoint(0, 0);
                 _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
-              case 'F':
+              case ansi::End:
                 _buf->setPoint(_buf->lineCount() - 1,
                                _buf->lineContent(_buf->lineCount() - 1).size());
                 _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
@@ -720,10 +722,10 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
           }
           break;
         }
-        case '3': {
+        case ansi::Delete: {
           char next;
           if (read(STDIN_FILENO, &next, 1) == 1) {
-            if (next == '~') {
+            if (next == ansi::Terminator) {
               // Plain Delete: ESC[3~
               if (_buf && _buf->mark()) {
                 _buf->deleteRegion(_buf->mark().value(), _buf->point());
@@ -732,27 +734,27 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                 _buf->deleteAtPoint();
                 _pasteState.reset();
               }
-            } else if (next == ';') {
+            } else if (next == ansi::Separator) {
               // Modified Delete: ESC[3;mod~
               char mod, tilde;
               if (read(STDIN_FILENO, &mod, 1) == 1 && read(STDIN_FILENO, &tilde, 1) == 1 &&
-                  tilde == '~') {
-                if (mod == '5' && _buf)
+                  tilde == ansi::Terminator) {
+                if (mod == ansi::ModCtrl && _buf)
                   _buf->deleteChunkAtPoint();
               }
             }
           }
           break;
         }
-        case '5': {
+        case ansi::PageUp: {
           char tilde;
-          if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~' && _buf)
+          if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
             _buf->pageUp(rowsForBuffer(), cols, _wrap);
           break;
         }
-        case '6': {
+        case ansi::PageDown: {
           char tilde;
-          if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == '~' && _buf)
+          if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
             _buf->pageDown(rowsForBuffer(), cols, _wrap);
           break;
         }
@@ -767,10 +769,10 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         }
         }
       }
-    } else if (!handleEscChord(seq[0]) && seq[0] != '[') {
+    } else if (!handleEscChord(seq[0]) && seq[0] != ansi::CsiIntro) {
       // Not a CSI sequence or known chord — insert the byte verbatim
       // (e.g. Alt+key sends ESC followed by the key).
-      if (_buf && static_cast<unsigned char>(seq[0]) >= 0x20)
+      if (_buf && static_cast<unsigned char>(seq[0]) >= key::PrintableMin)
         insertCharWithUtf8(*_buf, seq[0]);
     }
   } else {
@@ -800,7 +802,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
     }
 
     if (gotNext && !handleEscChord(next)) {
-      if (next == 0x1b) {
+      if (next == key::Escape) {
         // Esc-Esc: dismiss readonly overlay if active.
         if (_buf && _buf->readonly() && _prevBuf) {
           setBuffer(*_prevBuf);
@@ -826,7 +828,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     _highlightExpiry.reset();
   }
   auto& [rows, cols] = _size;
-  if (c == '\r' || c == '\n') {
+  if (c == key::Enter || c == key::Newline) {
     // Buffer list: Enter selects the highlighted buffer.
     auto* blb = dynamic_cast<BufferListBuffer*>(_buf);
     if (blb && _prevBuf && _bufMgr) {
@@ -851,7 +853,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
-  } else if (c == 0x7f) {
+  } else if (c == key::Backspace) {
     // Backspace: if mark active, delete region (no paste ring push).
     if (_buf && _buf->mark()) {
       _buf->deleteRegion(_buf->mark().value(), _buf->point());
@@ -860,9 +862,9 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _buf->deleteBeforePoint();
       _pasteState.reset();
     }
-  } else if (c == 0x1b) {
+  } else if (c == key::Escape) {
     return handleEscapeInput(pendingChar);
-  } else if (c == '\t') {
+  } else if (c == key::Tab) {
     // Tab: format current line in C/C++ files, insert tab otherwise.
     if (_buf && !_buf->readonly() && _buf->mode() == BufferMode::Cpp) {
       auto line = _buf->point().line + 1; // 1-based
@@ -878,7 +880,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _buf->insert('\t');
       _pasteState.reset();
     }
-  } else if (static_cast<unsigned char>(c) < 0x20) {
+  } else if (static_cast<unsigned char>(c) < key::PrintableMin) {
     auto s = shortcutFromCtrlChar(c);
     if (auto action = handleShortcut(s))
       dispatchAction(*action);
