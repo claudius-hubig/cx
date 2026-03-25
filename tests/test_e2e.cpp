@@ -613,9 +613,9 @@ BOOST_AUTO_TEST_CASE(e2e_txt_file_shows_text_mode) {
 
   TempFile tmp("hello world", ".txt");
   PtySession session(24, 80, bin, {std::string(tmp.path())});
-  auto output = session.readUntil("[text]", std::chrono::milliseconds{1000});
+  auto output = session.readUntil("[txt]", std::chrono::milliseconds{1000});
   auto stripped = stripAnsi(output);
-  BOOST_CHECK(stripped.find("[text]") != std::string::npos);
+  BOOST_CHECK(stripped.find("[txt]") != std::string::npos);
 
   session.send("\x1b"
                "c");
@@ -633,13 +633,13 @@ BOOST_AUTO_TEST_CASE(e2e_set_mode_to_text) {
   PtySession session(24, 80, bin, {std::string(tmp.path())});
   session.readUntil("[c]", std::chrono::milliseconds{1000});
 
-  // Esc-m, type "text", Enter.
+  // Esc-m, type "txt", Enter.
   session.send("\x1b"
                "m"
-               "text\r");
-  auto output = session.readUntil("Mode: text", std::chrono::milliseconds{1000});
+               "txt\r");
+  auto output = session.readUntil("Mode: txt", std::chrono::milliseconds{1000});
   auto stripped = stripAnsi(output);
-  BOOST_CHECK(stripped.find("Mode: text") != std::string::npos);
+  BOOST_CHECK(stripped.find("Mode: txt") != std::string::npos);
 
   session.send("\x1b"
                "c");
@@ -655,7 +655,7 @@ BOOST_AUTO_TEST_CASE(e2e_set_mode_to_c) {
 
   TempFile tmp("hello", ".txt");
   PtySession session(24, 80, bin, {std::string(tmp.path())});
-  session.readUntil("[text]", std::chrono::milliseconds{1000});
+  session.readUntil("[txt]", std::chrono::milliseconds{1000});
 
   // Esc-m, type "c", Enter.
   session.send("\x1b"

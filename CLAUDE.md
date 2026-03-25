@@ -22,6 +22,11 @@ See docs/architecture.md for a summary of the codebase.
 - Target: C++23
 - POSIX headers (`<termios.h>`, `<sys/ioctl.h>`, `<unistd.h>`) are a necessary exception for terminal I/O; there is no stdlib alternative
 
+## Buffer Modes
+
+- Mode names must be at most three letters (e.g. `txt`, `c`, `md`)
+- Mode-specific code lives in `src/buffer/modes/<mode>/`
+
 ## Keyboard Shortcuts
 
 - When adding or changing a keyboard shortcut, always update both the help text (`src/buffer/help_buffer.cpp`) and `README.md` to match

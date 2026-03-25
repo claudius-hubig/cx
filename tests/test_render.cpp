@@ -487,7 +487,7 @@ BOOST_AUTO_TEST_CASE(render_mode_switch_toggles_highlighting) {
   BOOST_CHECK(out1.find("\x1b[38;2;80;130;200m") != std::string::npos);
 
   // Switch to Text mode — no keyword color.
-  buf.setMode(BufferMode::Text);
+  buf.setMode(BufferMode::Txt);
   std::string out2;
   buf.render(out2, RowIdx{5}, ColIdx{40});
   BOOST_CHECK(out2.find("\x1b[38;2;80;130;200m") == std::string::npos);

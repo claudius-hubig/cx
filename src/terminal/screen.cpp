@@ -186,7 +186,7 @@ void Screen::draw() {
       status_vwidth += _lastSearch.size();
     }
   } else if (_prompt == Prompt::SetMode) {
-    status += " | Mode [text/c]: " + _prompt_input;
+    status += " | Mode [txt/c]: " + _prompt_input;
     status_vwidth = ansiVisualWidth(status);
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
              _prompt == Prompt::ConfirmRevert) {
@@ -204,7 +204,7 @@ void Screen::draw() {
   if (_buf) {
     buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
     if (!_buf->readonly())
-      buf_name += _buf->mode() == BufferMode::Cpp ? " [c]" : " [text]";
+      buf_name += _buf->mode() == BufferMode::Cpp ? " [c]" : " [txt]";
     if (_buf->modified())
       buf_name += " +";
     else
@@ -521,11 +521,11 @@ void Screen::submitSetMode() {
   if (_prompt_input == "c" || _prompt_input == "cpp" || _prompt_input == "c++") {
     _buf->setMode(BufferMode::Cpp);
     setStatus("Mode: c");
-  } else if (_prompt_input == "text" || _prompt_input == "txt") {
-    _buf->setMode(BufferMode::Text);
-    setStatus("Mode: text");
+  } else if (_prompt_input == "txt" || _prompt_input == "text") {
+    _buf->setMode(BufferMode::Txt);
+    setStatus("Mode: txt");
   } else {
-    setStatus("Unknown mode: " + _prompt_input + " (use 'text' or 'c')");
+    setStatus("Unknown mode: " + _prompt_input + " (use 'txt' or 'c')");
   }
 }
 

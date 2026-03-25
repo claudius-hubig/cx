@@ -41,7 +41,7 @@ void TextBuffer::detectMode() {
       ext == ".cxx")
     _mode = BufferMode::Cpp;
   else
-    _mode = BufferMode::Text;
+    _mode = BufferMode::Txt;
 }
 
 void TextBuffer::setPath(std::filesystem::path p) {

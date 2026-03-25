@@ -13,7 +13,7 @@
 
 /// Buffer mode determines file-type-specific behaviour such as syntax
 /// highlighting, auto-indent, and formatting.
-enum class BufferMode { Text, Cpp };
+enum class BufferMode { Txt, Cpp };
 
 // Abstract base for all buffer types. Provides text storage, a point
 // (insertion cursor), navigation, and rendering. Editing operations are
@@ -292,7 +292,7 @@ protected:
   std::size_t pointVisualCol() const;
 
   std::string _name;
-  BufferMode _mode = BufferMode::Text;
+  BufferMode _mode = BufferMode::Txt;
   std::vector<std::string> _lines{{}};
   BufferPoint _point;
   std::optional<BufferPoint> _mark;
