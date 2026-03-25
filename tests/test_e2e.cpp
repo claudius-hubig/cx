@@ -693,6 +693,42 @@ BOOST_AUTO_TEST_CASE(e2e_set_mode_invalid_shows_error) {
   session.waitExit();
 }
 
+BOOST_AUTO_TEST_CASE(e2e_switch_buffer_resets_prompt) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Open a file, then switch to a new scratch buffer via Ctrl-O.
+  TempFile tmp("original file content", ".txt");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("original", std::chrono::milliseconds{500});
+
+  // Ctrl-O opens the switch-buffer prompt. Type a new name and press Enter
+  // to open a new (scratch) buffer.
+  session.send("\x0f"       // Ctrl-O
+               "newbuf\r"); // type name + Enter
+  // Wait for the prompt to clear and the new buffer to appear.
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Now type some text — if the prompt wasn't reset, keystrokes would be
+  // swallowed by the stale prompt handler instead of being inserted.
+  session.send("hello after switch");
+  auto output = session.readUntil("hello after switch", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("hello after switch") != std::string::npos);
+
+  // The status bar should NOT show "Buffer:" prompt text (the old bug).
+  BOOST_CHECK(stripped.find("Buffer:") == std::string::npos);
+
+  // Clean exit.
+  session.send("\x1b"
+               "c"
+               "n"); // discard unsaved
+  session.waitExit();
+}
+
 BOOST_AUTO_TEST_CASE(e2e_set_mode_prompt_shows) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
