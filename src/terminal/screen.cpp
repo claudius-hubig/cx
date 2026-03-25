@@ -17,17 +17,6 @@
 #include <optional>
 #include <string>
 
-// Read remaining bytes of a UTF-8 sequence from stdin, given the lead byte.
-// Appends continuation bytes to `dest`.
-static void readUtf8Tail(unsigned char lead, std::string& dest) {
-  for (std::size_t j = 1; j < utf8SeqLen(lead); ++j) {
-    char next;
-    if (read(STDIN_FILENO, &next, 1) != 1)
-      break;
-    dest += next;
-  }
-}
-
 // Read a full UTF-8 character from stdin (given the lead byte) and insert
 // it into the buffer as a single codepoint.
 static void insertCharWithUtf8(Buffer& buf, char c) {

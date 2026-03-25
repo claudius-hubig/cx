@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 
 /// Return true if b is a UTF-8 continuation byte: (b & 0xC0) == 0x80.
@@ -69,3 +70,7 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, s
   }
   return {u, 1}; // invalid/truncated, treat as raw byte
 }
+
+/// Read the remaining bytes of a UTF-8 sequence from stdin, given the lead
+/// byte. Appends continuation bytes to `dest`. Defined in utf8.cpp.
+void readUtf8Tail(unsigned char lead, std::string& dest);

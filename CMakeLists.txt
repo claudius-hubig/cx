@@ -7,6 +7,7 @@ add_executable(cx
     src/main.cpp
     src/error_log.cpp
     src/subprocess.cpp
+    src/utf8.cpp
     src/syntax.cpp
     src/shortcut.cpp
     src/terminal/setup_terminal.cpp
