@@ -74,3 +74,8 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, s
 /// Read the remaining bytes of a UTF-8 sequence from stdin, given the lead
 /// byte. Appends continuation bytes to `dest`. Defined in utf8.cpp.
 void readUtf8Tail(unsigned char lead, std::string& dest);
+
+/// Read a complete UTF-8 codepoint from stdin given the lead byte.
+/// For ASCII (< 0x80), returns the byte directly. For multi-byte sequences,
+/// reads the continuation bytes from stdin and decodes. Defined in utf8.cpp.
+uint32_t readUtf8Codepoint(unsigned char lead);

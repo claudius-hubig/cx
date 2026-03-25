@@ -20,23 +20,7 @@
 // Read a full UTF-8 character from stdin (given the lead byte) and insert
 // it into the buffer as a single codepoint.
 static void insertCharWithUtf8(Buffer& buf, char c) {
-  auto u = static_cast<unsigned char>(c);
-  if (u < 0x80) {
-    buf.insert(static_cast<uint32_t>(u));
-    return;
-  }
-  char seq[4];
-  seq[0] = c;
-  std::size_t expected = utf8SeqLen(u);
-  std::size_t got = 1;
-  for (std::size_t j = 1; j < expected; ++j) {
-    char next;
-    if (read(STDIN_FILENO, &next, 1) != 1)
-      break;
-    seq[got++] = next;
-  }
-  auto [cp, len] = decodeUtf8(seq, got);
-  buf.insert(cp);
+  buf.insert(readUtf8Codepoint(static_cast<unsigned char>(c)));
 }
 
 // Count the visual width of a string, excluding ANSI escape sequences.
