@@ -36,6 +36,7 @@ void Buffer::doInsert(uint32_t cp) {
   auto insertOff = _point.offset;
 
   auto& line = _lines[_point.line];
+  std::size_t autoIndent = 0;
   if (cp == '\n') {
     // Split current line at point.offset.
     std::vector<char> tail(line.begin() + _point.offset, line.end());
@@ -43,6 +44,19 @@ void Buffer::doInsert(uint32_t cp) {
     _lines.insert(_lines.begin() + _point.line + 1, std::move(tail));
     _point.line++;
     _point.offset = 0;
+    // In Cpp mode, copy leading whitespace from the previous line for
+    // auto-indent. This runs inside doInsert (after readonly() was already
+    // checked by the public insert() wrapper).
+    if (_mode == BufferMode::Cpp) {
+      auto& prev = _lines[_point.line - 1];
+      while (autoIndent < prev.size() && prev[autoIndent] == ' ')
+        ++autoIndent;
+      if (autoIndent > 0) {
+        auto& cur = _lines[_point.line];
+        cur.insert(cur.begin(), autoIndent, ' ');
+        _point.offset = autoIndent;
+      }
+    }
   } else {
     line.insert(line.begin() + _point.offset, buf, buf + n);
     _point.offset += n;
@@ -55,7 +69,7 @@ void Buffer::doInsert(uint32_t cp) {
     if (cp == '\n') {
       if (m.line == insertLine && m.offset >= insertOff) {
         m.line = insertLine + 1;
-        m.offset -= insertOff;
+        m.offset = m.offset - insertOff + autoIndent;
       } else if (m.line > insertLine) {
         m.line++;
       }

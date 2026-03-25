@@ -255,11 +255,14 @@ BOOST_AUTO_TEST_CASE(goto_matching_angle) {
 BOOST_AUTO_TEST_CASE(goto_matching_multiline) {
   TextBuffer buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
+  // Auto-indent in Cpp mode copies leading whitespace on newline.
+  // "if (\n  x\n)" produces: line 0 = "if (", line 1 = "  x",
+  // line 2 = "  )" (the ')' gets 2-space indent from line 1).
   insertString(buf, "if (\n  x\n)");
   buf.setPoint(0, 3); // on '(' at line 0
   BOOST_CHECK(buf.gotoMatchingBracket());
   BOOST_CHECK_EQUAL(buf.point().line, 2u);
-  BOOST_CHECK_EQUAL(buf.point().offset, 0u);
+  BOOST_CHECK_EQUAL(buf.point().offset, 2u); // ')' is after auto-indent
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_not_on_bracket) {

@@ -839,17 +839,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         setBuffer(*target);
       }
     } else if (_buf) {
-      // In C/C++ files, copy leading spaces from the current line onto the
-      // new line so indentation carries over.
-      std::size_t indent = 0;
-      if (!_buf->readonly() && _buf->mode() == BufferMode::Cpp) {
-        auto& prev = _buf->lineContent(_buf->point().line);
-        while (indent < prev.size() && prev[indent] == ' ')
-          ++indent;
-      }
       _buf->insert('\n');
-      for (std::size_t i = 0; i < indent; ++i)
-        _buf->insert(' ');
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
