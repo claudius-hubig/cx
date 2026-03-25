@@ -73,6 +73,19 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 | Home / End      | Start / end of line          |
 | Ctrl-Home/End   | Start / end of file          |
 
+### C mode
+
+These shortcuts are active only when the buffer mode is set to `c` (via Esc-m).
+
+| Key | Action                        |
+|-----|-------------------------------|
+| ?   | Jump to matching bracket      |
+| Tab | Format current line (clang-format) |
+
+Note: `?` jumps to the matching bracket when the cursor is on `(`, `)`, `[`, `]`,
+`{`, `}`, `<`, or `>`. If the cursor is not on a bracket, `?` is inserted normally.
+Template angle brackets `<>` are matched; comparison operators `<` and `>` are not.
+
 ### Display
 
 | Key   | Action              |

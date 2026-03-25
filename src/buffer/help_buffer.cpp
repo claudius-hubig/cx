@@ -44,6 +44,9 @@ static std::vector<std::string> const& leftColumn() {
       v.push_back(formatHelpLine(a));
     v.push_back(formatHelpLine(Action::Format));
     v.push_back(formatRawLine("Tab", "Format line (C/C++)"));
+    v.emplace_back("");
+    v.emplace_back("C mode (Esc-m to set):");
+    v.push_back(formatRawLine("?", "Jump to matching bracket"));
     return v;
   }();
   return lines;
