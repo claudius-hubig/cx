@@ -10,6 +10,10 @@
 #include <tuple>
 #include <vector>
 
+/// Buffer mode determines file-type-specific behaviour such as syntax
+/// highlighting, auto-indent, and formatting.
+enum class BufferMode { Text, Cpp };
+
 // Abstract base for all buffer types. Provides text storage, a point
 // (insertion cursor), navigation, and rendering. Editing operations are
 // guarded by readonly() so that derived classes can forbid mutation.
@@ -38,6 +42,11 @@ public:
   /// Whether this buffer is backed by a file on disk. Default: false.
   /// Overridden by TextBuffer.
   virtual bool hasPath() const { return false; }
+
+  /// The buffer's current mode. Determines syntax highlighting,
+  /// auto-indent, and formatting behaviour.
+  BufferMode mode() const { return _mode; }
+  void setMode(BufferMode m) { _mode = m; }
 
   /// Write buffer contents to its file. Returns an empty expected on success,
   /// or an unexpected string describing the error. Default returns an error
@@ -158,6 +167,10 @@ public:
   /// same screen position.
   void pageDown(RowIdx screenRows, ColIdx cols, bool wrap);
 
+  /// If point is on a bracket character, move to the matching bracket.
+  /// Returns true if the jump was performed.
+  bool gotoMatchingBracket();
+
   /// Move point to the start of the given 1-based line number and center
   /// _viewFromLine so the line appears in the middle of the screen.
   /// Line 0 is treated as line 1; past-end clamps to the last line.
@@ -261,6 +274,7 @@ protected:
   std::size_t pointVisualCol() const;
 
   std::string _name;
+  BufferMode _mode = BufferMode::Text;
   std::vector<std::vector<char>> _lines{{}};
   BufferPoint _point;
   std::optional<BufferPoint> _mark;

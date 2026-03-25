@@ -1,5 +1,6 @@
 #include "buffer.hpp"
 #include "char_width.hpp"
+#include "syntax.hpp"
 
 #include <algorithm>
 
@@ -758,6 +759,15 @@ void Buffer::scrollDown() {
   }
 }
 
+bool Buffer::gotoMatchingBracket() {
+  auto match = findMatchingBracket(_lines, _point);
+  if (!match)
+    return false;
+  _point = *match;
+  _desiredCol.reset();
+  return true;
+}
+
 void Buffer::gotoLine(std::size_t line, RowIdx screenRows) {
   if (line == 0)
     line = 1;
@@ -1064,6 +1074,16 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kTabStyle = "\x1b[48;2;70;70;70m";
   static constexpr auto kNlStyle = "\x1b[48;2;35;35;35m";
 
+  // Syntax highlighting foreground colors.
+  static constexpr auto kSynKeyword = "\x1b[38;2;80;130;200m";   // blue
+  static constexpr auto kSynComment = "\x1b[38;2;80;160;80m";    // green
+  static constexpr auto kSynString = "\x1b[38;2;200;80;80m";     // red
+  static constexpr auto kSynOperator = "\x1b[38;2;150;100;200m"; // purple
+  static constexpr auto kSynReset = "\x1b[39m";                  // default fg
+  // Bracket match: turquoise foreground (no bold/underline).
+  static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
+  static constexpr auto kBracketMatchOff = "\x1b[39m";
+
   auto emitRowStart = [&](std::size_t r) {
     out += "\x1b[";
     out += std::to_string(r + 1);
@@ -1174,10 +1194,37 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   std::size_t viewFromOffset =
       (wrap && std::holds_alternative<ByteOffset>(_viewFrom.col)) ? _viewFrom.byteOffset() : 0;
 
-  // Shared highlight/region toggle logic. Updates active state and emits
-  // ANSI escapes when transitioning in/out of highlighted/region spans.
+  // Syntax highlighting pre-computation.
+  bool syntaxActive = _mode == BufferMode::Cpp;
+  std::optional<BufferPoint> matchBracket;
+  SyntaxState synState;
+  std::vector<SyntaxToken> lineTokens;
+
+  if (syntaxActive) {
+    for (std::size_t i = 0; i < _viewFrom.line.value && i < _lines.size(); ++i)
+      advanceBlockCommentState(_lines[i], synState);
+    matchBracket = findMatchingBracket(_lines, _point);
+  }
+
+  auto syntaxFg = [](SyntaxToken t) -> char const* {
+    switch (t) {
+    case SyntaxToken::Keyword:
+      return kSynKeyword;
+    case SyntaxToken::Comment:
+      return kSynComment;
+    case SyntaxToken::String:
+      return kSynString;
+    case SyntaxToken::Operator:
+      return kSynOperator;
+    default:
+      return nullptr; // brackets and Normal have no special color
+    }
+  };
+
+  // Shared highlight/region/syntax toggle logic. Updates active state and
+  // emits ANSI escapes when transitioning in/out of styled spans.
   auto updateStyle = [&](std::size_t lineIdx, std::size_t byteOff, bool& regionActive,
-                         bool& highlightActive) {
+                         bool& highlightActive, SyntaxToken& lastSynTok, bool& bracketMatchActive) {
     bool wantHl = inHighlight(lineIdx, byteOff);
     bool wantRegion = !wantHl && inRegion(lineIdx, byteOff);
     if (wantHl && !highlightActive) {
@@ -1192,18 +1239,72 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       highlightActive = false;
     }
     if (wantRegion && !regionActive) {
+      if (lastSynTok != SyntaxToken::Normal) {
+        out += kSynReset;
+        lastSynTok = SyntaxToken::Normal;
+      }
+      if (bracketMatchActive) {
+        out += kBracketMatchOff;
+        bracketMatchActive = false;
+      }
       out += kRegionOn;
       regionActive = true;
     } else if (!wantRegion && regionActive) {
       out += kRegionOff;
       regionActive = false;
     }
+
+    // Syntax foreground coloring (skip when region is active).
+    if (syntaxActive && !regionActive && !lineTokens.empty()) {
+      SyntaxToken tok = (byteOff < lineTokens.size()) ? lineTokens[byteOff] : SyntaxToken::Normal;
+      if (tok != lastSynTok) {
+        auto fg = syntaxFg(tok);
+        if (fg)
+          out += fg;
+        else if (lastSynTok != SyntaxToken::Normal)
+          out += kSynReset;
+        lastSynTok = tok;
+      }
+      bool wantMatch =
+          matchBracket && ((lineIdx == matchBracket->line && byteOff == matchBracket->offset) ||
+                           (lineIdx == _point.line && byteOff == _point.offset));
+      if (wantMatch && !bracketMatchActive) {
+        out += kBracketMatch;
+        bracketMatchActive = true;
+      } else if (!wantMatch && bracketMatchActive) {
+        out += kBracketMatchOff;
+        bracketMatchActive = false;
+      }
+    }
+  };
+
+  // Reset syntax/bracket state after emitChar for characters that emit
+  // kReset (tabs, control chars, whitespace indicators). Without this,
+  // the ANSI state on the terminal diverges from our tracking variables.
+  auto resetAfterSpecialChar = [&](char c, bool& regionActive, bool& highlightActive,
+                                   SyntaxToken& lastSynTok, bool& bracketMatchActive) {
+    auto u = static_cast<unsigned char>(c);
+    if (u < 0x20 || u == 0x7f || (c == ' ' && showWhitespace)) {
+      lastSynTok = SyntaxToken::Normal;
+      bracketMatchActive = false;
+      regionActive = false;
+      highlightActive = false;
+    }
   };
 
   // End-of-line: highlight the newline position if region spans it, show
   // whitespace indicator, then reset active styles.
   auto emitLineEnd = [&](std::size_t lineIdx, std::size_t lineSize, std::size_t visCol,
-                         std::size_t maxCol, bool& regionActive, bool& highlightActive) {
+                         std::size_t maxCol, bool& regionActive, bool& highlightActive,
+                         SyntaxToken& lastSynTok, bool& bracketMatchActive) {
+    if (bracketMatchActive) {
+      out += kBracketMatchOff;
+      bracketMatchActive = false;
+    }
+    if (lastSynTok != SyntaxToken::Normal) {
+      out += kSynReset;
+      lastSynTok = SyntaxToken::Normal;
+    }
     if (hasRegion && lineIdx + 1 < _lines.size() && visCol < maxCol &&
         inRegion(lineIdx, lineSize)) {
       if (!regionActive) {
@@ -1241,6 +1342,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       bool overflows = false; // content extends past visible area
       bool regionActive = false;
       bool highlightActive = false;
+      SyntaxToken lastSynTok = SyntaxToken::Normal;
+      bool bracketMatchActive = false;
+
+      if (syntaxActive)
+        lineTokens = tokenizeLine(line, synState);
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -1263,8 +1369,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           break;
         }
 
-        updateStyle(lineIdx, i, regionActive, highlightActive);
+        updateStyle(lineIdx, i, regionActive, highlightActive, lastSynTok, bracketMatchActive);
         emitChar(line.data() + i, info);
+        resetAfterSpecialChar(line[i], regionActive, highlightActive, lastSynTok,
+                              bracketMatchActive);
         vcol += info.width;
         i += info.len;
       }
@@ -1276,7 +1384,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       }
 
       if (!overflows && vcol >= hScroll)
-        emitLineEnd(lineIdx, line.size(), vcol - hScroll, cw, regionActive, highlightActive);
+        emitLineEnd(lineIdx, line.size(), vcol - hScroll, cw, regionActive, highlightActive,
+                    lastSynTok, bracketMatchActive);
 
       out += "\x1b[K";
 
@@ -1318,12 +1427,25 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     bool pendingWrap = false;
     bool regionActive = false;
     bool highlightActive = false;
+    SyntaxToken lastSynTok = SyntaxToken::Normal;
+    bool bracketMatchActive = false;
+
+    if (syntaxActive)
+      lineTokens = tokenizeLine(line, synState);
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
 
       // Wrap if the representation doesn't fit on the current line.
       if (col + info.width > cw || pendingWrap) {
+        if (bracketMatchActive) {
+          out += kBracketMatchOff;
+          bracketMatchActive = false;
+        }
+        if (lastSynTok != SyntaxToken::Normal) {
+          out += kSynReset;
+          lastSynTok = SyntaxToken::Normal;
+        }
         if (highlightActive) {
           out += kHighlightOff;
           highlightActive = false;
@@ -1349,8 +1471,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         pointFound = true;
       }
 
-      updateStyle(lineIdx, i, regionActive, highlightActive);
+      updateStyle(lineIdx, i, regionActive, highlightActive, lastSynTok, bracketMatchActive);
       emitChar(line.data() + i, info);
+      resetAfterSpecialChar(line[i], regionActive, highlightActive, lastSynTok, bracketMatchActive);
       col += info.width;
 
       if (col >= cw)
@@ -1380,7 +1503,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // End of physical line — emit newline visual and gutter (no wrap
     // indicator).
     if (row < rows.value) {
-      emitLineEnd(lineIdx, line.size(), col, cw, regionActive, highlightActive);
+      emitLineEnd(lineIdx, line.size(), col, cw, regionActive, highlightActive, lastSynTok,
+                  bracketMatchActive);
       out += "\x1b[K";
       emitGutter(row, row == cur_row && pointFound,
                  " "); // natural line end, no indicator

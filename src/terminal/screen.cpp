@@ -194,6 +194,9 @@ void Screen::draw() {
       status += "\x1b[2m" + _lastSearch + "\x1b[22m";
       status_vwidth += _lastSearch.size();
     }
+  } else if (_prompt == Prompt::SetMode) {
+    status += " | Mode [text/c]: " + _prompt_input;
+    status_vwidth = status.size();
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
              _prompt == Prompt::ConfirmRevert) {
     status += " | " + _prompt_input;
@@ -205,10 +208,12 @@ void Screen::draw() {
     }
   }
 
-  // Right-align the buffer name + modification indicator on the status line.
+  // Right-align the buffer name + mode + modification indicator on the status line.
   std::string buf_name;
   if (_buf) {
     buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
+    if (!_buf->readonly())
+      buf_name += _buf->mode() == BufferMode::Cpp ? " [c]" : " [text]";
     if (_buf->modified())
       buf_name += " +";
     else
@@ -487,6 +492,20 @@ void Screen::submitGoToLine() {
     _buf->gotoLine(line, rowsForBuffer());
 }
 
+void Screen::submitSetMode() {
+  if (!_buf)
+    return;
+  if (_prompt_input == "c" || _prompt_input == "cpp" || _prompt_input == "c++") {
+    _buf->setMode(BufferMode::Cpp);
+    setStatus("Mode: c");
+  } else if (_prompt_input == "text" || _prompt_input == "txt") {
+    _buf->setMode(BufferMode::Text);
+    setStatus("Mode: text");
+  } else {
+    setStatus("Unknown mode: " + _prompt_input + " (use 'text' or 'c')");
+  }
+}
+
 bool Screen::handleTextPrompt(char c) {
   if (c == '\r' || c == '\n') {
     if (!_prompt_input.empty()) {
@@ -508,6 +527,8 @@ bool Screen::handleTextPrompt(char c) {
         submitFind();
       } else if (_prompt == Prompt::GoToLine) {
         submitGoToLine();
+      } else if (_prompt == Prompt::SetMode) {
+        submitSetMode();
       }
     }
     _prompt = Prompt::None;
@@ -796,7 +817,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       // In C/C++ files, copy leading spaces from the current line onto the
       // new line so indentation carries over.
       std::size_t indent = 0;
-      if (!_buf->readonly() && _buf->hasPath() && isCppFile(_buf->name())) {
+      if (!_buf->readonly() && _buf->mode() == BufferMode::Cpp) {
         auto& prev = _buf->lineContent(_buf->point().line);
         while (indent < prev.size() && prev[indent] == ' ')
           ++indent;
@@ -820,7 +841,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     return handleEscapeInput(pendingChar);
   } else if (c == '\t') {
     // Tab: format current line in C/C++ files, insert tab otherwise.
-    if (_buf && !_buf->readonly() && _buf->hasPath() && isCppFile(_buf->name())) {
+    if (_buf && !_buf->readonly() && _buf->mode() == BufferMode::Cpp) {
       auto line = _buf->point().line + 1; // 1-based
       formatBuffer(std::make_pair(line, line));
       // If cursor is before the first non-space character, move it there.
@@ -841,7 +862,11 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     else
       setStatus(formatShortcut(s) + " not recognised.");
   } else {
-    if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
+    // '?' on a bracket in C mode → jump to matching bracket.
+    if (c == '?' && _buf && _buf->mode() == BufferMode::Cpp && !_buf->readonly() &&
+        _buf->gotoMatchingBracket()) {
+      // Jump succeeded — nothing else to do.
+    } else if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
       setBuffer(*_prevBuf);
       _prevBuf = nullptr;
     } else if (_buf) {
@@ -1135,11 +1160,6 @@ void Screen::findPrev() {
   setStatus("Not found");
 }
 
-bool Screen::isCppFile(std::string const& name) {
-  auto ext = std::filesystem::path(name).extension().string();
-  return ext == ".c" || ext == ".h" || ext == ".cpp" || ext == ".hpp";
-}
-
 void Screen::formatBuffer(std::optional<std::pair<std::size_t, std::size_t>> lineRange) {
   if (!_buf || _buf->readonly())
     return;
@@ -1147,7 +1167,7 @@ void Screen::formatBuffer(std::optional<std::pair<std::size_t, std::size_t>> lin
     setStatus("Save file first to determine format");
     return;
   }
-  if (!isCppFile(_buf->name())) {
+  if (_buf->mode() != BufferMode::Cpp) {
     setStatus("No formatter for this file type");
     return;
   }
@@ -1374,6 +1394,12 @@ void Screen::dispatchAction(Action action) {
       formatBuffer(std::make_pair(startLine, endLine));
     } else {
       formatBuffer(std::nullopt);
+    }
+    break;
+  case Action::SetMode:
+    if (_buf && !_buf->readonly()) {
+      _prompt = Prompt::SetMode;
+      _prompt_input.clear();
     }
     break;
   }

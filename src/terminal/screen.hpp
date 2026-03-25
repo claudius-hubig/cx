@@ -60,6 +60,7 @@ private:
   void submitSaveAs();
   void submitFind();
   void submitGoToLine();
+  void submitSetMode();
   bool handleEscapeInput(std::optional<char>& pendingChar);
   bool handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
@@ -77,7 +78,8 @@ private:
     ConfirmSave,
     ConfirmKill,
     ConfirmRevert,
-    Find
+    Find,
+    SetMode
   };
   Prompt _prompt = Prompt::None;
   std::string _prompt_input;
@@ -108,7 +110,6 @@ private:
   // only the given 1-based line range is formatted (via --lines=M:N);
   // otherwise the entire buffer is formatted.
   void formatBuffer(std::optional<std::pair<std::size_t, std::size_t>> lineRange);
-  static bool isCppFile(std::string const& name);
 
   // Auto-completion state for SwitchBuffer prompt.
   void updateCompletions();

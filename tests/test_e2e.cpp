@@ -585,3 +585,135 @@ BOOST_AUTO_TEST_CASE(e2e_unrecognised_shortcut_message) {
                "c");
   session.waitExit();
 }
+
+BOOST_AUTO_TEST_CASE(e2e_cpp_file_shows_c_mode) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("int main() {}", ".cpp");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  auto output = session.readUntil("[c]", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("[c]") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_txt_file_shows_text_mode) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("hello world", ".txt");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  auto output = session.readUntil("[text]", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("[text]") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_set_mode_to_text) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("int x;", ".cpp");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("[c]", std::chrono::milliseconds{1000});
+
+  // Esc-m, type "text", Enter.
+  session.send("\x1b"
+               "m"
+               "text\r");
+  auto output = session.readUntil("Mode: text", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Mode: text") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_set_mode_to_c) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("hello", ".txt");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("[text]", std::chrono::milliseconds{1000});
+
+  // Esc-m, type "c", Enter.
+  session.send("\x1b"
+               "m"
+               "c\r");
+  auto output = session.readUntil("Mode: c", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Mode: c") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_set_mode_invalid_shows_error) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Esc-m, type "bogus", Enter.
+  session.send("\x1b"
+               "m"
+               "bogus\r");
+  auto output = session.readUntil("Unknown mode", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Unknown mode") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_set_mode_prompt_shows) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Esc-m should open the mode prompt.
+  session.send("\x1b"
+               "m");
+  auto output = session.readUntil("Mode", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Mode") != std::string::npos);
+
+  // Escape to cancel.
+  session.send("\x1b\x1b");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}

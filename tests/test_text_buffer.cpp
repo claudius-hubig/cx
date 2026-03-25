@@ -182,3 +182,87 @@ BOOST_AUTO_TEST_CASE(setPath_updates_name_and_hasPath) {
   BOOST_CHECK(buf.hasPath());
   BOOST_CHECK_EQUAL(buf.name(), p.string());
 }
+
+// --- Mode detection ---
+
+BOOST_AUTO_TEST_CASE(scratch_buffer_defaults_to_text_mode) {
+  TextBuffer buf("scratch");
+  BOOST_CHECK(buf.mode() == BufferMode::Text);
+}
+
+BOOST_AUTO_TEST_CASE(cpp_extension_sets_cpp_mode) {
+  TempFile tmp("int main() {}", ".cpp");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(c_extension_sets_cpp_mode) {
+  TempFile tmp("int main() {}", ".c");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(h_extension_sets_cpp_mode) {
+  TempFile tmp("", ".h");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(hpp_extension_sets_cpp_mode) {
+  TempFile tmp("", ".hpp");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(ixx_extension_sets_cpp_mode) {
+  TempFile tmp("", ".ixx");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(cxx_extension_sets_cpp_mode) {
+  TempFile tmp("", ".cxx");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(txt_extension_stays_text_mode) {
+  TempFile tmp("hello", ".txt");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Text);
+}
+
+BOOST_AUTO_TEST_CASE(no_extension_stays_text_mode) {
+  TempFile tmp("hello");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Text);
+}
+
+BOOST_AUTO_TEST_CASE(missing_cpp_file_still_detects_mode) {
+  std::filesystem::path p = "/tmp/cx_test_nonexistent.cpp";
+  TextBuffer buf(p.string(), p);
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(setMode_overrides_detected_mode) {
+  TempFile tmp("int x;", ".cpp");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+  buf.setMode(BufferMode::Text);
+  BOOST_CHECK(buf.mode() == BufferMode::Text);
+}
+
+BOOST_AUTO_TEST_CASE(setPath_redetects_mode) {
+  TextBuffer buf("scratch");
+  BOOST_CHECK(buf.mode() == BufferMode::Text);
+  buf.setPath("/tmp/cx_test_foo.cpp");
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+}
+
+BOOST_AUTO_TEST_CASE(setPath_to_txt_resets_mode) {
+  TempFile tmp("", ".cpp");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+  buf.setPath("/tmp/cx_test_foo.txt");
+  BOOST_CHECK(buf.mode() == BufferMode::Text);
+}

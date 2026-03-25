@@ -67,6 +67,7 @@ static std::vector<std::string> const& rightColumn() {
     v.emplace_back("Display:");
     v.push_back(formatHelpLine(Action::ToggleWhitespace));
     v.push_back(formatHelpLine(Action::ToggleWrap));
+    v.push_back(formatHelpLine(Action::SetMode));
     v.emplace_back("");
     v.emplace_back("Deletion:");
     v.push_back(formatRawLine("Bksp", "Delete before cursor"));

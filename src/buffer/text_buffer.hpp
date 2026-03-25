@@ -36,5 +36,6 @@ public:
   std::expected<void, std::string> revert() override;
 
 private:
+  void detectMode();
   std::optional<std::filesystem::path> _path;
 };

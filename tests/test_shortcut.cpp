@@ -66,6 +66,12 @@ BOOST_AUTO_TEST_CASE(esc_backspace_maps_to_delete_chunk_before) {
   BOOST_CHECK(*action == Action::DeleteChunkBefore);
 }
 
+BOOST_AUTO_TEST_CASE(esc_m_maps_to_set_mode) {
+  auto action = handleShortcut({.esc = true, .key = 'm'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::SetMode);
+}
+
 BOOST_AUTO_TEST_CASE(unrecognised_shortcut_returns_nullopt) {
   // Ctrl-z is not bound.
   auto action = handleShortcut({.ctrl = true, .key = 'z'});
@@ -116,6 +122,12 @@ BOOST_AUTO_TEST_CASE(reverse_lookup_delete_chunk_returns_first) {
   auto s = shortcutForAction(Action::DeleteChunkBefore);
   BOOST_CHECK(s.ctrl);
   BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('h'));
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_set_mode) {
+  auto s = shortcutForAction(Action::SetMode);
+  BOOST_CHECK(s.esc);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('m'));
 }
 
 // --- formatShortcut ---
@@ -223,11 +235,13 @@ BOOST_AUTO_TEST_CASE(esc_char_roundtrip_finds_action) {
 // --- All actions have descriptions ---
 
 BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
-  for (auto a : {Action::Help, Action::Exit, Action::GoToLine, Action::Save, Action::KillBuffer,
-                 Action::SwitchBuffer, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
-                 Action::PasteCycle, Action::DeleteChunkBefore, Action::Revert, Action::Find,
-                 Action::FindBackward, Action::BufferList, Action::PasteRing,
-                 Action::ToggleWhitespace, Action::ToggleWrap}) {
+  for (auto a : {Action::Help,       Action::Exit,       Action::GoToLine,
+                 Action::Save,       Action::KillBuffer, Action::SwitchBuffer,
+                 Action::ToggleMark, Action::Cut,        Action::Copy,
+                 Action::Paste,      Action::PasteCycle, Action::DeleteChunkBefore,
+                 Action::Revert,     Action::Find,       Action::FindBackward,
+                 Action::BufferList, Action::PasteRing,  Action::ToggleWhitespace,
+                 Action::ToggleWrap, Action::Format,     Action::SetMode}) {
     BOOST_CHECK(!descriptionForAction(a).empty());
   }
 }
@@ -235,11 +249,13 @@ BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
 // --- All actions have shortcuts ---
 
 BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
-  for (auto a : {Action::Help, Action::Exit, Action::GoToLine, Action::Save, Action::KillBuffer,
-                 Action::SwitchBuffer, Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste,
-                 Action::PasteCycle, Action::DeleteChunkBefore, Action::Revert, Action::Find,
-                 Action::FindBackward, Action::BufferList, Action::PasteRing,
-                 Action::ToggleWhitespace, Action::ToggleWrap}) {
+  for (auto a : {Action::Help,       Action::Exit,       Action::GoToLine,
+                 Action::Save,       Action::KillBuffer, Action::SwitchBuffer,
+                 Action::ToggleMark, Action::Cut,        Action::Copy,
+                 Action::Paste,      Action::PasteCycle, Action::DeleteChunkBefore,
+                 Action::Revert,     Action::Find,       Action::FindBackward,
+                 Action::BufferList, Action::PasteRing,  Action::ToggleWhitespace,
+                 Action::ToggleWrap, Action::Format,     Action::SetMode}) {
     auto s = shortcutForAction(a);
     // Every action should have either ctrl or esc set.
     BOOST_CHECK(s.ctrl || s.esc);

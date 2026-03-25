@@ -7,6 +7,7 @@ add_executable(cx
     src/main.cpp
     src/error_log.cpp
     src/subprocess.cpp
+    src/syntax.cpp
     src/shortcut.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
@@ -32,6 +33,7 @@ add_test(NAME char_width COMMAND test_char_width)
 add_executable(test_buffer
     tests/test_buffer.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
@@ -43,6 +45,7 @@ add_test(NAME buffer COMMAND test_buffer)
 add_executable(test_text_buffer
     tests/test_text_buffer.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_text_buffer PRIVATE src .)
@@ -52,6 +55,7 @@ add_test(NAME text_buffer COMMAND test_text_buffer)
 add_executable(test_help_buffer
     tests/test_help_buffer.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
 )
@@ -62,6 +66,7 @@ add_test(NAME help_buffer COMMAND test_help_buffer)
 add_executable(test_buffer_list_buffer
     tests/test_buffer_list_buffer.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/buffer_list_buffer.cpp
 )
 target_include_directories(test_buffer_list_buffer PRIVATE src)
@@ -71,6 +76,7 @@ add_test(NAME buffer_list_buffer COMMAND test_buffer_list_buffer)
 add_executable(test_buffer_manager
     tests/test_buffer_manager.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
@@ -85,6 +91,7 @@ add_test(NAME buffer_manager COMMAND test_buffer_manager)
 add_executable(test_render
     tests/test_render.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_render PRIVATE src .)
@@ -94,6 +101,7 @@ add_test(NAME render COMMAND test_render)
 add_executable(test_movement
     tests/test_movement.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_movement PRIVATE src .)
@@ -103,6 +111,7 @@ add_test(NAME movement COMMAND test_movement)
 add_executable(test_chunk_delete
     tests/test_chunk_delete.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
@@ -114,6 +123,7 @@ add_test(NAME chunk_delete COMMAND test_chunk_delete)
 add_executable(test_scroll
     tests/test_scroll.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_scroll PRIVATE src .)
@@ -128,9 +138,20 @@ target_include_directories(test_shortcut PRIVATE src)
 target_link_libraries(test_shortcut Boost::unit_test_framework)
 add_test(NAME shortcut COMMAND test_shortcut)
 
+add_executable(test_syntax
+    tests/test_syntax.cpp
+    src/buffer/buffer.cpp
+    src/syntax.cpp
+    src/buffer/text_buffer.cpp
+)
+target_include_directories(test_syntax PRIVATE src .)
+target_link_libraries(test_syntax Boost::unit_test_framework)
+add_test(NAME syntax COMMAND test_syntax)
+
 add_executable(test_e2e
     tests/test_e2e.cpp
     src/buffer/buffer.cpp
+    src/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_e2e PRIVATE src .)

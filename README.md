@@ -79,6 +79,7 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 |-------|---------------------|
 | Esc-s | Toggle whitespace   |
 | Esc-l | Toggle line wrap    |
+| Esc-m | Set buffer mode     |
 
 ### Deletion
 

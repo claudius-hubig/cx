@@ -25,6 +25,7 @@ enum class Action {
   ToggleWhitespace,
   ToggleWrap,
   Format,
+  SetMode,
 };
 
 struct Shortcut {

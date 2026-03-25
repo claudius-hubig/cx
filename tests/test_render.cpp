@@ -438,3 +438,57 @@ BOOST_AUTO_TEST_CASE(render_highlight_does_not_affect_cursor_pos) {
   BOOST_CHECK_EQUAL(col1.value, col2.value);
   buf.clearHighlight();
 }
+
+// --- Syntax highlighting ---
+
+BOOST_AUTO_TEST_CASE(render_cpp_mode_emits_syntax_colors) {
+  TextBuffer buf("test.cpp");
+  buf.setMode(BufferMode::Cpp);
+  insertString(buf, "return 0;");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // "return" is a keyword — render should contain the keyword color escape.
+  // Keyword color: \x1b[38;2;80;130;200m
+  BOOST_CHECK(out.find("\x1b[38;2;80;130;200m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_text_mode_no_syntax_colors) {
+  TextBuffer buf("test.txt");
+  // Default mode is Text — no syntax coloring expected.
+  insertString(buf, "return 0;");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // No keyword color should appear.
+  BOOST_CHECK(out.find("\x1b[38;2;80;130;200m") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_cpp_mode_comment_colored) {
+  TextBuffer buf("test.cpp");
+  buf.setMode(BufferMode::Cpp);
+  insertString(buf, "// a comment");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // Comment color: \x1b[38;2;80;160;80m
+  BOOST_CHECK(out.find("\x1b[38;2;80;160;80m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_mode_switch_toggles_highlighting) {
+  TextBuffer buf("test.cpp");
+  buf.setMode(BufferMode::Cpp);
+  insertString(buf, "return x;");
+  buf.moveHome();
+
+  // Render in Cpp mode — should have keyword color.
+  std::string out1;
+  buf.render(out1, RowIdx{5}, ColIdx{40});
+  BOOST_CHECK(out1.find("\x1b[38;2;80;130;200m") != std::string::npos);
+
+  // Switch to Text mode — no keyword color.
+  buf.setMode(BufferMode::Text);
+  std::string out2;
+  buf.render(out2, RowIdx{5}, ColIdx{40});
+  BOOST_CHECK(out2.find("\x1b[38;2;80;130;200m") == std::string::npos);
+}

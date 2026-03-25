@@ -1,12 +1,14 @@
 #include "text_buffer.hpp"
 
 #include <expected>
+#include <filesystem>
 #include <fstream>
 
-TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) {}
+TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) { detectMode(); }
 
 TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
     : Buffer(std::move(name)), _path(path) {
+  detectMode();
   std::ifstream file(path, std::ios::binary);
   if (!file)
     return;
@@ -31,9 +33,21 @@ TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
   }
 }
 
+void TextBuffer::detectMode() {
+  if (!_path)
+    return;
+  auto ext = _path->extension().string();
+  if (ext == ".c" || ext == ".h" || ext == ".cpp" || ext == ".hpp" || ext == ".ixx" ||
+      ext == ".cxx")
+    _mode = BufferMode::Cpp;
+  else
+    _mode = BufferMode::Text;
+}
+
 void TextBuffer::setPath(std::filesystem::path p) {
   _path = std::move(p);
   _name = _path->string();
+  detectMode();
 }
 
 std::expected<void, std::string> TextBuffer::save() {

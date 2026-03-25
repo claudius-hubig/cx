@@ -30,3 +30,22 @@ BOOST_AUTO_TEST_CASE(screenRow_initially_zero) {
   // Point starts at 0, viewFrom at 0 — screen row should be 0.
   BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{80}), 0u);
 }
+
+BOOST_AUTO_TEST_CASE(help_contains_set_mode_shortcut) {
+  HelpBuffer buf;
+  // Render the help buffer and check that Esc-m appears.
+  std::string out;
+  buf.render(out, RowIdx{40}, ColIdx{100});
+  // The rendered output should mention "Esc-m" and "mode".
+  auto stripped = out; // raw text includes the shortcut labels
+  bool found = false;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i) {
+    auto& line = buf.lineContent(i);
+    std::string s(line.begin(), line.end());
+    if (s.find("Esc-m") != std::string::npos) {
+      found = true;
+      break;
+    }
+  }
+  BOOST_CHECK(found);
+}

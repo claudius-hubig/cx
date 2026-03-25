@@ -22,11 +22,11 @@ public:
 // RAII helper for a temporary file that is removed on destruction.
 class TempFile {
 public:
-  explicit TempFile(std::string const& content = {}) {
+  explicit TempFile(std::string const& content = {}, std::string const& suffix = {}) {
     static std::atomic<int> counter{0};
     static auto seed = std::random_device{}();
     _path = std::filesystem::temp_directory_path() /
-            ("cx_test_" + std::to_string(seed) + "_" + std::to_string(counter++));
+            ("cx_test_" + std::to_string(seed) + "_" + std::to_string(counter++) + suffix);
     std::ofstream f(_path, std::ios::binary);
     f << content;
   }
