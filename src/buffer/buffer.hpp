@@ -1,6 +1,6 @@
 #pragma once
 
-#include "syntax.hpp"
+#include "modes/c/syntax.hpp"
 #include "types.hpp"
 
 #include <cstdint>

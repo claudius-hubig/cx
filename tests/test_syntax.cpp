@@ -2,8 +2,8 @@
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
 
+#include "buffer/modes/c/syntax.hpp"
 #include "buffer/text_buffer.hpp"
-#include "syntax.hpp"
 #include "test_helpers.hpp"
 
 // Helper: create a line from a string literal.

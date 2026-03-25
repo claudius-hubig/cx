@@ -1,7 +1,7 @@
 #include "buffer.hpp"
 #include "char_width.hpp"
+#include "modes/c/syntax.hpp"
 #include "subprocess.hpp"
-#include "syntax.hpp"
 
 #include <algorithm>
 #include <span>
