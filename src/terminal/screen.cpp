@@ -685,38 +685,31 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
               switch (dir) {
               case ansi::RightArrow:
                 _buf->moveWordRight();
-                _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
               case ansi::LeftArrow:
                 _buf->moveWordLeft();
-                while (_buf->point() < _buf->viewFrom())
-                  _buf->scrollUp(_wrap);
                 break;
               case ansi::UpArrow:
                 if (_wrap && _buf->currentLineWraps(cols))
                   _buf->movePhysicalUp();
                 else
                   _buf->moveParagraphUp();
-                while (_buf->point() < _buf->viewFrom())
-                  _buf->scrollUp(_wrap);
                 break;
               case ansi::DownArrow:
                 if (_wrap && _buf->currentLineWraps(cols))
                   _buf->movePhysicalDown();
                 else
                   _buf->moveParagraphDown();
-                _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
               case ansi::Home:
                 _buf->setPoint(0, 0);
-                _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
               case ansi::End:
                 _buf->setPoint(_buf->lineCount() - 1,
                                _buf->lineContent(_buf->lineCount() - 1).size());
-                _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
                 break;
               }
+              _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
             }
           }
           break;
