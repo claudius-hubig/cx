@@ -1,5 +1,6 @@
 #pragma once
 
+#include "syntax.hpp"
 #include "types.hpp"
 
 #include <cstdint>
@@ -46,11 +47,13 @@ public:
   /// The buffer's current mode. Determines syntax highlighting,
   /// auto-indent, and formatting behaviour.
   BufferMode mode() const { return _mode; }
-  /// Switch the buffer mode. Callers are responsible for triggering a
-  /// redraw afterwards; this setter has no side effects. Any per-line
-  /// syntax caches (e.g. lineTokens in render()) are local to each
-  /// render() call and are automatically rebuilt on the next draw.
-  void setMode(BufferMode m) { _mode = m; }
+  /// Switch the buffer mode. Invalidates the per-line syntax cache so
+  /// the next render() recomputes tokenisation from scratch. Callers
+  /// are responsible for triggering a redraw afterwards.
+  void setMode(BufferMode m) {
+    _mode = m;
+    _synCacheValidUpto = 0;
+  }
 
   /// Write buffer contents to its file. Returns an empty expected on success,
   /// or an unexpected string describing the error. Default returns an error
@@ -317,4 +320,21 @@ protected:
   // Ensure the row bounds cache is populated for the given line and cols.
   // Returns a const reference to _rowBoundsCache.rowStarts.
   std::vector<std::size_t> const& ensureRowBounds(std::size_t lineIdx, std::size_t cols) const;
+
+  // --- Per-line syntax cache ---
+  // Populated lazily by render() for Cpp-mode buffers. Each entry stores
+  // the tokenisation result and the multi-line state at the *end* of the
+  // line (i.e. the state that feeds into the *next* line's tokenisation).
+  // Lines [0, _synCacheValidUpto) have valid entries.
+  struct LineSyntaxCache {
+    SyntaxState stateAfter;          // state at end of this line
+    std::vector<SyntaxToken> tokens; // per-byte token classification
+  };
+  mutable std::vector<LineSyntaxCache> _synCache;
+  mutable std::size_t _synCacheValidUpto = 0;
+
+  // Mark all cache entries from `fromLine` onwards as stale.
+  void invalidateSynCache(std::size_t fromLine);
+  // Ensure the cache covers lines [0, upToLine).  Called by render().
+  void ensureSynCache(std::size_t upToLine) const;
 };

@@ -3,11 +3,13 @@
 #include "syntax.hpp"
 
 #include <algorithm>
+#include <span>
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
 void Buffer::doInsert(uint32_t cp) {
   _rowBoundsCache.lineIdx = SIZE_MAX;
+  invalidateSynCache(_point.line);
   char buf[4];
   std::size_t n;
   if (cp < 0x80) {
@@ -72,6 +74,7 @@ void Buffer::doInsert(uint32_t cp) {
 
 void Buffer::doDeleteAtPoint() {
   _rowBoundsCache.lineIdx = SIZE_MAX;
+  invalidateSynCache(_point.line);
   auto& line = _lines[_point.line];
   if (_point.offset < line.size()) {
     // Delete within line.
@@ -108,6 +111,9 @@ void Buffer::doDeleteAtPoint() {
 
 void Buffer::doDeleteBeforePoint() {
   _rowBoundsCache.lineIdx = SIZE_MAX;
+  // Invalidate from the line that will be affected: if at the start of
+  // a line, the preceding line is joined and needs re-tokenisation.
+  invalidateSynCache(_point.offset > 0 ? _point.line : (_point.line > 0 ? _point.line - 1 : 0));
   auto& line = _lines[_point.line];
   if (_point.offset > 0) {
     // Walk back over continuation bytes.
@@ -996,6 +1002,7 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
   _rowBoundsCache.lineIdx = SIZE_MAX;
   if (to < from)
     std::swap(from, to);
+  invalidateSynCache(from.line);
   if (from.line >= _lines.size())
     return;
 
@@ -1020,6 +1027,7 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
 
 BufferPoint Buffer::insertText(std::string_view text) {
   _rowBoundsCache.lineIdx = SIZE_MAX;
+  invalidateSynCache(_point.line);
   auto startLine = _point.line;
   auto startOff = _point.offset;
 
@@ -1062,6 +1070,35 @@ BufferPoint Buffer::insertText(std::string_view text) {
   }
 
   return _point;
+}
+
+void Buffer::invalidateSynCache(std::size_t fromLine) {
+  if (fromLine < _synCacheValidUpto)
+    _synCacheValidUpto = fromLine;
+}
+
+void Buffer::ensureSynCache(std::size_t upToLine) const {
+  // Resize if _lines changed (insertions / deletions).
+  if (_synCache.size() != _lines.size()) {
+    _synCache.resize(_lines.size());
+    if (_synCacheValidUpto > _lines.size())
+      _synCacheValidUpto = 0;
+  }
+  if (upToLine > _lines.size())
+    upToLine = _lines.size();
+  if (_synCacheValidUpto >= upToLine)
+    return; // already covered
+
+  // Start from the state at the end of the previous valid line.
+  SyntaxState state;
+  if (_synCacheValidUpto > 0)
+    state = _synCache[_synCacheValidUpto - 1].stateAfter;
+
+  for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
+    _synCache[i].tokens = tokenizeLine(_lines[i], state);
+    _synCache[i].stateAfter = state; // state was advanced by tokenizeLine
+  }
+  _synCacheValidUpto = upToLine;
 }
 
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
@@ -1219,12 +1256,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // Syntax highlighting pre-computation.
   bool syntaxActive = _mode == BufferMode::Cpp;
   std::optional<BufferPoint> matchBracket;
-  SyntaxState synState;
-  std::vector<SyntaxToken> lineTokens;
+  std::span<SyntaxToken const> lineTokens;
 
   if (syntaxActive) {
-    for (std::size_t i = 0; i < _viewFrom.line.value && i < _lines.size(); ++i)
-      advanceBlockCommentState(_lines[i], synState);
+    // Build the per-line cache up to just past the last potentially visible
+    // line. This replaces the O(viewFrom) advanceBlockCommentState loop with
+    // an incremental O(changed-lines) update.
+    std::size_t lastVisible =
+        std::min(_viewFrom.line.value + static_cast<std::size_t>(rows.value) + 1, _lines.size());
+    ensureSynCache(lastVisible);
     matchBracket = findMatchingBracket(_lines, _point);
   }
 
@@ -1349,7 +1389,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       RenderState rs;
 
       if (syntaxActive)
-        lineTokens = tokenizeLine(line, synState);
+        lineTokens = _synCache[lineIdx].tokens;
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -1428,7 +1468,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     RenderState rs;
 
     if (syntaxActive)
-      lineTokens = tokenizeLine(line, synState);
+      lineTokens = _synCache[lineIdx].tokens;
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
