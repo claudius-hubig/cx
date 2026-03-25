@@ -3,7 +3,6 @@
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
 #include "byte_constants.hpp"
-#include "subprocess.hpp"
 #include "utf8.hpp"
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -855,19 +854,11 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
   } else if (c == key::Escape) {
     return handleEscapeInput(pendingChar);
   } else if (c == key::Tab) {
-    // Tab: format current line in C/C++ files, insert tab otherwise.
-    if (_buf && !_buf->readonly() && _buf->mode() == BufferMode::Cpp) {
-      auto line = _buf->point().line + 1; // 1-based
-      formatBuffer(std::make_pair(line, line));
-      // If cursor is before the first non-space character, move it there.
-      auto& content = _buf->lineContent(_buf->point().line);
-      std::size_t firstNonSpace = 0;
-      while (firstNonSpace < content.size() && content[firstNonSpace] == ' ')
-        ++firstNonSpace;
-      if (_buf->point().offset < firstNonSpace)
-        _buf->setPoint(_buf->point().line, firstNonSpace);
-    } else if (_buf) {
-      _buf->insert('\t');
+    if (_buf) {
+      auto msg = _buf->receiveTab();
+      if (!msg.empty())
+        setStatus(std::move(msg));
+      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
   } else if (static_cast<unsigned char>(c) < key::PrintableMin) {
@@ -1175,58 +1166,6 @@ void Screen::findPrev() {
   setStatus("Not found");
 }
 
-void Screen::formatBuffer(std::optional<std::pair<std::size_t, std::size_t>> lineRange) {
-  if (!_buf || _buf->readonly())
-    return;
-  if (!_buf->hasPath()) {
-    setStatus("Save file first to determine format");
-    return;
-  }
-  if (_buf->mode() != BufferMode::Cpp) {
-    setStatus("No formatter for this file type");
-    return;
-  }
-
-  // Extract entire buffer content.
-  auto lc = _buf->lineCount();
-  BufferPoint endPt{lc - 1, _buf->lineContent(lc - 1).size()};
-  auto allText = _buf->extractRegion({0, 0}, endPt);
-
-  // Build clang-format command.
-  std::vector<std::string> args = {"clang-format", "--assume-filename=" + _buf->name()};
-  if (lineRange) {
-    auto [startLine, endLine] = *lineRange;
-    args.push_back("--lines=" + std::to_string(startLine) + ":" + std::to_string(endLine));
-  }
-
-  auto result = runSubprocess(args, allText);
-  if (!result) {
-    setStatus(result.error());
-    return;
-  }
-  if (result->exitCode != 0) {
-    // Show first line of stderr.
-    auto& err = result->stderrData;
-    auto nl = err.find('\n');
-    setStatus(nl != std::string::npos ? err.substr(0, nl) : err);
-    return;
-  }
-  if (result->stdoutData == allText) {
-    setStatus("Already formatted");
-    return;
-  }
-
-  // Replace buffer contents, preserving cursor position.
-  auto [savedLine, savedOffset] = std::make_pair(_buf->point().line, _buf->point().offset);
-  _buf->clearMark();
-  _buf->deleteRegion({0, 0}, endPt);
-  _buf->insertText(result->stdoutData);
-  _buf->setPoint(savedLine, savedOffset);
-  auto& [rows, cols] = _size;
-  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
-  setStatus("Formatted");
-}
-
 void Screen::dispatchAction(Action action) {
   if (action != Action::Find && action != Action::FindBackward && _buf) {
     _buf->clearHighlight();
@@ -1401,14 +1340,17 @@ void Screen::dispatchAction(Action action) {
     setStatus(_wrap ? "Wrap on" : "Wrap off");
     break;
   case Action::Format:
-    if (_buf && _buf->mark()) {
-      auto markLine = _buf->mark()->line;
-      auto pointLine = _buf->point().line;
-      auto startLine = std::min(markLine, pointLine) + 1; // 1-based
-      auto endLine = std::max(markLine, pointLine) + 1;
-      formatBuffer(std::make_pair(startLine, endLine));
-    } else {
-      formatBuffer(std::nullopt);
+    if (_buf) {
+      std::optional<std::pair<std::size_t, std::size_t>> range;
+      if (_buf->mark()) {
+        auto markLine = _buf->mark()->line;
+        auto pointLine = _buf->point().line;
+        range = {std::min(markLine, pointLine) + 1, std::max(markLine, pointLine) + 1};
+      }
+      auto msg = _buf->format(range);
+      if (!msg.empty())
+        setStatus(std::move(msg));
+      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
     }
     break;
   case Action::SetMode:

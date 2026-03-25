@@ -1,11 +1,68 @@
 #include "buffer.hpp"
 #include "char_width.hpp"
+#include "subprocess.hpp"
 #include "syntax.hpp"
 
 #include <algorithm>
 #include <span>
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
+
+std::string Buffer::format(std::optional<std::pair<std::size_t, std::size_t>> lineRange) {
+  if (readonly())
+    return {};
+  if (!hasPath())
+    return "Save file first to determine format";
+  if (_mode != BufferMode::Cpp)
+    return "No formatter for this file type";
+
+  BufferPoint endPt{_lines.size() - 1, _lines.back().size()};
+  auto allText = extractRegion({0, 0}, endPt);
+
+  std::vector<std::string> args = {"clang-format", "--assume-filename=" + _name};
+  if (lineRange) {
+    auto [startLine, endLine] = *lineRange;
+    args.push_back("--lines=" + std::to_string(startLine) + ":" + std::to_string(endLine));
+  }
+
+  auto result = runSubprocess(args, allText);
+  if (!result)
+    return result.error();
+  if (result->exitCode != 0) {
+    auto& err = result->stderrData;
+    auto nl = err.find('\n');
+    return nl != std::string::npos ? err.substr(0, nl) : err;
+  }
+  if (result->stdoutData == allText)
+    return "Already formatted";
+
+  auto savedLine = _point.line;
+  auto savedOffset = _point.offset;
+  clearMark();
+  deleteRegion({0, 0}, endPt);
+  insertText(result->stdoutData);
+  setPoint(savedLine, savedOffset);
+  return "Formatted";
+}
+
+std::string Buffer::receiveTab() {
+  if (readonly())
+    return {};
+  if (_mode == BufferMode::Cpp) {
+    auto line = _point.line + 1; // 1-based
+    auto msg = format(std::make_pair(line, line));
+    // If cursor is before the first non-space character, move it there.
+    auto& content = _lines[_point.line];
+    std::size_t firstNonSpace = 0;
+    while (firstNonSpace < content.size() && content[firstNonSpace] == ' ')
+      ++firstNonSpace;
+    if (_point.offset < firstNonSpace)
+      setPoint(_point.line, firstNonSpace);
+    return msg;
+  }
+  insert('\t');
+  return {};
+}
 
 void Buffer::doInsert(uint32_t cp) {
   _rowBoundsCache.lineIdx = SIZE_MAX;

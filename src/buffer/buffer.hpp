@@ -66,6 +66,17 @@ public:
     return std::unexpected("buffer has no path");
   }
 
+  /// Run an external formatter on the buffer contents and replace the buffer
+  /// text with the result. In Cpp mode, invokes clang-format. If lineRange
+  /// is set, only the given 1-based line range is formatted. Returns a
+  /// human-readable status string describing the outcome.
+  std::string format(std::optional<std::pair<std::size_t, std::size_t>> lineRange = {});
+
+  /// Handle a Tab keypress. In Cpp mode, formats the current line and
+  /// adjusts the cursor; otherwise inserts a literal tab. Returns a
+  /// status string (empty if no message is needed).
+  std::string receiveTab();
+
   /// Insert a Unicode code point at _point, encoding it as UTF-8. No-op
   /// if readonly(). The entire multi-byte sequence is inserted atomically.
   void insert(uint32_t cp) {
