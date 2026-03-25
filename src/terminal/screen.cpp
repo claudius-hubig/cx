@@ -270,11 +270,120 @@ void Screen::loop() {
 
     bool drew = false;
     if (_prompt == Prompt::ConfirmSave)
-      drew = handleConfirmSave(c);
+      drew = handleConfirm(
+          c,
+          [&] {
+            // Y: save, then optionally kill the buffer.
+            if (_buf) {
+              auto res = _buf->save();
+              if (res) {
+                setStatus("Saved to " + _buf->name());
+                if (_killPending && _bufMgr) {
+                  _killPending = false;
+                  auto name = _buf->name();
+                  _prompt = Prompt::None;
+                  _prompt_input.clear();
+                  if (_prevBuf == _buf)
+                    _prevBuf = nullptr;
+                  setBuffer(_bufMgr->kill(name));
+                  draw();
+                  return true;
+                }
+              } else {
+                setStatus(res.error());
+                _killPending = false;
+              }
+            }
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            return false;
+          },
+          [&] {
+            // N / Esc: cancel.
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            _killPending = false;
+            _exitPending = false;
+            return false;
+          },
+          [&] {
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            _killPending = false;
+            _exitPending = false;
+            return false;
+          });
     else if (_prompt == Prompt::ConfirmKill)
-      drew = handleConfirmKill(c);
+      drew = handleConfirm(
+          c,
+          [&] {
+            // Y: save then kill (file-backed) or enter SaveAs (temp).
+            if (_buf && _bufMgr) {
+              if (_buf->hasPath()) {
+                auto res = _buf->save();
+                _prompt = Prompt::None;
+                _prompt_input.clear();
+                if (!res) {
+                  setStatus(res.error());
+                } else {
+                  if (_prevBuf == _buf)
+                    _prevBuf = nullptr;
+                  setBuffer(_bufMgr->kill(_buf->name()));
+                }
+              } else {
+                _killPending = true;
+                _prompt = Prompt::SaveAs;
+                _prompt_input.clear();
+              }
+            }
+            return false;
+          },
+          [&] {
+            // N: kill without saving.
+            if (_buf && _bufMgr) {
+              auto name = _buf->name();
+              _prompt = Prompt::None;
+              _prompt_input.clear();
+              if (_prevBuf == _buf)
+                _prevBuf = nullptr;
+              setBuffer(_bufMgr->kill(name));
+            }
+            return false;
+          },
+          [&] {
+            // Esc: abort.
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            _exitPending = false;
+            return false;
+          });
     else if (_prompt == Prompt::ConfirmRevert)
-      drew = handleConfirmRevert(c);
+      drew = handleConfirm(
+          c,
+          [&] {
+            // Y: revert from disk.
+            if (_buf) {
+              auto res = _buf->revert();
+              if (res)
+                setStatus("Reverted from " + _buf->name());
+              else
+                setStatus(res.error());
+            }
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            return false;
+          },
+          [&] {
+            // N / Esc: cancel.
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            return false;
+          },
+          [&] {
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            return false;
+          });
     else if (_prompt != Prompt::None)
       drew = handleTextPrompt(c);
     else
@@ -291,95 +400,15 @@ void Screen::loop() {
   }
 }
 
-bool Screen::handleConfirmSave(char c) {
-  if (c == 'y' || c == 'Y') {
-    if (_buf) {
-      auto res = _buf->save();
-      if (res) {
-        setStatus("Saved to " + _buf->name());
-        if (_killPending && _bufMgr) {
-          _killPending = false;
-          auto name = _buf->name();
-          _prompt = Prompt::None;
-          _prompt_input.clear();
-          if (_prevBuf == _buf)
-            _prevBuf = nullptr;
-          setBuffer(_bufMgr->kill(name));
-          draw();
-          return true;
-        }
-      } else {
-        setStatus(res.error());
-        _killPending = false;
-      }
-    }
-    _prompt = Prompt::None;
-    _prompt_input.clear();
-  } else if (c == 'n' || c == 'N' || c == 0x1b) {
-    _prompt = Prompt::None;
-    _prompt_input.clear();
-    _killPending = false;
-    _exitPending = false;
-  }
+bool Screen::handleConfirm(char c, std::function<bool()> onAccept, std::function<bool()> onDecline,
+                           std::function<bool()> onAbort) {
+  if (c == 'y' || c == 'Y')
+    return onAccept();
+  if (c == 'n' || c == 'N')
+    return onDecline();
+  if (c == 0x1b)
+    return onAbort();
   // Ignore all other keys.
-  return false;
-}
-
-bool Screen::handleConfirmKill(char c) {
-  if (c == 'y' || c == 'Y') {
-    if (_buf && _bufMgr) {
-      if (_buf->hasPath()) {
-        // Modified file-backed: save then kill.
-        auto res = _buf->save();
-        _prompt = Prompt::None;
-        _prompt_input.clear();
-        if (!res) {
-          setStatus(res.error());
-        } else {
-          if (_prevBuf == _buf)
-            _prevBuf = nullptr;
-          setBuffer(_bufMgr->kill(_buf->name()));
-        }
-      } else {
-        // Temp buffer: enter SaveAs, then kill after save.
-        _killPending = true;
-        _prompt = Prompt::SaveAs;
-        _prompt_input.clear();
-      }
-    }
-  } else if (c == 'n' || c == 'N') {
-    // Kill without saving.
-    if (_buf && _bufMgr) {
-      auto name = _buf->name();
-      _prompt = Prompt::None;
-      _prompt_input.clear();
-      if (_prevBuf == _buf)
-        _prevBuf = nullptr;
-      setBuffer(_bufMgr->kill(name));
-    }
-  } else if (c == 0x1b) {
-    _prompt = Prompt::None;
-    _prompt_input.clear();
-    _exitPending = false;
-  }
-  return false;
-}
-
-bool Screen::handleConfirmRevert(char c) {
-  if (c == 'y' || c == 'Y') {
-    if (_buf) {
-      auto res = _buf->revert();
-      if (res)
-        setStatus("Reverted from " + _buf->name());
-      else
-        setStatus(res.error());
-    }
-    _prompt = Prompt::None;
-    _prompt_input.clear();
-  } else if (c == 'n' || c == 'N' || c == 0x1b) {
-    _prompt = Prompt::None;
-    _prompt_input.clear();
-  }
   return false;
 }
 

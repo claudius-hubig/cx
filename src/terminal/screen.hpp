@@ -6,6 +6,7 @@
 #include "types.hpp"
 
 #include <chrono>
+#include <functional>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -52,9 +53,11 @@ private:
 
   // Loop sub-handlers. Each returns true if it already called draw()
   // (so the caller should skip its trailing draw()).
-  bool handleConfirmSave(char c);
-  bool handleConfirmKill(char c);
-  bool handleConfirmRevert(char c);
+  // Unified Y/N/Esc confirmation handler. Dispatches to the given
+  // callbacks on Y/y, N/n, or Esc respectively. Returns true if the
+  // handler already called draw().
+  bool handleConfirm(char c, std::function<bool()> onAccept, std::function<bool()> onDecline,
+                     std::function<bool()> onAbort);
   bool handleTextPrompt(char c);
   void submitSwitchBuffer();
   void submitSaveAs();
