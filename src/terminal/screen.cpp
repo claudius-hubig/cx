@@ -428,6 +428,9 @@ void Screen::submitSwitchBuffer() {
     }
     setBuffer(_bufMgr->open(_prompt_input));
   }
+  _prompt = Prompt::None;
+  _prompt_input.clear();
+  _completions.clear();
 }
 
 void Screen::submitSaveAs() {
