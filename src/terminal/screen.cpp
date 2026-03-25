@@ -50,6 +50,24 @@ static void insertCharWithUtf8(Buffer& buf, char c) {
   buf.insert(cp);
 }
 
+// Count the visual width of a string, excluding ANSI escape sequences.
+// Handles ESC[ ... letter sequences (CSI). All other bytes count as one column.
+static std::size_t ansiVisualWidth(std::string_view s) {
+  std::size_t w = 0;
+  for (std::size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '\x1b' && i + 1 < s.size() && s[i + 1] == '[') {
+      // Skip ESC[ followed by parameter bytes and a final letter.
+      i += 2;
+      while (i < s.size() && !std::isalpha(static_cast<unsigned char>(s[i])))
+        ++i;
+      // i now points at the terminating letter; the outer ++i will advance past it.
+    } else {
+      ++w;
+    }
+  }
+  return w;
+}
+
 // Write all bytes to fd, retrying on partial writes and EINTR.
 static void writeAll(int fd, char const* data, std::size_t len) {
   while (len > 0) {
@@ -139,17 +157,17 @@ void Screen::draw() {
   if (_buf) {
     auto [line, col] = _buf->lineCol();
     status = std::to_string(line) + ":" + std::to_string(col);
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
   }
   if (_prompt == Prompt::GoToLine) {
     status += " | Go to line: " + _prompt_input;
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
   } else if (_prompt == Prompt::SaveAs) {
     status += " | Save as: " + _prompt_input;
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
   } else if (_prompt == Prompt::SwitchBuffer) {
     status += " | Buffer: " + _prompt_input;
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
     // Append completion hints (dim text). A completion's match
     // string may or may not share the typed prefix (e.g. filename
     // matches against a full-path match string).
@@ -189,22 +207,22 @@ void Screen::draw() {
     }
   } else if (_prompt == Prompt::Find) {
     status += " | Find: " + _prompt_input;
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
     if (_prompt_input.empty() && !_lastSearch.empty()) {
       status += "\x1b[2m" + _lastSearch + "\x1b[22m";
       status_vwidth += _lastSearch.size();
     }
   } else if (_prompt == Prompt::SetMode) {
     status += " | Mode [text/c]: " + _prompt_input;
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
              _prompt == Prompt::ConfirmRevert) {
     status += " | " + _prompt_input;
-    status_vwidth = status.size();
+    status_vwidth = ansiVisualWidth(status);
   } else {
     if (!_statusMsg.empty()) {
       status += " | " + _statusMsg;
-      status_vwidth = status.size();
+      status_vwidth = ansiVisualWidth(status);
     }
   }
 
