@@ -7,7 +7,7 @@
 #include "test_helpers.hpp"
 
 // Helper: create a line from a string literal.
-static std::vector<char> mkline(std::string_view s) { return {s.begin(), s.end()}; }
+static std::string mkline(std::string_view s) { return std::string(s); }
 
 // Helper: check that all bytes in [from, to) have a given token.
 static bool allTokens(std::vector<SyntaxToken> const& toks, std::size_t from, std::size_t to,
@@ -468,12 +468,12 @@ BOOST_AUTO_TEST_CASE(advance_state_block_comment_inside_raw_string_ignored) {
 // ============================================================
 
 // Build a lines vector from newline-separated text.
-static std::vector<std::vector<char>> mklines(std::string_view s) {
-  std::vector<std::vector<char>> result;
+static std::vector<std::string> mklines(std::string_view s) {
+  std::vector<std::string> result;
   std::size_t start = 0;
   for (std::size_t i = 0; i <= s.size(); ++i) {
     if (i == s.size() || s[i] == '\n') {
-      result.emplace_back(s.begin() + start, s.begin() + i);
+      result.emplace_back(s.substr(start, i - start));
       start = i + 1;
     }
   }

@@ -19,7 +19,7 @@ enum class BufferMode { Text, Cpp };
 // (insertion cursor), navigation, and rendering. Editing operations are
 // guarded by readonly() so that derived classes can forbid mutation.
 //
-// Text is stored as one vector<char> per line, without '\n' delimiters.
+// Text is stored as one std::string per line, without '\n' delimiters.
 // An empty buffer has _lines = {{}} (one empty line). A file ending with
 // '\n' is represented by an empty trailing entry.
 class Buffer {
@@ -257,7 +257,7 @@ public:
   std::size_t lineCount() const { return _lines.size(); }
 
   /// Access the raw content of a line by 0-based index.
-  std::vector<char> const& lineContent(std::size_t idx) const { return _lines[idx]; }
+  std::string const& lineContent(std::size_t idx) const { return _lines[idx]; }
 
   /// Set point to (line, offset). Clamps to valid range. Resets _desiredCol.
   void setPoint(std::size_t line, std::size_t offset);
@@ -276,7 +276,7 @@ protected:
   void doDeleteChunkAtPoint();
   void doDeleteChunkBeforePoint();
   // Sum of display widths of characters in line data[from..to).
-  std::size_t visualCol(std::vector<char> const& line, std::size_t from, std::size_t to) const;
+  std::size_t visualCol(std::string const& line, std::size_t from, std::size_t to) const;
   // True if line idx is empty or contains only spaces/tabs.
   bool isBlankLine(std::size_t idx) const;
   // Line index that is `lines` lines before the end of the buffer.
@@ -293,7 +293,7 @@ protected:
 
   std::string _name;
   BufferMode _mode = BufferMode::Text;
-  std::vector<std::vector<char>> _lines{{}};
+  std::vector<std::string> _lines{{}};
   BufferPoint _point;
   std::optional<BufferPoint> _mark;
   ViewFrom _viewFrom;

@@ -96,8 +96,8 @@ void Buffer::doInsert(uint32_t cp) {
   std::size_t autoIndent = 0;
   if (cp == '\n') {
     // Split current line at point.offset.
-    std::vector<char> tail(line.begin() + _point.offset, line.end());
-    line.erase(line.begin() + _point.offset, line.end());
+    std::string tail(line, _point.offset);
+    line.erase(_point.offset);
     _lines.insert(_lines.begin() + _point.line + 1, std::move(tail));
     _point.line++;
     _point.offset = 0;
@@ -309,8 +309,7 @@ bool Buffer::currentLineWraps(ColIdx cols) const {
 }
 
 // Compute visual column width of bytes in line[from..to).
-std::size_t Buffer::visualCol(std::vector<char> const& line, std::size_t from,
-                              std::size_t to) const {
+std::size_t Buffer::visualCol(std::string const& line, std::size_t from, std::size_t to) const {
   std::size_t vcol = 0;
   for (std::size_t i = from; i < to && i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -340,8 +339,8 @@ std::size_t Buffer::pointVisualCol() const {
 
 // Walk a line from `from` to find the byte offset matching a target visual
 // column. Stops at `to` (or line.size() if to > line.size()).
-static std::size_t offsetForVisualCol(std::vector<char> const& line, std::size_t from,
-                                      std::size_t to, std::size_t goal) {
+static std::size_t offsetForVisualCol(std::string const& line, std::size_t from, std::size_t to,
+                                      std::size_t goal) {
   std::size_t pos = from, v = 0;
   std::size_t end = std::min(to, line.size());
   while (pos < end) {
@@ -367,8 +366,7 @@ struct VisualRowInfo {
   std::size_t nextRowStart;
 };
 
-static VisualRowInfo findVisualRow(std::vector<char> const& line, std::size_t byteOff,
-                                   std::size_t cols) {
+static VisualRowInfo findVisualRow(std::string const& line, std::size_t byteOff, std::size_t cols) {
   std::size_t prevStart = 0, curStart = 0;
   std::size_t col = 0;
 
@@ -399,7 +397,7 @@ static VisualRowInfo findVisualRow(std::vector<char> const& line, std::size_t by
 }
 
 // Find the byte offset at the start of the last visual row of a line.
-static std::size_t lastVisualRowStart(std::vector<char> const& line, std::size_t cols) {
+static std::size_t lastVisualRowStart(std::string const& line, std::size_t cols) {
   std::size_t rowStart = 0, col = 0;
   for (std::size_t i = 0; i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -1084,8 +1082,8 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
   // Splice: head of from-line + tail of to-line.
   auto& fromLine = _lines[from.line];
   auto& toLine = _lines[to.line];
-  std::vector<char> merged(fromLine.begin(), fromLine.begin() + from.offset);
-  merged.insert(merged.end(), toLine.begin() + to.offset, toLine.end());
+  std::string merged(fromLine, 0, from.offset);
+  merged.append(toLine, to.offset);
 
   // Erase lines [from.line .. to.line], replace with merged.
   _lines.erase(_lines.begin() + from.line, _lines.begin() + to.line + 1);
@@ -1107,8 +1105,8 @@ BufferPoint Buffer::insertText(std::string_view text) {
     if (text[i] == '\n') {
       // Split current line at _point.
       auto& line = _lines[_point.line];
-      std::vector<char> tail(line.begin() + _point.offset, line.end());
-      line.erase(line.begin() + _point.offset, line.end());
+      std::string tail(line, _point.offset);
+      line.erase(_point.offset);
       _lines.insert(_lines.begin() + _point.line + 1, std::move(tail));
       _point.line++;
       _point.offset = 0;

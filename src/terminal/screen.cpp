@@ -945,7 +945,7 @@ bool Screen::tryExit() {
 // Case folding is ASCII-only: non-ASCII uppercase letters (e.g. Ü) will not
 // match their lowercase counterparts. Multi-byte UTF-8 patterns match by raw
 // byte comparison, which works for exact matches but not case-insensitive ones.
-static std::optional<std::size_t> matchAt(std::vector<char> const& line, std::size_t off,
+static std::optional<std::size_t> matchAt(std::string const& line, std::size_t off,
                                           std::string const& pattern, bool caseSensitive,
                                           bool matchDigits, bool matchSpecial) {
   if (pattern.empty())
@@ -1037,9 +1037,10 @@ struct FindFlags {
 };
 
 // Scan a line for the first match starting at or after `from`.
-static std::optional<std::pair<std::size_t, std::size_t>>
-findFirstMatch(std::vector<char> const& line, std::size_t from, std::string const& pattern,
-               FindFlags const& f) {
+static std::optional<std::pair<std::size_t, std::size_t>> findFirstMatch(std::string const& line,
+                                                                         std::size_t from,
+                                                                         std::string const& pattern,
+                                                                         FindFlags const& f) {
   for (std::size_t off = from; off < line.size(); ++off) {
     if (!f.firstCharCanMatch(line[off]))
       continue;
@@ -1051,7 +1052,7 @@ findFirstMatch(std::vector<char> const& line, std::size_t from, std::string cons
 
 // Scan a line for the last match within [from, limit).
 static std::optional<std::pair<std::size_t, std::size_t>>
-findLastMatch(std::vector<char> const& line, std::size_t from, std::size_t limit,
+findLastMatch(std::string const& line, std::size_t from, std::size_t limit,
               std::string const& pattern, FindFlags const& f) {
   std::optional<std::pair<std::size_t, std::size_t>> last;
   for (std::size_t off = from; off < limit && off < line.size(); ++off) {

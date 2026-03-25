@@ -53,7 +53,7 @@ static bool isOperatorChar(char c) {
 // Heuristic: < or > used as an operator (not a template bracket).
 // Operator if: preceded by a space AND followed by a space, or part of
 // <<, >>, <=, >=, <=>, ->, or <<= / >>=.
-static bool isAngleOperator(std::vector<char> const& line, std::size_t i) {
+static bool isAngleOperator(std::string const& line, std::size_t i) {
   char c = line[i];
   std::size_t sz = line.size();
   if (c == '<') {
@@ -86,7 +86,7 @@ static bool isAngleOperator(std::vector<char> const& line, std::size_t i) {
   return false;
 }
 
-std::vector<SyntaxToken> tokenizeLine(std::vector<char> const& line, SyntaxState& state) {
+std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& state) {
   std::vector<SyntaxToken> tokens(line.size(), SyntaxToken::Normal);
   std::size_t i = 0;
   std::size_t sz = line.size();
@@ -307,7 +307,7 @@ std::vector<SyntaxToken> tokenizeLine(std::vector<char> const& line, SyntaxState
   return tokens;
 }
 
-void advanceBlockCommentState(std::vector<char> const& line, SyntaxState& state) {
+void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
   // tokenizeLine already performs the full scan and updates `state` as a side
   // effect. Discard the returned token vector — only the state matters here.
   tokenizeLine(line, state);
@@ -350,7 +350,7 @@ static bool isBracketChar(char c, SyntaxToken tok) {
   return true;
 }
 
-std::optional<BufferPoint> findMatchingBracket(std::vector<std::vector<char>> const& lines,
+std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
                                                BufferPoint pos) {
   if (pos.line >= lines.size())
     return std::nullopt;

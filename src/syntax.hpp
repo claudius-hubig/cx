@@ -28,13 +28,13 @@ struct SyntaxState {
 // Tokenize a single line, producing a per-byte SyntaxToken vector.
 // state is the multi-line state entering this line; updated on return
 // to reflect state after this line.
-std::vector<SyntaxToken> tokenizeLine(std::vector<char> const& line, SyntaxState& state);
+std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& state);
 
 // Advance multi-line state across a line without producing tokens.
 // Cheaper than tokenizeLine when only the state is needed.
-void advanceBlockCommentState(std::vector<char> const& line, SyntaxState& state);
+void advanceBlockCommentState(std::string const& line, SyntaxState& state);
 
 // Find the matching bracket for the character at pos in the buffer.
 // Returns nullopt if pos is not on a bracket or no match is found.
-std::optional<BufferPoint> findMatchingBracket(std::vector<std::vector<char>> const& lines,
+std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
                                                BufferPoint pos);
