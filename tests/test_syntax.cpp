@@ -459,3 +459,120 @@ BOOST_AUTO_TEST_CASE(advance_state_block_comment_inside_raw_string_ignored) {
   BOOST_CHECK(!st.inBlockComment);
   BOOST_CHECK(!st.rawDelim.has_value());
 }
+
+// ============================================================
+// Bug 1: findMatchingBracket must skip brackets in strings/comments
+// ============================================================
+
+// Build a lines vector from newline-separated text.
+static std::vector<std::vector<char>> mklines(std::string_view s) {
+  std::vector<std::vector<char>> result;
+  std::size_t start = 0;
+  for (std::size_t i = 0; i <= s.size(); ++i) {
+    if (i == s.size() || s[i] == '\n') {
+      result.emplace_back(s.begin() + start, s.begin() + i);
+      start = i + 1;
+    }
+  }
+  return result;
+}
+
+BOOST_AUTO_TEST_CASE(bracket_in_string_skipped_finds_real_close) {
+  // printf("(");  — cursor on outer '(' at offset 6.
+  // The '(' inside the string at offset 8 must be ignored.
+  // The matching ')' is the one at offset 10, outside the string.
+  auto lines = mklines("printf(\"(\");");
+  auto result = findMatchingBracket(lines, {0, 6});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 10u); // ')' after closing '"'
+}
+
+BOOST_AUTO_TEST_CASE(bracket_in_string_no_outer_match) {
+  // A '(' that only has a matching ')' inside a string — no real match.
+  // open( "string with ) inside" and nothing after.
+  auto lines = mklines("open(\")\");");
+  // '(' at offset 4; ')' at offset 6 is inside string; ')' at offset 8 is the real close.
+  auto result = findMatchingBracket(lines, {0, 4});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 8u);
+}
+
+BOOST_AUTO_TEST_CASE(bracket_in_block_comment_not_matched) {
+  // if (x /* ) */ && y) {} — the ')' inside /* */ is not a real bracket.
+  auto lines = mklines("if (x /* ) */ && y) {}");
+  // '(' at offset 3; ')' at offset 9 is inside block comment; ')' at offset 18 is real.
+  auto result = findMatchingBracket(lines, {0, 3});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 18u);
+}
+
+BOOST_AUTO_TEST_CASE(bracket_in_line_comment_not_matched) {
+  // foo(x); // (unmatched) — the '(' in the comment should be ignored.
+  auto lines = mklines("foo(x); // (unmatched)");
+  // '(' at offset 3 matches ')' at offset 5; line comment '(' at 11 is irrelevant.
+  auto result = findMatchingBracket(lines, {0, 3});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 5u);
+}
+
+BOOST_AUTO_TEST_CASE(open_bracket_inside_string_returns_nullopt) {
+  // Cursor sits on '(' that is itself inside a string literal — not a bracket.
+  auto lines = mklines("x = \"(\";");
+  // '(' at offset 5 is inside string.
+  auto result = findMatchingBracket(lines, {0, 5});
+  BOOST_CHECK(!result.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(close_bracket_in_string_not_counted_backward) {
+  // Backward scan: ')' inside string should not be counted.
+  // foo(")", x) — cursor on ')' at offset 11.
+  auto lines = mklines("foo(\")\", x)");
+  auto result = findMatchingBracket(lines, {0, 10});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 3u);
+}
+
+// ============================================================
+// Bug 2: angle brackets use Angle/Operator distinction
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(angle_operator_not_matched) {
+  // x < y && z > w — cursor on '<' which is Operator, should not match.
+  auto lines = mklines("x < y && z > w");
+  // '<' at offset 2 is Operator (spaces around it).
+  auto result = findMatchingBracket(lines, {0, 2});
+  BOOST_CHECK(!result.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(angle_template_matched) {
+  // vector<int> — cursor on '<' which is Angle.
+  auto lines = mklines("vector<int>");
+  auto result = findMatchingBracket(lines, {0, 6});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 10u);
+}
+
+BOOST_AUTO_TEST_CASE(angle_close_operator_not_matched_backward) {
+  // '>' as Operator: backward scan from '>' in 'x > y' should return nullopt.
+  auto lines = mklines("x > y");
+  // '>' at offset 2 — spaces around it → Operator.
+  auto result = findMatchingBracket(lines, {0, 2});
+  BOOST_CHECK(!result.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(angle_template_backward_matched) {
+  // vector<int> — cursor on '>'.
+  auto lines = mklines("vector<int>");
+  auto result = findMatchingBracket(lines, {0, 10});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 6u);
+}
+
+BOOST_AUTO_TEST_CASE(nested_angle_templates_matched) {
+  // pair<char, int> — cursor on outer '<' at offset 4.
+  // Uses a single closing '>' (not '>>') to avoid the >> tokenizer heuristic.
+  auto lines = mklines("pair<char, int>");
+  auto result = findMatchingBracket(lines, {0, 4});
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 14u);
+}

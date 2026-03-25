@@ -449,6 +449,17 @@ static char matchingBracket(char c) {
 
 static bool isOpenBracket(char c) { return c == '(' || c == '[' || c == '{' || c == '<'; }
 
+// Returns true if the character `c` with token `tok` should be counted as a
+// bracket during matching. Brackets inside strings and comments are skipped.
+// Angle brackets are only counted when tokenized as Angle (not Operator).
+static bool isBracketChar(char c, SyntaxToken tok) {
+  if (tok == SyntaxToken::Comment || tok == SyntaxToken::String)
+    return false;
+  if ((c == '<' || c == '>') && tok != SyntaxToken::Angle)
+    return false;
+  return true;
+}
+
 std::optional<BufferPoint> findMatchingBracket(std::vector<std::vector<char>> const& lines,
                                                BufferPoint pos) {
   if (pos.line >= lines.size())
@@ -457,52 +468,97 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::vector<char>> co
   if (pos.offset >= line.size())
     return std::nullopt;
 
+  // Compute syntax state at the start of pos.line by scanning preceding lines.
+  SyntaxState stateAtLine;
+  for (std::size_t i = 0; i < pos.line; ++i)
+    advanceBlockCommentState(lines[i], stateAtLine);
+
+  // Tokenize pos.line; stateAfterLine becomes the state at the start of the next line.
+  SyntaxState stateAfterLine = stateAtLine;
+  auto curTokens = tokenizeLine(line, stateAfterLine);
+
   char ch = line[pos.offset];
+  auto curTok = (pos.offset < curTokens.size()) ? curTokens[pos.offset] : SyntaxToken::Normal;
+
+  // Cursor must be on a syntactically meaningful bracket character.
+  if (!isBracketChar(ch, curTok))
+    return std::nullopt;
+
   char match = matchingBracket(ch);
   if (!match)
     return std::nullopt;
 
   if (isOpenBracket(ch)) {
-    // Scan forward.
+    // Scan forward through the remainder of pos.line, then subsequent lines.
     int depth = 1;
-    std::size_t l = pos.line;
-    std::size_t o = pos.offset + 1;
-    while (l < lines.size()) {
-      auto& ln = lines[l];
-      while (o < ln.size()) {
-        if (ln[o] == ch)
+    SyntaxState state = stateAfterLine; // state at start of next line
+
+    for (std::size_t o = pos.offset + 1; o < line.size(); ++o) {
+      auto tok = (o < curTokens.size()) ? curTokens[o] : SyntaxToken::Normal;
+      if (isBracketChar(line[o], tok)) {
+        if (line[o] == ch)
           ++depth;
-        else if (ln[o] == match) {
-          --depth;
-          if (depth == 0)
+        else if (line[o] == match && --depth == 0)
+          return BufferPoint{pos.line, o};
+      }
+    }
+
+    for (std::size_t l = pos.line + 1; l < lines.size(); ++l) {
+      auto& ln = lines[l];
+      auto lnToks = tokenizeLine(ln, state); // advances state past ln
+      for (std::size_t o = 0; o < ln.size(); ++o) {
+        auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
+        if (isBracketChar(ln[o], tok)) {
+          if (ln[o] == ch)
+            ++depth;
+          else if (ln[o] == match && --depth == 0)
             return BufferPoint{l, o};
         }
-        ++o;
       }
-      ++l;
-      o = 0;
     }
   } else {
-    // Scan backward.
+    // Scan backward. Precompute syntax states at the start of each line so we
+    // can tokenize arbitrary lines without rescanning from the beginning each time.
+    std::vector<SyntaxState> lineStartStates(pos.line + 1);
+    {
+      SyntaxState s;
+      for (std::size_t i = 0; i <= pos.line; ++i) {
+        lineStartStates[i] = s;
+        if (i < pos.line)
+          advanceBlockCommentState(lines[i], s);
+      }
+    }
+
     int depth = 1;
-    std::size_t l = pos.line;
-    std::size_t o = pos.offset;
-    for (;;) {
-      auto& ln = lines[l];
-      while (o > 0) {
-        --o;
-        if (ln[o] == ch)
+
+    // Scan pos.line from pos.offset-1 down to 0.
+    for (std::size_t o = pos.offset; o > 0;) {
+      --o;
+      auto tok = (o < curTokens.size()) ? curTokens[o] : SyntaxToken::Normal;
+      if (isBracketChar(line[o], tok)) {
+        if (line[o] == ch)
           ++depth;
-        else if (ln[o] == match) {
-          --depth;
-          if (depth == 0)
+        else if (line[o] == match && --depth == 0)
+          return BufferPoint{pos.line, o};
+      }
+    }
+
+    // Scan lines before pos.line, each tokenized from its cached start state.
+    for (std::size_t l = pos.line; l > 0;) {
+      --l;
+      auto& ln = lines[l];
+      SyntaxState s = lineStartStates[l];
+      auto lnToks = tokenizeLine(ln, s);
+      for (std::size_t o = ln.size(); o > 0;) {
+        --o;
+        auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
+        if (isBracketChar(ln[o], tok)) {
+          if (ln[o] == ch)
+            ++depth;
+          else if (ln[o] == match && --depth == 0)
             return BufferPoint{l, o};
         }
       }
-      if (l == 0)
-        break;
-      --l;
-      o = lines[l].size();
     }
   }
 
