@@ -46,6 +46,10 @@ public:
   /// The buffer's current mode. Determines syntax highlighting,
   /// auto-indent, and formatting behaviour.
   BufferMode mode() const { return _mode; }
+  /// Switch the buffer mode. Callers are responsible for triggering a
+  /// redraw afterwards; this setter has no side effects. Any per-line
+  /// syntax caches (e.g. lineTokens in render()) are local to each
+  /// render() call and are automatically rebuilt on the next draw.
   void setMode(BufferMode m) { _mode = m; }
 
   /// Write buffer contents to its file. Returns an empty expected on success,
