@@ -1,5 +1,6 @@
 #include "help_buffer.hpp"
 #include "shortcut.hpp"
+#include "utf8.hpp"
 
 #include <algorithm>
 #include <span>
@@ -14,7 +15,7 @@ static std::string formatHelpLine(Action a) {
   auto desc = descriptionForAction(a);
   std::string line = "  ";
   line += label;
-  while (line.size() < 16)
+  while (visualWidth(line) < 16)
     line += ' ';
   line += desc;
   return line;
@@ -24,7 +25,7 @@ static std::string formatHelpLine(Action a) {
 static std::string formatRawLine(std::string_view key, std::string_view desc) {
   std::string line = "  ";
   line += key;
-  while (line.size() < 16)
+  while (visualWidth(line) < 16)
     line += ' ';
   line += desc;
   return line;
@@ -43,9 +44,9 @@ static std::vector<std::string> const& leftColumn() {
     for (auto a : {Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
     v.push_back(formatHelpLine(Action::Format));
-    v.push_back(formatRawLine("Tab", "Format line (C/C++)"));
     v.emplace_back("");
     v.emplace_back("C mode (Esc-m to set):");
+    v.push_back(formatRawLine("Tab", "Format line"));
     v.push_back(formatRawLine("?", "Jump to matching bracket"));
     return v;
   }();
@@ -91,7 +92,7 @@ static constexpr std::size_t kHeaderLines = 3;
 static std::size_t maxWidth(std::span<std::string const> lines) {
   std::size_t w = 0;
   for (auto& l : lines)
-    w = std::max(w, l.size());
+    w = std::max(w, visualWidth(l));
   return w;
 }
 
@@ -165,7 +166,7 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
       std::string line(leftPad, ' ');
       if (i < leftCount) {
         line += leftLines[i];
-        std::size_t cur = line.size() - leftPad;
+        std::size_t cur = visualWidth(leftLines[i]);
         if (cur < leftW)
           line.append(leftW - cur, ' ');
       } else {

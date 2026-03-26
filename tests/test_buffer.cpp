@@ -2,9 +2,9 @@
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
 
-#include "buffer/char_width.hpp"
 #include "buffer/help_buffer.hpp"
 #include "buffer/text_buffer.hpp"
+#include "utf8.hpp"
 
 // Helper: insert a string as UTF-8 codepoints into a buffer.
 static void insertString(Buffer& buf, std::string_view s) {

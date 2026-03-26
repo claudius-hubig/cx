@@ -218,8 +218,7 @@ knows about `Screen` concretely.
 | File                                   | Contents                                                                                                                     |
 |----------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `BufferPoint`, `ViewFrom`                                                                                |
-| `src/buffer/char_width.hpp`            | `isWhitespace`, `charWidth`, `isUtf8Continuation`, `utf8SeqLen`, `decodeUtf8`, `codepointWidth`, `CharInfo`, `charInfoAt`    |
-| `src/utf8.hpp`                         | UTF-8 encoding helpers: `utf8Len`, `encodeUtf8`                                                                              |
+| `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding, character width, `charInfoAt`, `visualWidth`, `isWhitespace`                                        |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `cx_error.log` for post-mortem inspection                                                     |
 

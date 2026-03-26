@@ -1,8 +1,8 @@
 #include "buffer.hpp"
-#include "char_width.hpp"
 #include "modes/c/syntax.hpp"
 #include "modes/md/syntax.hpp"
 #include "subprocess.hpp"
+#include "utf8.hpp"
 
 #include <algorithm>
 #include <span>

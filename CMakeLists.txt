@@ -36,6 +36,7 @@ add_executable(test_buffer
     tests/test_buffer.cpp
     src/buffer/buffer.cpp
     src/subprocess.cpp
+    src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -62,6 +63,7 @@ add_executable(test_help_buffer
     tests/test_help_buffer.cpp
     src/buffer/buffer.cpp
     src/subprocess.cpp
+    src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/help_buffer.cpp
@@ -87,6 +89,7 @@ add_executable(test_buffer_manager
     tests/test_buffer_manager.cpp
     src/buffer/buffer.cpp
     src/subprocess.cpp
+    src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -128,6 +131,7 @@ add_executable(test_chunk_delete
     tests/test_chunk_delete.cpp
     src/buffer/buffer.cpp
     src/subprocess.cpp
+    src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp

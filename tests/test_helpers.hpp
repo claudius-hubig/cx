@@ -2,7 +2,7 @@
 
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_sink.hpp"
-#include "buffer/char_width.hpp"
+#include "utf8.hpp"
 
 #include <atomic>
 #include <cstdio>

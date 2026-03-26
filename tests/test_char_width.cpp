@@ -2,7 +2,7 @@
 #define BOOST_TEST_DYN_LINK
 #include <boost/test/unit_test.hpp>
 
-#include "buffer/char_width.hpp"
+#include "utf8.hpp"
 
 // --- charWidth ---
 
