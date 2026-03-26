@@ -40,6 +40,8 @@ void TextBuffer::detectMode() {
   if (ext == ".c" || ext == ".h" || ext == ".cpp" || ext == ".hpp" || ext == ".ixx" ||
       ext == ".cxx")
     _mode = BufferMode::Cpp;
+  else if (ext == ".md")
+    _mode = BufferMode::Md;
   else
     _mode = BufferMode::Txt;
 }

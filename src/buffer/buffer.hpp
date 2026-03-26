@@ -13,7 +13,7 @@
 
 /// Buffer mode determines file-type-specific behaviour such as syntax
 /// highlighting, auto-indent, and formatting.
-enum class BufferMode { Txt, Cpp };
+enum class BufferMode { Txt, Cpp, Md };
 
 // Abstract base for all buffer types. Provides text storage, a point
 // (insertion cursor), navigation, and rendering. Editing operations are

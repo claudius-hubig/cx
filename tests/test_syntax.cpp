@@ -579,3 +579,120 @@ BOOST_AUTO_TEST_CASE(nested_angle_templates_matched) {
   BOOST_REQUIRE(result.has_value());
   BOOST_CHECK_EQUAL(result->offset, 14u);
 }
+
+// ============================================================
+// Markdown tokenizer
+// ============================================================
+
+#include "buffer/modes/md/syntax.hpp"
+
+BOOST_AUTO_TEST_CASE(md_heading_single_hash) {
+  auto line = mkline("# Hello");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Heading));
+}
+
+BOOST_AUTO_TEST_CASE(md_heading_multiple_hashes) {
+  auto line = mkline("### Sub-heading");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Heading));
+}
+
+BOOST_AUTO_TEST_CASE(md_heading_hash_only) {
+  // A line with just "#" (no space after) should still be a heading.
+  auto line = mkline("#");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, 1, SyntaxToken::Heading));
+}
+
+BOOST_AUTO_TEST_CASE(md_not_heading_no_space) {
+  // "#foo" — no space after '#' → not a heading.
+  auto line = mkline("#foo");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(md_bold) {
+  auto line = mkline("some **bold** text");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  // "**bold**" is at positions 5..12 (8 bytes).
+  BOOST_CHECK(allTokens(toks, 5, 13, SyntaxToken::Bold));
+  // Surrounding text is Normal.
+  BOOST_CHECK(allTokens(toks, 0, 5, SyntaxToken::Normal));
+  BOOST_CHECK(allTokens(toks, 13, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(md_bold_unclosed) {
+  // Unclosed bold: **not closed — should remain Normal.
+  auto line = mkline("**not closed");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(md_link) {
+  auto line = mkline("see [click](http://example.com) here");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  // "[click](http://example.com)" is at positions 4..30 (27 bytes).
+  BOOST_CHECK(allTokens(toks, 4, 31, SyntaxToken::Link));
+  // Surrounding text is Normal.
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Normal));
+  BOOST_CHECK(allTokens(toks, 31, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(md_link_no_paren) {
+  // "[text]" without "(url)" — not a link.
+  auto line = mkline("just [text] here");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(md_empty_line) {
+  auto line = mkline("");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(toks.empty());
+}
+
+BOOST_AUTO_TEST_CASE(md_bold_and_link_same_line) {
+  auto line = mkline("**bold** and [link](url)");
+  SyntaxState st;
+  auto toks = tokenizeMarkdownLine(line, st);
+  BOOST_CHECK(allTokens(toks, 0, 8, SyntaxToken::Bold));
+  BOOST_CHECK(allTokens(toks, 13, 24, SyntaxToken::Link));
+}
+
+BOOST_AUTO_TEST_CASE(md_mode_detection) {
+  TempFile tmp("# Hello\n", ".md");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Md);
+}
+
+BOOST_AUTO_TEST_CASE(md_render_heading_uses_bold_blue) {
+  TextBuffer buf("test.md");
+  buf.setMode(BufferMode::Md);
+  insertString(buf, "# Title");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // Heading color: bold + blue \x1b[1;38;2;80;130;200m
+  BOOST_CHECK(out.find("\x1b[1;38;2;80;130;200m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(md_render_bold_uses_bold) {
+  TextBuffer buf("test.md");
+  buf.setMode(BufferMode::Md);
+  insertString(buf, "some **bold** text");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // Bold: \x1b[1m
+  BOOST_CHECK(out.find("\x1b[1m") != std::string::npos);
+}

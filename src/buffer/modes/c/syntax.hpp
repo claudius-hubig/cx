@@ -17,6 +17,9 @@ enum class SyntaxToken : uint8_t {
   Bracket,  // [ ]
   Brace,    // { }
   Angle,    // < > (when used as template brackets)
+  Heading,  // Markdown headings (# ...)
+  Bold,     // Markdown bold (**...**)
+  Link,     // Markdown links [text](url)
 };
 
 /// Multi-line state carried between lines for syntax highlighting.

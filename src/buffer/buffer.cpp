@@ -1,6 +1,7 @@
 #include "buffer.hpp"
 #include "char_width.hpp"
 #include "modes/c/syntax.hpp"
+#include "modes/md/syntax.hpp"
 #include "subprocess.hpp"
 
 #include <algorithm>
@@ -1164,7 +1165,10 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
     state = _synCache[_synCacheValidUpto - 1].stateAfter;
 
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
-    _synCache[i].tokens = tokenizeLine(_lines[i], state);
+    if (_mode == BufferMode::Md)
+      _synCache[i].tokens = tokenizeMarkdownLine(_lines[i], state);
+    else
+      _synCache[i].tokens = tokenizeLine(_lines[i], state);
     _synCache[i].stateAfter = state; // state was advanced by tokenizeLine
   }
   _synCacheValidUpto = upToLine;
@@ -1185,7 +1189,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kSynComment = "\x1b[38;2;80;160;80m";    // green
   static constexpr auto kSynString = "\x1b[38;2;200;80;80m";     // red
   static constexpr auto kSynOperator = "\x1b[38;2;150;100;200m"; // purple
-  static constexpr auto kSynReset = "\x1b[39m";                  // default fg
+  static constexpr auto kSynReset = "\x1b[22;39m";               // bold off + default fg
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
   static constexpr auto kBracketMatchOff = "\x1b[39m";
@@ -1323,7 +1327,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       (wrap && std::holds_alternative<ByteOffset>(_viewFrom.col)) ? _viewFrom.byteOffset() : 0;
 
   // Syntax highlighting pre-computation.
-  bool syntaxActive = _mode == BufferMode::Cpp;
+  bool syntaxActive = _mode == BufferMode::Cpp || _mode == BufferMode::Md;
   std::optional<BufferPoint> matchBracket;
   std::span<SyntaxToken const> lineTokens;
 
@@ -1337,6 +1341,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     matchBracket = findMatchingBracket(_lines, _point);
   }
 
+  // Markdown-specific syntax highlight colors.
+  static constexpr auto kSynHeading = "\x1b[1;38;2;80;130;200m"; // bold + blue
+  static constexpr auto kSynBold = "\x1b[1m";                    // bold
+  static constexpr auto kSynLink = "\x1b[38;2;100;180;180m";     // teal
+
   auto syntaxFg = [](SyntaxToken t) -> char const* {
     switch (t) {
     case SyntaxToken::Keyword:
@@ -1347,6 +1356,12 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       return kSynString;
     case SyntaxToken::Operator:
       return kSynOperator;
+    case SyntaxToken::Heading:
+      return kSynHeading;
+    case SyntaxToken::Bold:
+      return kSynBold;
+    case SyntaxToken::Link:
+      return kSynLink;
     default:
       return nullptr; // brackets and Normal have no special color
     }

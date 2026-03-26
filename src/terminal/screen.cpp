@@ -204,7 +204,9 @@ void Screen::draw() {
   if (_buf) {
     buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
     if (!_buf->readonly())
-      buf_name += _buf->mode() == BufferMode::Cpp ? " [c]" : " [txt]";
+      buf_name += _buf->mode() == BufferMode::Cpp  ? " [c]"
+                  : _buf->mode() == BufferMode::Md ? " [md]"
+                                                   : " [txt]";
     if (_buf->modified())
       buf_name += " +";
     else
@@ -521,11 +523,14 @@ void Screen::submitSetMode() {
   if (_prompt_input == "c" || _prompt_input == "cpp" || _prompt_input == "c++") {
     _buf->setMode(BufferMode::Cpp);
     setStatus("Mode: c");
+  } else if (_prompt_input == "md" || _prompt_input == "markdown") {
+    _buf->setMode(BufferMode::Md);
+    setStatus("Mode: md");
   } else if (_prompt_input == "txt" || _prompt_input == "text") {
     _buf->setMode(BufferMode::Txt);
     setStatus("Mode: txt");
   } else {
-    setStatus("Unknown mode: " + _prompt_input + " (use 'txt' or 'c')");
+    setStatus("Unknown mode: " + _prompt_input + " (use 'txt', 'c', or 'md')");
   }
 }
 
