@@ -1,4 +1,5 @@
 #include "help_buffer.hpp"
+#include "byte_constants.hpp"
 #include "shortcut.hpp"
 #include "utf8.hpp"
 
@@ -232,10 +233,6 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   // Content width excludes the gutter column.
   std::size_t c = contentWidth(cols);
 
-  static constexpr auto kGutter = "\x1b[7m";
-  static constexpr auto kReset = "\x1b[0m";
-  static constexpr auto kDim = "\x1b[2m";
-
   // Cursor data-line and column within that line.
   std::size_t dataLine = _point.line;
   std::size_t dataCol = _point.offset;
@@ -294,9 +291,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t vi = scrollVis + r;
-    out += "\x1b[";
-    out += std::to_string(r + 1);
-    out += ";1H";
+    out += ansi::cursorTo(r, 0);
     if (vi < vlines.size()) {
       auto& content = vlines[vi].content;
       // Check if any section header appears in this visual line.
@@ -321,9 +316,9 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
           if (leftContentEnd > content.size())
             leftContentEnd = content.size();
           if (leftIsHeader && pos < leftContentEnd) {
-            out += kDim;
+            out += ansi::Dim;
             out.append(content, pos, leftContentEnd - pos);
-            out += kReset;
+            out += ansi::Reset;
           } else if (pos < leftContentEnd) {
             out.append(content, pos, leftContentEnd - pos);
           }
@@ -338,9 +333,9 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
           }
           // Right content.
           if (rightIsHeader && pos < content.size()) {
-            out += kDim;
+            out += ansi::Dim;
             out.append(content, pos, content.size() - pos);
-            out += kReset;
+            out += ansi::Reset;
           } else if (pos < content.size()) {
             out.append(content, pos, content.size() - pos);
           }
@@ -357,9 +352,9 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
         if (firstNonSpace != std::string::npos) {
           auto inner = std::string_view(trimmed).substr(firstNonSpace);
           if (isSectionHeader(inner)) {
-            out += kDim;
+            out += ansi::Dim;
             out += content;
-            out += kReset;
+            out += ansi::Reset;
             hasDim = true;
           }
         }
@@ -367,16 +362,12 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
       if (!hasDim)
         out += content;
     }
-    out += "\x1b[K";
+    out += ansi::EraseLine;
     // Gutter column.
-    out += "\x1b[";
-    out += std::to_string(r + 1);
-    out += ";";
-    out += std::to_string(cols.value);
-    out += "H";
-    out += kGutter;
+    out += ansi::cursorTo(r, cols.value - 1);
+    out += ansi::ReverseVideo;
     out += ' ';
-    out += kReset;
+    out += ansi::Reset;
   }
 
   return {RowIdx{curScreenRow}, ColIdx{curCol}};

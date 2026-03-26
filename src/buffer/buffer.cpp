@@ -1,4 +1,5 @@
 #include "buffer.hpp"
+#include "byte_constants.hpp"
 #include "modes/c/syntax.hpp"
 #include "modes/md/syntax.hpp"
 #include "subprocess.hpp"
@@ -68,27 +69,7 @@ std::string Buffer::receiveTab() {
 void Buffer::doInsert(uint32_t cp) {
   _rowBoundsCache.lineIdx = SIZE_MAX;
   invalidateSynCache(_point.line);
-  char buf[4];
-  std::size_t n;
-  if (cp < 0x80) {
-    buf[0] = static_cast<char>(cp);
-    n = 1;
-  } else if (cp < 0x800) {
-    buf[0] = static_cast<char>(0xC0 | (cp >> 6));
-    buf[1] = static_cast<char>(0x80 | (cp & 0x3F));
-    n = 2;
-  } else if (cp < 0x10000) {
-    buf[0] = static_cast<char>(0xE0 | (cp >> 12));
-    buf[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-    buf[2] = static_cast<char>(0x80 | (cp & 0x3F));
-    n = 3;
-  } else {
-    buf[0] = static_cast<char>(0xF0 | (cp >> 18));
-    buf[1] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-    buf[2] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-    buf[3] = static_cast<char>(0x80 | (cp & 0x3F));
-    n = 4;
-  }
+  auto [n, enc] = encodeUtf8(cp);
 
   auto insertLine = _point.line;
   auto insertOff = _point.offset;
@@ -116,7 +97,8 @@ void Buffer::doInsert(uint32_t cp) {
       }
     }
   } else {
-    line.insert(line.begin() + _point.offset, buf, buf + n);
+    auto* p = reinterpret_cast<char const*>(enc.data());
+    line.insert(_point.offset, p, n);
     _point.offset += n;
   }
   _modified = true;
@@ -1177,7 +1159,6 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
                                           bool showWhitespace, bool wrap) const {
   static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
-  static constexpr auto kReset = "\x1b[0m";
   static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
   static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";
   static constexpr auto kTabWsStyle = "\x1b[48;2;60;60;60m";
@@ -1192,13 +1173,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kSynReset = "\x1b[22;39m";               // bold off + default fg
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
-  static constexpr auto kBracketMatchOff = "\x1b[39m";
 
-  auto emitRowStart = [&](std::size_t r) {
-    out += "\x1b[";
-    out += std::to_string(r + 1);
-    out += ";1H";
-  };
+  auto emitRowStart = [&](std::size_t r) { out += ansi::cursorTo(r, 0); };
 
   // Per-character rendering state: tracks which ANSI highlight modes are
   // currently active so we can emit transitions only when they change.
@@ -1214,7 +1190,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   };
 
   // Emit one character/codepoint to `out` and reset `rs` when the emitted
-  // sequence includes kReset (which clears all ANSI state). Folding the
+  // sequence includes ansi::Reset (which clears all ANSI state). Folding the
   // reset here ensures rs stays in sync without a separate post-emit call.
   auto emitChar = [&](char const* data, CharInfo info, RenderState& rs) {
     auto u = static_cast<unsigned char>(*data);
@@ -1228,29 +1204,29 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           out += kTabStyle;
           out += "  ";
         }
-        out += kReset;
+        out += ansi::Reset;
         rs = {};
       } else if (*data == ' ' && showWhitespace) {
         out += kSpaceStyle;
         out += kWsFg;
         out += "\xc2\xb7";
-        out += kReset;
+        out += ansi::Reset;
         rs = {};
       } else if (u == 0) {
         out += kCtrlColor;
         out += "\\0";
-        out += kReset;
+        out += ansi::Reset;
         rs = {};
       } else if (u == 0x7f) {
         out += kCtrlColor;
         out += "^?";
-        out += kReset;
+        out += ansi::Reset;
         rs = {};
       } else if (u < 0x20) {
         out += kCtrlColor;
         out += '^';
         out += static_cast<char>('@' + u);
-        out += kReset;
+        out += ansi::Reset;
         rs = {};
       } else {
         out += *data;
@@ -1261,7 +1237,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       auto nibble = [](unsigned char n) -> char { return n < 10 ? ('0' + n) : ('a' + n - 10); };
       out += nibble(u >> 4);
       out += nibble(u & 0xf);
-      out += kReset;
+      out += ansi::Reset;
       rs = {};
     } else {
       out.append(data, info.len);
@@ -1271,26 +1247,16 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // Content width excludes the gutter column.
   std::size_t cw = contentWidth(cols);
 
-  // Gutter styles: reverse video matching the status bar.
-  static constexpr auto kGutter = "\x1b[7m";
-  static constexpr auto kGutterHi = "\x1b[0m"; // non-reverse for cursor line
-
   // Emit the gutter character at column cols.value for a given row.
   // `highlight` marks the visual row containing the cursor.
   auto emitGutter = [&](std::size_t r, bool highlight, char const* indicator) {
-    out += "\x1b[";
-    out += std::to_string(r + 1);
-    out += ";";
-    out += std::to_string(cols.value);
-    out += "H";
-    out += highlight ? kGutterHi : kGutter;
+    out += ansi::cursorTo(r, cols.value - 1);
+    out += highlight ? ansi::Reset : ansi::ReverseVideo;
     out += indicator;
-    out += kReset;
+    out += ansi::Reset;
   };
 
   // Region highlighting: compute normalized start/end from mark and point.
-  static constexpr auto kRegionOn = "\x1b[7m";
-  static constexpr auto kRegionOff = "\x1b[0m";
   bool hasRegion = _mark.has_value();
   BufferPoint regionStart, regionEnd;
   if (hasRegion) {
@@ -1300,7 +1266,6 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
   // Find highlight (light blue background).
   static constexpr auto kHighlightOn = "\x1b[48;2;60;100;160m";
-  static constexpr auto kHighlightOff = "\x1b[0m";
 
   // Helper: is position {lineIdx, byteOffset} within [regionStart, regionEnd)?
   auto inRegion = [&](std::size_t lineIdx, std::size_t byteOffset) -> bool {
@@ -1343,7 +1308,6 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
   // Markdown-specific syntax highlight colors.
   static constexpr auto kSynHeading = "\x1b[1;38;2;80;130;200m"; // bold + blue
-  static constexpr auto kSynBold = "\x1b[1m";                    // bold
   static constexpr auto kSynLink = "\x1b[38;2;100;180;180m";     // teal
 
   auto syntaxFg = [](SyntaxToken t) -> char const* {
@@ -1359,7 +1323,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     case SyntaxToken::Heading:
       return kSynHeading;
     case SyntaxToken::Bold:
-      return kSynBold;
+      return ansi::Bold;
     case SyntaxToken::Link:
       return kSynLink;
     default:
@@ -1374,13 +1338,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     bool wantRegion = !wantHl && inRegion(lineIdx, byteOff);
     if (wantHl && !rs.highlightActive) {
       if (rs.regionActive) {
-        out += kRegionOff;
+        out += ansi::Reset;
         rs.regionActive = false;
       }
       out += kHighlightOn;
       rs.highlightActive = true;
     } else if (!wantHl && rs.highlightActive) {
-      out += kHighlightOff;
+      out += ansi::Reset;
       rs.highlightActive = false;
     }
     if (wantRegion && !rs.regionActive) {
@@ -1389,13 +1353,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         rs.lastSynTok = SyntaxToken::Normal;
       }
       if (rs.bracketMatchActive) {
-        out += kBracketMatchOff;
+        out += ansi::DefaultFg;
         rs.bracketMatchActive = false;
       }
-      out += kRegionOn;
+      out += ansi::ReverseVideo;
       rs.regionActive = true;
     } else if (!wantRegion && rs.regionActive) {
-      out += kRegionOff;
+      out += ansi::Reset;
       rs.regionActive = false;
     }
 
@@ -1417,7 +1381,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         out += kBracketMatch;
         rs.bracketMatchActive = true;
       } else if (!wantMatch && rs.bracketMatchActive) {
-        out += kBracketMatchOff;
+        out += ansi::DefaultFg;
         rs.bracketMatchActive = false;
       }
     }
@@ -1428,7 +1392,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   auto emitLineEnd = [&](std::size_t lineIdx, std::size_t lineSize, std::size_t visCol,
                          std::size_t maxCol, RenderState& rs) {
     if (rs.bracketMatchActive) {
-      out += kBracketMatchOff;
+      out += ansi::DefaultFg;
       rs.bracketMatchActive = false;
     }
     if (rs.lastSynTok != SyntaxToken::Normal) {
@@ -1438,17 +1402,17 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     if (hasRegion && lineIdx + 1 < _lines.size() && visCol < maxCol &&
         inRegion(lineIdx, lineSize)) {
       if (!rs.regionActive) {
-        out += kRegionOn;
+        out += ansi::ReverseVideo;
         rs.regionActive = true;
       }
       out += ' ';
     }
     if (rs.highlightActive) {
-      out += kHighlightOff;
+      out += ansi::Reset;
       rs.highlightActive = false;
     }
     if (rs.regionActive) {
-      out += kRegionOff;
+      out += ansi::Reset;
       rs.regionActive = false;
     }
     if (showWhitespace && lineIdx + 1 < _lines.size() && visCol < maxCol &&
@@ -1456,7 +1420,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       out += kNlStyle;
       out += kWsFg;
       out += "\xe2\x86\xb5";
-      out += kReset;
+      out += ansi::Reset;
     }
   };
 
@@ -1511,7 +1475,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       if (!overflows && vcol >= hScroll)
         emitLineEnd(lineIdx, line.size(), vcol - hScroll, cw, rs);
 
-      out += "\x1b[K";
+      out += ansi::EraseLine;
 
       // Gutter: show ↠ if content extends past the visible area.
       emitGutter(row, row == cur_row && pointFound,
@@ -1530,7 +1494,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     for (std::size_t r = row; r < rows.value; ++r) {
       if (r > row)
         emitRowStart(r);
-      out += "\x1b[K";
+      out += ansi::EraseLine;
       emitGutter(r, false, " ");
     }
 
@@ -1560,7 +1524,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       // Wrap if the representation doesn't fit on the current line.
       if (col + info.width > cw || pendingWrap) {
         if (rs.bracketMatchActive) {
-          out += kBracketMatchOff;
+          out += ansi::DefaultFg;
           rs.bracketMatchActive = false;
         }
         if (rs.lastSynTok != SyntaxToken::Normal) {
@@ -1568,14 +1532,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           rs.lastSynTok = SyntaxToken::Normal;
         }
         if (rs.highlightActive) {
-          out += kHighlightOff;
+          out += ansi::Reset;
           rs.highlightActive = false;
         }
         if (rs.regionActive) {
-          out += kRegionOff;
+          out += ansi::Reset;
           rs.regionActive = false;
         }
-        out += "\x1b[K";
+        out += ansi::EraseLine;
         // We know there's more content — this is a true wrap.
         emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
         ++row;
@@ -1624,7 +1588,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // indicator).
     if (row < rows.value) {
       emitLineEnd(lineIdx, line.size(), col, cw, rs);
-      out += "\x1b[K";
+      out += ansi::EraseLine;
       emitGutter(row, row == cur_row && pointFound,
                  " "); // natural line end, no indicator
       if (lineIdx + 1 < _lines.size()) {
@@ -1646,7 +1610,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   for (std::size_t r = row; r < rows.value; ++r) {
     if (r > row)
       emitRowStart(r);
-    out += "\x1b[K";
+    out += ansi::EraseLine;
     emitGutter(r, false, " ");
   }
 

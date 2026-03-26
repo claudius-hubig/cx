@@ -1,4 +1,5 @@
 #include "buffer_list_buffer.hpp"
+#include "byte_constants.hpp"
 
 #include <map>
 #include <string>
@@ -130,39 +131,29 @@ std::string BufferListBuffer::selectedName() const {
 std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
                                                     bool /*showWhitespace*/, bool /*wrap*/) const {
 
-  static constexpr auto kHighlight = "\x1b[7m"; // reverse video
-  static constexpr auto kGutter = "\x1b[7m";
-  static constexpr auto kReset = "\x1b[0m";
-
   std::size_t curLine = _point.line;
   std::size_t scrollLine = _viewFrom.line.value;
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;
-    out += "\x1b[";
-    out += std::to_string(r + 1);
-    out += ";1H";
+    out += ansi::cursorTo(r, 0);
 
     if (lineIdx < _displayLines.size()) {
       bool highlight = (lineIdx == curLine);
       if (highlight)
-        out += kHighlight;
+        out += ansi::ReverseVideo;
       out += _displayLines[lineIdx];
       if (highlight)
-        out += kReset;
-      out += "\x1b[K";
+        out += ansi::Reset;
+      out += ansi::EraseLine;
     } else {
-      out += "\x1b[K";
+      out += ansi::EraseLine;
     }
     // Gutter column.
-    out += "\x1b[";
-    out += std::to_string(r + 1);
-    out += ";";
-    out += std::to_string(cols.value);
-    out += "H";
-    out += kGutter;
+    out += ansi::cursorTo(r, cols.value - 1);
+    out += ansi::ReverseVideo;
     out += ' ';
-    out += kReset;
+    out += ansi::Reset;
   }
 
   std::size_t curScreenRow = curLine >= scrollLine ? curLine - scrollLine : 0;

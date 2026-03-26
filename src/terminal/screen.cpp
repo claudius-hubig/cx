@@ -135,11 +135,11 @@ void Screen::draw() {
       auto hint = hintFor(_completions[0].first);
       if (_completions.size() == 1) {
         if (!hint.empty()) {
-          status += "\x1b[2m" + hint + "\x1b[22m";
+          status += ansi::Dim + hint + ansi::DimOff;
           status_vwidth += visualWidth(hint);
         }
       } else if (_completions.size() <= 3) {
-        status += "\x1b[2m[";
+        status += std::string(ansi::Dim) + "[";
         status_vwidth++;
         for (std::size_t i = 0; i < _completions.size(); ++i) {
           if (i > 0) {
@@ -152,11 +152,11 @@ void Screen::draw() {
           status += h;
           status_vwidth += visualWidth(h);
         }
-        status += "]\x1b[22m";
+        status += std::string("]") + ansi::DimOff;
         status_vwidth++;
       } else {
         auto cnt = " (" + std::to_string(_completions.size()) + " matches)";
-        status += "\x1b[2m" + hint + cnt + "\x1b[22m";
+        status += ansi::Dim + hint + cnt + ansi::DimOff;
         status_vwidth += visualWidth(hint) + cnt.size();
       }
     }
@@ -164,7 +164,7 @@ void Screen::draw() {
     status += " | Find: " + _prompt_input;
     status_vwidth = visualWidth(status);
     if (_prompt_input.empty() && !_lastSearch.empty()) {
-      status += "\x1b[2m" + _lastSearch + "\x1b[22m";
+      status += ansi::Dim + _lastSearch + ansi::DimOff;
       status_vwidth += visualWidth(_lastSearch);
     }
   } else if (_prompt == Prompt::SetMode) {
@@ -201,23 +201,17 @@ void Screen::draw() {
   } else if (status_vwidth < cols.value) {
     status.append(cols.value - status_vwidth, ' ');
   }
-  _renderBuf += "\x1b[";
-  _renderBuf += std::to_string(rows.value);
-  _renderBuf += ";1H";
-  _renderBuf += "\x1b[7m"; // reverse video
+  _renderBuf += ansi::cursorTo(rows.value - 1, 0);
+  _renderBuf += ansi::ReverseVideo;
   _renderBuf += status;
-  _renderBuf += "\x1b[0m"; // reset
+  _renderBuf += ansi::Reset;
 
   // Position the terminal cursor AFTER the status line, so it lands
   // in the buffer area rather than on the status bar.
-  _renderBuf += "\x1b[";
-  _renderBuf += std::to_string(cur_row.value + 1);
-  _renderBuf += ";";
-  _renderBuf += std::to_string(cur_col.value + 1);
-  _renderBuf += "H";
+  _renderBuf += ansi::cursorTo(cur_row.value, cur_col.value);
 
   // Ensure the cursor is visible.
-  _renderBuf += "\x1b[?25h";
+  _renderBuf += ansi::ShowCursor;
 
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
 }

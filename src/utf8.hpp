@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -70,6 +71,38 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, s
     return {cp, 4};
   }
   return {u, 1}; // invalid/truncated, treat as raw byte
+}
+
+/// Encode a Unicode code point as UTF-8.
+/// Returns {byte_count, bytes}. Only the first byte_count entries in
+/// the array are valid. Codepoints above U+10FFFF are clamped to the
+/// replacement character (U+FFFD).
+inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8(uint32_t cp) {
+  std::array<unsigned char, 4> buf{};
+  if (cp < 0x80) {
+    buf[0] = static_cast<unsigned char>(cp);
+    return {1, buf};
+  }
+  if (cp < 0x800) {
+    buf[0] = static_cast<unsigned char>(0xC0 | (cp >> 6));
+    buf[1] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
+    return {2, buf};
+  }
+  if (cp < 0x10000) {
+    buf[0] = static_cast<unsigned char>(0xE0 | (cp >> 12));
+    buf[1] = static_cast<unsigned char>(0x80 | ((cp >> 6) & 0x3F));
+    buf[2] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
+    return {3, buf};
+  }
+  if (cp <= 0x10FFFF) {
+    buf[0] = static_cast<unsigned char>(0xF0 | (cp >> 18));
+    buf[1] = static_cast<unsigned char>(0x80 | ((cp >> 12) & 0x3F));
+    buf[2] = static_cast<unsigned char>(0x80 | ((cp >> 6) & 0x3F));
+    buf[3] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
+    return {4, buf};
+  }
+  // Out of range — encode U+FFFD (replacement character).
+  return encodeUtf8(0xFFFD);
 }
 
 /// True if c is a horizontal whitespace character (space or tab).
