@@ -10,6 +10,8 @@ struct DirNode {
   std::map<std::string, DirNode> subdirs;
   // (filename, full_path) pairs, kept in insertion (sorted) order.
   std::vector<std::pair<std::string, std::string>> files;
+  // Non-empty if an open DirBuffer corresponds to this directory.
+  std::string dirBufferName;
 };
 
 void insertPath(DirNode& root, std::string const& fullPath) {
@@ -32,20 +34,48 @@ void insertPath(DirNode& root, std::string const& fullPath) {
   node->files.push_back({parts.back(), fullPath});
 }
 
+// Insert a DirBuffer name into the trie, marking the corresponding
+// node so it renders as a selectable directory header. Returns true
+// if the path was placed on an existing or newly created node.
+bool insertDirBuffer(DirNode& root, std::string const& fullPath) {
+  std::vector<std::string> parts;
+  std::size_t start = 1;
+  while (start < fullPath.size()) {
+    auto end = fullPath.find('/', start);
+    if (end == std::string::npos)
+      end = fullPath.size();
+    parts.push_back(fullPath.substr(start, end - start));
+    start = end + 1;
+  }
+  if (parts.empty())
+    return false;
+
+  DirNode* node = &root;
+  for (auto& part : parts)
+    node = &node->subdirs[part];
+  node->dirBufferName = fullPath;
+  return true;
+}
+
 // Render a directory node's contents into lines/names.
 void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent, bool showHeader,
                 std::vector<std::string>& lines, std::vector<std::string>& names) {
-  std::size_t total = node.files.size() + node.subdirs.size();
-  if (total == 0)
+  bool hasContent = !node.files.empty() || !node.subdirs.empty();
+  bool hasDirBuffer = !node.dirBufferName.empty();
+
+  if (!hasContent && !hasDirBuffer)
     return;
 
-  if (node.files.empty() && node.subdirs.size() == 1) {
+  // Collapse single-child subdirectories, but not if this node has a
+  // DirBuffer marker (it needs its own selectable header line).
+  if (!hasDirBuffer && node.files.empty() && node.subdirs.size() == 1) {
     auto& [name, child] = *node.subdirs.begin();
     renderNode(child, prefix + name + "/", indent, true, lines, names);
     return;
   }
 
-  if (node.files.size() == 1 && node.subdirs.empty()) {
+  // Single file leaf with no subdirs and no DirBuffer.
+  if (!hasDirBuffer && node.files.size() == 1 && node.subdirs.empty()) {
     lines.push_back(std::string(indent, ' ') + prefix + node.files[0].first);
     names.push_back(node.files[0].second);
     return;
@@ -54,7 +84,8 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
   std::string childPrefix;
   if (showHeader) {
     lines.push_back(std::string(indent, ' ') + prefix);
-    names.push_back({});
+    // If a DirBuffer is open for this directory, make the header selectable.
+    names.push_back(hasDirBuffer ? node.dirBufferName : std::string{});
     indent += 2;
   } else {
     childPrefix = prefix;
@@ -77,12 +108,14 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
 
 } // namespace
 
-BufferListBuffer::BufferListBuffer(std::vector<std::string> names, std::string const& startName)
+BufferListBuffer::BufferListBuffer(std::vector<std::string> names,
+                                   std::vector<std::string> dirNames, std::string const& startName)
     : Buffer("*buffers*") {
-  refresh(std::move(names), startName);
+  refresh(std::move(names), std::move(dirNames), startName);
 }
 
-void BufferListBuffer::refresh(std::vector<std::string> names, std::string const& startName) {
+void BufferListBuffer::refresh(std::vector<std::string> names, std::vector<std::string> dirNames,
+                               std::string const& startName) {
   _displayLines.clear();
   _lineToName.clear();
 
@@ -96,6 +129,10 @@ void BufferListBuffer::refresh(std::vector<std::string> names, std::string const
       _lineToName.push_back(name);
     }
   }
+
+  // Merge directory buffers into the trie as selectable headers.
+  for (auto& dn : dirNames)
+    insertDirBuffer(root, dn);
 
   // Render path trie.
   renderNode(root, "/", 0, false, _displayLines, _lineToName);

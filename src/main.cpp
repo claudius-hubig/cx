@@ -4,6 +4,7 @@
 #include "terminal/setup_terminal.hpp"
 
 #include <exception>
+#include <filesystem>
 
 int main(int argc, char* argv[]) {
   try {
@@ -14,8 +15,13 @@ int main(int argc, char* argv[]) {
 
     if (argc > 1) {
       Buffer* last = nullptr;
-      for (int i = 1; i < argc; ++i)
-        last = &bufferManager.open(argv[i]);
+      for (int i = 1; i < argc; ++i) {
+        std::error_code ec;
+        if (std::filesystem::is_directory(argv[i], ec))
+          last = &bufferManager.openDir(argv[i]);
+        else
+          last = &bufferManager.open(argv[i]);
+      }
       screen.setBuffer(*last);
       screen.setStatus("Opened " + std::to_string(argc - 1) + (argc - 1 == 1 ? " file" : " files"));
       screen.draw();

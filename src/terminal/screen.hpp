@@ -1,6 +1,7 @@
 #pragma once
 
 #include "buffer/buffer_sink.hpp"
+#include "buffer/dir_buffer.hpp"
 #include "paste_ring.hpp"
 #include "shortcut.hpp"
 #include "types.hpp"
@@ -81,6 +82,7 @@ private:
     ConfirmSave,
     ConfirmKill,
     ConfirmRevert,
+    ConfirmDelete,
     Find,
     SetMode
   };

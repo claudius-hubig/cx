@@ -37,7 +37,7 @@ static std::vector<std::string> const& leftColumn() {
     std::vector<std::string> v;
     v.emplace_back("Files & Buffers:");
     for (auto a : {Action::Help, Action::Exit, Action::SwitchBuffer, Action::BufferList,
-                   Action::Save, Action::KillBuffer, Action::Revert})
+                   Action::DirBrowser, Action::Save, Action::KillBuffer, Action::Revert})
       v.push_back(formatHelpLine(a));
     v.emplace_back("");
     v.emplace_back("Search & Edit:");
@@ -49,6 +49,12 @@ static std::vector<std::string> const& leftColumn() {
     v.emplace_back("C mode (Esc-m to set):");
     v.push_back(formatRawLine("Tab", "Format line"));
     v.push_back(formatRawLine("?", "Jump to matching bracket"));
+    v.emplace_back("");
+    v.emplace_back("Directory browser:");
+    v.push_back(formatRawLine("Enter", "Open file / enter dir"));
+    v.push_back(formatRawLine("h", "Toggle hidden files"));
+    v.push_back(formatRawLine("d", "Mark / unmark for deletion"));
+    v.push_back(formatRawLine("x", "Delete marked items"));
     return v;
   }();
   return lines;

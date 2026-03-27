@@ -18,6 +18,7 @@ add_executable(cx
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
     src/buffer/paste_ring_buffer.cpp
+    src/buffer/dir_buffer.cpp
     src/buffer/buffer_manager.cpp
 )
 
@@ -96,6 +97,7 @@ add_executable(test_buffer_manager
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
     src/buffer/paste_ring_buffer.cpp
+    src/buffer/dir_buffer.cpp
     src/buffer/buffer_manager.cpp
     src/shortcut.cpp
 )
@@ -173,6 +175,18 @@ add_executable(test_syntax
 target_include_directories(test_syntax PRIVATE src .)
 target_link_libraries(test_syntax Boost::unit_test_framework)
 add_test(NAME syntax COMMAND test_syntax)
+
+add_executable(test_dir_buffer
+    tests/test_dir_buffer.cpp
+    src/buffer/buffer.cpp
+    src/subprocess.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/dir_buffer.cpp
+)
+target_include_directories(test_dir_buffer PRIVATE src .)
+target_link_libraries(test_dir_buffer Boost::unit_test_framework)
+add_test(NAME dir_buffer COMMAND test_dir_buffer)
 
 add_executable(test_e2e
     tests/test_e2e.cpp

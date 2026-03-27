@@ -30,13 +30,26 @@ Buffer& BufferManager::open(std::filesystem::path const& path) {
 }
 
 BufferListBuffer& BufferManager::bufferListBuffer() {
-  auto names = bufferNames();
+  // Text buffer names go into the trie; dir buffer names are
+  // merged as selectable directory headers.
+  std::vector<std::string> names;
+  names.reserve(_buffers.size());
+  for (auto& [name, _] : _buffers)
+    names.push_back(name);
+  std::sort(names.begin(), names.end());
+
+  std::vector<std::string> dirNames;
+  dirNames.reserve(_dirBuffers.size());
+  for (auto& [name, _] : _dirBuffers)
+    dirNames.push_back(name);
+
   auto target = secondMRU();
 
   if (!_bufferListBuffer)
-    _bufferListBuffer = std::make_unique<BufferListBuffer>(std::move(names), target);
+    _bufferListBuffer =
+        std::make_unique<BufferListBuffer>(std::move(names), std::move(dirNames), target);
   else
-    _bufferListBuffer->refresh(std::move(names), target);
+    _bufferListBuffer->refresh(std::move(names), std::move(dirNames), target);
   return *_bufferListBuffer;
 }
 
@@ -45,6 +58,22 @@ PasteRingBuffer& BufferManager::pasteRingBuffer(PasteRing const& pr) {
     _pasteRingBuffer = std::make_unique<PasteRingBuffer>();
   _pasteRingBuffer->refresh(pr);
   return *_pasteRingBuffer;
+}
+
+DirBuffer& BufferManager::openDir(std::filesystem::path const& dir) {
+  auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
+  auto key = canonical.string();
+  auto it = _dirBuffers.find(key);
+  if (it != _dirBuffers.end()) {
+    touch(key);
+    return *it->second;
+  }
+  auto buf = std::make_unique<DirBuffer>(canonical);
+  auto& ref = *buf;
+  _dirBuffers.emplace(key, std::move(buf));
+  refreshDisplayNames();
+  touch(key);
+  return ref;
 }
 
 Buffer& BufferManager::create(std::string name) {
@@ -62,13 +91,18 @@ Buffer* BufferManager::find(std::string const& name) {
   auto it = _buffers.find(name);
   if (it != _buffers.end())
     return it->second.get();
+  auto dit = _dirBuffers.find(name);
+  if (dit != _dirBuffers.end())
+    return dit->second.get();
   return nullptr;
 }
 
 std::vector<std::string> BufferManager::bufferNames() const {
   std::vector<std::string> names;
-  names.reserve(_buffers.size());
+  names.reserve(_buffers.size() + _dirBuffers.size());
   for (auto& [name, _] : _buffers)
+    names.push_back(name);
+  for (auto& [name, _] : _dirBuffers)
     names.push_back(name);
   std::sort(names.begin(), names.end());
   return names;
@@ -83,7 +117,7 @@ std::string BufferManager::displayName(std::string const& name) const {
 
 void BufferManager::refreshDisplayNames() {
   _displayNames.clear();
-  _displayNames.reserve(_buffers.size());
+  _displayNames.reserve(_buffers.size() + _dirBuffers.size());
   // Count filename occurrences to detect ambiguity.
   std::unordered_map<std::string, int> fnCount;
   for (auto& [name, _] : _buffers) {
@@ -98,6 +132,9 @@ void BufferManager::refreshDisplayNames() {
     else
       _displayNames[name] = name;
   }
+  // Dir buffers use their path as display name.
+  for (auto& [name, _] : _dirBuffers)
+    _displayNames[name] = name;
 }
 
 std::vector<std::pair<std::string, std::string>>
@@ -193,22 +230,27 @@ void BufferManager::rename(std::string const& oldName, std::filesystem::path new
 
 Buffer& BufferManager::kill(std::string name) {
   _buffers.erase(name);
+  _dirBuffers.erase(name);
   auto it = std::find(_mru.begin(), _mru.end(), name);
   if (it != _mru.end())
     _mru.erase(it);
-  if (_buffers.empty()) {
+  refreshDisplayNames();
+  if (_buffers.empty() && _dirBuffers.empty()) {
     auto buf = std::make_unique<TextBuffer>("*1*");
     auto& ref = *buf;
     _buffers.emplace("*1*", std::move(buf));
     _mru.push_back("*1*");
     return ref;
   }
-  if (!_mru.empty()) {
-    auto found = _buffers.find(_mru.front());
-    if (found != _buffers.end())
-      return *found->second;
+  // Return most recently used buffer.
+  for (auto& mruName : _mru) {
+    if (auto* buf = find(mruName))
+      return *buf;
   }
-  return *_buffers.begin()->second;
+  // Fallback.
+  if (!_buffers.empty())
+    return *_buffers.begin()->second;
+  return *_dirBuffers.begin()->second;
 }
 
 void BufferManager::touch(std::string const& name) {

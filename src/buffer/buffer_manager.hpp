@@ -2,6 +2,7 @@
 
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
+#include "buffer/dir_buffer.hpp"
 #include "buffer/help_buffer.hpp"
 #include "buffer/paste_ring_buffer.hpp"
 #include "buffer/text_buffer.hpp"
@@ -35,6 +36,11 @@ public:
   /// Return the paste ring buffer, creating it lazily on first call.
   /// Always refreshes the display with current paste ring contents.
   PasteRingBuffer& pasteRingBuffer(PasteRing const& pr);
+
+  /// Open (or return existing) directory buffer for the given path.
+  /// Canonicalizes and returns existing buffer if already open;
+  /// otherwise creates a new DirBuffer. Calls touch().
+  DirBuffer& openDir(std::filesystem::path const& dir);
 
   /// Find a buffer by exact name. Returns nullptr if not found.
   Buffer* find(std::string const& name);
@@ -81,6 +87,7 @@ private:
   std::unique_ptr<BufferListBuffer> _bufferListBuffer;
   std::unique_ptr<PasteRingBuffer> _pasteRingBuffer;
   std::unordered_map<std::string, std::unique_ptr<TextBuffer>> _buffers;
+  std::unordered_map<std::string, std::unique_ptr<DirBuffer>> _dirBuffers;
   std::unordered_map<std::string, std::string> _displayNames;
   std::vector<std::string> _mru; // most recently used first
   BufferSink& _sink;

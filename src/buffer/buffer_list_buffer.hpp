@@ -9,9 +9,12 @@
 /// directory tree. Collapses single-child subdirectories.
 class BufferListBuffer : public Buffer {
 public:
-  /// Construct the buffer list from sorted buffer names. startName
-  /// positions the cursor on the matching line (or line 0 if not found).
-  BufferListBuffer(std::vector<std::string> names, std::string const& startName = {});
+  /// Construct the buffer list from sorted buffer names and directory
+  /// buffer names. Directory buffers are merged into the trie as
+  /// selectable directory headers rather than separate leaf entries.
+  /// startName positions the cursor on the matching line (or line 0).
+  BufferListBuffer(std::vector<std::string> names, std::vector<std::string> dirNames = {},
+                   std::string const& startName = {});
 
   bool readonly() const override { return true; }
 
@@ -26,7 +29,8 @@ public:
 
   /// Rebuild the display from a new set of buffer names. Safe to call
   /// repeatedly. Resets cursor to startName.
-  void refresh(std::vector<std::string> names, std::string const& startName = {});
+  void refresh(std::vector<std::string> names, std::vector<std::string> dirNames = {},
+               std::string const& startName = {});
 
 private:
   // Display text for each line (with indentation).

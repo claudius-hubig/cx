@@ -26,6 +26,7 @@ enum class Action {
   ToggleWrap,
   Format,
   SetMode,
+  DirBrowser,
 };
 
 struct Shortcut {

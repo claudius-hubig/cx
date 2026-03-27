@@ -68,7 +68,7 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
 void Screen::setBuffer(Buffer& buf) {
   _buf = &buf;
   _pasteState.reset();
-  if (_bufMgr && !buf.readonly())
+  if (_bufMgr && (!buf.readonly() || dynamic_cast<DirBuffer*>(&buf)))
     _bufMgr->touch(buf.name());
   draw();
 }
@@ -171,7 +171,7 @@ void Screen::draw() {
     status += " | Mode [txt/c]: " + _prompt_input;
     status_vwidth = visualWidth(status);
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
-             _prompt == Prompt::ConfirmRevert) {
+             _prompt == Prompt::ConfirmRevert || _prompt == Prompt::ConfirmDelete) {
     status += " | " + _prompt_input;
     status_vwidth = visualWidth(status);
   } else {
@@ -363,6 +363,36 @@ void Screen::loop() {
             _prompt_input.clear();
             return false;
           });
+    else if (_prompt == Prompt::ConfirmDelete)
+      drew = handleConfirm(
+          c,
+          [&] {
+            auto* db = dynamic_cast<DirBuffer*>(_buf);
+            if (db) {
+              auto [count, err] = db->executeDelete();
+              if (err.empty())
+                setStatus("Deleted " + std::to_string(count) + " item(s).");
+              else
+                setStatus("Deleted " + std::to_string(count) + "; errors: " + err);
+            }
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            return false;
+          },
+          [&] {
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            _statusMsg.clear();
+            _statusExpiry.reset();
+            return false;
+          },
+          [&] {
+            _prompt = Prompt::None;
+            _prompt_input.clear();
+            _statusMsg.clear();
+            _statusExpiry.reset();
+            return false;
+          });
     else if (_prompt != Prompt::None)
       drew = handleTextPrompt(c);
     else
@@ -420,10 +450,12 @@ void Screen::submitSwitchBuffer() {
     // Not an existing buffer — try opening as a file.
     std::error_code fec;
     if (std::filesystem::is_directory(_prompt_input, fec)) {
-      if (!_prompt_input.ends_with('/'))
-        _prompt_input += '/';
-      updateCompletions();
-      return; // stay in prompt
+      setBuffer(_bufMgr->openDir(_prompt_input));
+      _prompt = Prompt::None;
+      _prompt_input.clear();
+      _completions.clear();
+      _completionIdx.reset();
+      return;
     }
     setBuffer(_bufMgr->open(_prompt_input));
   }
@@ -812,6 +844,13 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         _prevBuf = nullptr;
         setBuffer(*target);
       }
+    } else if (auto* db = dynamic_cast<DirBuffer*>(_buf); db && _bufMgr) {
+      // Directory buffer: Enter opens file or navigates into directory.
+      if (db->selectedIsDir()) {
+        setBuffer(_bufMgr->openDir(db->selectedPath()));
+      } else {
+        setBuffer(_bufMgr->open(db->selectedPath()));
+      }
     } else if (_buf) {
       _buf->insert('\n');
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
@@ -847,6 +886,23 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     if (c == '?' && _buf && _buf->mode() == BufferMode::Cpp && !_buf->readonly() &&
         _buf->gotoMatchingBracket()) {
       // Jump succeeded — nothing else to do.
+    } else if (auto* db = dynamic_cast<DirBuffer*>(_buf)) {
+      // Directory buffer keys.
+      if (c == 'h') {
+        db->toggleHidden();
+      } else if (c == 'd') {
+        db->toggleDeleteMark();
+        if (_buf->point().line + 1 < _buf->lineCount())
+          _buf->movePhysicalDown();
+      } else if (c == 'x') {
+        auto marked = db->markedPaths();
+        if (marked.empty()) {
+          setStatus("No items marked for deletion.");
+        } else {
+          _prompt = Prompt::ConfirmDelete;
+          _prompt_input = "Delete " + std::to_string(marked.size()) + " item(s)? y/n: ";
+        }
+      }
     } else if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
       setBuffer(*_prevBuf);
       _prevBuf = nullptr;
@@ -1174,7 +1230,7 @@ void Screen::dispatchAction(Action action) {
     updateCompletions();
     break;
   case Action::KillBuffer:
-    if (_buf && _bufMgr && !_buf->readonly()) {
+    if (_buf && _bufMgr && (dynamic_cast<DirBuffer*>(_buf) || !_buf->readonly())) {
       if (!_buf->modified()) {
         auto name = _buf->name();
         if (_prevBuf == _buf)
@@ -1334,6 +1390,10 @@ void Screen::dispatchAction(Action action) {
       _prompt = Prompt::SetMode;
       _prompt_input.clear();
     }
+    break;
+  case Action::DirBrowser:
+    if (_bufMgr)
+      setBuffer(_bufMgr->openDir(std::filesystem::current_path()));
     break;
   }
 }

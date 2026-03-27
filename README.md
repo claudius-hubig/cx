@@ -12,10 +12,10 @@ cmake --build build
 ## Usage
 
 ```sh
-./build/cx [file ...]
+./build/cx [file|directory ...]
 ```
 
-Open one or more files for editing. With no arguments, cx starts with an empty scratch buffer.
+Open one or more files for editing, or directories for browsing. With no arguments, cx starts with an empty scratch buffer.
 
 ## Features
 
@@ -30,6 +30,7 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 - **Whitespace display** — toggle visible whitespace markers (spaces, tabs, newlines)
 - **Save / Save As** — write to the backing file or choose a new path
 - **Revert** — reload a buffer's contents from disk with confirmation
+- **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries
 - **Built-in help** — adaptive side-by-side or stacked layout depending on terminal width; generated from the keybinding table so it is always up to date
 
 ## Keyboard Shortcuts
@@ -42,6 +43,7 @@ Open one or more files for editing. With no arguments, cx starts with an empty s
 | Esc-c  | Exit                         |
 | Ctrl-o | Switch to buffer / open file |
 | Esc-b  | Buffer list                  |
+| Esc-d  | Directory browser            |
 | Ctrl-s | Save file                    |
 | Ctrl-k | Kill buffer                  |
 | Esc-r  | Revert buffer from file      |
@@ -85,6 +87,17 @@ These shortcuts are active only when the buffer mode is set to `c` (via Esc-m).
 Note: `?` jumps to the matching bracket when the cursor is on `(`, `)`, `[`, `]`,
 `{`, `}`, `<`, or `>`. If the cursor is not on a bracket, `?` is inserted normally.
 Template angle brackets `<>` are matched; comparison operators `<` and `>` are not.
+
+### Directory Browser
+
+These shortcuts are active when viewing a directory listing.
+
+| Key   | Action                          |
+|-------|---------------------------------|
+| Enter | Open file / enter directory     |
+| h     | Toggle hidden files (dotfiles)  |
+| d     | Mark / unmark for deletion      |
+| x     | Delete marked items             |
 
 ### Display
 
