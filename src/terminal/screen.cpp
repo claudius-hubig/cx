@@ -168,7 +168,7 @@ void Screen::draw() {
       status_vwidth += visualWidth(_lastSearch);
     }
   } else if (_prompt == Prompt::SetMode) {
-    status += " | Mode [txt/c]: " + _prompt_input;
+    status += " | Mode [txt/c/md]: " + _prompt_input;
     status_vwidth = visualWidth(status);
   } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
              _prompt == Prompt::ConfirmRevert || _prompt == Prompt::ConfirmDelete) {
