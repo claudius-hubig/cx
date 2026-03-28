@@ -164,6 +164,13 @@ target_include_directories(test_shortcut PRIVATE src)
 target_link_libraries(test_shortcut Boost::unit_test_framework)
 add_test(NAME shortcut COMMAND test_shortcut)
 
+add_executable(test_prompt_history
+    tests/test_prompt_history.cpp
+)
+target_include_directories(test_prompt_history PRIVATE src)
+target_link_libraries(test_prompt_history Boost::unit_test_framework)
+add_test(NAME prompt_history COMMAND test_prompt_history)
+
 add_executable(test_syntax
     tests/test_syntax.cpp
     src/buffer/buffer.cpp

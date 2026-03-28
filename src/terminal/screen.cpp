@@ -14,6 +14,7 @@
 #include <csignal>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -114,71 +115,16 @@ void Screen::draw() {
     status = std::to_string(line) + ":" + std::to_string(col);
     status_vwidth = visualWidth(status);
   }
-  if (_prompt == Prompt::GoToLine) {
-    status += " | Go to line: " + _prompt_input;
+  if (_prompt) {
+    status += " | " + _prompt->label;
+    if (_prompt->showInput)
+      status += _prompt->input;
     status_vwidth = visualWidth(status);
-  } else if (_prompt == Prompt::SaveAs) {
-    status += " | Save as: " + _prompt_input;
+    status += _prompt->display.rendered;
+    status_vwidth += _prompt->display.visualWidth;
+  } else if (!_statusMsg.empty()) {
+    status += " | " + _statusMsg;
     status_vwidth = visualWidth(status);
-  } else if (_prompt == Prompt::SwitchBuffer) {
-    status += " | Buffer: " + _prompt_input;
-    status_vwidth = visualWidth(status);
-    // Append completion hints (dim text). A completion's match
-    // string may or may not share the typed prefix (e.g. filename
-    // matches against a full-path match string).
-    auto hintFor = [&](std::string const& match) -> std::string {
-      if (match.starts_with(_prompt_input))
-        return match.substr(_prompt_input.size());
-      return match;
-    };
-    if (!_completionIdx && !_completions.empty()) {
-      auto hint = hintFor(_completions[0].first);
-      if (_completions.size() == 1) {
-        if (!hint.empty()) {
-          status += ansi::Dim + hint + ansi::DimOff;
-          status_vwidth += visualWidth(hint);
-        }
-      } else if (_completions.size() <= 3) {
-        status += std::string(ansi::Dim) + "[";
-        status_vwidth++;
-        for (std::size_t i = 0; i < _completions.size(); ++i) {
-          if (i > 0) {
-            status += "/";
-            status_vwidth++;
-          }
-          auto h = hintFor(_completions[i].first);
-          if (h.empty())
-            h = _completions[i].first;
-          status += h;
-          status_vwidth += visualWidth(h);
-        }
-        status += std::string("]") + ansi::DimOff;
-        status_vwidth++;
-      } else {
-        auto cnt = " (" + std::to_string(_completions.size()) + " matches)";
-        status += ansi::Dim + hint + cnt + ansi::DimOff;
-        status_vwidth += visualWidth(hint) + cnt.size();
-      }
-    }
-  } else if (_prompt == Prompt::Find) {
-    status += " | Find: " + _prompt_input;
-    status_vwidth = visualWidth(status);
-    if (_prompt_input.empty() && !_lastSearch.empty()) {
-      status += ansi::Dim + _lastSearch + ansi::DimOff;
-      status_vwidth += visualWidth(_lastSearch);
-    }
-  } else if (_prompt == Prompt::SetMode) {
-    status += " | Mode [txt/c/md]: " + _prompt_input;
-    status_vwidth = visualWidth(status);
-  } else if (_prompt == Prompt::ConfirmSave || _prompt == Prompt::ConfirmKill ||
-             _prompt == Prompt::ConfirmRevert || _prompt == Prompt::ConfirmDelete) {
-    status += " | " + _prompt_input;
-    status_vwidth = visualWidth(status);
-  } else {
-    if (!_statusMsg.empty()) {
-      status += " | " + _statusMsg;
-      status_vwidth = visualWidth(status);
-    }
   }
 
   // Right-align the buffer name + mode + modification indicator on the status line.
@@ -248,158 +194,13 @@ void Screen::loop() {
     }
 
     bool drew = false;
-    if (_prompt == Prompt::ConfirmSave)
-      drew = handleConfirm(
-          c,
-          [&] {
-            // Y: save, then optionally kill the buffer.
-            if (_buf) {
-              auto res = _buf->save();
-              if (res) {
-                setStatus("Saved to " + _buf->name());
-                if (_killPending && _bufMgr) {
-                  _killPending = false;
-                  auto name = _buf->name();
-                  _prompt = Prompt::None;
-                  _prompt_input.clear();
-                  if (_prevBuf == _buf)
-                    _prevBuf = nullptr;
-                  setBuffer(_bufMgr->kill(name));
-                  draw();
-                  return true;
-                }
-              } else {
-                setStatus(res.error());
-                _killPending = false;
-              }
-            }
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            return false;
-          },
-          [&] {
-            // N / Esc: cancel.
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            _killPending = false;
-            _exitPending = false;
-            return false;
-          },
-          [&] {
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            _killPending = false;
-            _exitPending = false;
-            return false;
-          });
-    else if (_prompt == Prompt::ConfirmKill)
-      drew = handleConfirm(
-          c,
-          [&] {
-            // Y: save then kill (file-backed) or enter SaveAs (temp).
-            if (_buf && _bufMgr) {
-              if (_buf->hasPath()) {
-                auto res = _buf->save();
-                _prompt = Prompt::None;
-                _prompt_input.clear();
-                if (!res) {
-                  setStatus(res.error());
-                } else {
-                  if (_prevBuf == _buf)
-                    _prevBuf = nullptr;
-                  setBuffer(_bufMgr->kill(_buf->name()));
-                }
-              } else {
-                _killPending = true;
-                _prompt = Prompt::SaveAs;
-                _prompt_input.clear();
-              }
-            }
-            return false;
-          },
-          [&] {
-            // N: kill without saving.
-            if (_buf && _bufMgr) {
-              auto name = _buf->name();
-              _prompt = Prompt::None;
-              _prompt_input.clear();
-              if (_prevBuf == _buf)
-                _prevBuf = nullptr;
-              setBuffer(_bufMgr->kill(name));
-            }
-            return false;
-          },
-          [&] {
-            // Esc: abort.
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            _exitPending = false;
-            return false;
-          });
-    else if (_prompt == Prompt::ConfirmRevert)
-      drew = handleConfirm(
-          c,
-          [&] {
-            // Y: revert from disk.
-            if (_buf) {
-              auto res = _buf->revert();
-              if (res)
-                setStatus("Reverted from " + _buf->name());
-              else
-                setStatus(res.error());
-            }
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            return false;
-          },
-          [&] {
-            // N / Esc: cancel.
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            return false;
-          },
-          [&] {
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            return false;
-          });
-    else if (_prompt == Prompt::ConfirmDelete)
-      drew = handleConfirm(
-          c,
-          [&] {
-            auto* db = dynamic_cast<DirBuffer*>(_buf);
-            if (db) {
-              auto [count, err] = db->executeDelete();
-              if (err.empty())
-                setStatus("Deleted " + std::to_string(count) + " item(s).");
-              else
-                setStatus("Deleted " + std::to_string(count) + "; errors: " + err);
-            }
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            return false;
-          },
-          [&] {
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            _statusMsg.clear();
-            _statusExpiry.reset();
-            return false;
-          },
-          [&] {
-            _prompt = Prompt::None;
-            _prompt_input.clear();
-            _statusMsg.clear();
-            _statusExpiry.reset();
-            return false;
-          });
-    else if (_prompt != Prompt::None)
-      drew = handleTextPrompt(c);
+    if (_prompt)
+      drew = handlePromptInput(c);
     else
       drew = handleNormalInput(c, pendingChar);
 
     // Process pending exit: walk modified buffers or break.
-    if (_exitPending && _prompt == Prompt::None) {
+    if (_exitPending && !_prompt) {
       if (tryExit())
         break;
     }
@@ -409,169 +210,19 @@ void Screen::loop() {
   }
 }
 
-bool Screen::handleConfirm(char c, std::function<bool()> onAccept, std::function<bool()> onDecline,
-                           std::function<bool()> onAbort) {
-  if (c == 'y' || c == 'Y')
-    return onAccept();
-  if (c == 'n' || c == 'N')
-    return onDecline();
-  if (c == key::Escape)
-    return onAbort();
-  // Ignore all other keys.
-  return false;
-}
-
-void Screen::submitSwitchBuffer() {
-  if (!_bufMgr)
-    return;
-  // Resolve target from completion or typed input.
-  std::string resolved;
-  if (_completionIdx && *_completionIdx < _completions.size())
-    resolved = _completions[*_completionIdx].second;
-  else if (_completions.size() == 1)
-    resolved = _completions[0].second;
-  Buffer* target = nullptr;
-  if (!resolved.empty())
-    target = _bufMgr->find(resolved);
-  if (!target)
-    target = _bufMgr->find(_prompt_input);
-  if (target) {
-    setBuffer(*target);
-  } else if (_prompt_input[0] == '*') {
-    std::string name = _prompt_input;
-    if (name.back() != '*')
-      name += '*';
-    target = _bufMgr->find(name);
-    if (target)
-      setBuffer(*target);
-    else
-      setBuffer(_bufMgr->create(name));
-  } else {
-    // Not an existing buffer — try opening as a file.
-    std::error_code fec;
-    if (std::filesystem::is_directory(_prompt_input, fec)) {
-      setBuffer(_bufMgr->openDir(_prompt_input));
-      _prompt = Prompt::None;
-      _prompt_input.clear();
-      _completions.clear();
-      _completionIdx.reset();
-      return;
-    }
-    setBuffer(_bufMgr->open(_prompt_input));
-  }
-  _prompt = Prompt::None;
-  _prompt_input.clear();
-  _completions.clear();
-}
-
-void Screen::submitSaveAs() {
-  if (!_buf || !_bufMgr)
-    return;
-  auto targetExists = std::filesystem::exists(_prompt_input);
-  _bufMgr->rename(_buf->name(), _prompt_input);
-  if (targetExists) {
-    _prompt = Prompt::ConfirmSave;
-    _prompt_input = "Overwrite " + _buf->name() + "? y/n: ";
-    return; // transition to confirm prompt
-  }
-  auto res = _buf->save();
-  if (res) {
-    setStatus("Saved to " + _buf->name());
-    if (_killPending) {
-      _killPending = false;
-      auto name = _buf->name();
-      _prompt = Prompt::None;
-      _prompt_input.clear();
-      _completions.clear();
-      _completionIdx.reset();
-      if (_prevBuf == _buf)
-        _prevBuf = nullptr;
-      setBuffer(_bufMgr->kill(name));
-      return;
-    }
-  } else {
-    setStatus(res.error());
-    _killPending = false;
-  }
-}
-
-void Screen::submitFind() {
-  if (!_buf)
-    return;
-  _lastSearch = _prompt_input;
-  findNext();
-}
-
-void Screen::submitGoToLine() {
-  if (!_buf)
-    return;
-  std::size_t line = 0;
-  if (_prompt_input == "last") {
-    line = std::numeric_limits<std::size_t>::max();
-  } else {
-    for (char ch : _prompt_input) {
-      if (ch < '0' || ch > '9') {
-        line = 0;
-        break;
-      }
-      auto digit = static_cast<std::size_t>(ch - '0');
-      if (line > (std::numeric_limits<std::size_t>::max() - digit) / 10) {
-        line = std::numeric_limits<std::size_t>::max();
-        break;
-      }
-      line = line * 10 + digit;
-    }
-  }
-  if (line > 0)
-    _buf->gotoLine(line, rowsForBuffer());
-}
-
-void Screen::submitSetMode() {
-  if (!_buf)
-    return;
-  if (_prompt_input == "c" || _prompt_input == "cpp" || _prompt_input == "c++") {
-    _buf->setMode(BufferMode::Cpp);
-    setStatus("Mode: c");
-  } else if (_prompt_input == "md" || _prompt_input == "markdown") {
-    _buf->setMode(BufferMode::Md);
-    setStatus("Mode: md");
-  } else if (_prompt_input == "txt" || _prompt_input == "text") {
-    _buf->setMode(BufferMode::Txt);
-    setStatus("Mode: txt");
-  } else {
-    setStatus("Unknown mode: " + _prompt_input + " (use 'txt', 'c', or 'md')");
-  }
-}
-
-bool Screen::handleTextPrompt(char c) {
+bool Screen::handlePromptInput(char c) {
   if (c == key::Enter || c == key::Newline) {
-    if (!_prompt_input.empty()) {
-      if (_prompt == Prompt::SwitchBuffer) {
-        submitSwitchBuffer();
-        // submitSwitchBuffer may stay in prompt (directory navigation).
-        if (_prompt != Prompt::None) {
-          draw();
-          return true;
-        }
-      } else if (_prompt == Prompt::SaveAs) {
-        submitSaveAs();
-        // submitSaveAs may transition to ConfirmSave or kill-after-save.
-        if (_prompt != Prompt::None) {
-          draw();
-          return true;
-        }
-      } else if (_prompt == Prompt::Find) {
-        submitFind();
-      } else if (_prompt == Prompt::GoToLine) {
-        submitGoToLine();
-      } else if (_prompt == Prompt::SetMode) {
-        submitSetMode();
-      }
+    if (!_prompt->showInput)
+      return false; // Enter is ignored on confirm prompts
+    if (!_prompt->input.empty()) {
+      _promptHistory.push(_prompt->label, _prompt->input);
+      auto resultFn = std::move(_prompt->onResult);
+      auto value = std::move(_prompt->input);
+      _prompt.reset();
+      resultFn(value);
+    } else {
+      _prompt.reset();
     }
-    _prompt = Prompt::None;
-    _prompt_input.clear();
-    _completions.clear();
-    _completionIdx.reset();
   } else if (c == key::Escape) {
     // Distinguish bare Esc (cancel) from escape sequences.
     struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
@@ -579,67 +230,423 @@ bool Screen::handleTextPrompt(char c) {
       char seq[2];
       if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == ansi::CsiIntro &&
           read(STDIN_FILENO, &seq[1], 1) == 1) {
-        if (seq[1] == ansi::RightArrow && _prompt == Prompt::SwitchBuffer &&
-            !_completions.empty()) {
-          // Right arrow: accept the current completion.
-          if (_completionIdx)
-            _prompt_input = _completions[*_completionIdx].first;
-          else if (_completions.size() == 1)
-            _prompt_input = _completions[0].first;
-          updateCompletions();
+        if (seq[1] == ansi::UpArrow) {
+          // History: browse backward.
+          auto* hist = _promptHistory.get(_prompt->label);
+          if (hist) {
+            if (!_prompt->historyIdx) {
+              _prompt->savedInput = _prompt->input;
+              _prompt->historyIdx = 0;
+              _prompt->input = (*hist)[0];
+            } else if (*_prompt->historyIdx + 1 < hist->size()) {
+              ++*_prompt->historyIdx;
+              _prompt->input = (*hist)[*_prompt->historyIdx];
+            }
+            runAutocomplete();
+          }
+        } else if (seq[1] == ansi::DownArrow) {
+          // History: browse forward.
+          if (_prompt->historyIdx) {
+            if (*_prompt->historyIdx == 0) {
+              _prompt->input = _prompt->savedInput;
+              _prompt->historyIdx.reset();
+            } else {
+              --*_prompt->historyIdx;
+              auto* hist = _promptHistory.get(_prompt->label);
+              if (hist)
+                _prompt->input = (*hist)[*_prompt->historyIdx];
+            }
+            runAutocomplete();
+          }
+        } else if (seq[1] == ansi::RightArrow && _prompt->onRightArrow) {
+          _prompt->display = _prompt->onRightArrow(_prompt->input);
         }
-        // Ignore other escape sequences in prompt mode.
+        // Other escape sequences: ignored in prompt mode.
       }
     } else {
       // Bare Esc: cancel prompt.
-      _prompt = Prompt::None;
-      _prompt_input.clear();
-      _completions.clear();
-      _completionIdx.reset();
-      _killPending = false;
+      auto abortFn = std::move(_prompt->onAbort);
+      _prompt.reset();
+      if (abortFn)
+        abortFn();
     }
-  } else if (c == key::Tab && _prompt == Prompt::SwitchBuffer && !_completions.empty()) {
-    if (!_completionIdx)
-      _completionIdx = 0;
-    else
-      _completionIdx = (*_completionIdx + 1) % _completions.size();
-    _prompt_input = _completions[*_completionIdx].first;
-    // Directory: navigate into it only when unambiguous.
-    if (_prompt_input.ends_with('/') && _completions.size() == 1)
-      updateCompletions();
-  } else if (c == key::Backspace && !_prompt_input.empty()) {
+  } else if (c == key::Tab && _prompt->onTab) {
+    _prompt->display = _prompt->onTab(_prompt->input);
+    _prompt->historyIdx.reset();
+  } else if (c == key::Backspace && !_prompt->input.empty()) {
     // Remove one full UTF-8 code point (walk back over continuation bytes).
-    _prompt_input.pop_back();
-    while (!_prompt_input.empty() &&
-           isUtf8Continuation(static_cast<unsigned char>(_prompt_input.back())))
-      _prompt_input.pop_back();
-    if (_prompt == Prompt::SwitchBuffer)
-      updateCompletions();
-  } else if (_prompt == Prompt::Find && c == key::CtrlF) {
-    // Ctrl-F while in Find prompt: advance to next match forward.
-    if (!_prompt_input.empty()) {
-      _lastSearch = _prompt_input;
-      _prompt_input.clear();
-    }
-    if (!_lastSearch.empty())
-      findNext();
-  } else if (_prompt == Prompt::Find && c == key::CtrlR) {
-    // Ctrl-R while in Find prompt: advance to next match backward.
-    if (!_prompt_input.empty()) {
-      _lastSearch = _prompt_input;
-      _prompt_input.clear();
-    }
-    if (!_lastSearch.empty())
-      findPrev();
+    _prompt->input.pop_back();
+    while (!_prompt->input.empty() &&
+           isUtf8Continuation(static_cast<unsigned char>(_prompt->input.back())))
+      _prompt->input.pop_back();
+    _prompt->historyIdx.reset();
+    runAutocomplete();
   } else if (static_cast<unsigned char>(c) >= key::PrintableMin) {
-    _prompt_input += c;
+    _prompt->input += c;
     auto u = static_cast<unsigned char>(c);
     if (u >= 0x80)
-      readUtf8Tail(u, _prompt_input);
-    if (_prompt == Prompt::SwitchBuffer)
-      updateCompletions();
+      readUtf8Tail(u, _prompt->input);
+    _prompt->historyIdx.reset();
+    if (runAutocomplete())
+      return false; // Prompt was closed by early-exit result
+  } else if (_prompt->onSpecialKey) {
+    if (_prompt->onSpecialKey(c, _prompt->input))
+      runAutocomplete();
   }
   return false;
+}
+
+bool Screen::runAutocomplete() {
+  if (!_prompt || !_prompt->autocomplete)
+    return false;
+  auto result = _prompt->autocomplete(_prompt->input);
+  if (auto* d = std::get_if<PromptDisplay>(&result)) {
+    _prompt->display = *d;
+    return false;
+  }
+  // Early exit: autocomplete returned a result value.
+  auto& value = std::get<std::string>(result);
+  if (_prompt->showInput)
+    _promptHistory.push(_prompt->label, _prompt->input);
+  auto resultFn = std::move(_prompt->onResult);
+  _prompt.reset();
+  resultFn(value);
+  return true;
+}
+
+// --- Prompt construction helpers ---
+
+void Screen::openGoToLinePrompt() {
+  _prompt = Prompt{
+      .label = "Go to line: ",
+      .onResult =
+          [this](std::string const& value) {
+            if (!_buf)
+              return;
+            std::size_t line = 0;
+            if (value == "last") {
+              line = std::numeric_limits<std::size_t>::max();
+            } else {
+              for (char ch : value) {
+                if (ch < '0' || ch > '9') {
+                  line = 0;
+                  break;
+                }
+                auto digit = static_cast<std::size_t>(ch - '0');
+                if (line > (std::numeric_limits<std::size_t>::max() - digit) / 10) {
+                  line = std::numeric_limits<std::size_t>::max();
+                  break;
+                }
+                line = line * 10 + digit;
+              }
+            }
+            if (line > 0)
+              _buf->gotoLine(line, rowsForBuffer());
+          },
+  };
+}
+
+void Screen::openSaveAsPrompt() {
+  _prompt = Prompt{
+      .label = "Save as: ",
+      .onResult =
+          [this](std::string const& value) {
+            if (!_buf || !_bufMgr)
+              return;
+            if (std::filesystem::exists(value)) {
+              // Defer rename until the user confirms the overwrite.
+              auto savedName = _buf->name();
+              openConfirmPrompt(
+                  "Overwrite " + value + "? y/n: ",
+                  [this, savedName, value](std::string const& answer) {
+                    if (answer == "y") {
+                      if (_buf && _bufMgr) {
+                        _bufMgr->rename(savedName, value);
+                        saveAndMaybeKill();
+                      }
+                    } else {
+                      _killPending = false;
+                      _exitPending = false;
+                    }
+                  },
+                  [this]() {
+                    _killPending = false;
+                    _exitPending = false;
+                  });
+              return;
+            }
+            _bufMgr->rename(_buf->name(), value);
+            saveAndMaybeKill();
+          },
+      .onAbort = [this]() { _killPending = false; },
+  };
+}
+
+void Screen::openSwitchBufferPrompt() {
+  struct CompletionState {
+    std::vector<std::pair<std::string, std::string>> completions; // {display, bufName}
+    std::optional<std::size_t> idx;
+  };
+  auto state = std::make_shared<CompletionState>();
+  if (_bufMgr)
+    state->completions = _bufMgr->completions("");
+
+  // Build a PromptDisplay from the current completion state.
+  auto buildDisplay = [state](std::string const& input) -> PromptDisplay {
+    auto const& completions = state->completions;
+    if (state->idx || completions.empty())
+      return {"", 0};
+    auto hintFor = [&](std::string const& match) -> std::string {
+      if (match.starts_with(input))
+        return match.substr(input.size());
+      return match;
+    };
+    auto hint = hintFor(completions[0].first);
+    if (completions.size() == 1) {
+      if (hint.empty())
+        return {"", 0};
+      return {ansi::Dim + hint + ansi::DimOff, visualWidth(hint)};
+    }
+    if (completions.size() <= 3) {
+      std::string rendered = std::string(ansi::Dim) + "[";
+      std::size_t vw = 1;
+      for (std::size_t i = 0; i < completions.size(); ++i) {
+        if (i > 0) {
+          rendered += "/";
+          vw++;
+        }
+        auto h = hintFor(completions[i].first);
+        if (h.empty())
+          h = completions[i].first;
+        rendered += h;
+        vw += visualWidth(h);
+      }
+      rendered += std::string("]") + ansi::DimOff;
+      vw++;
+      return {std::move(rendered), vw};
+    }
+    auto cnt = " (" + std::to_string(completions.size()) + " matches)";
+    return {ansi::Dim + hint + cnt + ansi::DimOff, visualWidth(hint) + cnt.size()};
+  };
+
+  _prompt = Prompt{
+      .label = "Buffer: ",
+      .autocomplete = [this, state,
+                       buildDisplay](std::string const& input) -> Prompt::AutocompleteResult {
+        if (_bufMgr)
+          state->completions = _bufMgr->completions(input);
+        state->idx.reset();
+        return buildDisplay(input);
+      },
+      .onResult =
+          [this, state](std::string const& value) {
+            if (!_bufMgr)
+              return;
+            // Resolve target from completion or typed input.
+            std::string resolved;
+            if (state->idx && *state->idx < state->completions.size())
+              resolved = state->completions[*state->idx].second;
+            else if (state->completions.size() == 1)
+              resolved = state->completions[0].second;
+            Buffer* target = nullptr;
+            if (!resolved.empty())
+              target = _bufMgr->find(resolved);
+            if (!target)
+              target = _bufMgr->find(value);
+            if (target) {
+              setBuffer(*target);
+            } else if (!value.empty() && value[0] == '*') {
+              std::string name = value;
+              if (name.back() != '*')
+                name += '*';
+              target = _bufMgr->find(name);
+              if (target)
+                setBuffer(*target);
+              else
+                setBuffer(_bufMgr->create(name));
+            } else {
+              std::error_code fec;
+              if (std::filesystem::is_directory(value, fec))
+                setBuffer(_bufMgr->openDir(value));
+              else
+                setBuffer(_bufMgr->open(value));
+            }
+          },
+      .onTab = [this, state, buildDisplay](std::string& input) -> PromptDisplay {
+        if (state->completions.empty())
+          return PromptDisplay{"", 0};
+        if (!state->idx)
+          state->idx = 0;
+        else
+          state->idx = (*state->idx + 1) % state->completions.size();
+        input = state->completions[*state->idx].first;
+        // Directory: navigate into it only when unambiguous.
+        if (input.ends_with('/') && state->completions.size() == 1) {
+          if (_bufMgr)
+            state->completions = _bufMgr->completions(input);
+          state->idx.reset();
+        }
+        return buildDisplay(input);
+      },
+      .onRightArrow = [this, state, buildDisplay](std::string& input) -> PromptDisplay {
+        if (state->completions.empty())
+          return PromptDisplay{"", 0};
+        if (state->idx)
+          input = state->completions[*state->idx].first;
+        else if (state->completions.size() == 1)
+          input = state->completions[0].first;
+        if (_bufMgr)
+          state->completions = _bufMgr->completions(input);
+        state->idx.reset();
+        return buildDisplay(input);
+      },
+  };
+  runAutocomplete();
+}
+
+void Screen::openFindPrompt(bool backward) {
+  if (!_lastSearch.empty() && _buf) {
+    if (backward)
+      findPrev();
+    else
+      findNext();
+  }
+  _prompt = Prompt{
+      .label = "Find: ",
+      .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
+        if (input.empty() && !_lastSearch.empty())
+          return PromptDisplay{ansi::Dim + _lastSearch + ansi::DimOff, visualWidth(_lastSearch)};
+        return PromptDisplay{"", 0};
+      },
+      .onResult =
+          [this](std::string const& value) {
+            if (!_buf)
+              return;
+            _lastSearch = value;
+            findNext();
+          },
+      .onSpecialKey = [this](char key, std::string& input) -> bool {
+        if (key == key::CtrlF) {
+          if (!input.empty()) {
+            _lastSearch = input;
+            input.clear();
+          }
+          if (!_lastSearch.empty())
+            findNext();
+          return true;
+        }
+        if (key == key::CtrlR) {
+          if (!input.empty()) {
+            _lastSearch = input;
+            input.clear();
+          }
+          if (!_lastSearch.empty())
+            findPrev();
+          return true;
+        }
+        return false;
+      },
+  };
+  runAutocomplete();
+}
+
+void Screen::openSetModePrompt() {
+  _prompt = Prompt{
+      .label = "Mode [txt/c/md]: ",
+      .onResult =
+          [this](std::string const& value) {
+            if (value == "c" || value == "cpp" || value == "c++") {
+              if (_buf)
+                _buf->setMode(BufferMode::Cpp);
+              setStatus("Mode: c");
+            } else if (value == "md" || value == "markdown") {
+              if (_buf)
+                _buf->setMode(BufferMode::Md);
+              setStatus("Mode: md");
+            } else if (value == "txt" || value == "text") {
+              if (_buf)
+                _buf->setMode(BufferMode::Txt);
+              setStatus("Mode: txt");
+            } else {
+              setStatus("Unknown mode: " + value + " (use 'txt', 'c', or 'md')");
+            }
+          },
+  };
+}
+
+void Screen::openConfirmPrompt(std::string question,
+                               std::function<void(std::string const&)> onResult,
+                               std::function<void()> onAbort) {
+  _prompt = Prompt{
+      .label = std::move(question),
+      .showInput = false,
+      .autocomplete = [](std::string const& input) -> Prompt::AutocompleteResult {
+        if (input.empty())
+          return PromptDisplay{"", 0};
+        char last = input.back();
+        if (last == 'y' || last == 'Y')
+          return std::string{"y"};
+        if (last == 'n' || last == 'N')
+          return std::string{"n"};
+        return PromptDisplay{"", 0};
+      },
+      .onResult = std::move(onResult),
+      .onAbort = std::move(onAbort),
+  };
+  runAutocomplete();
+}
+
+void Screen::saveAndMaybeKill() {
+  if (!_buf)
+    return;
+  auto res = _buf->save();
+  if (res) {
+    setStatus("Saved to " + _buf->name());
+    if (_killPending && _bufMgr) {
+      _killPending = false;
+      auto name = _buf->name();
+      if (_prevBuf == _buf)
+        _prevBuf = nullptr;
+      setBuffer(_bufMgr->kill(name));
+    }
+  } else {
+    setStatus(res.error());
+    _killPending = false;
+  }
+}
+
+void Screen::openConfirmKillPrompt(std::string question) {
+  openConfirmPrompt(
+      std::move(question),
+      [this](std::string const& answer) {
+        if (answer == "y") {
+          // Save then kill.
+          if (_buf && _bufMgr) {
+            if (_buf->hasPath()) {
+              auto res = _buf->save();
+              if (!res) {
+                setStatus(res.error());
+              } else {
+                if (_prevBuf == _buf)
+                  _prevBuf = nullptr;
+                setBuffer(_bufMgr->kill(_buf->name()));
+              }
+            } else {
+              _killPending = true;
+              openSaveAsPrompt();
+            }
+          }
+        } else {
+          // Kill without saving.
+          if (_buf && _bufMgr) {
+            auto name = _buf->name();
+            if (_prevBuf == _buf)
+              _prevBuf = nullptr;
+            setBuffer(_bufMgr->kill(name));
+          }
+        }
+      },
+      [this]() { _exitPending = false; });
 }
 
 bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
@@ -899,8 +906,27 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         if (marked.empty()) {
           setStatus("No items marked for deletion.");
         } else {
-          _prompt = Prompt::ConfirmDelete;
-          _prompt_input = "Delete " + std::to_string(marked.size()) + " item(s)? y/n: ";
+          openConfirmPrompt(
+              "Delete " + std::to_string(marked.size()) + " item(s)? y/n: ",
+              [this](std::string const& answer) {
+                if (answer == "y") {
+                  auto* db2 = dynamic_cast<DirBuffer*>(_buf);
+                  if (db2) {
+                    auto [count, err] = db2->executeDelete();
+                    if (err.empty())
+                      setStatus("Deleted " + std::to_string(count) + " item(s).");
+                    else
+                      setStatus("Deleted " + std::to_string(count) + "; errors: " + err);
+                  }
+                } else {
+                  _statusMsg.clear();
+                  _statusExpiry.reset();
+                }
+              },
+              [this]() {
+                _statusMsg.clear();
+                _statusExpiry.reset();
+              });
         }
       }
     } else if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
@@ -923,16 +949,6 @@ void Screen::resize() {
   struct winsize ws = {};
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0)
     _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
-}
-
-void Screen::updateCompletions() {
-  if (_prompt == Prompt::SwitchBuffer && _bufMgr) {
-    _completions = _bufMgr->completions(_prompt_input);
-    _completionIdx.reset();
-  } else {
-    _completions.clear();
-    _completionIdx.reset();
-  }
 }
 
 void Screen::setStatus(std::string msg) {
@@ -964,11 +980,12 @@ bool Screen::tryExit() {
     Buffer* buf = _bufMgr->find(name);
     if (buf && buf->modified() && !buf->readonly()) {
       setBuffer(*buf);
-      _prompt = Prompt::ConfirmKill;
+      std::string question;
       if (!buf->hasPath())
-        _prompt_input = "Exiting. Save temporary buffer? y/n/Esc: ";
+        question = "Exiting. Save temporary buffer? y/n/Esc: ";
       else
-        _prompt_input = "Exiting. Save " + _bufMgr->displayName(buf->name()) + "? y/n/Esc: ";
+        question = "Exiting. Save " + _bufMgr->displayName(buf->name()) + "? y/n/Esc: ";
+      openConfirmKillPrompt(std::move(question));
       return false;
     }
   }
@@ -1220,14 +1237,11 @@ void Screen::dispatchAction(Action action) {
     _exitPending = true;
     break;
   case Action::GoToLine:
-    _prompt = Prompt::GoToLine;
-    _prompt_input.clear();
+    openGoToLinePrompt();
     break;
   case Action::SwitchBuffer:
     _prevBuf = nullptr;
-    _prompt = Prompt::SwitchBuffer;
-    _prompt_input.clear();
-    updateCompletions();
+    openSwitchBufferPrompt();
     break;
   case Action::KillBuffer:
     if (_buf && _bufMgr && (dynamic_cast<DirBuffer*>(_buf) || !_buf->readonly())) {
@@ -1236,12 +1250,10 @@ void Screen::dispatchAction(Action action) {
         if (_prevBuf == _buf)
           _prevBuf = nullptr;
         setBuffer(_bufMgr->kill(name));
-      } else if (!_buf->hasPath()) {
-        _prompt = Prompt::ConfirmKill;
-        _prompt_input = "Killing temporary buffer. Save to file first? y/n: ";
       } else {
-        _prompt = Prompt::ConfirmKill;
-        _prompt_input = "Killing modified buffer. Save to file first? y/n: ";
+        openConfirmKillPrompt(!_buf->hasPath()
+                                  ? "Killing temporary buffer. Save to file first? y/n: "
+                                  : "Killing modified buffer. Save to file first? y/n: ");
       }
     }
     break;
@@ -1249,8 +1261,20 @@ void Screen::dispatchAction(Action action) {
     if (_buf && !_buf->readonly()) {
       if (_buf->hasPath()) {
         if (!std::filesystem::exists(_buf->name())) {
-          _prompt = Prompt::ConfirmSave;
-          _prompt_input = "File " + _buf->name() + " doesn't exist. Really save there? y/n: ";
+          openConfirmPrompt(
+              "File " + _buf->name() + " doesn't exist. Really save there? y/n: ",
+              [this](std::string const& answer) {
+                if (answer == "y")
+                  saveAndMaybeKill();
+                else {
+                  _killPending = false;
+                  _exitPending = false;
+                }
+              },
+              [this]() {
+                _killPending = false;
+                _exitPending = false;
+              });
         } else {
           auto res = _buf->save();
           if (res)
@@ -1259,8 +1283,7 @@ void Screen::dispatchAction(Action action) {
             setStatus(res.error());
         }
       } else {
-        _prompt = Prompt::SaveAs;
-        _prompt_input.clear();
+        openSaveAsPrompt();
       }
     }
     break;
@@ -1320,24 +1343,30 @@ void Screen::dispatchAction(Action action) {
       _buf->deleteChunkBeforePoint();
     break;
   case Action::Find:
-    if (!_lastSearch.empty() && _buf)
-      findNext();
-    _prompt = Prompt::Find;
-    _prompt_input.clear();
+    openFindPrompt(false);
     break;
   case Action::FindBackward:
-    if (!_lastSearch.empty() && _buf)
-      findPrev();
-    _prompt = Prompt::Find;
-    _prompt_input.clear();
+    openFindPrompt(true);
     break;
   case Action::Revert:
     if (_buf && !_buf->readonly()) {
       if (!_buf->hasPath()) {
         setStatus("Can't revert from file in temporary buffers.");
       } else {
-        _prompt = Prompt::ConfirmRevert;
-        _prompt_input = "Really revert buffer from file " + _buf->name() + "? y/n: ";
+        openConfirmPrompt(
+            "Really revert buffer from file " + _buf->name() + "? y/n: ",
+            [this](std::string const& answer) {
+              if (answer == "y") {
+                if (_buf) {
+                  auto res = _buf->revert();
+                  if (res)
+                    setStatus("Reverted from " + _buf->name());
+                  else
+                    setStatus(res.error());
+                }
+              }
+            },
+            [] {});
       }
     }
     break;
@@ -1386,10 +1415,8 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::SetMode:
-    if (_buf && !_buf->readonly()) {
-      _prompt = Prompt::SetMode;
-      _prompt_input.clear();
-    }
+    if (_buf && !_buf->readonly())
+      openSetModePrompt();
     break;
   case Action::DirBrowser:
     if (_bufMgr)

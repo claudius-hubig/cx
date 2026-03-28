@@ -45,6 +45,7 @@ src/
   byte_constants.hpp               Named constants for terminal bytes (key::, ansi::)
   utf8.hpp/.cpp                    UTF-8 decode/encode, char width, visual width
   shortcut.hpp/.cpp                Action enum, Shortcut struct, binding table
+  prompt.hpp                       Prompt struct, PromptDisplay, PromptHistory
   paste_ring.hpp                   Fixed-capacity ring buffer for cut/copy
   subprocess.hpp/.cpp              Run external commands (used for clang-format)
   error_log.hpp/.cpp               Diagnostic logging to cx_error.log
@@ -77,6 +78,7 @@ tests/
   test_chunk_delete.cpp            Word-level deletion tests
   test_char_width.cpp              UTF-8 / character width tests
   test_shortcut.cpp                Shortcut table tests
+  test_prompt_history.cpp          PromptHistory tests
   test_syntax.cpp                  Syntax highlighting tests
   test_e2e.cpp                     End-to-end tests (via PTY)
 ```

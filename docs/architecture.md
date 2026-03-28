@@ -79,10 +79,8 @@ Key responsibilities:
   positioning. Manages timed status messages and find-highlight expiry.
 - **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH, and
   dispatches to sub-handlers:
-  - `handleConfirm` — unified Y/N/Esc confirmation handler for save,
-    kill, revert, and delete confirmations
-  - `handleTextPrompt` — line-entry prompts (go-to-line, save-as,
-    switch-buffer, find, set-mode)
+  - `handlePromptInput` — generic handler for the active `Prompt`, driving
+    text entry, history navigation, autocomplete, and confirmation
   - `handleEscapeInput` — CSI escape sequences (arrows, page keys) and
     Esc-prefix chords
   - `handleNormalInput` — printable characters and control keys in normal
@@ -101,8 +99,13 @@ Key responsibilities:
 buffer: wrap mode, whitespace visibility, the active prompt, find state,
 the paste ring, and the timed status message.
 
-Prompts: `None`, `GoToLine`, `SaveAs`, `SwitchBuffer`, `ConfirmSave`,
-`ConfirmKill`, `ConfirmRevert`, `ConfirmDelete`, `Find`, `SetMode`.
+Prompts are represented by the `Prompt` struct (`src/prompt.hpp`), which
+carries a label, callbacks for autocomplete/result/abort/tab/special keys,
+and cached display state. Each prompt type is constructed by an
+`openXxxPrompt()` helper (e.g. `openGoToLinePrompt()`,
+`openSwitchBufferPrompt()`, `openConfirmPrompt()`). `PromptHistory`
+(also in `prompt.hpp`) records per-label input history, navigable with
+Up/Down arrows.
 
 ---
 
@@ -290,6 +293,7 @@ multi-line state without producing tokens.
 | `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
 | `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
 | `src/subprocess.hpp/.cpp`              | `runSubprocess()` — fork/exec with stdin pipe, captures stdout/stderr. Used by `Buffer::format()` to run clang-format        |
+| `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `cx_error.log` for post-mortem inspection                                                     |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |

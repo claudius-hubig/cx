@@ -3,6 +3,7 @@
 #include "buffer/buffer_sink.hpp"
 #include "buffer/dir_buffer.hpp"
 #include "paste_ring.hpp"
+#include "prompt.hpp"
 #include "shortcut.hpp"
 #include "types.hpp"
 
@@ -54,40 +55,39 @@ private:
 
   // Loop sub-handlers. Each returns true if it already called draw()
   // (so the caller should skip its trailing draw()).
-  // Unified Y/N/Esc confirmation handler. Dispatches to the given
-  // callbacks on Y/y, N/n, or Esc respectively. Returns true if the
-  // handler already called draw().
-  bool handleConfirm(char c, std::function<bool()> onAccept, std::function<bool()> onDecline,
-                     std::function<bool()> onAbort);
-  bool handleTextPrompt(char c);
-  void submitSwitchBuffer();
-  void submitSaveAs();
-  void submitFind();
-  void submitGoToLine();
-  void submitSetMode();
+  bool handlePromptInput(char c);
   bool handleEscapeInput(std::optional<char>& pendingChar);
   bool handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
   // Number of rows available for buffer content (total minus status line).
   RowIdx rowsForBuffer() const;
+
+  // Prompt construction helpers.
+  void openGoToLinePrompt();
+  void openSaveAsPrompt();
+  void openSwitchBufferPrompt();
+  void openFindPrompt(bool backward);
+  void openSetModePrompt();
+  void openConfirmPrompt(std::string question, std::function<void(std::string const&)> onResult,
+                         std::function<void()> onAbort);
+  // Confirm-kill prompt shared by KillBuffer and tryExit.
+  void openConfirmKillPrompt(std::string question);
+  // Save the current buffer and, if _killPending, kill it afterwards.
+  void saveAndMaybeKill();
+
+  // Run the prompt's autocomplete and cache the result. If autocomplete
+  // returns an early-exit result, closes the prompt and calls onResult.
+  // Returns true if the prompt was closed by early exit.
+  bool runAutocomplete();
+
   std::tuple<RowIdx, ColIdx> _size;
   Buffer* _buf = nullptr;
   BufferManager* _bufMgr = nullptr;
   std::string _renderBuf;
-  enum class Prompt {
-    None,
-    GoToLine,
-    SaveAs,
-    SwitchBuffer,
-    ConfirmSave,
-    ConfirmKill,
-    ConfirmRevert,
-    ConfirmDelete,
-    Find,
-    SetMode
-  };
-  Prompt _prompt = Prompt::None;
-  std::string _prompt_input;
+
+  std::optional<Prompt> _prompt;
+  PromptHistory _promptHistory;
+
   Buffer* _prevBuf = nullptr;
   std::string _statusMsg;
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
@@ -110,9 +110,4 @@ private:
   void onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd, bool wrapped);
   std::string _lastSearch;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
-
-  // Auto-completion state for SwitchBuffer prompt.
-  void updateCompletions();
-  std::vector<std::pair<std::string, std::string>> _completions; // {displayName, bufName}
-  std::optional<std::size_t> _completionIdx;
 };
