@@ -72,6 +72,12 @@ BOOST_AUTO_TEST_CASE(esc_m_maps_to_set_mode) {
   BOOST_CHECK(*action == Action::SetMode);
 }
 
+BOOST_AUTO_TEST_CASE(ctrl_p_maps_to_pipe_replace) {
+  auto action = handleShortcut({.ctrl = true, .key = 'p'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::PipeReplace);
+}
+
 BOOST_AUTO_TEST_CASE(unrecognised_shortcut_returns_nullopt) {
   // Ctrl-z is not bound.
   auto action = handleShortcut({.ctrl = true, .key = 'z'});
@@ -241,7 +247,8 @@ BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
                  Action::Paste,      Action::PasteCycle, Action::DeleteChunkBefore,
                  Action::Revert,     Action::Find,       Action::FindBackward,
                  Action::BufferList, Action::PasteRing,  Action::ToggleWhitespace,
-                 Action::ToggleWrap, Action::Format,     Action::SetMode}) {
+                 Action::ToggleWrap, Action::Format,     Action::SetMode,
+                 Action::DirBrowser, Action::PipeReplace}) {
     BOOST_CHECK(!descriptionForAction(a).empty());
   }
 }
@@ -255,7 +262,8 @@ BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
                  Action::Paste,      Action::PasteCycle, Action::DeleteChunkBefore,
                  Action::Revert,     Action::Find,       Action::FindBackward,
                  Action::BufferList, Action::PasteRing,  Action::ToggleWhitespace,
-                 Action::ToggleWrap, Action::Format,     Action::SetMode}) {
+                 Action::ToggleWrap, Action::Format,     Action::SetMode,
+                 Action::DirBrowser, Action::PipeReplace}) {
     auto s = shortcutForAction(a);
     // Every action should have either ctrl or esc set.
     BOOST_CHECK(s.ctrl || s.esc);

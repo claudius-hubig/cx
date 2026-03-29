@@ -63,7 +63,7 @@ Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`,
 `SwitchBuffer`, `ToggleMark`, `Cut`, `Copy`, `Paste`, `PasteCycle`,
 `DeleteChunkBefore`, `Revert`, `Find`, `FindBackward`, `BufferList`,
 `PasteRing`, `ToggleWhitespace`, `ToggleWrap`, `Format`, `SetMode`,
-`DirBrowser`.
+`DirBrowser`, `PipeReplace`.
 
 ---
 
@@ -94,6 +94,13 @@ Key responsibilities:
   lowercase; digits and special characters in the buffer are skipped
   unless they appear in the pattern). On match, sets the cursor after the
   last matched character and applies a timed highlight.
+- **Subprocess execution**: `runPipeCommand()` is the unified subprocess
+  runner used by Format (Esc-f), Tab-format (Cpp mode), and PipeReplace
+  (Ctrl-p). It forks/execs an external command, pipes stdin/stdout/stderr,
+  and monitors the child with `poll()`. After 10 seconds of inactivity it
+  displays a kill prompt; the user can press `y` to SIGTERM/SIGKILL the
+  child or `n` to dismiss. SIGWINCH is handled during the poll loop so
+  the terminal redraws correctly while a command is running.
 
 `Screen` holds display state that belongs to the view rather than to any
 buffer: wrap mode, whitespace visibility, the active prompt, find state,
@@ -164,9 +171,9 @@ delimiters). Provides:
   active), and find highlighting (light blue background via
   `setHighlight`/`clearHighlight`). Returns the screen `{row, col}`
   of the cursor for hardware cursor positioning.
-- **Formatting**: `format()` runs an external formatter (clang-format in
-  Cpp mode) via `runSubprocess()`. `receiveTab()` triggers per-line
-  formatting in Cpp mode, or inserts a literal tab otherwise.
+- **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to the
+  first non-space byte when it is in the leading whitespace. Used by
+  `Screen` after single-line formatting.
 - **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`) determines syntax
   highlighting, auto-indent, and formatting behaviour. Changed via
   `setMode()`.
@@ -292,7 +299,6 @@ multi-line state without producing tokens.
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `contentWidth()`, `BufferPoint`, `ByteOffset`, `VisualCol`, `ViewFrom`                                   |
 | `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
 | `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
-| `src/subprocess.hpp/.cpp`              | `runSubprocess()` — fork/exec with stdin pipe, captures stdout/stderr. Used by `Buffer::format()` to run clang-format        |
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `cx_error.log` for post-mortem inspection                                                     |

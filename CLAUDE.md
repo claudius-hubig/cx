@@ -1,5 +1,21 @@
 # cx — Project Guidelines
 
+## Project Overview
+
+This is a C++ terminal text editor project using CMake and Boost.Test. Build with `cmake --build build`. Run tests with `ctest --test-dir build --output-on-failure`. Always check that ALL test suites pass, not just the one you modified.
+
+## Workflow Rules
+
+When the user asks you to discuss or plan before implementing, do NOT implement changes until explicitly told to proceed. Always confirm the plan first.
+
+## Build & Test
+
+When refactoring across multiple files, run the full test suite after EACH logical change — not just at the end. If a refactor breaks tests, fix them before moving to the next item.
+
+## Input Handling
+
+When modifying keybindings or terminal input handling, verify there are no byte-level conflicts (e.g., Ctrl-? and Backspace both produce 0x7F, Esc prefix vs bare Esc). Document any conflicts found before implementing.
+
 ## Overview
 
 `cx` is a simple terminal text editor written in C++. It uses **only the C++ standard library** — no external dependencies.
@@ -47,7 +63,6 @@ src/
   shortcut.hpp/.cpp                Action enum, Shortcut struct, binding table
   prompt.hpp                       Prompt struct, PromptDisplay, PromptHistory
   paste_ring.hpp                   Fixed-capacity ring buffer for cut/copy
-  subprocess.hpp/.cpp              Run external commands (used for clang-format)
   error_log.hpp/.cpp               Diagnostic logging to cx_error.log
   terminal/
     setup_terminal.hpp/.cpp        RAII raw mode + alternate screen

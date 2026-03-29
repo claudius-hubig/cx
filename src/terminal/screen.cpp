@@ -5,13 +5,16 @@
 #include "byte_constants.hpp"
 #include "utf8.hpp"
 #include <poll.h>
+#include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -649,6 +652,346 @@ void Screen::openConfirmKillPrompt(std::string question) {
       [this]() { _exitPending = false; });
 }
 
+// --- Subprocess execution with kill-prompt support ---
+
+static void drainFd(int fd, std::string& out) {
+  char buf[4096];
+  for (;;) {
+    auto n = read(fd, buf, sizeof(buf));
+    if (n > 0)
+      out.append(buf, static_cast<std::size_t>(n));
+    else if (n < 0 && errno == EINTR)
+      continue;
+    else
+      break;
+  }
+}
+
+std::string Screen::bufferWorkDir() const {
+  if (_buf && _buf->hasPath())
+    return std::filesystem::path(_buf->name()).parent_path().string();
+  return std::filesystem::current_path().string();
+}
+
+std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string> const& args,
+                                                         std::string_view input,
+                                                         std::string const& workDir) {
+  if (args.empty())
+    return std::nullopt;
+
+  int pipeIn[2], pipeOut[2], pipeErr[2];
+  if (pipe(pipeIn) != 0) {
+    setStatus(std::string("pipe: ") + std::strerror(errno));
+    return std::nullopt;
+  }
+  if (pipe(pipeOut) != 0) {
+    close(pipeIn[0]);
+    close(pipeIn[1]);
+    setStatus(std::string("pipe: ") + std::strerror(errno));
+    return std::nullopt;
+  }
+  if (pipe(pipeErr) != 0) {
+    close(pipeIn[0]);
+    close(pipeIn[1]);
+    close(pipeOut[0]);
+    close(pipeOut[1]);
+    setStatus(std::string("pipe: ") + std::strerror(errno));
+    return std::nullopt;
+  }
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    close(pipeIn[0]);
+    close(pipeIn[1]);
+    close(pipeOut[0]);
+    close(pipeOut[1]);
+    close(pipeErr[0]);
+    close(pipeErr[1]);
+    setStatus(std::string("fork: ") + std::strerror(errno));
+    return std::nullopt;
+  }
+
+  if (pid == 0) {
+    // Child: wire up pipes and exec.
+    if (!workDir.empty())
+      (void)chdir(workDir.c_str());
+    dup2(pipeIn[0], STDIN_FILENO);
+    dup2(pipeOut[1], STDOUT_FILENO);
+    dup2(pipeErr[1], STDERR_FILENO);
+    close(pipeIn[0]);
+    close(pipeIn[1]);
+    close(pipeOut[0]);
+    close(pipeOut[1]);
+    close(pipeErr[0]);
+    close(pipeErr[1]);
+
+    std::vector<char*> argv;
+    for (auto& a : args)
+      argv.push_back(const_cast<char*>(a.c_str()));
+    argv.push_back(nullptr);
+    execvp(argv[0], argv.data());
+    auto msg = std::string("exec: ") + std::strerror(errno) + "\n";
+    (void)write(STDERR_FILENO, msg.data(), msg.size());
+    _exit(127);
+  }
+
+  // Parent: close child-side pipe ends.
+  close(pipeIn[0]);
+  close(pipeOut[1]);
+  close(pipeErr[1]);
+
+  std::string stdoutData, stderrData;
+  std::size_t written = 0;
+  bool stdinOpen = true;
+  bool killPromptShowing = false;
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  // Read one chunk from an output pipe into the target string; set done=true on EOF.
+  auto readPipe = [](int fd, short revents, std::string& out, bool& done) {
+    if (revents & (POLLIN | POLLHUP)) {
+      char buf[4096];
+      auto n = read(fd, buf, sizeof(buf));
+      if (n > 0)
+        out.append(buf, static_cast<std::size_t>(n));
+      else if (n == 0)
+        done = true;
+    }
+  };
+
+  // Drain output pipes, close them, reap child, clear status, and return a killed result.
+  auto killReturn = [&]() -> PipeResult {
+    drainFd(pipeOut[0], stdoutData);
+    drainFd(pipeErr[0], stderrData);
+    close(pipeOut[0]);
+    close(pipeErr[0]);
+    _statusMsg.clear();
+    _statusExpiry.reset();
+    return {std::move(stdoutData), std::move(stderrData), -1, true};
+  };
+
+  // Poll set is rebuilt each iteration because stdinOpen and killPromptShowing can change.
+  std::vector<pollfd> fds;
+  fds.reserve(4);
+
+  for (;;) {
+    fds.clear();
+    if (stdinOpen)
+      fds.push_back({pipeIn[1], POLLOUT, 0});
+    fds.push_back({pipeOut[0], POLLIN, 0});
+    fds.push_back({pipeErr[0], POLLIN, 0});
+    if (killPromptShowing)
+      fds.push_back({STDIN_FILENO, POLLIN, 0});
+
+    int timeoutMs = -1;
+    if (!killPromptShowing) {
+      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now());
+      timeoutMs = std::max(0, static_cast<int>(remaining.count()));
+    }
+
+    int rc = poll(fds.data(), fds.size(), timeoutMs);
+    if (rc < 0) {
+      if (errno == EINTR) {
+        if (g_resized) {
+          g_resized = 0;
+          resize();
+          draw();
+        }
+        continue;
+      }
+      break;
+    }
+
+    if (rc == 0) {
+      // Timeout: show kill prompt.
+      setStatus("Command still running. Kill? y/n");
+      draw();
+      killPromptShowing = true;
+      continue;
+    }
+
+    bool outDone = false, errDone = false;
+    for (auto& pfd : fds) {
+      if (pfd.fd == pipeIn[1] && (pfd.revents & (POLLOUT | POLLERR))) {
+        if (written < input.size()) {
+          auto n = write(pipeIn[1], input.data() + written, input.size() - written);
+          if (n > 0)
+            written += static_cast<std::size_t>(n);
+          else if (n < 0 && errno != EINTR) {
+            close(pipeIn[1]);
+            stdinOpen = false;
+          }
+        } else {
+          close(pipeIn[1]);
+          stdinOpen = false;
+        }
+      }
+      if (pfd.fd == pipeOut[0])
+        readPipe(pipeOut[0], pfd.revents, stdoutData, outDone);
+      if (pfd.fd == pipeErr[0])
+        readPipe(pipeErr[0], pfd.revents, stderrData, errDone);
+      if (pfd.fd == STDIN_FILENO && (pfd.revents & POLLIN)) {
+        char ch;
+        if (read(STDIN_FILENO, &ch, 1) == 1) {
+          if (ch == 'y' || ch == 'Y') {
+            // Give the process 1s to clean up after SIGTERM before forcing SIGKILL.
+            kill(pid, SIGTERM);
+            if (stdinOpen) {
+              close(pipeIn[1]);
+              stdinOpen = false;
+            }
+            for (int i = 0; i < 10; ++i) {
+              int wstatus;
+              if (waitpid(pid, &wstatus, WNOHANG) > 0)
+                return killReturn();
+              pollfd drain[] = {{pipeOut[0], POLLIN, 0}, {pipeErr[0], POLLIN, 0}};
+              poll(drain, 2, 100);
+              bool dummy = false;
+              readPipe(pipeOut[0], drain[0].revents, stdoutData, dummy);
+              readPipe(pipeErr[0], drain[1].revents, stderrData, dummy);
+            }
+            kill(pid, SIGKILL);
+            {
+              int wstatus;
+              waitpid(pid, &wstatus, 0);
+            }
+            return killReturn();
+          } else if (ch == 'n' || ch == 'N') {
+            _statusMsg.clear();
+            _statusExpiry.reset();
+            draw();
+            killPromptShowing = false;
+            deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+          }
+          // Ignore other characters.
+        }
+      }
+    }
+
+    // If child closed both output pipes, no point keeping stdin open.
+    if (outDone && errDone && stdinOpen) {
+      close(pipeIn[1]);
+      stdinOpen = false;
+    }
+
+    if (outDone && errDone && !stdinOpen)
+      break;
+  }
+
+  if (stdinOpen)
+    close(pipeIn[1]);
+
+  drainFd(pipeOut[0], stdoutData);
+  drainFd(pipeErr[0], stderrData);
+  close(pipeOut[0]);
+  close(pipeErr[0]);
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+
+  _statusMsg.clear();
+  _statusExpiry.reset();
+  return PipeResult{std::move(stdoutData), std::move(stderrData), exitCode, false};
+}
+
+void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> lineRange) {
+  if (!_buf)
+    return;
+  if (_buf->readonly())
+    return;
+  if (!_buf->hasPath()) {
+    setStatus("Save file first to determine format");
+    return;
+  }
+  if (_buf->mode() != BufferMode::Cpp) {
+    setStatus("No formatter for this file type");
+    return;
+  }
+
+  BufferPoint endPt{_buf->lineCount() - 1, _buf->lineContent(_buf->lineCount() - 1).size()};
+  auto allText = _buf->extractRegion({0, 0}, endPt);
+
+  std::vector<std::string> args = {"clang-format", "--assume-filename=" + _buf->name()};
+  if (lineRange) {
+    auto [startLine, endLine] = *lineRange;
+    args.push_back("--lines=" + std::to_string(startLine) + ":" + std::to_string(endLine));
+  }
+
+  auto res = runPipeCommand(args, allText, bufferWorkDir());
+  if (!res)
+    return;
+  if (res->killed) {
+    setStatus("Format killed");
+    return;
+  }
+  if (res->exitCode != 0) {
+    auto& err = res->stderrData;
+    auto nl = err.find('\n');
+    setStatus(nl != std::string::npos ? err.substr(0, nl) : err);
+    return;
+  }
+  if (res->stdoutData == allText) {
+    setStatus("Already formatted");
+    return;
+  }
+
+  auto savedLine = _buf->point().line;
+  auto savedOffset = _buf->point().offset;
+  _buf->clearMark();
+  _buf->deleteRegion({0, 0}, endPt);
+  _buf->insertText(res->stdoutData);
+  auto line = std::min(savedLine, _buf->lineCount() - 1);
+  auto offset = std::min(savedOffset, _buf->lineContent(line).size());
+  _buf->setPoint(line, offset);
+  auto& [rows, cols] = _size;
+  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+  setStatus("Formatted");
+}
+
+void Screen::openPipeReplacePrompt() {
+  _prompt = Prompt{
+      .label = "Shell command: ",
+      .onResult = [this](std::string const& value) { executePipeReplace(value); },
+  };
+}
+
+void Screen::executePipeReplace(std::string command) {
+  if (!_buf || !_buf->mark())
+    return;
+
+  auto from = *_buf->mark();
+  auto to = _buf->point();
+  auto regionText = _buf->extractRegion(from, to);
+
+  auto res = runPipeCommand({"/bin/sh", "-c", std::move(command)}, regionText, bufferWorkDir());
+
+  if (!res || res->killed) {
+    setStatus(res ? "Command killed" : "Command failed to start");
+    return;
+  }
+
+  _buf->deleteRegion(from, to);
+  _buf->clearMark();
+
+  if (!res->stdoutData.empty()) {
+    _buf->insertText(res->stdoutData);
+    if (!res->stderrData.empty()) {
+      std::string trimmed;
+      trimmed.reserve(res->stderrData.size());
+      for (char c : res->stderrData)
+        if (c != '\n' && c != '\r')
+          trimmed += c;
+      setStatus("Command returned error output: " + trimmed);
+    }
+  } else if (!res->stderrData.empty()) {
+    _buf->insertText("STDERR:\n" + res->stderrData);
+  }
+
+  auto& [rows, cols] = _size;
+  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+}
+
 bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
   auto& [rows, cols] = _size;
   struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
@@ -875,10 +1218,18 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
   } else if (c == key::Escape) {
     return handleEscapeInput(pendingChar);
   } else if (c == key::Tab) {
-    if (_buf) {
-      auto msg = _buf->receiveTab();
-      if (!msg.empty())
-        setStatus(std::move(msg));
+    if (_buf && !_buf->readonly()) {
+      if (_buf->mode() == BufferMode::Cpp) {
+        if (!_buf->hasPath()) {
+          setStatus("Save file first to determine format");
+        } else {
+          auto line = _buf->point().line + 1;
+          executeFormat({{line, line}});
+          _buf->adjustCursorToIndent();
+        }
+      } else {
+        _buf->insert('\t');
+      }
       _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
@@ -1408,10 +1759,15 @@ void Screen::dispatchAction(Action action) {
         auto pointLine = _buf->point().line;
         range = {std::min(markLine, pointLine) + 1, std::max(markLine, pointLine) + 1};
       }
-      auto msg = _buf->format(range);
-      if (!msg.empty())
-        setStatus(std::move(msg));
-      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+      executeFormat(range);
+    }
+    break;
+  case Action::PipeReplace:
+    if (_buf && !_buf->readonly()) {
+      if (!_buf->mark())
+        setStatus("No mark set");
+      else
+        openPipeReplacePrompt();
     }
     break;
   case Action::SetMode:

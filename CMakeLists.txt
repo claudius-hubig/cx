@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD 23)
 add_executable(cx
     src/main.cpp
     src/error_log.cpp
-    src/subprocess.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
@@ -36,7 +35,6 @@ add_test(NAME char_width COMMAND test_char_width)
 add_executable(test_buffer
     tests/test_buffer.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
@@ -51,7 +49,6 @@ add_test(NAME buffer COMMAND test_buffer)
 add_executable(test_text_buffer
     tests/test_text_buffer.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -63,7 +60,6 @@ add_test(NAME text_buffer COMMAND test_text_buffer)
 add_executable(test_help_buffer
     tests/test_help_buffer.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
@@ -77,7 +73,6 @@ add_test(NAME help_buffer COMMAND test_help_buffer)
 add_executable(test_buffer_list_buffer
     tests/test_buffer_list_buffer.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/buffer_list_buffer.cpp
@@ -89,7 +84,6 @@ add_test(NAME buffer_list_buffer COMMAND test_buffer_list_buffer)
 add_executable(test_buffer_manager
     tests/test_buffer_manager.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
@@ -108,7 +102,6 @@ add_test(NAME buffer_manager COMMAND test_buffer_manager)
 add_executable(test_render
     tests/test_render.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -120,7 +113,6 @@ add_test(NAME render COMMAND test_render)
 add_executable(test_movement
     tests/test_movement.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -132,7 +124,6 @@ add_test(NAME movement COMMAND test_movement)
 add_executable(test_chunk_delete
     tests/test_chunk_delete.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
@@ -147,7 +138,6 @@ add_test(NAME chunk_delete COMMAND test_chunk_delete)
 add_executable(test_scroll
     tests/test_scroll.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -174,7 +164,6 @@ add_test(NAME prompt_history COMMAND test_prompt_history)
 add_executable(test_syntax
     tests/test_syntax.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -186,7 +175,6 @@ add_test(NAME syntax COMMAND test_syntax)
 add_executable(test_dir_buffer
     tests/test_dir_buffer.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/dir_buffer.cpp
@@ -198,7 +186,6 @@ add_test(NAME dir_buffer COMMAND test_dir_buffer)
 add_executable(test_e2e
     tests/test_e2e.cpp
     src/buffer/buffer.cpp
-    src/subprocess.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/text_buffer.cpp

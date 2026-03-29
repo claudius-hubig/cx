@@ -80,6 +80,28 @@ private:
   // Returns true if the prompt was closed by early exit.
   bool runAutocomplete();
 
+  // Working directory for the current buffer: parent dir if it has a path,
+  // else the process working directory. Used by all subprocess callers.
+  std::string bufferWorkDir() const;
+
+  // Subprocess execution with a kill-prompt poll loop. Used by Format,
+  // Tab-format, and PipeReplace. Returns nullopt on fork/pipe failure.
+  struct PipeResult {
+    std::string stdoutData;
+    std::string stderrData;
+    int exitCode;
+    bool killed;
+  };
+  std::optional<PipeResult> runPipeCommand(std::vector<std::string> const& args,
+                                           std::string_view input, std::string const& workDir);
+
+  // Format the current buffer using clang-format via runPipeCommand.
+  void executeFormat(std::optional<std::pair<std::size_t, std::size_t>> lineRange);
+
+  // Pipe-replace: prompt for a shell command, pipe the region through it.
+  void openPipeReplacePrompt();
+  void executePipeReplace(std::string command);
+
   std::tuple<RowIdx, ColIdx> _size;
   Buffer* _buf = nullptr;
   BufferManager* _bufMgr = nullptr;

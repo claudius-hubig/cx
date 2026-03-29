@@ -45,6 +45,7 @@ static std::vector<std::string> const& leftColumn() {
     for (auto a : {Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
     v.push_back(formatHelpLine(Action::Format));
+    v.push_back(formatHelpLine(Action::PipeReplace));
     v.emplace_back("");
     v.emplace_back("C mode (Esc-m to set):");
     v.push_back(formatRawLine("Tab", "Format line"));

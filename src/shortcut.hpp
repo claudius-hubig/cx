@@ -27,6 +27,7 @@ enum class Action {
   Format,
   SetMode,
   DirBrowser,
+  PipeReplace,
 };
 
 struct Shortcut {

@@ -59,6 +59,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 | Esc-y      | Paste cycle      |
 | Esc-p      | Paste ring       |
 | Esc-f      | Format buffer/region (C/C++) |
+| Ctrl-p     | Pipe region through command  |
 | Tab        | Format line (C/C++) |
 
 ### Movement
