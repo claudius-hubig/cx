@@ -1342,7 +1342,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         out += kBracketMatch;
         rs.bracketMatchActive = true;
       } else if (!wantMatch && rs.bracketMatchActive) {
-        out += ansi::DefaultFg;
+        // Restore the current syntax foreground instead of defaulting to
+        // white — otherwise the DefaultFg clobbers the color we just set.
+        auto restoreFg = syntaxFg(rs.lastSynTok);
+        out += restoreFg ? restoreFg : ansi::DefaultFg;
         rs.bracketMatchActive = false;
       }
     }
