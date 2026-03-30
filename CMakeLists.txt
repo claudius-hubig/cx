@@ -9,6 +9,7 @@ add_executable(cx
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/shortcut.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
@@ -38,6 +39,7 @@ add_executable(test_buffer
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
@@ -51,6 +53,7 @@ add_executable(test_text_buffer
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_text_buffer PRIVATE src .)
@@ -63,6 +66,7 @@ add_executable(test_help_buffer
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
 )
@@ -75,6 +79,7 @@ add_executable(test_buffer_list_buffer
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/buffer_list_buffer.cpp
 )
 target_include_directories(test_buffer_list_buffer PRIVATE src)
@@ -87,6 +92,7 @@ add_executable(test_buffer_manager
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
@@ -104,6 +110,7 @@ add_executable(test_render
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_render PRIVATE src .)
@@ -115,6 +122,7 @@ add_executable(test_movement
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_movement PRIVATE src .)
@@ -127,6 +135,7 @@ add_executable(test_chunk_delete
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
@@ -140,6 +149,7 @@ add_executable(test_scroll
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_scroll PRIVATE src .)
@@ -166,6 +176,7 @@ add_executable(test_syntax
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_syntax PRIVATE src .)
@@ -177,6 +188,7 @@ add_executable(test_dir_buffer
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/dir_buffer.cpp
 )
 target_include_directories(test_dir_buffer PRIVATE src .)
@@ -188,6 +200,7 @@ add_executable(test_e2e
     src/buffer/buffer.cpp
     src/buffer/modes/c/syntax.cpp
     src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
 )
 target_include_directories(test_e2e PRIVATE src .)

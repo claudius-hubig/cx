@@ -1,6 +1,7 @@
 #include "buffer.hpp"
 #include "byte_constants.hpp"
 #include "modes/c/syntax.hpp"
+#include "modes/jsn/syntax.hpp"
 #include "modes/md/syntax.hpp"
 #include "utf8.hpp"
 
@@ -38,7 +39,7 @@ void Buffer::doInsert(uint32_t cp) {
     // In Cpp mode, copy leading whitespace from the previous line for
     // auto-indent. This runs inside doInsert (after readonly() was already
     // checked by the public insert() wrapper).
-    if (_mode == BufferMode::Cpp) {
+    if (_mode == BufferMode::Cpp || _mode == BufferMode::Jsn) {
       auto& prev = _lines[_point.line - 1];
       while (autoIndent < prev.size() && prev[autoIndent] == ' ')
         ++autoIndent;
@@ -770,7 +771,8 @@ void Buffer::scrollDown() {
 }
 
 bool Buffer::gotoMatchingBracket() {
-  auto match = findMatchingBracket(_lines, _point);
+  auto match = (_mode == BufferMode::Jsn) ? findMatchingBracketJson(_lines, _point)
+                                          : findMatchingBracket(_lines, _point);
   if (!match)
     return false;
   _point = *match;
@@ -1101,6 +1103,8 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
     if (_mode == BufferMode::Md)
       _synCache[i].tokens = tokenizeMarkdownLine(_lines[i], state);
+    else if (_mode == BufferMode::Jsn)
+      _synCache[i].tokens = tokenizeJsonLine(_lines[i], state);
     else
       _synCache[i].tokens = tokenizeLine(_lines[i], state);
     _synCache[i].stateAfter = state; // state was advanced by tokenizeLine
@@ -1122,6 +1126,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kSynComment = "\x1b[38;2;80;160;80m";    // green
   static constexpr auto kSynString = "\x1b[38;2;200;80;80m";     // red
   static constexpr auto kSynOperator = "\x1b[38;2;150;100;200m"; // purple
+  static constexpr auto kSynNumber = "\x1b[38;2;100;200;200m";   // light turquoise
   static constexpr auto kSynReset = "\x1b[22;39m";               // bold off + default fg
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
@@ -1244,7 +1249,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       (wrap && std::holds_alternative<ByteOffset>(_viewFrom.col)) ? _viewFrom.byteOffset() : 0;
 
   // Syntax highlighting pre-computation.
-  bool syntaxActive = _mode == BufferMode::Cpp || _mode == BufferMode::Md;
+  bool syntaxActive =
+      _mode == BufferMode::Cpp || _mode == BufferMode::Md || _mode == BufferMode::Jsn;
   std::optional<BufferPoint> matchBracket;
   std::span<SyntaxToken const> lineTokens;
 
@@ -1255,7 +1261,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     std::size_t lastVisible =
         std::min(_viewFrom.line.value + static_cast<std::size_t>(rows.value) + 1, _lines.size());
     ensureSynCache(lastVisible);
-    matchBracket = findMatchingBracket(_lines, _point);
+    matchBracket = (_mode == BufferMode::Jsn) ? findMatchingBracketJson(_lines, _point)
+                                              : findMatchingBracket(_lines, _point);
   }
 
   // Markdown-specific syntax highlight colors.
@@ -1278,6 +1285,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       return ansi::Bold;
     case SyntaxToken::Link:
       return kSynLink;
+    case SyntaxToken::Number:
+      return kSynNumber;
     default:
       return nullptr; // brackets and Normal have no special color
     }

@@ -89,6 +89,19 @@ Note: `?` jumps to the matching bracket when the cursor is on `(`, `)`, `[`, `]`
 `{`, `}`, `<`, or `>`. If the cursor is not on a bracket, `?` is inserted normally.
 Template angle brackets `<>` are matched; comparison operators `<` and `>` are not.
 
+### JSON mode
+
+These shortcuts are active only when the buffer mode is set to `jsn` (via Esc-m).
+Auto-enabled for `.json` files.
+
+| Key | Action                        |
+|-----|-------------------------------|
+| ?   | Jump to matching bracket      |
+
+Note: `?` jumps to the matching bracket when the cursor is on `[`, `]`,
+`{`, or `}`. Brackets inside strings are ignored. If the cursor is not on a
+bracket, `?` is inserted normally.
+
 ### Directory Browser
 
 These shortcuts are active when viewing a directory listing.

@@ -51,6 +51,9 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("Tab", "Format line"));
     v.push_back(formatRawLine("?", "Jump to matching bracket"));
     v.emplace_back("");
+    v.emplace_back("JSON mode (Esc-m to set):");
+    v.push_back(formatRawLine("?", "Jump to matching bracket"));
+    v.emplace_back("");
     v.emplace_back("Directory browser:");
     v.push_back(formatRawLine("Enter", "Open file / enter dir"));
     v.push_back(formatRawLine("h", "Toggle hidden files"));

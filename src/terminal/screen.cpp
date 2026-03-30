@@ -135,9 +135,10 @@ void Screen::draw() {
   if (_buf) {
     buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
     if (!_buf->readonly())
-      buf_name += _buf->mode() == BufferMode::Cpp  ? " [c]"
-                  : _buf->mode() == BufferMode::Md ? " [md]"
-                                                   : " [txt]";
+      buf_name += _buf->mode() == BufferMode::Cpp   ? " [c]"
+                  : _buf->mode() == BufferMode::Md  ? " [md]"
+                  : _buf->mode() == BufferMode::Jsn ? " [jsn]"
+                                                    : " [txt]";
     if (_buf->modified())
       buf_name += " +";
     else
@@ -555,13 +556,17 @@ void Screen::openFindPrompt(bool backward) {
 
 void Screen::openSetModePrompt() {
   _prompt = Prompt{
-      .label = "Mode [txt/c/md]: ",
+      .label = "Mode [txt/c/md/jsn]: ",
       .onResult =
           [this](std::string const& value) {
             if (value == "c" || value == "cpp" || value == "c++") {
               if (_buf)
                 _buf->setMode(BufferMode::Cpp);
               setStatus("Mode: c");
+            } else if (value == "jsn" || value == "json") {
+              if (_buf)
+                _buf->setMode(BufferMode::Jsn);
+              setStatus("Mode: jsn");
             } else if (value == "md" || value == "markdown") {
               if (_buf)
                 _buf->setMode(BufferMode::Md);
@@ -571,7 +576,7 @@ void Screen::openSetModePrompt() {
                 _buf->setMode(BufferMode::Txt);
               setStatus("Mode: txt");
             } else {
-              setStatus("Unknown mode: " + value + " (use 'txt', 'c', or 'md')");
+              setStatus("Unknown mode: " + value + " (use 'txt', 'c', 'md', or 'jsn')");
             }
           },
   };
@@ -1240,9 +1245,9 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     else
       setStatus(formatShortcut(s) + " not recognised.");
   } else {
-    // '?' on a bracket in C mode → jump to matching bracket.
-    if (c == '?' && _buf && _buf->mode() == BufferMode::Cpp && !_buf->readonly() &&
-        _buf->gotoMatchingBracket()) {
+    // '?' on a bracket in C/JSON mode → jump to matching bracket.
+    if (c == '?' && _buf && (_buf->mode() == BufferMode::Cpp || _buf->mode() == BufferMode::Jsn) &&
+        !_buf->readonly() && _buf->gotoMatchingBracket()) {
       // Jump succeeded — nothing else to do.
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf)) {
       // Directory buffer keys.

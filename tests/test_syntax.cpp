@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/modes/c/syntax.hpp"
+#include "buffer/modes/jsn/syntax.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
 
@@ -695,4 +696,191 @@ BOOST_AUTO_TEST_CASE(md_render_bold_uses_bold) {
   buf.render(out, RowIdx{5}, ColIdx{40});
   // Bold: \x1b[1m
   BOOST_CHECK(out.find("\x1b[1m") != std::string::npos);
+}
+
+// ============================================================
+// JSON mode
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(json_string_is_string_token) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline(R"("hello")"), state);
+  BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::String));
+}
+
+BOOST_AUTO_TEST_CASE(json_string_with_escape) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline(R"("a\"b")"), state);
+  // All 6 bytes should be String: " a \ " b "
+  BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::String));
+}
+
+BOOST_AUTO_TEST_CASE(json_true_is_keyword) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("true"), state);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));
+}
+
+BOOST_AUTO_TEST_CASE(json_false_is_keyword) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("false"), state);
+  BOOST_CHECK(allTokens(toks, 0, 5, SyntaxToken::Keyword));
+}
+
+BOOST_AUTO_TEST_CASE(json_null_is_keyword) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("null"), state);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));
+}
+
+BOOST_AUTO_TEST_CASE(json_integer_is_number) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("42"), state);
+  BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(json_negative_is_number) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("-3"), state);
+  BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(json_decimal_is_number) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("3.14"), state);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(json_scientific_is_number) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("1.5e10"), state);
+  BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(json_scientific_negative_exp) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("2E-3"), state);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(json_brackets_are_bracket) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("[1]"), state);
+  BOOST_CHECK(toks[0] == SyntaxToken::Bracket);
+  BOOST_CHECK(toks[2] == SyntaxToken::Bracket);
+}
+
+BOOST_AUTO_TEST_CASE(json_braces_are_brace) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("{}"), state);
+  BOOST_CHECK(toks[0] == SyntaxToken::Brace);
+  BOOST_CHECK(toks[1] == SyntaxToken::Brace);
+}
+
+BOOST_AUTO_TEST_CASE(json_no_comments) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline("// foo"), state);
+  // In JSON, // is NOT a comment — should remain Normal.
+  BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(json_colon_comma_normal) {
+  SyntaxState state;
+  auto toks = tokenizeJsonLine(mkline(": ,"), state);
+  BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(json_bracket_match_square) {
+  std::vector<std::string> lines = {"[1, 2]"};
+  auto match = findMatchingBracketJson(lines, {0, 0});
+  BOOST_REQUIRE(match.has_value());
+  BOOST_CHECK_EQUAL(match->line, 0u);
+  BOOST_CHECK_EQUAL(match->offset, 5u);
+  // Reverse.
+  auto rev = findMatchingBracketJson(lines, {0, 5});
+  BOOST_REQUIRE(rev.has_value());
+  BOOST_CHECK_EQUAL(rev->line, 0u);
+  BOOST_CHECK_EQUAL(rev->offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(json_bracket_match_brace) {
+  std::vector<std::string> lines = {R"({"a": 1})"};
+  auto match = findMatchingBracketJson(lines, {0, 0});
+  BOOST_REQUIRE(match.has_value());
+  BOOST_CHECK_EQUAL(match->offset, 7u);
+}
+
+BOOST_AUTO_TEST_CASE(json_bracket_inside_string_skipped) {
+  std::vector<std::string> lines = {R"({"key": "["})"};
+  // The [ at pos 8 is inside a string — cursor on { at 0 should match } at 11.
+  auto match = findMatchingBracketJson(lines, {0, 0});
+  BOOST_REQUIRE(match.has_value());
+  BOOST_CHECK_EQUAL(match->offset, 11u);
+}
+
+BOOST_AUTO_TEST_CASE(json_bracket_multiline) {
+  std::vector<std::string> lines = {"{", "  \"a\": 1", "}"};
+  auto match = findMatchingBracketJson(lines, {0, 0});
+  BOOST_REQUIRE(match.has_value());
+  BOOST_CHECK_EQUAL(match->line, 2u);
+  BOOST_CHECK_EQUAL(match->offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(json_mode_detection) {
+  TempFile tmp("{}\n", ".json");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Jsn);
+}
+
+BOOST_AUTO_TEST_CASE(json_render_string_red) {
+  TextBuffer buf("test.json");
+  buf.setMode(BufferMode::Jsn);
+  insertString(buf, R"("hello")");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // String color: red \x1b[38;2;200;80;80m
+  BOOST_CHECK(out.find("\x1b[38;2;200;80;80m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(json_render_keyword_blue) {
+  TextBuffer buf("test.json");
+  buf.setMode(BufferMode::Jsn);
+  insertString(buf, "true");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // Keyword color: blue \x1b[38;2;80;130;200m
+  BOOST_CHECK(out.find("\x1b[38;2;80;130;200m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(json_render_number_turquoise) {
+  TextBuffer buf("test.json");
+  buf.setMode(BufferMode::Jsn);
+  insertString(buf, "42");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // Number color: light turquoise \x1b[38;2;100;200;200m
+  BOOST_CHECK(out.find("\x1b[38;2;100;200;200m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(json_goto_matching_bracket) {
+  TextBuffer buf("test.json");
+  buf.setMode(BufferMode::Jsn);
+  insertString(buf, "[1, 2]");
+  buf.moveHome(); // cursor on [
+  BOOST_CHECK(buf.gotoMatchingBracket());
+  BOOST_CHECK_EQUAL(buf.point().offset, 5u); // on ]
+}
+
+BOOST_AUTO_TEST_CASE(json_bracket_match_highlight_in_render) {
+  TextBuffer buf("test.json");
+  buf.setMode(BufferMode::Jsn);
+  insertString(buf, "[1]");
+  buf.moveHome(); // cursor on [
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40});
+  // Bracket match: turquoise \x1b[38;2;60;170;170m
+  BOOST_CHECK(out.find("\x1b[38;2;60;170;170m") != std::string::npos);
 }

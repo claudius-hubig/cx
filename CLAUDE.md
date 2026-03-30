@@ -79,6 +79,7 @@ src/
     modes/
       c/syntax.hpp/.cpp            C/C++ tokenizer, bracket matching
       md/syntax.hpp/.cpp           Markdown tokenizer (headings, bold, links)
+      jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
 tests/
   test_helpers.hpp                 Shared test utilities
   test_buffer.cpp                  Buffer base class tests

@@ -20,6 +20,7 @@ enum class SyntaxToken : uint8_t {
   Heading,  // Markdown headings (# ...)
   Bold,     // Markdown bold (**...**)
   Link,     // Markdown links [text](url)
+  Number,   // JSON numeric literals
 };
 
 /// Multi-line state carried between lines for syntax highlighting.

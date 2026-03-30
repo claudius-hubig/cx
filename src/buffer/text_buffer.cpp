@@ -42,6 +42,8 @@ void TextBuffer::detectMode() {
     _mode = BufferMode::Cpp;
   else if (ext == ".md")
     _mode = BufferMode::Md;
+  else if (ext == ".json")
+    _mode = BufferMode::Jsn;
   else
     _mode = BufferMode::Txt;
 }
