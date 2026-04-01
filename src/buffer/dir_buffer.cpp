@@ -267,8 +267,8 @@ void DirBuffer::refresh() {
   _desiredCol.reset();
 }
 
-std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColIdx cols, bool,
-                                             bool) const {
+std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColIdx cols, bool, bool,
+                                             std::size_t rowOffset, std::size_t colOffset) const {
   constexpr auto kRedFg = "\x1b[31m";
 
   std::size_t curLine = _point.line;
@@ -276,7 +276,7 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;
-    out += ansi::cursorTo(r, 0);
+    out += ansi::cursorTo(rowOffset + r, colOffset);
 
     if (lineIdx < _displayLines.size()) {
       bool highlight = (lineIdx == curLine);
@@ -303,7 +303,7 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
     }
 
     // Gutter column.
-    out += ansi::cursorTo(r, cols.value - 1);
+    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

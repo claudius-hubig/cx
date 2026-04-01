@@ -21,7 +21,9 @@ public:
   /// Render the buffer list with reverse-video highlighting on the
   /// selected line.
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true) const override;
+                                    bool showWhitespace = false, bool wrap = true,
+                                    std::size_t rowOffset = 0,
+                                    std::size_t colOffset = 0) const override;
 
   /// Return the full buffer name for the line the cursor is on.
   /// Returns empty string for directory header lines.

@@ -20,6 +20,7 @@ add_executable(cx
     src/buffer/paste_ring_buffer.cpp
     src/buffer/dir_buffer.cpp
     src/buffer/buffer_manager.cpp
+    src/buffer/buffer_view.cpp
 )
 
 target_include_directories(cx PRIVATE src)
@@ -206,3 +207,17 @@ add_executable(test_e2e
 target_include_directories(test_e2e PRIVATE src .)
 target_link_libraries(test_e2e Boost::unit_test_framework util)
 add_test(NAME e2e COMMAND test_e2e)
+
+add_executable(test_buffer_view
+    tests/test_buffer_view.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+    src/buffer/text_buffer.cpp
+)
+target_include_directories(test_buffer_view PRIVATE src .)
+target_link_libraries(test_buffer_view Boost::unit_test_framework)
+add_test(NAME buffer_view COMMAND test_buffer_view)

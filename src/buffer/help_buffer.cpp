@@ -238,7 +238,8 @@ std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
 }
 
 std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
-                                              bool /*showWhitespace*/, bool /*wrap*/) const {
+                                              bool /*showWhitespace*/, bool /*wrap*/,
+                                              std::size_t rowOffset, std::size_t colOffset) const {
 
   // Content width excludes the gutter column.
   std::size_t c = contentWidth(cols);
@@ -301,7 +302,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t vi = scrollVis + r;
-    out += ansi::cursorTo(r, 0);
+    out += ansi::cursorTo(rowOffset + r, colOffset);
     if (vi < vlines.size()) {
       auto& content = vlines[vi].content;
       // Check if any section header appears in this visual line.
@@ -374,7 +375,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
     }
     out += ansi::EraseLine;
     // Gutter column.
-    out += ansi::cursorTo(r, cols.value - 1);
+    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

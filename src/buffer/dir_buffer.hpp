@@ -18,7 +18,9 @@ public:
   bool readonly() const override { return true; }
 
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true) const override;
+                                    bool showWhitespace = false, bool wrap = true,
+                                    std::size_t rowOffset = 0,
+                                    std::size_t colOffset = 0) const override;
 
   /// Return the full path for the entry on the cursor line.
   std::filesystem::path selectedPath() const;

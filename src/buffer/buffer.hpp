@@ -22,7 +22,11 @@ enum class BufferMode { Txt, Cpp, Md, Jsn };
 // Text is stored as one std::string per line, without '\n' delimiters.
 // An empty buffer has _lines = {{}} (one empty line). A file ending with
 // '\n' is represented by an empty trailing entry.
+class BufferView;
+
 class Buffer {
+  friend class BufferView;
+
 public:
   virtual ~Buffer() = default;
 
@@ -219,7 +223,9 @@ public:
   /// starting from _viewFromLine. rows and cols must be > 0. Returns the
   /// screen {row, col} of the point for cursor positioning.
   virtual std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                            bool showWhitespace = false, bool wrap = true) const;
+                                            bool showWhitespace = false, bool wrap = true,
+                                            std::size_t rowOffset = 0,
+                                            std::size_t colOffset = 0) const;
 
   // Mark
   std::optional<BufferPoint> mark() const { return _mark; }
@@ -293,6 +299,7 @@ protected:
   bool _wrapMode = false; // tracks last wrap mode seen by ensureVisible
   std::optional<ColIdx> _desiredCol;
   bool _modified = false;
+  std::size_t _docVersion = 0; // incremented on every edit; used by BufferView
 
   // Memoisation cache for point column computations. Both lineCol() and
   // pointVisualCol() scan from byte 0 to _point.offset on the current

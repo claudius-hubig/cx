@@ -55,6 +55,7 @@ void Buffer::doInsert(uint32_t cp) {
     _point.offset += n;
   }
   _modified = true;
+  ++_docVersion;
 
   // Adjust mark to track its original position.
   if (_mark) {
@@ -90,6 +91,7 @@ void Buffer::doDeleteAtPoint() {
     auto delBytes = end - _point.offset;
     line.erase(line.begin() + _point.offset, line.begin() + end);
     _modified = true;
+    ++_docVersion;
     // Adjust mark.
     if (_mark && _mark->line == _point.line && _mark->offset > _point.offset) {
       if (_mark->offset >= _point.offset + delBytes)
@@ -104,6 +106,7 @@ void Buffer::doDeleteAtPoint() {
     line.insert(line.end(), next.begin(), next.end());
     _lines.erase(_lines.begin() + _point.line + 1);
     _modified = true;
+    ++_docVersion;
     // Adjust mark.
     if (_mark) {
       if (_mark->line == _point.line + 1) {
@@ -131,6 +134,7 @@ void Buffer::doDeleteBeforePoint() {
     auto delBytes = end - _point.offset;
     line.erase(line.begin() + _point.offset, line.begin() + end);
     _modified = true;
+    ++_docVersion;
     // Adjust mark.
     if (_mark && _mark->line == _point.line && _mark->offset > _point.offset) {
       if (_mark->offset >= _point.offset + delBytes)
@@ -148,6 +152,7 @@ void Buffer::doDeleteBeforePoint() {
     _point.line--;
     _point.offset = newOffset;
     _modified = true;
+    ++_docVersion;
     // Adjust mark.
     if (_mark) {
       if (_mark->line == curLine) {
@@ -1029,6 +1034,7 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
   _point = from;
   _mark.reset();
   _modified = true;
+  ++_docVersion;
 }
 
 BufferPoint Buffer::insertText(std::string_view text) {
@@ -1060,6 +1066,7 @@ BufferPoint Buffer::insertText(std::string_view text) {
     }
   }
   _modified = true;
+  ++_docVersion;
 
   // Adjust mark to track its original position.
   if (_mark) {
@@ -1113,7 +1120,8 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
 }
 
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,
-                                          bool showWhitespace, bool wrap) const {
+                                          bool showWhitespace, bool wrap, std::size_t rowOffset,
+                                          std::size_t colOffset) const {
   static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
   static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
   static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";
@@ -1131,7 +1139,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
 
-  auto emitRowStart = [&](std::size_t r) { out += ansi::cursorTo(r, 0); };
+  auto emitRowStart = [&](std::size_t r) { out += ansi::cursorTo(rowOffset + r, colOffset); };
 
   // Per-character rendering state: tracks which ANSI highlight modes are
   // currently active so we can emit transitions only when they change.
@@ -1207,7 +1215,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // Emit the gutter character at column cols.value for a given row.
   // `highlight` marks the visual row containing the cursor.
   auto emitGutter = [&](std::size_t r, bool highlight, char const* indicator) {
-    out += ansi::cursorTo(r, cols.value - 1);
+    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
     out += highlight ? ansi::Reset : ansi::ReverseVideo;
     out += indicator;
     out += ansi::Reset;

@@ -20,5 +20,7 @@ public:
   /// Render help content with adaptive layout: stacked (single column)
   /// or side-by-side (commands + movement) depending on terminal width.
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true) const override;
+                                    bool showWhitespace = false, bool wrap = true,
+                                    std::size_t rowOffset = 0,
+                                    std::size_t colOffset = 0) const override;
 };
