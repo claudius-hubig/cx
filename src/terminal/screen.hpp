@@ -1,7 +1,9 @@
 #pragma once
 
 #include "buffer/buffer_sink.hpp"
+#include "buffer/buffer_view.hpp"
 #include "buffer/dir_buffer.hpp"
+#include "panel_layout.hpp"
 #include "paste_ring.hpp"
 #include "prompt.hpp"
 #include "shortcut.hpp"
@@ -9,6 +11,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -62,6 +65,9 @@ private:
   // Number of rows available for buffer content (total minus status line).
   RowIdx rowsForBuffer() const;
 
+  // Update _buf and _view from the focused panel in _layout.
+  void updateFocusPointers();
+
   // Prompt construction helpers.
   void openGoToLinePrompt();
   void openSaveAsPrompt();
@@ -103,7 +109,9 @@ private:
   void executePipeReplace(std::string command);
 
   std::tuple<RowIdx, ColIdx> _size;
+  std::unique_ptr<PanelLayout> _layout;
   Buffer* _buf = nullptr;
+  BufferView* _view = nullptr;
   BufferManager* _bufMgr = nullptr;
   std::string _renderBuf;
 

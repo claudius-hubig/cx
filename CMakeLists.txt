@@ -21,6 +21,8 @@ add_executable(cx
     src/buffer/dir_buffer.cpp
     src/buffer/buffer_manager.cpp
     src/buffer/buffer_view.cpp
+    src/terminal/panel.cpp
+    src/terminal/panel_layout.cpp
 )
 
 target_include_directories(cx PRIVATE src)
@@ -221,3 +223,19 @@ add_executable(test_buffer_view
 target_include_directories(test_buffer_view PRIVATE src .)
 target_link_libraries(test_buffer_view Boost::unit_test_framework)
 add_test(NAME buffer_view COMMAND test_buffer_view)
+
+add_executable(test_panel_layout
+    tests/test_panel_layout.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+    src/buffer/text_buffer.cpp
+    src/terminal/panel.cpp
+    src/terminal/panel_layout.cpp
+)
+target_include_directories(test_panel_layout PRIVATE src .)
+target_link_libraries(test_panel_layout Boost::unit_test_framework)
+add_test(NAME panel_layout COMMAND test_panel_layout)

@@ -23,8 +23,8 @@
 
 // Read a full UTF-8 character from stdin (given the lead byte) and insert
 // it into the buffer as a single codepoint.
-static void insertCharWithUtf8(Buffer& buf, char c) {
-  buf.insert(readUtf8Codepoint(static_cast<unsigned char>(c)));
+static void insertCharWithUtf8(BufferView& view, char c) {
+  view.insert(readUtf8Codepoint(static_cast<unsigned char>(c)));
 }
 
 // Write all bytes to fd, retrying on partial writes and EINTR.
@@ -70,11 +70,32 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
 }
 
 void Screen::setBuffer(Buffer& buf) {
-  _buf = &buf;
+  auto& [rows, cols] = _size;
+  if (!_layout) {
+    _layout = std::make_unique<PanelLayout>(buf, rows.value, cols.value);
+  } else {
+    auto& panel = _layout->focused();
+    // Save view state if this is the last view for the old buffer.
+    if (_buf && _layout->viewCountFor(*_buf) == 1)
+      panel.saveViewState();
+    bool restoreState = (_layout->viewCountFor(buf) == 0);
+    panel.setBuffer(buf, restoreState);
+  }
+  updateFocusPointers();
   _pasteState.reset();
   if (_bufMgr && (!buf.readonly() || dynamic_cast<DirBuffer*>(&buf)))
     _bufMgr->touch(buf.name());
   draw();
+}
+
+void Screen::updateFocusPointers() {
+  if (_layout) {
+    _buf = &_layout->focused().buffer();
+    _view = &_layout->focused().view();
+  } else {
+    _buf = nullptr;
+    _view = nullptr;
+  }
 }
 
 void Screen::setBufferManager(BufferManager& mgr) { _bufMgr = &mgr; }
@@ -91,9 +112,9 @@ void Screen::draw() {
 
   RowIdx cur_row{0};
   ColIdx cur_col{0};
-  if (_buf) {
-    _buf->ensureVisible(br, cols, _wrap);
-    std::tie(cur_row, cur_col) = _buf->render(_renderBuf, br, cols, _showWhitespace, _wrap);
+  if (_view) {
+    _view->ensureVisible(br, cols, _wrap);
+    std::tie(cur_row, cur_col) = _view->render(_renderBuf, br, cols, _showWhitespace, _wrap);
   }
 
   // Expire timed status message.
@@ -104,8 +125,8 @@ void Screen::draw() {
 
   // Expire find highlight.
   if (_highlightExpiry && std::chrono::steady_clock::now() >= *_highlightExpiry) {
-    if (_buf)
-      _buf->clearHighlight();
+    if (_view)
+      _view->clearHighlight();
     _highlightExpiry.reset();
   }
 
@@ -113,8 +134,8 @@ void Screen::draw() {
   // Always show line:col when a buffer is available.
   std::string status;
   std::size_t status_vwidth = 0; // visual width (excludes ANSI escapes)
-  if (_buf) {
-    auto [line, col] = _buf->lineCol();
+  if (_view) {
+    auto [line, col] = _view->lineCol();
     status = std::to_string(line) + ":" + std::to_string(col);
     status_vwidth = visualWidth(status);
   }
@@ -345,7 +366,7 @@ void Screen::openGoToLinePrompt() {
               }
             }
             if (line > 0)
-              _buf->gotoLine(line, rowsForBuffer());
+              _view->gotoLine(line, rowsForBuffer());
           },
   };
 }
@@ -915,7 +936,7 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
   }
 
   BufferPoint endPt{_buf->lineCount() - 1, _buf->lineContent(_buf->lineCount() - 1).size()};
-  auto allText = _buf->extractRegion({0, 0}, endPt);
+  auto allText = _view->extractRegion({0, 0}, endPt);
 
   std::vector<std::string> args = {"clang-format", "--assume-filename=" + _buf->name()};
   if (lineRange) {
@@ -941,16 +962,16 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
     return;
   }
 
-  auto savedLine = _buf->point().line;
-  auto savedOffset = _buf->point().offset;
-  _buf->clearMark();
-  _buf->deleteRegion({0, 0}, endPt);
-  _buf->insertText(res->stdoutData);
+  auto savedLine = _view->point().line;
+  auto savedOffset = _view->point().offset;
+  _view->clearMark();
+  _view->deleteRegion({0, 0}, endPt);
+  _view->insertText(res->stdoutData);
   auto line = std::min(savedLine, _buf->lineCount() - 1);
   auto offset = std::min(savedOffset, _buf->lineContent(line).size());
-  _buf->setPoint(line, offset);
+  _view->setPoint(line, offset);
   auto& [rows, cols] = _size;
-  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _view->ensureVisible(rowsForBuffer(), cols, _wrap);
   setStatus("Formatted");
 }
 
@@ -962,12 +983,12 @@ void Screen::openPipeReplacePrompt() {
 }
 
 void Screen::executePipeReplace(std::string command) {
-  if (!_buf || !_buf->mark())
+  if (!_buf || !_view->mark())
     return;
 
-  auto from = *_buf->mark();
-  auto to = _buf->point();
-  auto regionText = _buf->extractRegion(from, to);
+  auto from = *_view->mark();
+  auto to = _view->point();
+  auto regionText = _view->extractRegion(from, to);
 
   auto res = runPipeCommand({"/bin/sh", "-c", std::move(command)}, regionText, bufferWorkDir());
 
@@ -976,11 +997,11 @@ void Screen::executePipeReplace(std::string command) {
     return;
   }
 
-  _buf->deleteRegion(from, to);
-  _buf->clearMark();
+  _view->deleteRegion(from, to);
+  _view->clearMark();
 
   if (!res->stdoutData.empty()) {
-    _buf->insertText(res->stdoutData);
+    _view->insertText(res->stdoutData);
     if (!res->stderrData.empty()) {
       std::string trimmed;
       trimmed.reserve(res->stderrData.size());
@@ -990,11 +1011,11 @@ void Screen::executePipeReplace(std::string command) {
       setStatus("Command returned error output: " + trimmed);
     }
   } else if (!res->stderrData.empty()) {
-    _buf->insertText("STDERR:\n" + res->stderrData);
+    _view->insertText("STDERR:\n" + res->stderrData);
   }
 
   auto& [rows, cols] = _size;
-  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _view->ensureVisible(rowsForBuffer(), cols, _wrap);
 }
 
 bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
@@ -1009,41 +1030,41 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         case ansi::UpArrow:
           if (_buf) {
             if (_wrap)
-              _buf->moveUp(cols);
+              _view->moveUp(cols);
             else
-              _buf->movePhysicalUp();
-            if (_buf->point() < _buf->viewFrom())
-              _buf->scrollUp(_wrap);
+              _view->movePhysicalUp();
+            if (_view->point() < _view->viewFrom())
+              _view->scrollUp(_wrap);
           }
           break;
         case ansi::DownArrow:
           if (_buf) {
-            auto prev = _buf->point();
+            auto prev = _view->point();
             if (_wrap)
-              _buf->moveDown(cols);
+              _view->moveDown(cols);
             else
-              _buf->movePhysicalDown();
-            if (_buf->point() == prev)
-              _buf->scrollViewNearEnd(rowsForBuffer());
+              _view->movePhysicalDown();
+            if (_view->point() == prev)
+              _view->scrollViewNearEnd(rowsForBuffer());
             else
-              _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+              _view->ensureVisible(rowsForBuffer(), cols, _wrap);
           }
           break;
         case ansi::RightArrow:
           if (_buf)
-            _buf->moveRight();
+            _view->moveRight();
           break;
         case ansi::LeftArrow:
           if (_buf)
-            _buf->moveLeft();
+            _view->moveLeft();
           break;
         case ansi::Home:
           if (_buf)
-            _buf->moveHome();
+            _view->moveHome();
           break;
         case ansi::End:
           if (_buf)
-            _buf->moveEnd();
+            _view->moveEnd();
           break;
         case ansi::ModifiedKey: {
           // Modified key: ESC[1;modX (e.g. Ctrl+Arrow = ESC[1;5X)
@@ -1053,32 +1074,32 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
             if (mod == ansi::ModCtrl && _buf) {
               switch (dir) {
               case ansi::RightArrow:
-                _buf->moveWordRight();
+                _view->moveWordRight();
                 break;
               case ansi::LeftArrow:
-                _buf->moveWordLeft();
+                _view->moveWordLeft();
                 break;
               case ansi::UpArrow:
-                if (_wrap && _buf->currentLineWraps(cols))
-                  _buf->movePhysicalUp();
+                if (_wrap && _view->currentLineWraps(cols))
+                  _view->movePhysicalUp();
                 else
-                  _buf->moveParagraphUp();
+                  _view->moveParagraphUp();
                 break;
               case ansi::DownArrow:
-                if (_wrap && _buf->currentLineWraps(cols))
-                  _buf->movePhysicalDown();
+                if (_wrap && _view->currentLineWraps(cols))
+                  _view->movePhysicalDown();
                 else
-                  _buf->moveParagraphDown();
+                  _view->moveParagraphDown();
                 break;
               case ansi::Home:
-                _buf->setPoint(0, 0);
+                _view->setPoint(0, 0);
                 break;
               case ansi::End:
-                _buf->setPoint(_buf->lineCount() - 1,
-                               _buf->lineContent(_buf->lineCount() - 1).size());
+                _view->setPoint(_buf->lineCount() - 1,
+                                _buf->lineContent(_buf->lineCount() - 1).size());
                 break;
               }
-              _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+              _view->ensureVisible(rowsForBuffer(), cols, _wrap);
             }
           }
           break;
@@ -1088,11 +1109,11 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
           if (read(STDIN_FILENO, &next, 1) == 1) {
             if (next == ansi::Terminator) {
               // Plain Delete: ESC[3~
-              if (_buf && _buf->mark()) {
-                _buf->deleteRegion(_buf->mark().value(), _buf->point());
+              if (_buf && _view->mark()) {
+                _view->deleteRegion(_view->mark().value(), _view->point());
                 _pasteState.reset();
               } else if (_buf) {
-                _buf->deleteAtPoint();
+                _view->deleteAtPoint();
                 _pasteState.reset();
               }
             } else if (next == ansi::Separator) {
@@ -1101,7 +1122,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
               if (read(STDIN_FILENO, &mod, 1) == 1 && read(STDIN_FILENO, &tilde, 1) == 1 &&
                   tilde == ansi::Terminator) {
                 if (mod == ansi::ModCtrl && _buf)
-                  _buf->deleteChunkAtPoint();
+                  _view->deleteChunkAtPoint();
               }
             }
           }
@@ -1110,13 +1131,13 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         case ansi::PageUp: {
           char tilde;
           if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
-            _buf->pageUp(rowsForBuffer(), cols, _wrap);
+            _view->pageUp(rowsForBuffer(), cols, _wrap);
           break;
         }
         case ansi::PageDown: {
           char tilde;
           if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
-            _buf->pageDown(rowsForBuffer(), cols, _wrap);
+            _view->pageDown(rowsForBuffer(), cols, _wrap);
           break;
         }
         default: {
@@ -1134,7 +1155,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
       // Not a CSI sequence or known chord — insert the byte verbatim
       // (e.g. Alt+key sends ESC followed by the key).
       if (_buf && static_cast<unsigned char>(seq[0]) >= key::PrintableMin)
-        insertCharWithUtf8(*_buf, seq[0]);
+        insertCharWithUtf8(*_view, seq[0]);
     }
   } else {
     // Bare Esc — enter prefix mode: wait for the next key.
@@ -1184,8 +1205,8 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
 }
 
 bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
-  if (_buf && _highlightExpiry) {
-    _buf->clearHighlight();
+  if (_view && _highlightExpiry) {
+    _view->clearHighlight();
     _highlightExpiry.reset();
   }
   auto& [rows, cols] = _size;
@@ -1207,17 +1228,17 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         setBuffer(_bufMgr->open(db->selectedPath()));
       }
     } else if (_buf) {
-      _buf->insert('\n');
-      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->insert('\n');
+      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
   } else if (c == key::Backspace) {
     // Backspace: if mark active, delete region (no paste ring push).
-    if (_buf && _buf->mark()) {
-      _buf->deleteRegion(_buf->mark().value(), _buf->point());
+    if (_buf && _view->mark()) {
+      _view->deleteRegion(_view->mark().value(), _view->point());
       _pasteState.reset();
     } else if (_buf) {
-      _buf->deleteBeforePoint();
+      _view->deleteBeforePoint();
       _pasteState.reset();
     }
   } else if (c == key::Escape) {
@@ -1228,14 +1249,14 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         if (!_buf->hasPath()) {
           setStatus("Save file first to determine format");
         } else {
-          auto line = _buf->point().line + 1;
+          auto line = _view->point().line + 1;
           executeFormat({{line, line}});
-          _buf->adjustCursorToIndent();
+          _view->adjustCursorToIndent();
         }
       } else {
-        _buf->insert('\t');
+        _view->insert('\t');
       }
-      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
       _pasteState.reset();
     }
   } else if (static_cast<unsigned char>(c) < key::PrintableMin) {
@@ -1247,7 +1268,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
   } else {
     // '?' on a bracket in C/JSON mode → jump to matching bracket.
     if (c == '?' && _buf && (_buf->mode() == BufferMode::Cpp || _buf->mode() == BufferMode::Jsn) &&
-        !_buf->readonly() && _buf->gotoMatchingBracket()) {
+        !_buf->readonly() && _view->gotoMatchingBracket()) {
       // Jump succeeded — nothing else to do.
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf)) {
       // Directory buffer keys.
@@ -1255,8 +1276,8 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         db->toggleHidden();
       } else if (c == 'd') {
         db->toggleDeleteMark();
-        if (_buf->point().line + 1 < _buf->lineCount())
-          _buf->movePhysicalDown();
+        if (_view->point().line + 1 < _buf->lineCount())
+          _view->movePhysicalDown();
       } else if (c == 'x') {
         auto marked = db->markedPaths();
         if (marked.empty()) {
@@ -1289,7 +1310,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       setBuffer(*_prevBuf);
       _prevBuf = nullptr;
     } else if (_buf) {
-      insertCharWithUtf8(*_buf, c);
+      insertCharWithUtf8(*_view, c);
       _pasteState.reset();
     }
   }
@@ -1305,6 +1326,10 @@ void Screen::resize() {
   struct winsize ws = {};
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0)
     _size = {RowIdx{ws.ws_row}, ColIdx{ws.ws_col}};
+  if (_layout) {
+    auto& [rows, cols] = _size;
+    _layout->resize(rows.value, cols.value);
+  }
 }
 
 void Screen::setStatus(std::string msg) {
@@ -1478,9 +1503,9 @@ findLastMatch(std::string const& line, std::size_t from, std::size_t limit,
 void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd,
                          bool wrapped) {
   auto& [rows, cols] = _size;
-  _buf->setPoint(line, matchEnd);
-  _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
-  _buf->setHighlight({line, matchStart}, {line, matchEnd});
+  _view->setPoint(line, matchEnd);
+  _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _view->setHighlight({line, matchStart}, {line, matchEnd});
   _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   _pasteState.reset();
   if (wrapped)
@@ -1497,8 +1522,8 @@ void Screen::findNext() {
   FindFlags f(_lastSearch);
 
   std::size_t lineCount = _buf->lineCount();
-  std::size_t startLine = _buf->point().line;
-  std::size_t startOff = _buf->point().offset;
+  std::size_t startLine = _view->point().line;
+  std::size_t startOff = _view->point().offset;
   bool wrapped = false;
 
   // Search forward from current position, wrapping around.
@@ -1521,7 +1546,7 @@ void Screen::findNext() {
     }
   }
 
-  _buf->clearHighlight();
+  _view->clearHighlight();
   _highlightExpiry.reset();
   setStatus("Not found");
 }
@@ -1532,8 +1557,8 @@ void Screen::findPrev() {
   FindFlags f(_lastSearch);
 
   std::size_t lineCount = _buf->lineCount();
-  std::size_t startLine = _buf->point().line;
-  std::size_t startOff = _buf->point().offset;
+  std::size_t startLine = _view->point().line;
+  std::size_t startOff = _view->point().offset;
   bool wrapped = false;
 
   // Search backward on the current line before the cursor.
@@ -1566,14 +1591,14 @@ void Screen::findPrev() {
     }
   }
 
-  _buf->clearHighlight();
+  _view->clearHighlight();
   _highlightExpiry.reset();
   setStatus("Not found");
 }
 
 void Screen::dispatchAction(Action action) {
   if (action != Action::Find && action != Action::FindBackward && _buf) {
-    _buf->clearHighlight();
+    _view->clearHighlight();
     _highlightExpiry.reset();
   }
   auto& [rows, cols] = _size;
@@ -1645,16 +1670,16 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::ToggleMark:
     if (_buf) {
-      _buf->toggleMark();
-      setStatus(_buf->mark() ? "Mark set" : "Mark cleared");
+      _view->toggleMark();
+      setStatus(_view->mark() ? "Mark set" : "Mark cleared");
       _pasteState.reset();
     }
     break;
   case Action::Cut:
-    if (_buf && _buf->mark()) {
-      auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
+    if (_buf && _view->mark()) {
+      auto text = _view->extractRegion(_view->mark().value(), _view->point());
       _pasteRing.push(std::move(text));
-      _buf->deleteRegion(_buf->mark().value(), _buf->point());
+      _view->deleteRegion(_view->mark().value(), _view->point());
       setStatus("Region cut");
       _pasteState.reset();
     } else {
@@ -1662,10 +1687,10 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::Copy:
-    if (_buf && _buf->mark()) {
-      auto text = _buf->extractRegion(_buf->mark().value(), _buf->point());
+    if (_buf && _view->mark()) {
+      auto text = _view->extractRegion(_view->mark().value(), _view->point());
       _pasteRing.push(std::move(text));
-      _buf->clearMark();
+      _view->clearMark();
       setStatus("Region copied");
       _pasteState.reset();
     } else {
@@ -1674,29 +1699,29 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::Paste:
     if (_buf && !_buf->readonly() && !_pasteRing.empty()) {
-      auto start = _buf->point();
-      auto end = _buf->insertText(_pasteRing.at(0));
+      auto start = _view->point();
+      auto end = _view->insertText(_pasteRing.at(0));
       _pasteState = PasteState{start, end, 0};
-      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
     }
     break;
   case Action::PasteCycle:
     if (_buf && !_buf->readonly() && _pasteState && !_pasteRing.empty()) {
       auto nextIdx = (_pasteState->rbIdx + 1) % _pasteRing.size();
-      _buf->deleteRegion(_pasteState->start, _pasteState->end);
-      auto start = _buf->point();
-      auto end = _buf->insertText(_pasteRing.at(nextIdx));
+      _view->deleteRegion(_pasteState->start, _pasteState->end);
+      auto start = _view->point();
+      auto end = _view->insertText(_pasteRing.at(nextIdx));
       _pasteState = PasteState{start, end, nextIdx};
       setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
                 std::to_string(_pasteRing.size()));
-      _buf->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
     } else {
       setStatus("Can't cycle paste if last command was not a paste");
     }
     break;
   case Action::DeleteChunkBefore:
     if (_buf)
-      _buf->deleteChunkBeforePoint();
+      _view->deleteChunkBeforePoint();
     break;
   case Action::Find:
     openFindPrompt(false);
@@ -1759,9 +1784,9 @@ void Screen::dispatchAction(Action action) {
   case Action::Format:
     if (_buf) {
       std::optional<std::pair<std::size_t, std::size_t>> range;
-      if (_buf->mark()) {
-        auto markLine = _buf->mark()->line;
-        auto pointLine = _buf->point().line;
+      if (_view->mark()) {
+        auto markLine = _view->mark()->line;
+        auto pointLine = _view->point().line;
         range = {std::min(markLine, pointLine) + 1, std::max(markLine, pointLine) + 1};
       }
       executeFormat(range);
@@ -1769,7 +1794,7 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::PipeReplace:
     if (_buf && !_buf->readonly()) {
-      if (!_buf->mark())
+      if (!_view->mark())
         setStatus("No mark set");
       else
         openPipeReplacePrompt();
