@@ -102,20 +102,11 @@ void Screen::setBufferManager(BufferManager& mgr) { _bufMgr = &mgr; }
 
 void Screen::draw() {
   auto& [rows, cols] = _size;
-  auto br = rowsForBuffer();
 
   _renderBuf.clear();
-  // Rough estimate: ~2 bytes per cell for content + ANSI escapes.
   std::size_t estimate = rows.value * cols.value * 2;
   if (_renderBuf.capacity() < estimate)
     _renderBuf.reserve(estimate);
-
-  RowIdx cur_row{0};
-  ColIdx cur_col{0};
-  if (_view) {
-    _view->ensureVisible(br, cols, _wrap);
-    std::tie(cur_row, cur_col) = _view->render(_renderBuf, br, cols, _showWhitespace, _wrap);
-  }
 
   // Expire timed status message.
   if (_statusExpiry && std::chrono::steady_clock::now() >= *_statusExpiry) {
@@ -130,58 +121,99 @@ void Screen::draw() {
     _highlightExpiry.reset();
   }
 
-  // Status line on the last row, with inverted colours.
-  // Always show line:col when a buffer is available.
-  std::string status;
-  std::size_t status_vwidth = 0; // visual width (excludes ANSI escapes)
-  if (_view) {
-    auto [line, col] = _view->lineCol();
-    status = std::to_string(line) + ":" + std::to_string(col);
-    status_vwidth = visualWidth(status);
-  }
-  if (_prompt) {
-    status += " | " + _prompt->label;
-    if (_prompt->showInput)
-      status += _prompt->input;
-    status_vwidth = visualWidth(status);
-    status += _prompt->display.rendered;
-    status_vwidth += _prompt->display.visualWidth;
-  } else if (!_statusMsg.empty()) {
-    status += " | " + _statusMsg;
-    status_vwidth = visualWidth(status);
+  RowIdx cur_row{0};
+  ColIdx cur_col{0};
+
+  if (_layout) {
+    bool multiPanel = _layout->count() > 1;
+    int focusedId = _layout->focused().id();
+
+    _layout->forEachPanel([&](Panel& panel) {
+      auto& view = panel.view();
+      auto rect = panel.rect();
+      auto pr = panel.contentRows();
+      auto pc = panel.totalCols();
+      bool focused = (panel.id() == focusedId);
+
+      // Clamp stale cursors in non-focused panels sharing a buffer.
+      if (multiPanel && !focused)
+        view.clampToBuffer();
+
+      view.ensureVisible(pr, pc, _wrap);
+      auto [cr, cc] = view.render(_renderBuf, pr, pc, _showWhitespace, _wrap, rect.row, rect.col);
+
+      if (focused) {
+        cur_row = cr;
+        cur_col = cc;
+      }
+
+      // --- Modeline at the bottom row of this panel ---
+      auto& pbuf = panel.buffer();
+      std::string status;
+      std::size_t status_vwidth = 0;
+
+      {
+        auto [line, col] = view.lineCol();
+        status = std::to_string(line) + ":" + std::to_string(col);
+        status_vwidth = visualWidth(status);
+      }
+
+      // Prompt and status messages only on the focused panel.
+      if (focused) {
+        if (_prompt) {
+          status += " | " + _prompt->label;
+          if (_prompt->showInput)
+            status += _prompt->input;
+          status_vwidth = visualWidth(status);
+          status += _prompt->display.rendered;
+          status_vwidth += _prompt->display.visualWidth;
+        } else if (!_statusMsg.empty()) {
+          status += " | " + _statusMsg;
+          status_vwidth = visualWidth(status);
+        }
+      }
+
+      // Right-align: buffer name + mode + modification indicator.
+      std::string buf_name = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
+      if (!pbuf.readonly())
+        buf_name += pbuf.mode() == BufferMode::Cpp   ? " [c]"
+                    : pbuf.mode() == BufferMode::Md  ? " [md]"
+                    : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
+                                                     : " [txt]";
+      if (pbuf.modified())
+        buf_name += " +";
+      else
+        buf_name += "  ";
+
+      auto buf_name_vwidth = visualWidth(buf_name);
+      if (status_vwidth + buf_name_vwidth + 2 <= pc.value) {
+        status.append(pc.value - buf_name_vwidth - status_vwidth, ' ');
+        status += buf_name;
+      } else if (status_vwidth < pc.value) {
+        status.append(pc.value - status_vwidth, ' ');
+      }
+
+      std::size_t modelineRow = rect.row + rect.rows - 1;
+      _renderBuf += ansi::cursorTo(modelineRow, rect.col);
+      if (focused)
+        _renderBuf += ansi::Bold;
+      else
+        _renderBuf += ansi::Dim;
+      _renderBuf += ansi::ReverseVideo;
+      _renderBuf += status;
+      _renderBuf += ansi::Reset;
+
+      // Panel ID in the gutter's top-right cell (only when multiple panels).
+      if (multiPanel && panel.id() >= 1 && panel.id() <= 9) {
+        _renderBuf += ansi::cursorTo(rect.row, rect.col + rect.cols - 1);
+        _renderBuf += ansi::Dim;
+        _renderBuf += static_cast<char>('0' + panel.id());
+        _renderBuf += ansi::DimOff;
+      }
+    });
   }
 
-  // Right-align the buffer name + mode + modification indicator on the status line.
-  std::string buf_name;
-  if (_buf) {
-    buf_name = _bufMgr ? _bufMgr->displayName(_buf->name()) : _buf->name();
-    if (!_buf->readonly())
-      buf_name += _buf->mode() == BufferMode::Cpp   ? " [c]"
-                  : _buf->mode() == BufferMode::Md  ? " [md]"
-                  : _buf->mode() == BufferMode::Jsn ? " [jsn]"
-                                                    : " [txt]";
-    if (_buf->modified())
-      buf_name += " +";
-    else
-      buf_name += "  ";
-  }
-  auto buf_name_vwidth = visualWidth(buf_name);
-  if (status_vwidth + buf_name_vwidth + 2 <= cols.value) {
-    status.append(cols.value - buf_name_vwidth - status_vwidth, ' ');
-    status += buf_name;
-  } else if (status_vwidth < cols.value) {
-    status.append(cols.value - status_vwidth, ' ');
-  }
-  _renderBuf += ansi::cursorTo(rows.value - 1, 0);
-  _renderBuf += ansi::ReverseVideo;
-  _renderBuf += status;
-  _renderBuf += ansi::Reset;
-
-  // Position the terminal cursor AFTER the status line, so it lands
-  // in the buffer area rather than on the status bar.
   _renderBuf += ansi::cursorTo(cur_row.value, cur_col.value);
-
-  // Ensure the cursor is visible.
   _renderBuf += ansi::ShowCursor;
 
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
@@ -634,8 +666,8 @@ void Screen::saveAndMaybeKill() {
     if (_killPending && _bufMgr) {
       _killPending = false;
       auto name = _buf->name();
-      if (_prevBuf == _buf)
-        _prevBuf = nullptr;
+      if (prevBuf() == _buf)
+        prevBuf() = nullptr;
       setBuffer(_bufMgr->kill(name));
     }
   } else {
@@ -656,8 +688,8 @@ void Screen::openConfirmKillPrompt(std::string question) {
               if (!res) {
                 setStatus(res.error());
               } else {
-                if (_prevBuf == _buf)
-                  _prevBuf = nullptr;
+                if (prevBuf() == _buf)
+                  prevBuf() = nullptr;
                 setBuffer(_bufMgr->kill(_buf->name()));
               }
             } else {
@@ -669,8 +701,8 @@ void Screen::openConfirmKillPrompt(std::string question) {
           // Kill without saving.
           if (_buf && _bufMgr) {
             auto name = _buf->name();
-            if (_prevBuf == _buf)
-              _prevBuf = nullptr;
+            if (prevBuf() == _buf)
+              prevBuf() = nullptr;
             setBuffer(_bufMgr->kill(name));
           }
         }
@@ -970,8 +1002,7 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
   auto line = std::min(savedLine, _buf->lineCount() - 1);
   auto offset = std::min(savedOffset, _buf->lineContent(line).size());
   _view->setPoint(line, offset);
-  auto& [rows, cols] = _size;
-  _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
   setStatus("Formatted");
 }
 
@@ -1014,12 +1045,11 @@ void Screen::executePipeReplace(std::string command) {
     _view->insertText("STDERR:\n" + res->stderrData);
   }
 
-  auto& [rows, cols] = _size;
-  _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
 }
 
 bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
-  auto& [rows, cols] = _size;
+  auto pcols = colsForBuffer();
   struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
   if (poll(&pfd, 1, 50) > 0) {
     // Escape sequence: read the next bytes to identify the key.
@@ -1030,7 +1060,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         case ansi::UpArrow:
           if (_buf) {
             if (_wrap)
-              _view->moveUp(cols);
+              _view->moveUp(pcols);
             else
               _view->movePhysicalUp();
             if (_view->point() < _view->viewFrom())
@@ -1041,13 +1071,13 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
           if (_buf) {
             auto prev = _view->point();
             if (_wrap)
-              _view->moveDown(cols);
+              _view->moveDown(pcols);
             else
               _view->movePhysicalDown();
             if (_view->point() == prev)
               _view->scrollViewNearEnd(rowsForBuffer());
             else
-              _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+              _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
           }
           break;
         case ansi::RightArrow:
@@ -1080,13 +1110,13 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                 _view->moveWordLeft();
                 break;
               case ansi::UpArrow:
-                if (_wrap && _view->currentLineWraps(cols))
+                if (_wrap && _view->currentLineWraps(pcols))
                   _view->movePhysicalUp();
                 else
                   _view->moveParagraphUp();
                 break;
               case ansi::DownArrow:
-                if (_wrap && _view->currentLineWraps(cols))
+                if (_wrap && _view->currentLineWraps(pcols))
                   _view->movePhysicalDown();
                 else
                   _view->moveParagraphDown();
@@ -1099,7 +1129,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                                 _buf->lineContent(_buf->lineCount() - 1).size());
                 break;
               }
-              _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+              _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
             }
           }
           break;
@@ -1131,13 +1161,13 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         case ansi::PageUp: {
           char tilde;
           if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
-            _view->pageUp(rowsForBuffer(), cols, _wrap);
+            _view->pageUp(rowsForBuffer(), pcols, _wrap);
           break;
         }
         case ansi::PageDown: {
           char tilde;
           if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
-            _view->pageDown(rowsForBuffer(), cols, _wrap);
+            _view->pageDown(rowsForBuffer(), pcols, _wrap);
           break;
         }
         default: {
@@ -1186,9 +1216,9 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
     if (gotNext && !handleEscChord(next)) {
       if (next == key::Escape) {
         // Esc-Esc: dismiss readonly overlay if active.
-        if (_buf && _buf->readonly() && _prevBuf) {
-          setBuffer(*_prevBuf);
-          _prevBuf = nullptr;
+        if (_buf && _buf->readonly() && prevBuf()) {
+          setBuffer(*prevBuf());
+          prevBuf() = nullptr;
         }
       } else {
         setStatus(formatShortcut(shortcutFromEscChar(next)) + " not recognised.");
@@ -1209,15 +1239,15 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     _view->clearHighlight();
     _highlightExpiry.reset();
   }
-  auto& [rows, cols] = _size;
+  auto pcols = colsForBuffer();
   if (c == key::Enter || c == key::Newline) {
     // Buffer list: Enter selects the highlighted buffer.
     auto* blb = dynamic_cast<BufferListBuffer*>(_buf);
-    if (blb && _prevBuf && _bufMgr) {
+    if (blb && prevBuf() && _bufMgr) {
       auto name = blb->selectedName();
       Buffer* target = _bufMgr->find(name);
       if (target) {
-        _prevBuf = nullptr;
+        prevBuf() = nullptr;
         setBuffer(*target);
       }
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf); db && _bufMgr) {
@@ -1229,7 +1259,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       }
     } else if (_buf) {
       _view->insert('\n');
-      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
       _pasteState.reset();
     }
   } else if (c == key::Backspace) {
@@ -1256,7 +1286,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       } else {
         _view->insert('\t');
       }
-      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
       _pasteState.reset();
     }
   } else if (static_cast<unsigned char>(c) < key::PrintableMin) {
@@ -1306,9 +1336,9 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
               });
         }
       }
-    } else if (_buf && _buf->readonly() && c == 'q' && _prevBuf) {
-      setBuffer(*_prevBuf);
-      _prevBuf = nullptr;
+    } else if (_buf && _buf->readonly() && c == 'q' && prevBuf()) {
+      setBuffer(*prevBuf());
+      prevBuf() = nullptr;
     } else if (_buf) {
       insertCharWithUtf8(*_view, c);
       _pasteState.reset();
@@ -1318,9 +1348,19 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
 }
 
 RowIdx Screen::rowsForBuffer() const {
+  if (_layout)
+    return _layout->focused().contentRows();
   auto& [rows, cols] = _size;
   return RowIdx{rows.value > 1 ? rows.value - 1 : 1};
 }
+
+ColIdx Screen::colsForBuffer() const {
+  if (_layout)
+    return _layout->focused().totalCols();
+  return std::get<1>(_size);
+}
+
+Buffer*& Screen::prevBuf() { return _layout->focused().prevBuf; }
 
 void Screen::resize() {
   struct winsize ws = {};
@@ -1351,9 +1391,9 @@ bool Screen::tryExit() {
     return true;
 
   // Dismiss any readonly overlay first.
-  if (_buf && _buf->readonly() && _prevBuf) {
-    setBuffer(*_prevBuf);
-    _prevBuf = nullptr;
+  if (_buf && _buf->readonly() && prevBuf()) {
+    setBuffer(*prevBuf());
+    prevBuf() = nullptr;
   }
 
   // Find the next modified, non-readonly buffer.
@@ -1502,9 +1542,8 @@ findLastMatch(std::string const& line, std::size_t from, std::size_t limit,
 
 void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd,
                          bool wrapped) {
-  auto& [rows, cols] = _size;
   _view->setPoint(line, matchEnd);
-  _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
   _view->setHighlight({line, matchStart}, {line, matchEnd});
   _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   _pasteState.reset();
@@ -1601,15 +1640,15 @@ void Screen::dispatchAction(Action action) {
     _view->clearHighlight();
     _highlightExpiry.reset();
   }
-  auto& [rows, cols] = _size;
+  auto pcols = colsForBuffer();
   switch (action) {
   case Action::Help:
     if (_bufMgr) {
-      if (_buf && _buf->readonly() && _prevBuf) {
-        setBuffer(*_prevBuf);
-        _prevBuf = nullptr;
+      if (_buf && _buf->readonly() && prevBuf()) {
+        setBuffer(*prevBuf());
+        prevBuf() = nullptr;
       } else {
-        _prevBuf = _buf;
+        prevBuf() = _buf;
         setBuffer(_bufMgr->helpBuffer());
       }
     }
@@ -1621,15 +1660,15 @@ void Screen::dispatchAction(Action action) {
     openGoToLinePrompt();
     break;
   case Action::SwitchBuffer:
-    _prevBuf = nullptr;
+    prevBuf() = nullptr;
     openSwitchBufferPrompt();
     break;
   case Action::KillBuffer:
     if (_buf && _bufMgr && (dynamic_cast<DirBuffer*>(_buf) || !_buf->readonly())) {
       if (!_buf->modified()) {
         auto name = _buf->name();
-        if (_prevBuf == _buf)
-          _prevBuf = nullptr;
+        if (prevBuf() == _buf)
+          prevBuf() = nullptr;
         setBuffer(_bufMgr->kill(name));
       } else {
         openConfirmKillPrompt(!_buf->hasPath()
@@ -1702,7 +1741,7 @@ void Screen::dispatchAction(Action action) {
       auto start = _view->point();
       auto end = _view->insertText(_pasteRing.at(0));
       _pasteState = PasteState{start, end, 0};
-      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
     }
     break;
   case Action::PasteCycle:
@@ -1714,7 +1753,7 @@ void Screen::dispatchAction(Action action) {
       _pasteState = PasteState{start, end, nextIdx};
       setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
                 std::to_string(_pasteRing.size()));
-      _view->ensureVisible(rowsForBuffer(), cols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
     } else {
       setStatus("Can't cycle paste if last command was not a paste");
     }
@@ -1753,22 +1792,22 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::BufferList:
     if (_bufMgr) {
-      if (_buf && _buf->readonly() && _prevBuf) {
-        setBuffer(*_prevBuf);
-        _prevBuf = nullptr;
+      if (_buf && _buf->readonly() && prevBuf()) {
+        setBuffer(*prevBuf());
+        prevBuf() = nullptr;
       } else {
-        _prevBuf = _buf;
+        prevBuf() = _buf;
         setBuffer(_bufMgr->bufferListBuffer());
       }
     }
     break;
   case Action::PasteRing:
     if (_bufMgr) {
-      if (_buf && _buf->readonly() && _prevBuf) {
-        setBuffer(*_prevBuf);
-        _prevBuf = nullptr;
+      if (_buf && _buf->readonly() && prevBuf()) {
+        setBuffer(*prevBuf());
+        prevBuf() = nullptr;
       } else {
-        _prevBuf = _buf;
+        prevBuf() = _buf;
         setBuffer(_bufMgr->pasteRingBuffer(_pasteRing));
       }
     }
@@ -1807,6 +1846,53 @@ void Screen::dispatchAction(Action action) {
   case Action::DirBrowser:
     if (_bufMgr)
       setBuffer(_bufMgr->openDir(std::filesystem::current_path()));
+    break;
+  case Action::SplitVertical:
+    if (_layout && _buf) {
+      auto* p = _layout->splitFocused(SplitDir::Vertical, *_buf);
+      if (p) {
+        updateFocusPointers();
+        setStatus("Split vertical (panel " + std::to_string(p->id()) + ")");
+      } else {
+        setStatus("Not enough space to split");
+      }
+    }
+    break;
+  case Action::SplitHorizontal:
+    if (_layout && _buf) {
+      auto* p = _layout->splitFocused(SplitDir::Horizontal, *_buf);
+      if (p) {
+        updateFocusPointers();
+        setStatus("Split horizontal (panel " + std::to_string(p->id()) + ")");
+      } else {
+        setStatus("Not enough space to split");
+      }
+    }
+    break;
+  case Action::ClosePanel:
+    if (_layout) {
+      if (_layout->count() <= 1) {
+        setStatus("Last panel");
+      } else {
+        // Save view state if this is the last view for the buffer.
+        if (_buf && _layout->viewCountFor(*_buf) == 1)
+          _layout->focused().saveViewState();
+        _layout->closeFocused();
+        updateFocusPointers();
+      }
+    }
+    break;
+  case Action::FocusPanel1:
+  case Action::FocusPanel2:
+  case Action::FocusPanel3:
+  case Action::FocusPanel4:
+  case Action::FocusPanel5:
+  case Action::FocusPanel6:
+    if (_layout) {
+      int id = static_cast<int>(action) - static_cast<int>(Action::FocusPanel1) + 1;
+      if (_layout->focusPanel(id))
+        updateFocusPointers();
+    }
     break;
   }
 }

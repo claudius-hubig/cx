@@ -28,6 +28,15 @@ enum class Action {
   SetMode,
   DirBrowser,
   PipeReplace,
+  SplitVertical,
+  SplitHorizontal,
+  ClosePanel,
+  FocusPanel1,
+  FocusPanel2,
+  FocusPanel3,
+  FocusPanel4,
+  FocusPanel5,
+  FocusPanel6,
 };
 
 struct Shortcut {

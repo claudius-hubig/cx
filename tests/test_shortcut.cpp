@@ -78,6 +78,24 @@ BOOST_AUTO_TEST_CASE(ctrl_p_maps_to_pipe_replace) {
   BOOST_CHECK(*action == Action::PipeReplace);
 }
 
+BOOST_AUTO_TEST_CASE(esc_v_maps_to_split_vertical) {
+  auto action = handleShortcut({.esc = true, .key = 'v'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::SplitVertical);
+}
+
+BOOST_AUTO_TEST_CASE(esc_dot_maps_to_close_panel) {
+  auto action = handleShortcut({.esc = true, .key = '.'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::ClosePanel);
+}
+
+BOOST_AUTO_TEST_CASE(esc_1_maps_to_focus_panel_1) {
+  auto action = handleShortcut({.esc = true, .key = '1'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::FocusPanel1);
+}
+
 BOOST_AUTO_TEST_CASE(unrecognised_shortcut_returns_nullopt) {
   // Ctrl-z is not bound.
   auto action = handleShortcut({.ctrl = true, .key = 'z'});
@@ -241,14 +259,38 @@ BOOST_AUTO_TEST_CASE(esc_char_roundtrip_finds_action) {
 // --- All actions have descriptions ---
 
 BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
-  for (auto a : {Action::Help,       Action::Exit,       Action::GoToLine,
-                 Action::Save,       Action::KillBuffer, Action::SwitchBuffer,
-                 Action::ToggleMark, Action::Cut,        Action::Copy,
-                 Action::Paste,      Action::PasteCycle, Action::DeleteChunkBefore,
-                 Action::Revert,     Action::Find,       Action::FindBackward,
-                 Action::BufferList, Action::PasteRing,  Action::ToggleWhitespace,
-                 Action::ToggleWrap, Action::Format,     Action::SetMode,
-                 Action::DirBrowser, Action::PipeReplace}) {
+  for (auto a : {Action::Help,
+                 Action::Exit,
+                 Action::GoToLine,
+                 Action::Save,
+                 Action::KillBuffer,
+                 Action::SwitchBuffer,
+                 Action::ToggleMark,
+                 Action::Cut,
+                 Action::Copy,
+                 Action::Paste,
+                 Action::PasteCycle,
+                 Action::DeleteChunkBefore,
+                 Action::Revert,
+                 Action::Find,
+                 Action::FindBackward,
+                 Action::BufferList,
+                 Action::PasteRing,
+                 Action::ToggleWhitespace,
+                 Action::ToggleWrap,
+                 Action::Format,
+                 Action::SetMode,
+                 Action::DirBrowser,
+                 Action::PipeReplace,
+                 Action::SplitVertical,
+                 Action::SplitHorizontal,
+                 Action::ClosePanel,
+                 Action::FocusPanel1,
+                 Action::FocusPanel2,
+                 Action::FocusPanel3,
+                 Action::FocusPanel4,
+                 Action::FocusPanel5,
+                 Action::FocusPanel6}) {
     BOOST_CHECK(!descriptionForAction(a).empty());
   }
 }
@@ -256,14 +298,38 @@ BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
 // --- All actions have shortcuts ---
 
 BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
-  for (auto a : {Action::Help,       Action::Exit,       Action::GoToLine,
-                 Action::Save,       Action::KillBuffer, Action::SwitchBuffer,
-                 Action::ToggleMark, Action::Cut,        Action::Copy,
-                 Action::Paste,      Action::PasteCycle, Action::DeleteChunkBefore,
-                 Action::Revert,     Action::Find,       Action::FindBackward,
-                 Action::BufferList, Action::PasteRing,  Action::ToggleWhitespace,
-                 Action::ToggleWrap, Action::Format,     Action::SetMode,
-                 Action::DirBrowser, Action::PipeReplace}) {
+  for (auto a : {Action::Help,
+                 Action::Exit,
+                 Action::GoToLine,
+                 Action::Save,
+                 Action::KillBuffer,
+                 Action::SwitchBuffer,
+                 Action::ToggleMark,
+                 Action::Cut,
+                 Action::Copy,
+                 Action::Paste,
+                 Action::PasteCycle,
+                 Action::DeleteChunkBefore,
+                 Action::Revert,
+                 Action::Find,
+                 Action::FindBackward,
+                 Action::BufferList,
+                 Action::PasteRing,
+                 Action::ToggleWhitespace,
+                 Action::ToggleWrap,
+                 Action::Format,
+                 Action::SetMode,
+                 Action::DirBrowser,
+                 Action::PipeReplace,
+                 Action::SplitVertical,
+                 Action::SplitHorizontal,
+                 Action::ClosePanel,
+                 Action::FocusPanel1,
+                 Action::FocusPanel2,
+                 Action::FocusPanel3,
+                 Action::FocusPanel4,
+                 Action::FocusPanel5,
+                 Action::FocusPanel6}) {
     auto s = shortcutForAction(a);
     // Every action should have either ctrl or esc set.
     BOOST_CHECK(s.ctrl || s.esc);

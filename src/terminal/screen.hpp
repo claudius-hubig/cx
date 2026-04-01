@@ -62,11 +62,15 @@ private:
   bool handleEscapeInput(std::optional<char>& pendingChar);
   bool handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
-  // Number of rows available for buffer content (total minus status line).
+  // Focused panel's content dimensions (rows minus modeline, total cols).
   RowIdx rowsForBuffer() const;
+  ColIdx colsForBuffer() const;
 
   // Update _buf and _view from the focused panel in _layout.
   void updateFocusPointers();
+
+  // Per-panel overlay buffer accessor (focused panel's prevBuf).
+  Buffer*& prevBuf();
 
   // Prompt construction helpers.
   void openGoToLinePrompt();
@@ -118,7 +122,6 @@ private:
   std::optional<Prompt> _prompt;
   PromptHistory _promptHistory;
 
-  Buffer* _prevBuf = nullptr;
   std::string _statusMsg;
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
   bool _showWhitespace = false;
