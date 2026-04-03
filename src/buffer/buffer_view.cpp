@@ -82,6 +82,8 @@ void BufferView::saveToBuffer() {
   syncFrom();
 }
 
+void BufferView::loadFromBuffer() { syncFrom(); }
+
 // --- View state accessors ---
 
 BufferPoint BufferView::viewFrom() const {

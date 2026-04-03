@@ -42,6 +42,32 @@ private:
   std::filesystem::path _path;
 };
 
+// RAII helper for a temporary directory (with optional files) removed on destruction.
+class TempDir {
+public:
+  explicit TempDir(std::vector<std::string> const& filenames = {}) {
+    static std::atomic<int> counter{0};
+    static auto seed = std::random_device{}();
+    _path = std::filesystem::temp_directory_path() /
+            ("cx_testdir_" + std::to_string(seed) + "_" + std::to_string(counter++));
+    std::filesystem::create_directories(_path);
+    for (auto& name : filenames) {
+      std::ofstream f(_path / name);
+      f << name; // write the filename as content
+    }
+  }
+
+  ~TempDir() { std::filesystem::remove_all(_path); }
+
+  std::filesystem::path const& path() const { return _path; }
+
+  TempDir(TempDir const&) = delete;
+  TempDir& operator=(TempDir const&) = delete;
+
+private:
+  std::filesystem::path _path;
+};
+
 // Insert a string as UTF-8 codepoints into a buffer.
 inline void insertString(Buffer& buf, std::string_view s) {
   for (std::size_t i = 0; i < s.size();) {
