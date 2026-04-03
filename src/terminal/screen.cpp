@@ -143,8 +143,8 @@ void Screen::draw() {
       auto [cr, cc] = view.render(_renderBuf, pr, pc, _showWhitespace, _wrap, rect.row, rect.col);
 
       if (focused) {
-        cur_row = cr;
-        cur_col = cc;
+        cur_row = RowIdx{rect.row + cr.value};
+        cur_col = ColIdx{rect.col + cc.value};
       }
 
       // --- Modeline at the bottom row of this panel ---
@@ -1271,6 +1271,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     // Buffer list: Enter selects the highlighted buffer.
     auto* blb = dynamic_cast<BufferListBuffer*>(_buf);
     if (blb && prevBuf() && _bufMgr) {
+      _view->saveToBuffer();
       auto name = blb->selectedName();
       Buffer* target = _bufMgr->find(name);
       if (target) {
@@ -1279,6 +1280,8 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       }
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf); db && _bufMgr) {
       // Directory buffer: Enter opens file or navigates into directory.
+      // Sync view state to buffer so DirBuffer methods see the correct cursor.
+      _view->saveToBuffer();
       if (db->selectedIsDir()) {
         setBuffer(_bufMgr->openDir(db->selectedPath()));
       } else {
@@ -1329,10 +1332,16 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       // Jump succeeded — nothing else to do.
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf)) {
       // Directory buffer keys.
+      // Sync view state before DirBuffer methods that read _point;
+      // reload the view after methods that modify _point.
       if (c == 'h') {
+        _view->saveToBuffer();
         db->toggleHidden();
+        _view->loadFromBuffer();
       } else if (c == 'd') {
+        _view->saveToBuffer();
         db->toggleDeleteMark();
+        _view->loadFromBuffer();
         if (_view->point().line + 1 < _buf->lineCount())
           _view->movePhysicalDown();
       } else if (c == 'x') {
@@ -1346,7 +1355,9 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
                 if (answer == "y") {
                   auto* db2 = dynamic_cast<DirBuffer*>(_buf);
                   if (db2) {
+                    _view->saveToBuffer();
                     auto [count, err] = db2->executeDelete();
+                    _view->loadFromBuffer();
                     if (err.empty())
                       setStatus("Deleted " + std::to_string(count) + " item(s).");
                     else
