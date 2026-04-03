@@ -96,6 +96,13 @@ public:
   /// is the last view before destruction, to preserve cursor position.
   void saveToBuffer();
 
+  /// Reload this view's state from the buffer's fields. Used after
+  /// external code modifies the buffer's cursor directly (e.g. DirBuffer
+  /// methods that update _point).
+  /// Precondition: saveToBuffer() was called before the external modification,
+  /// so the buffer's cache fields are in a valid state.
+  void loadFromBuffer();
+
 private:
   /// Copy view state into Buffer's protected fields before delegating.
   void syncTo() const;

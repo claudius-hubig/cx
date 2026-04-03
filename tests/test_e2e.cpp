@@ -753,3 +753,175 @@ BOOST_AUTO_TEST_CASE(e2e_set_mode_prompt_shows) {
                "c");
   session.waitExit();
 }
+
+// --- Directory buffer cursor tests (single and multi-panel) ---
+
+// Helper: send N down-arrows with small delays between each.
+static void sendDownArrows(PtySession& session, int n) {
+  for (int i = 0; i < n; ++i) {
+    session.send("\x1b[B");                             // Down arrow
+    session.readOutput(std::chrono::milliseconds{100}); // drain render output
+  }
+}
+
+BOOST_AUTO_TEST_CASE(e2e_dir_open_file_single_panel) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Create a directory with three files.
+  TempDir dir({"aaa", "bbb", "ccc"});
+  PtySession session(24, 80, bin, {std::string(dir.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{1000});
+
+  // Listing order: .  ..  aaa  bbb  ccc  (indices 0-4).
+  // Move down 3 times (. -> .. -> aaa -> bbb), then Enter.
+  sendDownArrows(session, 3);
+  session.send("\r");
+  auto output = session.readUntil("bbb", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  // The modeline should show "bbb" as the opened file's name.
+  BOOST_CHECK_MESSAGE(stripped.find("bbb") != std::string::npos,
+                      "Expected 'bbb' in output after opening second file");
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_dir_open_file_split_top_panel) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Create a directory with three files.
+  TempDir dir({"aaa", "bbb", "ccc"});
+  PtySession session(24, 80, bin, {std::string(dir.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{1000});
+
+  // Split horizontally: Esc-h. Both panels show the same dir buffer.
+  session.send("\x1b"
+               "h");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Focus stays on top panel (panel 1). Move down to bbb and press Enter.
+  sendDownArrows(session, 3);
+  session.send("\r");
+  auto output = session.readUntil("bbb", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK_MESSAGE(stripped.find("bbb") != std::string::npos,
+                      "Expected 'bbb' in output after opening from top panel");
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_dir_open_file_split_bottom_panel) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Create a directory with three files.
+  TempDir dir({"aaa", "bbb", "ccc"});
+  PtySession session(24, 80, bin, {std::string(dir.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{1000});
+
+  // Split horizontally and switch focus to bottom panel (panel 2).
+  session.send("\x1b"
+               "h");
+  session.readOutput(std::chrono::milliseconds{300});
+  session.send("\x1b"
+               "2");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Move down to ccc (4 down-arrows: . -> .. -> aaa -> bbb -> ccc).
+  sendDownArrows(session, 4);
+  session.send("\r");
+  auto output = session.readUntil("ccc", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK_MESSAGE(stripped.find("ccc") != std::string::npos,
+                      "Expected 'ccc' in output after opening from bottom panel");
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_dir_open_file_split_vertical_right) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Create a directory with three files.
+  TempDir dir({"aaa", "bbb", "ccc"});
+  PtySession session(24, 80, bin, {std::string(dir.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{1000});
+
+  // Split vertically and switch focus to right panel (panel 2).
+  session.send("\x1b"
+               "v");
+  session.readOutput(std::chrono::milliseconds{300});
+  session.send("\x1b"
+               "2");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Move down to aaa (2 down-arrows: . -> .. -> aaa), then Enter.
+  sendDownArrows(session, 2);
+  session.send("\r");
+  auto output = session.readUntil("aaa", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK_MESSAGE(stripped.find("aaa") != std::string::npos,
+                      "Expected 'aaa' in output after opening from right panel");
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_dir_navigate_parent_in_split) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Create a nested directory structure.
+  TempDir dir({"file1"});
+  auto subdir = dir.path() / "subdir";
+  std::filesystem::create_directories(subdir);
+  std::ofstream(subdir / "inner") << "inner";
+
+  // Open the subdir.
+  PtySession session(24, 80, bin, {std::string(subdir)});
+  session.readUntil("inner", std::chrono::milliseconds{1000});
+
+  // Split horizontally and focus bottom panel.
+  session.send("\x1b"
+               "h");
+  session.readOutput(std::chrono::milliseconds{300});
+  session.send("\x1b"
+               "2");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Move down once (. -> ..) and press Enter to navigate to parent.
+  sendDownArrows(session, 1);
+  session.send("\r");
+  // The parent directory should now be listed, containing "subdir" and "file1".
+  auto output = session.readUntil("file1", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK_MESSAGE(stripped.find("file1") != std::string::npos,
+                      "Expected parent dir contents after navigating to '..' in split panel");
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
