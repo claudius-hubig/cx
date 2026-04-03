@@ -55,6 +55,11 @@ private:
   // it and show a save prompt. Returns true when no modified buffers
   // remain (caller should exit the loop).
   bool tryExit();
+  // Kill the named buffer via BufferManager and switch all panels
+  // (including non-focused) that show it to the replacement buffer.
+  // Handles the focused panel's prevBuf clearing. The caller must
+  // clear its own prevBuf before calling if appropriate.
+  void killBufferAndSwitchPanels(std::string const& name);
 
   // Loop sub-handlers. Each returns true if it already called draw()
   // (so the caller should skip its trailing draw()).

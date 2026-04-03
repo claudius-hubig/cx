@@ -657,6 +657,32 @@ void Screen::openConfirmPrompt(std::string question,
   runAutocomplete();
 }
 
+void Screen::killBufferAndSwitchPanels(std::string const& name) {
+  if (!_bufMgr || !_layout)
+    return;
+  // Collect non-focused panel IDs that show this buffer or have it as prevBuf.
+  Buffer* killed = _buf;
+  std::vector<int> affectedIds;
+  int focusedId = _layout->focused().id();
+  _layout->forEachPanel([&](Panel& panel) {
+    if (panel.id() == focusedId)
+      return;
+    if (panel.prevBuf == killed)
+      panel.prevBuf = nullptr;
+    if (&panel.buffer() == killed)
+      affectedIds.push_back(panel.id());
+  });
+  // Destroy the buffer and get its replacement.
+  auto& replacement = _bufMgr->kill(name);
+  // Switch affected panels to the replacement.
+  for (int id : affectedIds) {
+    if (auto* panel = _layout->byId(id))
+      panel->setBuffer(replacement, true);
+  }
+  // Switch focused panel.
+  setBuffer(replacement);
+}
+
 void Screen::saveAndMaybeKill() {
   if (!_buf)
     return;
@@ -668,7 +694,7 @@ void Screen::saveAndMaybeKill() {
       auto name = _buf->name();
       if (prevBuf() == _buf)
         prevBuf() = nullptr;
-      setBuffer(_bufMgr->kill(name));
+      killBufferAndSwitchPanels(name);
     }
   } else {
     setStatus(res.error());
@@ -688,9 +714,10 @@ void Screen::openConfirmKillPrompt(std::string question) {
               if (!res) {
                 setStatus(res.error());
               } else {
+                auto name = _buf->name();
                 if (prevBuf() == _buf)
                   prevBuf() = nullptr;
-                setBuffer(_bufMgr->kill(_buf->name()));
+                killBufferAndSwitchPanels(name);
               }
             } else {
               _killPending = true;
@@ -703,7 +730,7 @@ void Screen::openConfirmKillPrompt(std::string question) {
             auto name = _buf->name();
             if (prevBuf() == _buf)
               prevBuf() = nullptr;
-            setBuffer(_bufMgr->kill(name));
+            killBufferAndSwitchPanels(name);
           }
         }
       },
@@ -1669,7 +1696,7 @@ void Screen::dispatchAction(Action action) {
         auto name = _buf->name();
         if (prevBuf() == _buf)
           prevBuf() = nullptr;
-        setBuffer(_bufMgr->kill(name));
+        killBufferAndSwitchPanels(name);
       } else {
         openConfirmKillPrompt(!_buf->hasPath()
                                   ? "Killing temporary buffer. Save to file first? y/n: "
