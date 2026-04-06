@@ -45,15 +45,16 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
 }
 
 BufferPoint Buffer::deleteAt(BufferPoint at) {
-  invalidateSynCache(at.line);
   auto& line = _lines[at.line];
   if (at.offset < line.size()) {
+    invalidateSynCache(at.line);
     auto len = utf8SeqLen(static_cast<unsigned char>(line[at.offset]));
     auto end = std::min(at.offset + len, line.size());
     line.erase(line.begin() + at.offset, line.begin() + end);
     _modified = true;
     ++_docVersion;
   } else if (at.line + 1 < _lines.size()) {
+    invalidateSynCache(at.line);
     auto& next = _lines[at.line + 1];
     line.insert(line.end(), next.begin(), next.end());
     _lines.erase(_lines.begin() + at.line + 1);
@@ -64,9 +65,9 @@ BufferPoint Buffer::deleteAt(BufferPoint at) {
 }
 
 BufferPoint Buffer::deleteBefore(BufferPoint at) {
-  invalidateSynCache(at.offset > 0 ? at.line : (at.line > 0 ? at.line - 1 : 0));
   auto& line = _lines[at.line];
   if (at.offset > 0) {
+    invalidateSynCache(at.line);
     auto end = at.offset;
     --at.offset;
     while (at.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[at.offset])))
@@ -75,6 +76,7 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
     _modified = true;
     ++_docVersion;
   } else if (at.line > 0) {
+    invalidateSynCache(at.line - 1);
     auto& prev = _lines[at.line - 1];
     std::size_t newOffset = prev.size();
     prev.insert(prev.end(), line.begin(), line.end());

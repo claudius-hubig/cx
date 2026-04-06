@@ -635,7 +635,6 @@ void BufferView::insert(uint32_t cp) {
     autoIndent = _point.offset;
 
   // Adjust mark.
-  auto [n, enc] = encodeUtf8(cp);
   if (_mark) {
     auto& m = *_mark;
     if (cp == '\n') {
@@ -646,6 +645,7 @@ void BufferView::insert(uint32_t cp) {
         m.line++;
       }
     } else {
+      auto [n, enc] = encodeUtf8(cp);
       if (m.line == insertLine && m.offset >= insertOff)
         m.offset += n;
     }
@@ -803,7 +803,11 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
 
+  auto oldVersion = _buf.docVersion();
   _buf.deleteRegion(from, to);
+  if (_buf.docVersion() == oldVersion)
+    return; // No-op: don't move point or clear mark.
+
   _point = (to < from) ? to : from;
   if (_point.line >= _buf.lineCount())
     _point.line = _buf.lineCount() - 1;
