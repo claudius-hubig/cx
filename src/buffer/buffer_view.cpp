@@ -689,7 +689,8 @@ void BufferView::deleteAtPoint() {
         else
           _mark->offset = delOff;
       }
-    } else if (delLine + 1 <= _buf.lineCount()) {
+    } else {
+      // Line join occurred: delLine+1 was merged into delLine.
       if (_mark->line == delLine + 1) {
         _mark->line = delLine;
         _mark->offset += lineLen;
