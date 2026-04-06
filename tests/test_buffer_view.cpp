@@ -221,6 +221,24 @@ BOOST_AUTO_TEST_CASE(moveHome_clamps_after_external_edit) {
   BOOST_CHECK_EQUAL(view.point().offset, 0u);
 }
 
+BOOST_AUTO_TEST_CASE(save_restore_preserves_desiredCol) {
+  TempFile f("short\nlonger line\nhi\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView v1(buf);
+  // Move to end of "longer line" then up — desiredCol should be set.
+  v1.setPoint(1, 11); // end of "longer line"
+  v1.moveUp(ColIdx{80});
+  // Now on "short" with desiredCol remembering column 11.
+  BOOST_CHECK_EQUAL(v1.point().line, 0u);
+
+  v1.saveViewState();
+  BufferView v2 = BufferView::fromSavedState(buf);
+  // moveDown should restore to "longer line" at the remembered column.
+  v2.moveDown(ColIdx{80});
+  BOOST_CHECK_EQUAL(v2.point().line, 1u);
+  BOOST_CHECK_EQUAL(v2.point().offset, 11u);
+}
+
 BOOST_AUTO_TEST_CASE(ensure_visible_through_view) {
   TempFile f("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
   TextBuffer buf(f.path().string(), f.path());

@@ -158,6 +158,8 @@ public:
     BufferPoint point;
     ViewFrom viewFrom;
     std::optional<BufferPoint> mark;
+    std::optional<std::size_t> desiredCol;
+    bool wrapMode = false;
   };
   void setSavedView(SavedViewState s) { _savedView = s; }
   std::optional<SavedViewState> savedView() const { return _savedView; }

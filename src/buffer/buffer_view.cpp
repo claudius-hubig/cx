@@ -16,6 +16,9 @@ BufferView BufferView::fromSavedState(Buffer& buf) {
     v._point = saved->point;
     v._viewFrom = saved->viewFrom;
     v._mark = saved->mark;
+    if (saved->desiredCol)
+      v._desiredCol = ColIdx{*saved->desiredCol};
+    v._wrapMode = saved->wrapMode;
     buf.clearSavedView();
   }
   v._docVersion = buf.docVersion();
@@ -44,7 +47,12 @@ void BufferView::clampToBuffer() {
   _rowBoundsCache.lineIdx = SIZE_MAX;
 }
 
-void BufferView::saveViewState() { _buf.setSavedView({_point, _viewFrom, _mark}); }
+void BufferView::saveViewState() {
+  std::optional<std::size_t> dc;
+  if (_desiredCol)
+    dc = _desiredCol->value;
+  _buf.setSavedView({_point, _viewFrom, _mark, dc, _wrapMode});
+}
 
 // --- Private helpers ---
 
