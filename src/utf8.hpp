@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 /// Return true if b is a UTF-8 continuation byte: (b & 0xC0) == 0x80.
 /// Pure predicate — works on any unsigned char value.
@@ -189,6 +190,39 @@ inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
 /// Visual (display column) width of a string, handling multi-byte UTF-8
 /// and ANSI escape sequences (which contribute 0 width). Defined in utf8.cpp.
 std::size_t visualWidth(std::string_view s);
+
+/// Sum of display widths of characters in line[from..to). Defined in utf8.cpp.
+std::size_t visualColRange(std::string const& line, std::size_t from, std::size_t to);
+
+/// Walk a line from byte offset `from` to find the byte offset matching a
+/// target visual column `goal`. Stops at `to` (or line.size()). Defined in utf8.cpp.
+std::size_t offsetForVisualCol(std::string const& line, std::size_t from, std::size_t to,
+                               std::size_t goal);
+
+/// Visual-row boundary info for a byte offset within a wrapped line.
+struct VisualRowInfo {
+  std::size_t prevRowStart;
+  std::size_t curRowStart;
+  std::size_t nextRowStart;
+};
+
+/// Scan a line to find the visual-row boundaries around a byte offset
+/// at a given column width. Defined in utf8.cpp.
+VisualRowInfo findVisualRow(std::string const& line, std::size_t byteOff, std::size_t cols);
+
+/// Find the byte offset at the start of the last visual row of a line
+/// at a given column width. Defined in utf8.cpp.
+std::size_t lastVisualRowStart(std::string const& line, std::size_t cols);
+
+/// Look up VisualRowInfo from pre-computed row boundary offsets using binary
+/// search. Defined in utf8.cpp.
+VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts,
+                                  std::size_t byteOff, std::size_t lineSize);
+
+/// Compute visual-row boundary byte offsets for a line at a given column
+/// width. Returns a vector where each entry is the byte offset of the start
+/// of a visual row. Defined in utf8.cpp.
+std::vector<std::size_t> computeRowBounds(std::string const& line, std::size_t cols);
 
 /// Read the remaining bytes of a UTF-8 sequence from stdin, given the lead
 /// byte. Appends continuation bytes to `dest`. Defined in utf8.cpp.

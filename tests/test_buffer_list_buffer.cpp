@@ -3,51 +3,77 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/buffer_list_buffer.hpp"
+#include "buffer/buffer_view.hpp"
+#include "test_helpers.hpp"
 
 #include <string>
 #include <vector>
 
 BOOST_AUTO_TEST_CASE(is_readonly) {
-  BufferListBuffer buf({"*1*"});
+  TB<BufferListBuffer> buf({"*1*"});
   BOOST_CHECK(buf.readonly());
 }
 
 BOOST_AUTO_TEST_CASE(selectedName_on_file_lines) {
   std::vector<std::string> names = {"*1*", "*2*"};
-  BufferListBuffer buf(names, {}, "*1*");
-  // Cursor should be on *1*
-  BOOST_CHECK_EQUAL(buf.selectedName(), "*1*");
+  TB<BufferListBuffer> buf(names, {}, "*1*");
+  // Point defaults to (0,0); "*1*" is on line 0.
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "*1*");
 }
 
 BOOST_AUTO_TEST_CASE(selectedName_empty_on_dir_headers) {
   // Two files in the same directory — produces a dir header as first line.
   std::vector<std::string> names = {"/home/user/a.txt", "/home/user/b.txt"};
-  BufferListBuffer buf(names);
+  TB<BufferListBuffer> buf(names);
   // The cursor starts on the first line, which is the directory header.
   // selectedName should return empty for directory headers.
-  BOOST_CHECK(buf.selectedName().empty());
+  BOOST_CHECK(buf.selectedName(buf.point()).empty());
 }
 
 BOOST_AUTO_TEST_CASE(refresh_rebuilds) {
-  BufferListBuffer buf({"*1*"});
-  BOOST_CHECK_EQUAL(buf.selectedName(), "*1*");
+  TB<BufferListBuffer> buf({"*1*"});
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "*1*");
 
-  buf.refresh({"*2*", "*3*"}, {}, "*3*");
-  BOOST_CHECK_EQUAL(buf.selectedName(), "*3*");
+  // refresh() returns a ViewHint indicating where the cursor should land;
+  // callers apply it to the view explicitly.
+  auto hint = buf.refresh({"*2*", "*3*"}, {}, "*3*");
+  buf.setPoint(hint.point.line, hint.point.offset);
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "*3*");
 }
 
 BOOST_AUTO_TEST_CASE(startName_positions_cursor) {
   std::vector<std::string> names = {"aaa", "bbb", "ccc"};
-  BufferListBuffer buf(names, {}, "bbb");
-  BOOST_CHECK_EQUAL(buf.selectedName(), "bbb");
+  TB<BufferListBuffer> buf(names, {}, "bbb");
+  auto hint = buf.refresh(names, {}, "bbb");
+  buf.setPoint(hint.point.line, hint.point.offset);
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "bbb");
+}
+
+BOOST_AUTO_TEST_CASE(constructor_saves_view_hint) {
+  // Constructor should save the ViewHint via setSavedView so that
+  // fromSavedState() picks up the startName cursor position.
+  std::vector<std::string> names = {"aaa", "bbb", "ccc"};
+  BufferListBuffer blb(names, {}, "bbb");
+  auto saved = blb.savedView();
+  BOOST_REQUIRE(saved.has_value());
+  BOOST_CHECK_EQUAL(saved->point.line, 1u); // "bbb" is on line 1
+  BOOST_CHECK_EQUAL(saved->point.offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(from_saved_state_lands_on_startName) {
+  // End-to-end: constructor + fromSavedState should land on startName.
+  std::vector<std::string> names = {"aaa", "bbb", "ccc"};
+  BufferListBuffer blb(names, {}, "bbb");
+  BufferView view = BufferView::fromSavedState(blb);
+  BOOST_CHECK_EQUAL(blb.selectedName(view.point()), "bbb");
 }
 
 BOOST_AUTO_TEST_CASE(trie_collapses_single_subdirs) {
   // /a/b/c/file.txt should collapse /a/b/c/ into one line
   std::vector<std::string> names = {"/a/b/c/file.txt"};
-  BufferListBuffer buf(names);
+  TB<BufferListBuffer> buf(names);
   // Should be a single file line, selected
-  auto sel = buf.selectedName();
+  auto sel = buf.selectedName(buf.point());
   BOOST_CHECK_EQUAL(sel, "/a/b/c/file.txt");
 }
 
@@ -56,30 +82,30 @@ BOOST_AUTO_TEST_CASE(dir_buffer_merges_into_trie) {
   // header rather than a duplicate leaf entry.
   std::vector<std::string> names = {"/home/user/a.txt", "/home/user/b.txt"};
   std::vector<std::string> dirNames = {"/home/user"};
-  BufferListBuffer buf(names, dirNames);
+  TB<BufferListBuffer> buf(names, dirNames);
 
   // First line is the directory header — should now be selectable.
-  BOOST_CHECK_EQUAL(buf.selectedName(), "/home/user");
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "/home/user");
 }
 
 BOOST_AUTO_TEST_CASE(dir_buffer_prevents_collapse) {
   // A DirBuffer at an intermediate node should prevent collapsing.
   std::vector<std::string> names = {"/a/b/c/file.txt"};
   std::vector<std::string> dirNames = {"/a/b"};
-  BufferListBuffer buf(names, dirNames);
+  TB<BufferListBuffer> buf(names, dirNames);
 
   // /a/b/ should be a separate selectable header (not collapsed with /a/b/c/).
-  BOOST_CHECK_EQUAL(buf.selectedName(), "/a/b");
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "/a/b");
 }
 
 BOOST_AUTO_TEST_CASE(standalone_dir_buffer_without_files) {
   // A DirBuffer with no files under it should still appear.
   std::vector<std::string> names = {"*1*"};
   std::vector<std::string> dirNames = {"/home/project"};
-  BufferListBuffer buf(names, dirNames);
+  TB<BufferListBuffer> buf(names, dirNames);
 
   // *1* is first (non-path), then the dir buffer.
-  BOOST_CHECK_EQUAL(buf.selectedName(), "*1*");
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "*1*");
   buf.movePhysicalDown();
-  BOOST_CHECK_EQUAL(buf.selectedName(), "/home/project");
+  BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "/home/project");
 }

@@ -11,6 +11,7 @@ public:
 
   bool readonly() const override { return true; }
 
-  /// Rebuild _lines from paste ring contents.
-  void refresh(PasteRing const& pr);
+  /// Rebuild _lines from paste ring contents. Returns a ViewHint
+  /// positioning the cursor at the top.
+  ViewHint refresh(PasteRing const& pr);
 };

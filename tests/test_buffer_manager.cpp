@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/buffer_manager.hpp"
+#include "buffer/buffer_view.hpp"
 #include "tests/test_helpers.hpp"
 
 #include <algorithm>
@@ -226,4 +227,29 @@ BOOST_AUTO_TEST_CASE(bufferListBuffer_refreshes) {
   mgr.create("new_buf");
   auto& blb2 = mgr.bufferListBuffer();
   BOOST_CHECK_EQUAL(&blb1, &blb2); // same object, just refreshed
+}
+
+BOOST_AUTO_TEST_CASE(bufferListBuffer_saves_view_hint) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  mgr.create("aaa");
+  mgr.create("bbb");
+  mgr.touch("aaa"); // aaa is MRU, bbb is secondMRU
+  auto& blb = mgr.bufferListBuffer();
+  // BufferManager should save a ViewHint so fromSavedState lands on secondMRU.
+  BufferView view = BufferView::fromSavedState(blb);
+  BOOST_CHECK_EQUAL(blb.selectedName(view.point()), "bbb");
+}
+
+BOOST_AUTO_TEST_CASE(bufferListBuffer_refresh_updates_saved_hint) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  mgr.create("aaa");
+  mgr.create("bbb");
+  mgr.touch("bbb");                   // bbb MRU, aaa secondMRU
+  mgr.bufferListBuffer();             // first call creates
+  mgr.touch("aaa");                   // aaa MRU, bbb secondMRU
+  auto& blb = mgr.bufferListBuffer(); // refresh path
+  BufferView view = BufferView::fromSavedState(blb);
+  BOOST_CHECK_EQUAL(blb.selectedName(view.point()), "bbb");
 }

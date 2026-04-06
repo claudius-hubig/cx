@@ -111,11 +111,13 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
 BufferListBuffer::BufferListBuffer(std::vector<std::string> names,
                                    std::vector<std::string> dirNames, std::string const& startName)
     : Buffer("*buffers*") {
-  refresh(std::move(names), std::move(dirNames), startName);
+  auto hint = refresh(std::move(names), std::move(dirNames), startName);
+  setSavedView({hint.point, hint.viewFrom, std::nullopt});
 }
 
-void BufferListBuffer::refresh(std::vector<std::string> names, std::vector<std::string> dirNames,
-                               std::string const& startName) {
+ViewHint BufferListBuffer::refresh(std::vector<std::string> names,
+                                   std::vector<std::string> dirNames,
+                                   std::string const& startName) {
   _displayLines.clear();
   _lineToName.clear();
 
@@ -154,28 +156,24 @@ void BufferListBuffer::refresh(std::vector<std::string> names, std::vector<std::
       }
     }
   }
-  _point = {startLine, 0};
-  _viewFrom = ViewFrom{};
-  _desiredCol.reset();
+  return ViewHint{{startLine, 0}, {}};
 }
 
-std::string BufferListBuffer::selectedName() const {
-  if (_point.line < _lineToName.size())
-    return _lineToName[_point.line];
+std::string BufferListBuffer::selectedName(BufferPoint p) const {
+  if (p.line < _lineToName.size())
+    return _lineToName[p.line];
   return {};
 }
 
 std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
-                                                    bool /*showWhitespace*/, bool /*wrap*/,
-                                                    std::size_t rowOffset,
-                                                    std::size_t colOffset) const {
+                                                    RenderParams const& params) const {
 
-  std::size_t curLine = _point.line;
-  std::size_t scrollLine = _viewFrom.line.value;
+  std::size_t curLine = params.point.line;
+  std::size_t scrollLine = params.viewFrom.line.value;
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;
-    out += ansi::cursorTo(rowOffset + r, colOffset);
+    out += ansi::cursorTo(params.rowOffset + r, params.colOffset);
 
     if (lineIdx < _displayLines.size()) {
       bool highlight = (lineIdx == curLine);
@@ -189,7 +187,7 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx row
       out += ansi::EraseLine;
     }
     // Gutter column.
-    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
+    out += ansi::cursorTo(params.rowOffset + r, params.colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

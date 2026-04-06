@@ -15,12 +15,11 @@ public:
 
   /// Screen row of the cursor, accounting for side-by-side layout
   /// when terminal width allows it.
-  std::size_t screenRow(ColIdx cols, bool wrap = true) const override;
+  std::size_t screenRow(ColIdx cols, BufferPoint point, ViewFrom viewFrom,
+                        bool wrap = true) const override;
 
   /// Render help content with adaptive layout: stacked (single column)
   /// or side-by-side (commands + movement) depending on terminal width.
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true,
-                                    std::size_t rowOffset = 0,
-                                    std::size_t colOffset = 0) const override;
+                                    RenderParams const& params) const override;
 };

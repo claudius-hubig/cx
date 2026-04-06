@@ -45,18 +45,21 @@ BufferListBuffer& BufferManager::bufferListBuffer() {
 
   auto target = secondMRU();
 
-  if (!_bufferListBuffer)
+  if (!_bufferListBuffer) {
     _bufferListBuffer =
         std::make_unique<BufferListBuffer>(std::move(names), std::move(dirNames), target);
-  else
-    _bufferListBuffer->refresh(std::move(names), std::move(dirNames), target);
+  } else {
+    auto hint = _bufferListBuffer->refresh(std::move(names), std::move(dirNames), target);
+    _bufferListBuffer->setSavedView({hint.point, hint.viewFrom, std::nullopt});
+  }
   return *_bufferListBuffer;
 }
 
 PasteRingBuffer& BufferManager::pasteRingBuffer(PasteRing const& pr) {
   if (!_pasteRingBuffer)
     _pasteRingBuffer = std::make_unique<PasteRingBuffer>();
-  _pasteRingBuffer->refresh(pr);
+  auto hint = _pasteRingBuffer->refresh(pr);
+  _pasteRingBuffer->setSavedView({hint.point, hint.viewFrom, std::nullopt});
   return *_pasteRingBuffer;
 }
 

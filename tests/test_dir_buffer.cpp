@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/dir_buffer.hpp"
+#include "test_helpers.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -34,7 +35,7 @@ struct TmpDir {
 
 BOOST_AUTO_TEST_CASE(is_readonly) {
   TmpDir tmp;
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   BOOST_CHECK(buf.readonly());
 }
 
@@ -43,7 +44,7 @@ BOOST_AUTO_TEST_CASE(dot_and_dotdot_at_top) {
   tmp.createFile("hello.txt");
   tmp.createDir("subdir");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   BOOST_REQUIRE_GE(entries.size(), 2u);
   BOOST_CHECK_EQUAL(entries[0].name, ".");
@@ -57,7 +58,7 @@ BOOST_AUTO_TEST_CASE(directories_before_files) {
   tmp.createFile("aaa.txt");
   tmp.createDir("zzz_dir");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   // After . and .., directories come before files.
   // zzz_dir should appear before aaa.txt despite alphabetical order.
@@ -76,7 +77,7 @@ BOOST_AUTO_TEST_CASE(navigate_changes_directory) {
   TmpDir tmp;
   tmp.createDir("child");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto origDir = buf.directory();
   buf.navigate(tmp.path / "child");
   BOOST_CHECK_EQUAL(buf.directory(), fs::weakly_canonical(fs::absolute(tmp.path / "child")));
@@ -88,7 +89,7 @@ BOOST_AUTO_TEST_CASE(hidden_files_filtered_by_default) {
   tmp.createFile(".hidden");
   tmp.createFile("visible.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   bool foundHidden = false;
   bool foundVisible = false;
@@ -107,9 +108,9 @@ BOOST_AUTO_TEST_CASE(toggle_hidden_shows_dotfiles) {
   tmp.createFile(".hidden");
   tmp.createFile("visible.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   BOOST_CHECK(!buf.showingHidden());
-  buf.toggleHidden();
+  buf.toggleHidden(buf.point());
   BOOST_CHECK(buf.showingHidden());
 
   auto const& entries = buf.entries();
@@ -126,24 +127,24 @@ BOOST_AUTO_TEST_CASE(selectedPath_and_selectedIsDir) {
   tmp.createFile("file.txt");
   tmp.createDir("subdir");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   // First entry is '.', which is a directory.
-  BOOST_CHECK(buf.selectedIsDir());
-  BOOST_CHECK_EQUAL(buf.selectedPath(), buf.directory());
+  BOOST_CHECK(buf.selectedIsDir(buf.point()));
+  BOOST_CHECK_EQUAL(buf.selectedPath(buf.point()), buf.directory());
 }
 
 BOOST_AUTO_TEST_CASE(cannot_mark_dot_or_dotdot) {
   TmpDir tmp;
   tmp.createFile("file.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   // Cursor on line 0 (.)
-  buf.toggleDeleteMark();
+  buf.toggleDeleteMark(buf.point());
   BOOST_CHECK(buf.markedPaths().empty());
 
   // Move to line 1 (..)
   buf.movePhysicalDown();
-  buf.toggleDeleteMark();
+  buf.toggleDeleteMark(buf.point());
   BOOST_CHECK(buf.markedPaths().empty());
 }
 
@@ -151,7 +152,7 @@ BOOST_AUTO_TEST_CASE(mark_and_unmark) {
   TmpDir tmp;
   tmp.createFile("file.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   // Find file.txt index.
   std::size_t fileIdx = 0;
@@ -167,12 +168,12 @@ BOOST_AUTO_TEST_CASE(mark_and_unmark) {
   for (std::size_t i = 0; i < fileIdx; ++i)
     buf.movePhysicalDown();
 
-  buf.toggleDeleteMark();
+  buf.toggleDeleteMark(buf.point());
   BOOST_CHECK(buf.isMarked(fileIdx));
   BOOST_CHECK_EQUAL(buf.markedPaths().size(), 1u);
 
   // Unmark.
-  buf.toggleDeleteMark();
+  buf.toggleDeleteMark(buf.point());
   BOOST_CHECK(!buf.isMarked(fileIdx));
   BOOST_CHECK(buf.markedPaths().empty());
 }
@@ -181,7 +182,7 @@ BOOST_AUTO_TEST_CASE(execute_delete_removes_files) {
   TmpDir tmp;
   tmp.createFile("to_delete.txt", "data");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   std::size_t fileIdx = 0;
   for (std::size_t i = 0; i < entries.size(); ++i) {
@@ -194,12 +195,12 @@ BOOST_AUTO_TEST_CASE(execute_delete_removes_files) {
   for (std::size_t i = 0; i < fileIdx; ++i)
     buf.movePhysicalDown();
 
-  buf.toggleDeleteMark();
+  buf.toggleDeleteMark(buf.point());
   BOOST_CHECK(fs::exists(tmp.path / "to_delete.txt"));
 
-  auto [count, err] = buf.executeDelete();
-  BOOST_CHECK_EQUAL(count, 1u);
-  BOOST_CHECK(err.empty());
+  auto result = buf.executeDelete();
+  BOOST_CHECK_EQUAL(result.count, 1u);
+  BOOST_CHECK(result.error.empty());
   BOOST_CHECK(!fs::exists(tmp.path / "to_delete.txt"));
 }
 
@@ -208,7 +209,7 @@ BOOST_AUTO_TEST_CASE(execute_delete_removes_directories) {
   tmp.createDir("subdir");
   tmp.createFile("subdir/inner.txt", "data");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   std::size_t dirIdx = 0;
   for (std::size_t i = 0; i < entries.size(); ++i) {
@@ -221,10 +222,10 @@ BOOST_AUTO_TEST_CASE(execute_delete_removes_directories) {
   for (std::size_t i = 0; i < dirIdx; ++i)
     buf.movePhysicalDown();
 
-  buf.toggleDeleteMark();
-  auto [count, err] = buf.executeDelete();
-  BOOST_CHECK_EQUAL(count, 1u);
-  BOOST_CHECK(err.empty());
+  buf.toggleDeleteMark(buf.point());
+  auto result = buf.executeDelete();
+  BOOST_CHECK_EQUAL(result.count, 1u);
+  BOOST_CHECK(result.error.empty());
   BOOST_CHECK(!fs::exists(tmp.path / "subdir"));
 }
 
@@ -232,7 +233,7 @@ BOOST_AUTO_TEST_CASE(entry_has_owner_and_group) {
   TmpDir tmp;
   tmp.createFile("file.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   for (auto& e : entries) {
     // Owner and group should be non-empty (populated from stat).
@@ -245,7 +246,7 @@ BOOST_AUTO_TEST_CASE(entry_has_permissions) {
   TmpDir tmp;
   tmp.createFile("file.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   auto const& entries = buf.entries();
   for (auto& e : entries) {
     // Permissions should be 10 chars like "drwxr-xr-x" or "-rw-r--r--".
@@ -259,9 +260,9 @@ BOOST_AUTO_TEST_CASE(render_produces_output) {
   TmpDir tmp;
   tmp.createFile("file.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   std::string out;
-  auto [row, col] = buf.render(out, RowIdx{24}, ColIdx{80});
+  auto [row, col] = buf.render(out, RowIdx{24}, ColIdx{80}, renderParams(buf));
   BOOST_CHECK(!out.empty());
   BOOST_CHECK_EQUAL(row.value, 0u);
   BOOST_CHECK_EQUAL(col.value, 0u);
@@ -271,10 +272,10 @@ BOOST_AUTO_TEST_CASE(display_lines_have_del_prefix_area) {
   TmpDir tmp;
   tmp.createFile("file.txt");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   // Render without marks — lines should start with 4 spaces.
   std::string out;
-  buf.render(out, RowIdx{24}, ColIdx{80});
+  buf.render(out, RowIdx{24}, ColIdx{80}, renderParams(buf));
   // The display lines in the rendered output should contain "    " prefix.
   // We can check via the entries — each display line begins with 4-space prefix.
   // Verify by finding "file.txt" in the rendered output without "DEL" prefix.
@@ -286,13 +287,13 @@ BOOST_AUTO_TEST_CASE(display_lines_have_del_prefix_area) {
     if (entries[i].name == "file.txt") {
       for (std::size_t j = 0; j < i; ++j)
         buf.movePhysicalDown();
-      buf.toggleDeleteMark();
+      buf.toggleDeleteMark(buf.point());
       break;
     }
   }
 
   out.clear();
-  buf.render(out, RowIdx{24}, ColIdx{80});
+  buf.render(out, RowIdx{24}, ColIdx{80}, renderParams(buf));
   BOOST_CHECK(out.find("DEL ") != std::string::npos);
 }
 
@@ -301,14 +302,14 @@ BOOST_AUTO_TEST_CASE(navigate_clears_marks) {
   tmp.createFile("file.txt");
   tmp.createDir("sub");
 
-  DirBuffer buf(tmp.path);
+  TB<DirBuffer> buf(tmp.path);
   // Mark file.txt.
   auto const& entries = buf.entries();
   for (std::size_t i = 0; i < entries.size(); ++i) {
     if (entries[i].name == "file.txt") {
       for (std::size_t j = 0; j < i; ++j)
         buf.movePhysicalDown();
-      buf.toggleDeleteMark();
+      buf.toggleDeleteMark(buf.point());
       break;
     }
   }

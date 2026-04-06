@@ -2,15 +2,86 @@
 
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_sink.hpp"
+#include "buffer/buffer_view.hpp"
+#include "types.hpp"
 #include "utf8.hpp"
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
+
+// Test wrapper that bundles any Buffer subclass with an owned BufferView and
+// provides forwarding methods for all view-state operations. This allows
+// tests written against the old Buffer API (buf.insert, buf.moveLeft, ...)
+// to keep working after view state was split out into BufferView.
+//
+// Usage: `TB<TextBuffer> buf("name");` then call view-style methods on buf.
+template <typename T> class TB : public T {
+public:
+  using T::T;
+
+  // The embedded view. Public so tests can pass it to free functions.
+  mutable BufferView view{*static_cast<Buffer*>(this)};
+
+  // --- View state accessors ---
+  BufferPoint point() const { return view.point(); }
+  std::optional<BufferPoint> mark() const { return view.mark(); }
+  BufferPoint viewFrom() const { return view.viewFrom(); }
+  ViewFrom const& viewFromRaw() const { return view.viewFromRaw(); }
+  std::optional<Highlight> const& highlight() const { return view.highlight(); }
+  std::tuple<std::size_t, std::size_t> lineCol() const { return view.lineCol(); }
+
+  void setPoint(std::size_t line, std::size_t offset) { view.setPoint(line, offset); }
+  void setMark(BufferPoint p) { view.setMark(p); }
+  void clearMark() { view.clearMark(); }
+  void toggleMark() { view.toggleMark(); }
+  void setHighlight(BufferPoint from, BufferPoint to) { view.setHighlight(from, to); }
+  void clearHighlight() { view.clearHighlight(); }
+
+  // --- Movement ---
+  void moveLeft() { view.moveLeft(); }
+  void moveRight() { view.moveRight(); }
+  void moveUp(ColIdx cols) { view.moveUp(cols); }
+  void moveDown(ColIdx cols) { view.moveDown(cols); }
+  void movePhysicalUp() { view.movePhysicalUp(); }
+  void movePhysicalDown() { view.movePhysicalDown(); }
+  void moveHome() { view.moveHome(); }
+  void moveEnd() { view.moveEnd(); }
+  void moveWordRight() { view.moveWordRight(); }
+  void moveWordLeft() { view.moveWordLeft(); }
+  void moveParagraphUp() { view.moveParagraphUp(); }
+  void moveParagraphDown() { view.moveParagraphDown(); }
+  void pageUp(RowIdx rows, ColIdx cols, bool wrap) { view.pageUp(rows, cols, wrap); }
+  void pageDown(RowIdx rows, ColIdx cols, bool wrap) { view.pageDown(rows, cols, wrap); }
+  bool gotoMatchingBracket() { return view.gotoMatchingBracket(); }
+  void gotoLine(std::size_t line, RowIdx rows) { view.gotoLine(line, rows); }
+  void scrollDown() { view.scrollDown(); }
+  void scrollUp(bool wrap = false) { view.scrollUp(wrap); }
+  void scrollViewNearEnd(RowIdx rows) { view.scrollViewNearEnd(rows); }
+
+  // --- Editing ---
+  void insert(uint32_t cp) { view.insert(cp); }
+  void deleteAtPoint() { view.deleteAtPoint(); }
+  void deleteBeforePoint() { view.deleteBeforePoint(); }
+  void deleteChunkAtPoint() { view.deleteChunkAtPoint(); }
+  void deleteChunkBeforePoint() { view.deleteChunkBeforePoint(); }
+  void adjustCursorToIndent() { view.adjustCursorToIndent(); }
+
+  // --- Rendering ---
+  void ensureVisible(RowIdx rows, ColIdx cols, bool wrap) { view.ensureVisible(rows, cols, wrap); }
+  bool currentLineWraps(ColIdx cols) const { return view.currentLineWraps(cols); }
+  // Note: screenRow is NOT forwarded so that Buffer's virtual
+  // screenRow(cols, point, viewFrom, wrap) stays accessible.
+};
 
 // Trivial BufferSink stub for testing BufferManager without a terminal.
 class NullBufferSink : public BufferSink {
@@ -68,13 +139,41 @@ private:
   std::filesystem::path _path;
 };
 
-// Insert a string as UTF-8 codepoints into a buffer.
-inline void insertString(Buffer& buf, std::string_view s) {
+// Create RenderParams from a BufferView's current state.
+inline RenderParams renderParams(BufferView const& view, bool showWhitespace = false,
+                                 bool wrap = true, std::size_t rowOffset = 0,
+                                 std::size_t colOffset = 0) {
+  RenderParams p;
+  p.point = view.point();
+  p.viewFrom = view.viewFromRaw();
+  p.mark = view.mark();
+  p.highlight = view.highlight();
+  p.showWhitespace = showWhitespace;
+  p.wrap = wrap;
+  p.rowOffset = rowOffset;
+  p.colOffset = colOffset;
+  return p;
+}
+
+// Overload for TB wrapper: reads from its embedded view.
+template <typename T>
+inline RenderParams renderParams(TB<T> const& buf, bool showWhitespace = false, bool wrap = true,
+                                 std::size_t rowOffset = 0, std::size_t colOffset = 0) {
+  return renderParams(buf.view, showWhitespace, wrap, rowOffset, colOffset);
+}
+
+// Insert a string as UTF-8 codepoints through a BufferView.
+inline void insertString(BufferView& view, std::string_view s) {
   for (std::size_t i = 0; i < s.size();) {
     auto [cp, len] = decodeUtf8(s.data() + i, s.size() - i);
-    buf.insert(cp);
+    view.insert(cp);
     i += len;
   }
+}
+
+// Overload for TB wrapper: forwards to its embedded view.
+template <typename T> inline void insertString(TB<T>& buf, std::string_view s) {
+  insertString(buf.view, s);
 }
 
 // Strip ANSI escape sequences from a string, returning only visible characters.

@@ -21,18 +21,16 @@ public:
   /// Render the buffer list with reverse-video highlighting on the
   /// selected line.
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true,
-                                    std::size_t rowOffset = 0,
-                                    std::size_t colOffset = 0) const override;
+                                    RenderParams const& params) const override;
 
-  /// Return the full buffer name for the line the cursor is on.
+  /// Return the full buffer name for the line at the given position.
   /// Returns empty string for directory header lines.
-  std::string selectedName() const;
+  std::string selectedName(BufferPoint p) const;
 
   /// Rebuild the display from a new set of buffer names. Safe to call
-  /// repeatedly. Resets cursor to startName.
-  void refresh(std::vector<std::string> names, std::vector<std::string> dirNames = {},
-               std::string const& startName = {});
+  /// repeatedly. Returns a ViewHint positioning the cursor on startName.
+  ViewHint refresh(std::vector<std::string> names, std::vector<std::string> dirNames = {},
+                   std::string const& startName = {});
 
 private:
   // Display text for each line (with indentation).

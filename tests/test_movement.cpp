@@ -8,7 +8,7 @@
 // --- moveWordRight ---
 
 BOOST_AUTO_TEST_CASE(wordRight_from_start) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello world");
   buf.moveHome();
   buf.moveWordRight();
@@ -17,7 +17,7 @@ BOOST_AUTO_TEST_CASE(wordRight_from_start) {
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_mid_word) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello world");
   buf.moveHome();
   buf.moveRight(); // 'h' -> 'e'
@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(wordRight_mid_word) {
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_skips_spaces) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello   world");
   buf.moveHome();
   buf.moveWordRight();
@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(wordRight_skips_spaces) {
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_crosses_lines) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc\ndef");
   buf.gotoLine(1, RowIdx{10}); // go to line 0
   buf.moveWordRight();
@@ -62,7 +62,7 @@ BOOST_AUTO_TEST_CASE(wordRight_crosses_lines) {
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_at_end) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello");
   // Point is at end.
   auto before = buf.point();
@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(wordRight_at_end) {
 // --- moveWordLeft ---
 
 BOOST_AUTO_TEST_CASE(wordLeft_from_end) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello world");
   // Point at end (offset 11).
   buf.moveWordLeft();
@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(wordLeft_from_end) {
 }
 
 BOOST_AUTO_TEST_CASE(wordLeft_mid_word) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello world");
   buf.moveHome();
   // Move to 'r' (offset 8).
@@ -96,7 +96,7 @@ BOOST_AUTO_TEST_CASE(wordLeft_mid_word) {
 }
 
 BOOST_AUTO_TEST_CASE(wordLeft_skips_spaces) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello   world");
   buf.moveHome();
   // Move to 'w' (offset 8).
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(wordLeft_skips_spaces) {
 }
 
 BOOST_AUTO_TEST_CASE(wordLeft_crosses_lines) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc\ndef");
   // Point at end of "def" (line 1, offset 3).
   buf.gotoLine(2, RowIdx{10});
@@ -123,7 +123,7 @@ BOOST_AUTO_TEST_CASE(wordLeft_crosses_lines) {
 }
 
 BOOST_AUTO_TEST_CASE(wordLeft_at_start) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello");
   buf.moveHome();
   auto before = buf.point();
@@ -134,7 +134,7 @@ BOOST_AUTO_TEST_CASE(wordLeft_at_start) {
 // --- moveParagraphUp ---
 
 BOOST_AUTO_TEST_CASE(paragraphUp_from_middle) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\n\nccc\nddd");
   buf.gotoLine(5, RowIdx{10}); // on "ddd"
   buf.moveParagraphUp();
@@ -144,7 +144,7 @@ BOOST_AUTO_TEST_CASE(paragraphUp_from_middle) {
 }
 
 BOOST_AUTO_TEST_CASE(paragraphUp_from_first_line) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\nccc");
   buf.gotoLine(1, RowIdx{10});
   buf.moveParagraphUp();
@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(paragraphUp_from_first_line) {
 }
 
 BOOST_AUTO_TEST_CASE(paragraphUp_skips_blank_lines) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\n\n\nbbb");
   buf.gotoLine(4, RowIdx{10}); // on "bbb"
   buf.moveParagraphUp();
@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE(paragraphUp_skips_blank_lines) {
 // --- moveParagraphDown ---
 
 BOOST_AUTO_TEST_CASE(paragraphDown_from_middle) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\n\nccc\nddd");
   buf.gotoLine(1, RowIdx{10}); // on "aaa"
   buf.moveParagraphDown();
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(paragraphDown_from_middle) {
 }
 
 BOOST_AUTO_TEST_CASE(paragraphDown_from_last_line) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb");
   buf.gotoLine(2, RowIdx{10}); // on "bbb"
   buf.moveParagraphDown();
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(paragraphDown_from_last_line) {
 }
 
 BOOST_AUTO_TEST_CASE(paragraphDown_skips_blank_lines) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\n\n\nbbb");
   buf.gotoLine(1, RowIdx{10}); // on "aaa"
   buf.moveParagraphDown();
@@ -192,7 +192,7 @@ BOOST_AUTO_TEST_CASE(paragraphDown_skips_blank_lines) {
 // --- movePhysicalUp/Down ---
 
 BOOST_AUTO_TEST_CASE(physicalUp_basic) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\nccc");
   buf.gotoLine(2, RowIdx{10}); // on "bbb"
   buf.movePhysicalUp();
@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(physicalUp_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(physicalUp_preserves_desired_col) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abcde\nfg\nhijkl");
   buf.gotoLine(1, RowIdx{10});
   buf.moveEnd();          // end of "abcde", offset 5
@@ -212,7 +212,7 @@ BOOST_AUTO_TEST_CASE(physicalUp_preserves_desired_col) {
 }
 
 BOOST_AUTO_TEST_CASE(physicalUp_boundary) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc");
   buf.movePhysicalUp();
   // Already on first line — goes to offset 0.
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(physicalUp_boundary) {
 }
 
 BOOST_AUTO_TEST_CASE(physicalDown_basic) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\nccc");
   buf.gotoLine(1, RowIdx{10}); // on "aaa"
   buf.movePhysicalDown();
@@ -228,7 +228,7 @@ BOOST_AUTO_TEST_CASE(physicalDown_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(physicalDown_boundary) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc");
   buf.moveHome();
   buf.movePhysicalDown();
@@ -239,7 +239,7 @@ BOOST_AUTO_TEST_CASE(physicalDown_boundary) {
 // --- pageUp/Down ---
 
 BOOST_AUTO_TEST_CASE(pageUp_basic) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 20; ++i) {
     insertString(buf, "line");
     if (i < 19)
@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE(pageUp_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(pageUp_clamps_at_start) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\nccc");
   buf.gotoLine(2, RowIdx{10});
   buf.pageUp(RowIdx{10}, ColIdx{20}, true);
@@ -260,7 +260,7 @@ BOOST_AUTO_TEST_CASE(pageUp_clamps_at_start) {
 }
 
 BOOST_AUTO_TEST_CASE(pageDown_basic) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 20; ++i) {
     insertString(buf, "line");
     if (i < 19)
@@ -272,7 +272,7 @@ BOOST_AUTO_TEST_CASE(pageDown_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(pageDown_clamps_at_end) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "aaa\nbbb\nccc");
   buf.gotoLine(2, RowIdx{10});
   buf.pageDown(RowIdx{10}, ColIdx{20}, true);

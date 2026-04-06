@@ -91,10 +91,7 @@ std::expected<void, std::string> TextBuffer::revert() {
         _lines.back().push_back(buf[i]);
     }
   }
-  _point = {};
-  _mark.reset();
-  _viewFrom = {};
-  _desiredCol.reset();
   _modified = false;
+  ++_docVersion;
   return {};
 }

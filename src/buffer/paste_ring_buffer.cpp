@@ -2,7 +2,7 @@
 
 PasteRingBuffer::PasteRingBuffer() : Buffer("*paste ring*") {}
 
-void PasteRingBuffer::refresh(PasteRing const& pr) {
+ViewHint PasteRingBuffer::refresh(PasteRing const& pr) {
   _lines.clear();
 
   if (pr.empty()) {
@@ -33,7 +33,5 @@ void PasteRingBuffer::refresh(PasteRing const& pr) {
     }
   }
 
-  _point = {0, 0};
-  _viewFrom = ViewFrom{};
-  _desiredCol.reset();
+  return ViewHint{{0, 0}, {}};
 }

@@ -18,24 +18,24 @@ public:
   bool readonly() const override { return true; }
 
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true,
-                                    std::size_t rowOffset = 0,
-                                    std::size_t colOffset = 0) const override;
+                                    RenderParams const& params) const override;
 
-  /// Return the full path for the entry on the cursor line.
-  std::filesystem::path selectedPath() const;
+  /// Return the full path for the entry at the given cursor position.
+  std::filesystem::path selectedPath(BufferPoint p) const;
 
-  /// True if the selected entry is a directory.
-  bool selectedIsDir() const;
+  /// True if the entry at the given position is a directory.
+  bool selectedIsDir(BufferPoint p) const;
 
   /// Navigate to a new directory and rebuild the listing.
-  void navigate(std::filesystem::path dir);
+  /// Returns a ViewHint for the caller to position the cursor.
+  ViewHint navigate(std::filesystem::path dir);
 
-  /// Toggle visibility of dotfiles.
-  void toggleHidden();
+  /// Toggle visibility of dotfiles. Returns a ViewHint that tries
+  /// to restore the cursor on the same entry.
+  ViewHint toggleHidden(BufferPoint currentPoint);
 
-  /// Toggle deletion mark on the current line. No-op on . and .. entries.
-  void toggleDeleteMark();
+  /// Toggle deletion mark at the given line. No-op on . and .. entries.
+  void toggleDeleteMark(BufferPoint p);
 
   /// Return the set of paths currently marked for deletion.
   std::vector<std::filesystem::path> markedPaths() const;
@@ -43,9 +43,14 @@ public:
   /// Clear all deletion marks.
   void clearMarks();
 
-  /// Remove all marked entries from disk. Returns the number of items
-  /// deleted and an error string (empty on full success).
-  std::pair<std::size_t, std::string> executeDelete();
+  /// Remove all marked entries from disk. Returns count, error, and a
+  /// ViewHint for cursor positioning after the listing is refreshed.
+  struct DeleteResult {
+    std::size_t count;
+    std::string error;
+    ViewHint hint;
+  };
+  DeleteResult executeDelete();
 
   /// The directory currently being listed.
   std::filesystem::path const& directory() const { return _dir; }
@@ -72,7 +77,9 @@ public:
   bool isMarked(std::size_t idx) const { return _markedForDelete.count(idx) > 0; }
 
 private:
-  void refresh();
+  /// Rebuild the entry list and display lines. If `prevName` is non-empty,
+  /// tries to place the returned cursor on the entry with that name.
+  ViewHint refresh(std::string const& prevName = {});
 
   std::filesystem::path _dir;
   bool _showHidden = false;

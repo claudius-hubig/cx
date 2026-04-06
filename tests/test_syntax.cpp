@@ -128,12 +128,12 @@ BOOST_AUTO_TEST_CASE(raw_string_multiline_with_delim) {
 }
 
 BOOST_AUTO_TEST_CASE(string_render_uses_red_color) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, R"(x = "hello";)");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // String color (red): \x1b[38;2;200;80;80m
   BOOST_CHECK(out.find("\x1b[38;2;200;80;80m") != std::string::npos);
 }
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(spaceship_is_operator) {
 // ============================================================
 
 BOOST_AUTO_TEST_CASE(goto_matching_paren_forward) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "foo(bar)");
   buf.setPoint(0, 3); // on '('
@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_paren_forward) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_paren_backward) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "foo(bar)");
   buf.setPoint(0, 7); // on ')'
@@ -227,7 +227,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_paren_backward) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_brace) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "{ x }");
   buf.setPoint(0, 0); // on '{'
@@ -236,7 +236,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_brace) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_bracket_square) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "a[b]");
   buf.setPoint(0, 1); // on '['
@@ -245,7 +245,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_bracket_square) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_angle) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "vector<int>");
   buf.setPoint(0, 6); // on '<'
@@ -254,7 +254,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_angle) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_multiline) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   // Auto-indent in Cpp mode copies leading whitespace on newline.
   // "if (\n  x\n)" produces: line 0 = "if (", line 1 = "  x",
@@ -267,7 +267,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_multiline) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_not_on_bracket) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "hello");
   buf.setPoint(0, 0); // on 'h'
@@ -275,7 +275,7 @@ BOOST_AUTO_TEST_CASE(goto_matching_not_on_bracket) {
 }
 
 BOOST_AUTO_TEST_CASE(goto_matching_no_match) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "foo(bar");
   buf.setPoint(0, 3); // on '(' with no matching ')'
@@ -287,12 +287,12 @@ BOOST_AUTO_TEST_CASE(goto_matching_no_match) {
 // ============================================================
 
 BOOST_AUTO_TEST_CASE(brackets_not_colored_individually) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "foo(x)");
   buf.setPoint(0, 0); // cursor NOT on bracket
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Old bracket colors should not appear.
   // Old paren red: \x1b[38;2;200;80;80m — now used for String, not brackets.
   // Old bracket orange: \x1b[38;2;180;140;40m
@@ -302,23 +302,23 @@ BOOST_AUTO_TEST_CASE(brackets_not_colored_individually) {
 }
 
 BOOST_AUTO_TEST_CASE(bracket_match_uses_turquoise) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "foo(x)");
   buf.setPoint(0, 3); // on '(' — should match ')'
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Turquoise: \x1b[38;2;60;170;170m
   BOOST_CHECK(out.find("\x1b[38;2;60;170;170m") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(bracket_at_point_also_highlighted) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "foo(x)");
   buf.setPoint(0, 3); // on '('
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Both the bracket at point and the matching one should be turquoise.
   // Count occurrences of the turquoise color.
   std::string turq = "\x1b[38;2;60;170;170m";
@@ -426,12 +426,12 @@ BOOST_AUTO_TEST_CASE(tilde_is_operator) {
 }
 
 BOOST_AUTO_TEST_CASE(operator_render_uses_purple_color) {
-  TextBuffer buf("test.cpp");
+  TB<TextBuffer> buf("test.cpp");
   buf.setMode(BufferMode::Cpp);
   insertString(buf, "x = 5;");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Operator color (purple): \x1b[38;2;150;100;200m
   BOOST_CHECK(out.find("\x1b[38;2;150;100;200m") != std::string::npos);
 }
@@ -672,28 +672,28 @@ BOOST_AUTO_TEST_CASE(md_bold_and_link_same_line) {
 
 BOOST_AUTO_TEST_CASE(md_mode_detection) {
   TempFile tmp("# Hello\n", ".md");
-  TextBuffer buf(tmp.path().string(), tmp.path());
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
   BOOST_CHECK(buf.mode() == BufferMode::Md);
 }
 
 BOOST_AUTO_TEST_CASE(md_render_heading_uses_bold_blue) {
-  TextBuffer buf("test.md");
+  TB<TextBuffer> buf("test.md");
   buf.setMode(BufferMode::Md);
   insertString(buf, "# Title");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Heading color: bold + blue \x1b[1;38;2;80;130;200m
   BOOST_CHECK(out.find("\x1b[1;38;2;80;130;200m") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(md_render_bold_uses_bold) {
-  TextBuffer buf("test.md");
+  TB<TextBuffer> buf("test.md");
   buf.setMode(BufferMode::Md);
   insertString(buf, "some **bold** text");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Bold: \x1b[1m
   BOOST_CHECK(out.find("\x1b[1m") != std::string::npos);
 }
@@ -828,45 +828,45 @@ BOOST_AUTO_TEST_CASE(json_bracket_multiline) {
 
 BOOST_AUTO_TEST_CASE(json_mode_detection) {
   TempFile tmp("{}\n", ".json");
-  TextBuffer buf(tmp.path().string(), tmp.path());
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
   BOOST_CHECK(buf.mode() == BufferMode::Jsn);
 }
 
 BOOST_AUTO_TEST_CASE(json_render_string_red) {
-  TextBuffer buf("test.json");
+  TB<TextBuffer> buf("test.json");
   buf.setMode(BufferMode::Jsn);
   insertString(buf, R"("hello")");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // String color: red \x1b[38;2;200;80;80m
   BOOST_CHECK(out.find("\x1b[38;2;200;80;80m") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(json_render_keyword_blue) {
-  TextBuffer buf("test.json");
+  TB<TextBuffer> buf("test.json");
   buf.setMode(BufferMode::Jsn);
   insertString(buf, "true");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Keyword color: blue \x1b[38;2;80;130;200m
   BOOST_CHECK(out.find("\x1b[38;2;80;130;200m") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(json_render_number_turquoise) {
-  TextBuffer buf("test.json");
+  TB<TextBuffer> buf("test.json");
   buf.setMode(BufferMode::Jsn);
   insertString(buf, "42");
   buf.moveHome();
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Number color: light turquoise \x1b[38;2;100;200;200m
   BOOST_CHECK(out.find("\x1b[38;2;100;200;200m") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(json_goto_matching_bracket) {
-  TextBuffer buf("test.json");
+  TB<TextBuffer> buf("test.json");
   buf.setMode(BufferMode::Jsn);
   insertString(buf, "[1, 2]");
   buf.moveHome(); // cursor on [
@@ -875,12 +875,12 @@ BOOST_AUTO_TEST_CASE(json_goto_matching_bracket) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_match_highlight_in_render) {
-  TextBuffer buf("test.json");
+  TB<TextBuffer> buf("test.json");
   buf.setMode(BufferMode::Jsn);
   insertString(buf, "[1]");
   buf.moveHome(); // cursor on [
   std::string out;
-  buf.render(out, RowIdx{5}, ColIdx{40});
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Bracket match: turquoise \x1b[38;2;60;170;170m
   BOOST_CHECK(out.find("\x1b[38;2;60;170;170m") != std::string::npos);
 }

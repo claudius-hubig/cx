@@ -1271,8 +1271,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     // Buffer list: Enter selects the highlighted buffer.
     auto* blb = dynamic_cast<BufferListBuffer*>(_buf);
     if (blb && prevBuf() && _bufMgr) {
-      _view->saveToBuffer();
-      auto name = blb->selectedName();
+      auto name = blb->selectedName(_view->point());
       Buffer* target = _bufMgr->find(name);
       if (target) {
         prevBuf() = nullptr;
@@ -1280,12 +1279,11 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       }
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf); db && _bufMgr) {
       // Directory buffer: Enter opens file or navigates into directory.
-      // Sync view state to buffer so DirBuffer methods see the correct cursor.
-      _view->saveToBuffer();
-      if (db->selectedIsDir()) {
-        setBuffer(_bufMgr->openDir(db->selectedPath()));
+      auto pt = _view->point();
+      if (db->selectedIsDir(pt)) {
+        setBuffer(_bufMgr->openDir(db->selectedPath(pt)));
       } else {
-        setBuffer(_bufMgr->open(db->selectedPath()));
+        setBuffer(_bufMgr->open(db->selectedPath(pt)));
       }
     } else if (_buf) {
       _view->insert('\n');
@@ -1332,16 +1330,11 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       // Jump succeeded — nothing else to do.
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf)) {
       // Directory buffer keys.
-      // Sync view state before DirBuffer methods that read _point;
-      // reload the view after methods that modify _point.
       if (c == 'h') {
-        _view->saveToBuffer();
-        db->toggleHidden();
-        _view->loadFromBuffer();
+        auto hint = db->toggleHidden(_view->point());
+        _view->setPoint(hint.point.line, hint.point.offset);
       } else if (c == 'd') {
-        _view->saveToBuffer();
-        db->toggleDeleteMark();
-        _view->loadFromBuffer();
+        db->toggleDeleteMark(_view->point());
         if (_view->point().line + 1 < _buf->lineCount())
           _view->movePhysicalDown();
       } else if (c == 'x') {
@@ -1355,13 +1348,13 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
                 if (answer == "y") {
                   auto* db2 = dynamic_cast<DirBuffer*>(_buf);
                   if (db2) {
-                    _view->saveToBuffer();
-                    auto [count, err] = db2->executeDelete();
-                    _view->loadFromBuffer();
-                    if (err.empty())
-                      setStatus("Deleted " + std::to_string(count) + " item(s).");
+                    auto result = db2->executeDelete();
+                    _view->setPoint(result.hint.point.line, result.hint.point.offset);
+                    if (result.error.empty())
+                      setStatus("Deleted " + std::to_string(result.count) + " item(s).");
                     else
-                      setStatus("Deleted " + std::to_string(count) + "; errors: " + err);
+                      setStatus("Deleted " + std::to_string(result.count) +
+                                "; errors: " + result.error);
                   }
                 } else {
                   _statusMsg.clear();
@@ -1817,10 +1810,15 @@ void Screen::dispatchAction(Action action) {
               if (answer == "y") {
                 if (_buf) {
                   auto res = _buf->revert();
-                  if (res)
+                  if (res) {
+                    // revert() only reloads content; reset view state here
+                    // so the cursor and selection land in a sensible place.
+                    _view->setPoint(0, 0);
+                    _view->clearMark();
                     setStatus("Reverted from " + _buf->name());
-                  else
+                  } else {
                     setStatus(res.error());
+                  }
                 }
               }
             },

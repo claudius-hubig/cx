@@ -69,3 +69,11 @@ struct ViewFrom {
 
   bool operator==(ViewFrom const&) const = default;
 };
+
+// Suggested cursor position returned by buffer methods that rebuild
+// their contents (DirBuffer::refresh, BufferListBuffer::refresh, etc.).
+// The caller (BufferView / Screen) uses this to position the view.
+struct ViewHint {
+  BufferPoint point{};
+  ViewFrom viewFrom{};
+};

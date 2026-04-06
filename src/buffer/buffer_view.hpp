@@ -9,23 +9,28 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <vector>
 
 /// Per-view state for a Buffer. Owns the cursor position, selection mark,
-/// viewport scroll, and per-view caches. Delegates all operations to the
-/// underlying Buffer via a sync pattern: view state is copied into Buffer's
-/// fields before the call, and copied back afterwards.
+/// viewport scroll, wrap mode, desired column, find highlight, and
+/// per-view caches. Movement, editing, and rendering are implemented
+/// directly using the Buffer's public accessors (lineContent, lineCount,
+/// isBlankLine, lines) and its position-explicit editing API
+/// (insertAt, deleteAt, deleteBefore, insertText, deleteRegion).
 ///
 /// Multiple BufferViews can reference the same Buffer (for multi-panel
-/// editing). Each view maintains independent cursor/viewport state.
+/// editing). Each view maintains independent cursor/viewport state and
+/// detects external edits via Buffer::docVersion(), clamping its
+/// positions on the next access.
 class BufferView {
 public:
   /// Construct a view with default position (0,0) for the given buffer.
   explicit BufferView(Buffer& buf);
 
-  /// Construct a view by copying the buffer's current view state. Used when
-  /// the buffer was previously shown in a single view and we want to resume
-  /// the saved cursor position.
-  static BufferView fromBufferState(Buffer& buf);
+  /// Construct a view from the buffer's saved view state (if any).
+  /// If the buffer has no saved state, starts at position (0,0).
+  /// Clears the saved state after reading it.
+  static BufferView fromSavedState(Buffer& buf);
 
   Buffer& buffer() { return _buf; }
   Buffer const& buffer() const { return _buf; }
@@ -41,8 +46,9 @@ public:
   void clearMark() { _mark.reset(); }
   void toggleMark();
 
-  void setHighlight(BufferPoint from, BufferPoint to) { _highlight = Buffer::Highlight{from, to}; }
+  void setHighlight(BufferPoint from, BufferPoint to) { _highlight = Highlight{from, to}; }
   void clearHighlight() { _highlight.reset(); }
+  std::optional<Highlight> const& highlight() const { return _highlight; }
 
   std::tuple<std::size_t, std::size_t> lineCol() const;
 
@@ -92,22 +98,43 @@ public:
   /// Call this when another view may have modified the buffer's content.
   void clampToBuffer();
 
-  /// Save this view's state back into the buffer's fields. Used when this
-  /// is the last view before destruction, to preserve cursor position.
-  void saveToBuffer();
-
-  /// Reload this view's state from the buffer's fields. Used after
-  /// external code modifies the buffer's cursor directly (e.g. DirBuffer
-  /// methods that update _point).
-  /// Precondition: saveToBuffer() was called before the external modification,
-  /// so the buffer's cache fields are in a valid state.
-  void loadFromBuffer();
+  /// Save this view's cursor/viewport into the buffer's saved-state slot.
+  /// Called when this is the last view before destruction, to preserve
+  /// cursor position for later restoration via fromSavedState().
+  void saveViewState();
 
 private:
-  /// Copy view state into Buffer's protected fields before delegating.
-  void syncTo() const;
-  /// Copy view state back from Buffer's fields after delegating.
-  void syncFrom();
+  /// Cached visual column of the point. Avoids re-scanning the line on
+  /// every movement command.
+  struct PointColCache {
+    std::size_t line = SIZE_MAX;
+    std::size_t offset = 0;
+    std::size_t visualCol = 0;
+    std::size_t codepointCol = 0;
+  };
+
+  /// Cached visual-row boundaries for a wrapped line. Rebuilt when the
+  /// line index or column count changes.
+  struct RowBoundsCache {
+    std::size_t lineIdx = SIZE_MAX;
+    std::size_t cols = 0;
+    std::vector<std::size_t> rowStarts;
+  };
+
+  /// Visual column of the point from byte 0, cached.
+  std::size_t pointVisualCol() const;
+
+  /// Ensure the row bounds cache is populated for the given line and cols.
+  /// Mirrors Buffer::ensureRowBounds() but reads line data through
+  /// _buf.lineContent().
+  std::vector<std::size_t> const& ensureRowBounds(std::size_t lineIdx, std::size_t cols) const;
+
+  /// Line index that is `lines` lines before the end of the buffer.
+  std::size_t viewFromLinesBeforeEnd(std::size_t lines) const;
+
+  /// True if point is at the very end of the buffer (last line, past all
+  /// chars).
+  bool atEnd() const;
 
   Buffer& _buf;
   BufferPoint _point;
@@ -115,10 +142,10 @@ private:
   ViewFrom _viewFrom;
   bool _wrapMode = false;
   std::optional<ColIdx> _desiredCol;
-  std::optional<Buffer::Highlight> _highlight;
+  std::optional<Highlight> _highlight;
 
-  mutable Buffer::PointColCache _pointColCache;
-  mutable Buffer::RowBoundsCache _rowBoundsCache;
+  mutable PointColCache _pointColCache;
+  mutable RowBoundsCache _rowBoundsCache;
 
   std::size_t _docVersion = 0;
 };

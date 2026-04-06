@@ -149,57 +149,101 @@ Key responsibilities:
 
 ### `Buffer` (`src/buffer/buffer.hpp/.cpp`)
 
-Abstract base for all buffer types. Stores text as
-`std::vector<std::string>` (one `std::string` per line, without newline
-delimiters). Provides:
+Abstract base for all buffer types. Owns *document content only* — line
+storage, filename, mode, modified flag, document version, and the
+per-line syntax cache. All *view state* (cursor position, viewport,
+mark, selection highlight, per-view caches) lives in `BufferView`, so
+multiple views can share the same `Buffer` for split-window editing.
 
-- **Editing**: `insert`, `deleteAtPoint`, `deleteBeforePoint`,
-  `deleteChunkAtPoint`, `deleteChunkBeforePoint`
-- **Cursor movement**: `moveLeft/Right/Up/Down`, `moveHome/End`,
-  `moveWordLeft/Right`, `moveParagraphUp/Down`, `movePhysicalUp/Down`,
-  `pageUp/Down`, `gotoLine`, `gotoMatchingBracket`, `setPoint`
-- **Mark and region**: `toggleMark`, `setMark`, `clearMark`,
-  `extractRegion`, `deleteRegion`, `insertText`
-- **Viewport management**: `ensureVisible`, `scrollUp/Down`,
-  `scrollViewNearEnd`. The viewport is described by `ViewFrom` which
-  holds a `RowIdx line` and a mode-dependent sub-position: `ByteOffset`
-  in wrap mode (sub-line scroll), or `VisualCol` in no-wrap mode
-  (horizontal scroll).
-- **Rendering**: `render()` produces an ANSI escape string for the
-  visible portion of the buffer, including syntax highlighting (via
-  per-mode tokenizers), region highlighting (inverse video when mark is
-  active), and find highlighting (light blue background via
-  `setHighlight`/`clearHighlight`). Returns the screen `{row, col}`
-  of the cursor for hardware cursor positioning.
-- **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to the
-  first non-space byte when it is in the leading whitespace. Used by
-  `Screen` after single-line formatting.
-- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`) determines syntax
-  highlighting, auto-indent, and formatting behaviour. Changed via
-  `setMode()`.
+Text is stored as `std::vector<std::string>` (one `std::string` per line,
+without newline delimiters). An empty buffer has `{{}}` (a single empty
+line); a file ending in `\n` is represented by an empty trailing entry.
+
+Public API:
+
+- **Position-explicit editing**: `insertAt(cp, point)`, `deleteAt(point)`,
+  `deleteBefore(point)`, `insertText(text, point)`, `deleteRegion(from, to)`,
+  `extractRegion(from, to)`. Every editing method takes the cursor position
+  as a parameter and returns the new position — `Buffer` never reads or
+  writes any view state.
+- **Rendering**: virtual `render(out, rows, cols, RenderParams)` produces
+  an ANSI escape string for the visible portion of the buffer, including
+  syntax highlighting (via per-mode tokenizers), region highlighting
+  (inverse video when a selection mark is active), and find highlighting.
+  `RenderParams` bundles the view-state inputs (point, viewFrom, mark,
+  highlight, showWhitespace, wrap, row/col offsets). Returns the
+  screen `{row, col}` of the cursor.
+- **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
+  reports where a given point sits relative to a viewport start, used
+  by `BufferView::ensureVisible` and similar.
+- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`) determines
+  syntax highlighting, auto-indent, and formatting behaviour. Changed
+  via `setMode()`, which invalidates the per-line syntax cache.
+- **Document version**: `docVersion()` is incremented on every edit so
+  `BufferView` can detect external modifications made by another view
+  sharing the buffer and invoke `clampToBuffer()` to re-validate its
+  cached positions.
+- **Saved view state**: for buffer switching, a `SavedViewState`
+  ({point, viewFrom, mark}) can be stashed on the buffer via
+  `setSavedView()` / `savedView()` / `clearSavedView()` and later
+  restored by `BufferView::fromSavedState()`.
 
 Editing methods are guarded by `readonly()` (a pure virtual that derived
 classes override). The `_modified` flag is set on any edit and cleared by
 a successful `save()`.
 
 Caching:
-- `_pointColCache` — memoises visual and codepoint column for the current
-  point position.
-- `_rowBoundsCache` — caches visual-row boundary offsets for a single
-  line (used by wrapped-line navigation).
 - `_synCache` — per-line syntax tokenisation cache, invalidated on edits.
+
+### `BufferView` (`src/buffer/buffer_view.hpp/.cpp`)
+
+Owns all view-specific state for one logical "view" of a `Buffer`:
+point (`BufferPoint`), mark, viewport (`ViewFrom`), wrap mode, desired
+column for vertical movement, find highlight, and per-view caches
+(`PointColCache`, `RowBoundsCache`). Multiple `BufferView`s can share
+the same `Buffer`, each with independent cursor and viewport.
+
+All user-facing movement, editing, and render operations are methods on
+`BufferView`:
+
+- **Movement**: `moveLeft/Right/Up/Down`, `moveHome/End`,
+  `moveWordLeft/Right`, `moveParagraphUp/Down`, `movePhysicalUp/Down`,
+  `pageUp/Down`, `gotoLine`, `gotoMatchingBracket`, `setPoint`.
+- **Editing**: `insert`, `deleteAtPoint`, `deleteBeforePoint`,
+  `deleteChunkAtPoint`, `deleteChunkBeforePoint`, `insertText`,
+  `deleteRegion`. These call the position-explicit methods on `Buffer`
+  and apply the necessary mark-adjustment locally.
+- **Mark and region**: `toggleMark`, `setMark`, `clearMark`,
+  `extractRegion`.
+- **Viewport management**: `ensureVisible`, `scrollUp/Down`,
+  `scrollViewNearEnd`, `currentLineWraps`. The viewport is described
+  by `ViewFrom` which holds a `RowIdx line` and a mode-dependent
+  sub-position: `ByteOffset` in wrap mode (sub-line scroll), or
+  `VisualCol` in no-wrap mode (horizontal scroll).
+- **Rendering**: `render()` builds a `RenderParams` from the view's
+  state and forwards to `Buffer::render()`.
+- **Highlight**: `setHighlight/clearHighlight` for find highlighting.
+- **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to
+  the first non-space byte when it is in the leading whitespace.
+- **Consistency**: `clampToBuffer()` re-clamps point, mark, and
+  viewport to valid positions after the underlying buffer changed
+  (e.g. via another view or `revert()`). Called automatically when the
+  view notices a `docVersion` mismatch.
 
 ---
 
 ### `TextBuffer` (`src/buffer/text_buffer.hpp/.cpp`)
 
 Concrete editable buffer backed by a file on disk. Reads the file on
-construction; `save()` writes lines back as a truncating binary write and
-returns `std::expected<void, std::string>` with an error message on
-failure. `revert()` reloads the buffer contents from its backing file,
-resetting point, mark, viewport, and modified flag. Exposes `setPath()`
-for the save-as rename workflow. `detectMode()` sets the `BufferMode`
-based on file extension (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`;
+construction; `save()` writes lines back as a truncating binary write
+and returns `std::expected<void, std::string>` with an error message on
+failure. `revert()` reloads the buffer contents from its backing file
+and bumps `docVersion`; it does *not* touch view state. Callers that
+need to reposition the cursor after a revert (e.g. `Screen` on the
+user-invoked `Revert` action) explicitly reset `_view->setPoint(0,0)`
+and clear the mark. Exposes `setPath()` for the save-as rename
+workflow. `detectMode()` sets the `BufferMode` based on file extension
+(`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
 otherwise `Txt`).
 
 ---

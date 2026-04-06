@@ -9,7 +9,7 @@
 // --- deleteChunkAtPoint ---
 
 BOOST_AUTO_TEST_CASE(chunkDelete_word) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello world");
   buf.moveHome();
   buf.deleteChunkAtPoint();
@@ -23,7 +23,7 @@ BOOST_AUTO_TEST_CASE(chunkDelete_word) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDelete_spaces) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello   world");
   buf.moveHome();
   // Move past "hello".
@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(chunkDelete_spaces) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDelete_crosses_newline) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc\ndef");
   buf.gotoLine(1, RowIdx{10}); // go to start of line 0
   buf.moveEnd();               // end of "abc" (offset 3)
@@ -54,7 +54,7 @@ BOOST_AUTO_TEST_CASE(chunkDelete_crosses_newline) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDelete_at_end_noop) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc");
   auto before = buf.point();
   buf.deleteChunkAtPoint();
@@ -62,7 +62,7 @@ BOOST_AUTO_TEST_CASE(chunkDelete_at_end_noop) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDelete_readonly_noop) {
-  HelpBuffer buf;
+  TB<HelpBuffer> buf;
   auto before = buf.point();
   buf.deleteChunkAtPoint();
   BOOST_CHECK(buf.point() == before);
@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(chunkDelete_readonly_noop) {
 // --- deleteChunkBeforePoint ---
 
 BOOST_AUTO_TEST_CASE(chunkDeleteBefore_word) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello world");
   // Point at end (offset 11).
   buf.deleteChunkBeforePoint();
@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(chunkDeleteBefore_word) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDeleteBefore_spaces) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "hello   world");
   buf.moveHome();
   // Move to 'w' (offset 8).
@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(chunkDeleteBefore_spaces) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDeleteBefore_crosses_newline) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc\ndef");
   buf.gotoLine(2, RowIdx{10}); // at start of "def"
   buf.deleteChunkBeforePoint();
@@ -105,7 +105,7 @@ BOOST_AUTO_TEST_CASE(chunkDeleteBefore_crosses_newline) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDeleteBefore_at_start_noop) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abc");
   buf.moveHome();
   auto before = buf.point();
@@ -114,7 +114,7 @@ BOOST_AUTO_TEST_CASE(chunkDeleteBefore_at_start_noop) {
 }
 
 BOOST_AUTO_TEST_CASE(chunkDeleteBefore_utf8) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   // Insert "abc" then two CJK chars.
   insertString(buf, "abc");
   buf.insert(0x4E2Du); // 中

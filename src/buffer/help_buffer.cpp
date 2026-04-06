@@ -237,22 +237,22 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
   addLine(kFooterText);
 }
 
-std::size_t HelpBuffer::screenRow(ColIdx cols, bool /*wrap*/) const {
-  std::size_t pointVis = dataLineToVisualRow(_point.line, cols.value);
-  std::size_t scrollVis = dataLineToVisualRow(_viewFrom.line.value, cols.value);
+std::size_t HelpBuffer::screenRow(ColIdx cols, BufferPoint point, ViewFrom viewFrom,
+                                  bool /*wrap*/) const {
+  std::size_t pointVis = dataLineToVisualRow(point.line, cols.value);
+  std::size_t scrollVis = dataLineToVisualRow(viewFrom.line.value, cols.value);
   return pointVis >= scrollVis ? pointVis - scrollVis : 0;
 }
 
 std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
-                                              bool /*showWhitespace*/, bool /*wrap*/,
-                                              std::size_t rowOffset, std::size_t colOffset) const {
+                                              RenderParams const& params) const {
 
   // Content width excludes the gutter column.
   std::size_t c = contentWidth(cols);
 
   // Cursor data-line and column within that line.
-  std::size_t dataLine = _point.line;
-  std::size_t dataCol = _point.offset;
+  std::size_t dataLine = params.point.line;
+  std::size_t dataCol = params.point.offset;
 
   // Layout indices computed from generated vectors.
   std::size_t leftEnd = kHeaderLines + leftColumn().size();
@@ -260,8 +260,8 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t rightEnd = rightStart + rightColumn().size();
   std::size_t footer = rightEnd + 1;
 
-  // Scroll offset: visual row corresponding to _viewFrom.line.value.
-  std::size_t scrollVis = dataLineToVisualRow(_viewFrom.line.value, c);
+  // Scroll offset: visual row corresponding to viewFrom.
+  std::size_t scrollVis = dataLineToVisualRow(params.viewFrom.line.value, c);
 
   // Cursor visual row, relative to scroll.
   std::size_t curVis = dataLineToVisualRow(dataLine, c);
@@ -308,7 +308,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t vi = scrollVis + r;
-    out += ansi::cursorTo(rowOffset + r, colOffset);
+    out += ansi::cursorTo(params.rowOffset + r, params.colOffset);
     if (vi < vlines.size()) {
       auto& content = vlines[vi].content;
       // Check if any section header appears in this visual line.
@@ -381,7 +381,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
     }
     out += ansi::EraseLine;
     // Gutter column.
-    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
+    out += ansi::cursorTo(params.rowOffset + r, params.colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

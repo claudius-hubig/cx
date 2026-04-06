@@ -50,40 +50,30 @@ DirBuffer::DirBuffer(std::filesystem::path dir)
   refresh();
 }
 
-void DirBuffer::navigate(std::filesystem::path dir) {
+ViewHint DirBuffer::navigate(std::filesystem::path dir) {
   _dir = std::filesystem::weakly_canonical(std::filesystem::absolute(std::move(dir)));
   _markedForDelete.clear();
-  refresh();
+  return refresh();
 }
 
-void DirBuffer::toggleHidden() {
+ViewHint DirBuffer::toggleHidden(BufferPoint currentPoint) {
   std::string prevName;
-  if (_point.line < _entries.size())
-    prevName = _entries[_point.line].name;
+  if (currentPoint.line < _entries.size())
+    prevName = _entries[currentPoint.line].name;
 
   _showHidden = !_showHidden;
   _markedForDelete.clear();
-  refresh();
-
-  // Try to restore cursor on the same entry.
-  if (!prevName.empty()) {
-    for (std::size_t i = 0; i < _entries.size(); ++i) {
-      if (_entries[i].name == prevName) {
-        _point = {i, 0};
-        break;
-      }
-    }
-  }
+  return refresh(prevName);
 }
 
-void DirBuffer::toggleDeleteMark() {
+void DirBuffer::toggleDeleteMark(BufferPoint p) {
   // Refuse to mark . and .. (always at indices 0 and 1).
-  if (_point.line < 2 || _point.line >= _entries.size())
+  if (p.line < 2 || p.line >= _entries.size())
     return;
-  if (_markedForDelete.count(_point.line))
-    _markedForDelete.erase(_point.line);
+  if (_markedForDelete.count(p.line))
+    _markedForDelete.erase(p.line);
   else
-    _markedForDelete.insert(_point.line);
+    _markedForDelete.insert(p.line);
 }
 
 std::vector<std::filesystem::path> DirBuffer::markedPaths() const {
@@ -97,7 +87,7 @@ std::vector<std::filesystem::path> DirBuffer::markedPaths() const {
 
 void DirBuffer::clearMarks() { _markedForDelete.clear(); }
 
-std::pair<std::size_t, std::string> DirBuffer::executeDelete() {
+DirBuffer::DeleteResult DirBuffer::executeDelete() {
   std::size_t count = 0;
   std::string errors;
   for (auto idx : _markedForDelete) {
@@ -117,28 +107,23 @@ std::pair<std::size_t, std::string> DirBuffer::executeDelete() {
     }
   }
   _markedForDelete.clear();
-  refresh();
-  return {count, errors};
+  auto hint = refresh();
+  return {count, errors, hint};
 }
 
-std::filesystem::path DirBuffer::selectedPath() const {
-  if (_point.line < _entries.size())
-    return _entries[_point.line].path;
+std::filesystem::path DirBuffer::selectedPath(BufferPoint p) const {
+  if (p.line < _entries.size())
+    return _entries[p.line].path;
   return _dir;
 }
 
-bool DirBuffer::selectedIsDir() const {
-  if (_point.line < _entries.size())
-    return _entries[_point.line].isDir;
+bool DirBuffer::selectedIsDir(BufferPoint p) const {
+  if (p.line < _entries.size())
+    return _entries[p.line].isDir;
   return false;
 }
 
-void DirBuffer::refresh() {
-  // Remember current entry name for cursor restoration.
-  std::string prevName;
-  if (_point.line < _entries.size())
-    prevName = _entries[_point.line].name;
-
+ViewHint DirBuffer::refresh(std::string const& prevName) {
   _entries.clear();
   _displayLines.clear();
 
@@ -262,17 +247,17 @@ void DirBuffer::refresh() {
   }
   if (newLine >= _lines.size())
     newLine = _lines.size() > 0 ? _lines.size() - 1 : 0;
-  _point = {newLine, 0};
-  _viewFrom = ViewFrom{};
-  _desiredCol.reset();
+  return ViewHint{{newLine, 0}, {}};
 }
 
-std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColIdx cols, bool, bool,
-                                             std::size_t rowOffset, std::size_t colOffset) const {
+std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColIdx cols,
+                                             RenderParams const& params) const {
   constexpr auto kRedFg = "\x1b[31m";
 
-  std::size_t curLine = _point.line;
-  std::size_t scrollLine = _viewFrom.line.value;
+  std::size_t curLine = params.point.line;
+  std::size_t scrollLine = params.viewFrom.line.value;
+  std::size_t rowOffset = params.rowOffset;
+  std::size_t colOffset = params.colOffset;
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;

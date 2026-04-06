@@ -8,7 +8,7 @@
 // --- scrollViewNearEnd ---
 
 BOOST_AUTO_TEST_CASE(scrollNearEnd_scrolls_when_at_end) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 20; ++i) {
     insertString(buf, "line");
     if (i < 19)
@@ -23,7 +23,7 @@ BOOST_AUTO_TEST_CASE(scrollNearEnd_scrolls_when_at_end) {
 }
 
 BOOST_AUTO_TEST_CASE(scrollNearEnd_stops_at_limit) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 20; ++i) {
     insertString(buf, "line");
     if (i < 19)
@@ -38,7 +38,7 @@ BOOST_AUTO_TEST_CASE(scrollNearEnd_stops_at_limit) {
 }
 
 BOOST_AUTO_TEST_CASE(scrollNearEnd_noop_when_past_limit) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 20; ++i) {
     insertString(buf, "line");
     if (i < 19)
@@ -58,7 +58,7 @@ BOOST_AUTO_TEST_CASE(scrollNearEnd_noop_when_past_limit) {
 // --- ensureVisible ---
 
 BOOST_AUTO_TEST_CASE(ensureVisible_horizontal_scroll) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   insertString(buf, "abcdefghijklmnop");
   buf.moveEnd();
   buf.ensureVisible(RowIdx{5}, ColIdx{6}, false);
@@ -67,22 +67,22 @@ BOOST_AUTO_TEST_CASE(ensureVisible_horizontal_scroll) {
   BOOST_CHECK_EQUAL(vf.line, 0u);
   // In no-wrap mode, hscroll should be non-zero for a 16-char line in 5 cols.
   std::string out;
-  auto [row, col] = buf.render(out, RowIdx{5}, ColIdx{6}, false, false);
+  auto [row, col] = buf.render(out, RowIdx{5}, ColIdx{6}, renderParams(buf, false, false));
   BOOST_CHECK(col.value <= 5u);
 }
 
 BOOST_AUTO_TEST_CASE(ensureVisible_wrap_subline) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 40; ++i)
     buf.insert('x');
   buf.moveEnd();
   buf.ensureVisible(RowIdx{3}, ColIdx{4}, true);
   BOOST_CHECK(buf.viewFrom().offset > 0u);
-  BOOST_CHECK(buf.screenRow(ColIdx{4}, true) < 3u);
+  BOOST_CHECK(buf.screenRow(ColIdx{4}, buf.point(), buf.viewFromRaw(), true) < 3u);
 }
 
 BOOST_AUTO_TEST_CASE(ensureVisible_far_point_jump) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   for (int i = 0; i < 100; ++i) {
     insertString(buf, "line");
     if (i < 99)
@@ -92,15 +92,15 @@ BOOST_AUTO_TEST_CASE(ensureVisible_far_point_jump) {
   // Now move to end.
   buf.gotoLine(100, RowIdx{10});
   buf.ensureVisible(RowIdx{10}, ColIdx{20}, true);
-  BOOST_CHECK(buf.screenRow(ColIdx{20}, true) < 10u);
+  BOOST_CHECK(buf.screenRow(ColIdx{20}, buf.point(), buf.viewFromRaw(), true) < 10u);
 }
 
 BOOST_AUTO_TEST_CASE(ensureVisible_cjk_wrap) {
-  TextBuffer buf("test");
+  TB<TextBuffer> buf("test");
   // Fill with CJK characters (width=2 each).
   for (int i = 0; i < 20; ++i)
     buf.insert(0x4E2Du); // 中
   buf.moveEnd();
   buf.ensureVisible(RowIdx{3}, ColIdx{6}, true);
-  BOOST_CHECK(buf.screenRow(ColIdx{6}, true) < 3u);
+  BOOST_CHECK(buf.screenRow(ColIdx{6}, buf.point(), buf.viewFromRaw(), true) < 3u);
 }
