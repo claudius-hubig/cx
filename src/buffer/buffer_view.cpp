@@ -301,6 +301,8 @@ void BufferView::movePhysicalDown() {
 }
 
 void BufferView::moveHome() {
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
   _point.offset = 0;
   _desiredCol.reset();
 }

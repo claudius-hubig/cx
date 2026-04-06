@@ -205,6 +205,22 @@ BOOST_AUTO_TEST_CASE(line_col_through_view) {
   BOOST_CHECK_EQUAL(col, 4u);  // 1-indexed codepoint column
 }
 
+BOOST_AUTO_TEST_CASE(moveHome_clamps_after_external_edit) {
+  TempFile f("aaa\nbbb\nccc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(2, 1); // on 'ccc', offset 1
+
+  // Another view deletes lines so line 2 no longer exists.
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{1, 0}, BufferPoint{2, 3});
+
+  // moveHome on stale view should clamp first, not OOB.
+  view.moveHome();
+  BOOST_CHECK(view.point().line < buf.lineCount());
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
 BOOST_AUTO_TEST_CASE(ensure_visible_through_view) {
   TempFile f("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
   TextBuffer buf(f.path().string(), f.path());
