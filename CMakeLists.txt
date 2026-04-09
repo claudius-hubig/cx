@@ -31,7 +31,10 @@ target_include_directories(cx PRIVATE src)
 enable_testing()
 find_package(Boost REQUIRED COMPONENTS unit_test_framework)
 
-add_executable(test_char_width tests/test_char_width.cpp)
+add_executable(test_char_width
+    tests/test_char_width.cpp
+    src/utf8.cpp
+)
 target_include_directories(test_char_width PRIVATE src)
 target_link_libraries(test_char_width Boost::unit_test_framework)
 add_test(NAME char_width COMMAND test_char_width)

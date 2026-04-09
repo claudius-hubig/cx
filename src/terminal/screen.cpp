@@ -173,24 +173,51 @@ void Screen::draw() {
         }
       }
 
-      // Right-align: buffer name + mode + modification indicator.
-      std::string buf_name = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
+      // Right-align: buffer name + mode + modification indicator. The
+      // filename may be truncated from the front when the panel is too
+      // narrow to fit the full modeline; the mode/modified suffix is
+      // always preserved so the user can still see it.
+      std::string filename = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
+      std::string suffix;
       if (!pbuf.readonly())
-        buf_name += pbuf.mode() == BufferMode::Cpp   ? " [c]"
-                    : pbuf.mode() == BufferMode::Md  ? " [md]"
-                    : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
-                                                     : " [txt]";
-      if (pbuf.modified())
-        buf_name += " +";
-      else
-        buf_name += "  ";
+        suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
+                  : pbuf.mode() == BufferMode::Md  ? " [md]"
+                  : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
+                                                   : " [txt]";
+      suffix += pbuf.modified() ? " +" : "  ";
+      auto suffix_vwidth = visualWidth(suffix);
+      auto filename_vwidth = visualWidth(filename);
+      auto buf_name_vwidth = filename_vwidth + suffix_vwidth;
 
-      auto buf_name_vwidth = visualWidth(buf_name);
       if (status_vwidth + buf_name_vwidth + 2 <= pc.value) {
+        // Everything fits: pad between status and the buffer name block.
         status.append(pc.value - buf_name_vwidth - status_vwidth, ' ');
-        status += buf_name;
+        status += filename + suffix;
+      } else if (pc.value >= status_vwidth + 2 + suffix_vwidth + 1) {
+        // Truncate the filename from the front to fit, preserving the
+        // suffix and at least one column for the ellipsis.
+        std::size_t filenameAvail = pc.value - status_vwidth - 2 - suffix_vwidth;
+        std::string truncated = truncateVisualFromFront(filename, filenameAvail);
+        std::size_t used = status_vwidth + visualWidth(truncated) + suffix_vwidth;
+        if (used < pc.value)
+          status.append(pc.value - used, ' ');
+        status += truncated + suffix;
       } else if (status_vwidth < pc.value) {
+        // No room for a meaningful buffer name — pad the rest with spaces.
         status.append(pc.value - status_vwidth, ' ');
+      } else if (status_vwidth > pc.value) {
+        // Status itself overflows (e.g. very long prompt); truncate from
+        // the back so we never spill past the panel.
+        std::size_t keep = 0;
+        std::size_t w = 0;
+        while (keep < status.size()) {
+          auto info = charInfoAt(status.data() + keep, status.size() - keep);
+          if (w + info.width > pc.value)
+            break;
+          w += info.width;
+          keep += info.len;
+        }
+        status.resize(keep);
       }
 
       std::size_t modelineRow = rect.row + rect.rows - 1;

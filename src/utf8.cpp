@@ -13,6 +13,28 @@ std::size_t visualWidth(std::string_view s) {
   return w;
 }
 
+std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth) {
+  if (maxWidth == 0)
+    return {};
+  std::size_t total = visualWidth(s);
+  if (total <= maxWidth)
+    return std::string(s);
+  // Reserve one visual column for the leading ellipsis.
+  std::size_t tailBudget = maxWidth - 1;
+  // Advance from the start until the remaining tail fits in tailBudget.
+  std::size_t i = 0;
+  std::size_t dropped = 0;
+  while (i < s.size() && total - dropped > tailBudget) {
+    auto info = charInfoAt(s.data() + i, s.size() - i);
+    dropped += info.width;
+    i += info.len;
+  }
+  // U+2026 HORIZONTAL ELLIPSIS (width 1, 3 bytes UTF-8).
+  std::string out = "\xe2\x80\xa6";
+  out.append(s.data() + i, s.size() - i);
+  return out;
+}
+
 void readUtf8Tail(unsigned char lead, std::string& dest) {
   for (std::size_t j = 1; j < utf8SeqLen(lead); ++j) {
     char next;

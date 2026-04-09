@@ -232,3 +232,43 @@ BOOST_AUTO_TEST_CASE(charInfoAt_overlong) {
   BOOST_CHECK_EQUAL(info.width, 2u);
   BOOST_CHECK_EQUAL(info.len, 1u);
 }
+
+// --- truncateVisualFromFront ---
+
+BOOST_AUTO_TEST_CASE(truncateFromFront_fits) {
+  // No truncation needed when the string already fits.
+  BOOST_CHECK_EQUAL(truncateVisualFromFront("hello", 10), "hello");
+  BOOST_CHECK_EQUAL(truncateVisualFromFront("hello", 5), "hello");
+  BOOST_CHECK_EQUAL(truncateVisualFromFront("", 5), "");
+}
+
+BOOST_AUTO_TEST_CASE(truncateFromFront_ascii) {
+  // "abcdef" (width 6) truncated to 4 => "…def" (ellipsis width 1 + 3 chars).
+  auto r = truncateVisualFromFront("abcdef", 4);
+  BOOST_CHECK_EQUAL(r, "\xe2\x80\xa6"
+                       "def");
+  BOOST_CHECK_EQUAL(visualWidth(r), 4u);
+}
+
+BOOST_AUTO_TEST_CASE(truncateFromFront_keeps_unique_tail) {
+  // A long path should be truncated from the front, preserving the filename
+  // (the rightmost component is the most unique).
+  auto r = truncateVisualFromFront("/very/long/path/to/buffer_view.cpp", 20);
+  BOOST_CHECK(visualWidth(r) <= 20u);
+  BOOST_CHECK(r.find("buffer_view.cpp") != std::string::npos);
+  BOOST_CHECK_EQUAL(r.substr(0, 3), "\xe2\x80\xa6");
+}
+
+BOOST_AUTO_TEST_CASE(truncateFromFront_zero_width) {
+  BOOST_CHECK_EQUAL(truncateVisualFromFront("hello", 0), "");
+}
+
+BOOST_AUTO_TEST_CASE(truncateFromFront_cjk) {
+  // Each CJK char is width 2. "中中中中" is width 8.
+  std::string s = "\xe4\xb8\xad\xe4\xb8\xad\xe4\xb8\xad\xe4\xb8\xad"; // 中中中中
+  auto r = truncateVisualFromFront(s, 5);
+  // Available tail budget after ellipsis: 4, fits exactly 2 CJK chars.
+  BOOST_CHECK(visualWidth(r) <= 5u);
+  // Leading ellipsis.
+  BOOST_CHECK_EQUAL(r.substr(0, 3), "\xe2\x80\xa6");
+}

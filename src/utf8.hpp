@@ -191,6 +191,12 @@ inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
 /// and ANSI escape sequences (which contribute 0 width). Defined in utf8.cpp.
 std::size_t visualWidth(std::string_view s);
 
+/// Truncate `s` from the front so its visual width is at most `maxWidth`,
+/// prepending a horizontal ellipsis ("…", U+2026, visual width 1) when any
+/// content was dropped. If `s` already fits, it is returned unchanged.
+/// If `maxWidth` is 0, returns an empty string. Defined in utf8.cpp.
+std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth);
+
 /// Sum of display widths of characters in line[from..to). Defined in utf8.cpp.
 std::size_t visualColRange(std::string const& line, std::size_t from, std::size_t to);
 
@@ -216,8 +222,8 @@ std::size_t lastVisualRowStart(std::string const& line, std::size_t cols);
 
 /// Look up VisualRowInfo from pre-computed row boundary offsets using binary
 /// search. Defined in utf8.cpp.
-VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts,
-                                  std::size_t byteOff, std::size_t lineSize);
+VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts, std::size_t byteOff,
+                                  std::size_t lineSize);
 
 /// Compute visual-row boundary byte offsets for a line at a given column
 /// width. Returns a vector where each entry is the byte offset of the start
