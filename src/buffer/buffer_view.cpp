@@ -555,7 +555,9 @@ void BufferView::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   std::size_t limit = viewFromLinesBeforeEnd(half);
   if (_viewFrom.line.value > limit) {
     _viewFrom.line = RowIdx{limit};
-    _viewFrom.col = ByteOffset{0};
+    // Reset wrap-mode sub-line scroll; preserve horizontal scroll in no-wrap.
+    if (std::holds_alternative<ByteOffset>(_viewFrom.col))
+      _viewFrom.col = ByteOffset{0};
   }
 }
 
@@ -594,7 +596,10 @@ void BufferView::scrollDown() {
     clampToBuffer();
   if (_viewFrom.line.value + 1 < _buf.lineCount()) {
     _viewFrom.line = RowIdx{_viewFrom.line.value + 1};
-    _viewFrom.col = ByteOffset{0};
+    // Reset wrap-mode sub-line scroll at the start of the new physical line;
+    // preserve the horizontal scroll position in no-wrap mode.
+    if (std::holds_alternative<ByteOffset>(_viewFrom.col))
+      _viewFrom.col = ByteOffset{0};
   }
 }
 
@@ -605,7 +610,9 @@ void BufferView::scrollUp(bool wrap) {
     _viewFrom.col = ByteOffset{0};
   } else if (_viewFrom.line.value > 0) {
     _viewFrom.line = RowIdx{_viewFrom.line.value - 1};
-    _viewFrom.col = ByteOffset{0};
+    // Reset wrap-mode sub-line scroll; preserve horizontal scroll in no-wrap.
+    if (std::holds_alternative<ByteOffset>(_viewFrom.col))
+      _viewFrom.col = ByteOffset{0};
   }
 }
 
