@@ -435,7 +435,13 @@ void Screen::openSaveAsPrompt() {
             _bufMgr->rename(_buf->name(), value);
             saveAndMaybeKill();
           },
-      .onAbort = [this]() { _killPending = false; },
+      // Abort also cancels any in-progress exit flow, so the loop does not
+      // re-enter tryExit() and bounce the user back to the same prompt.
+      .onAbort =
+          [this]() {
+            _killPending = false;
+            _exitPending = false;
+          },
   };
 }
 

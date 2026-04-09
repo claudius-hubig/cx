@@ -284,6 +284,54 @@ BOOST_AUTO_TEST_CASE(e2e_discard_without_saving) {
   BOOST_CHECK_EQUAL(exitCode, 0);
 }
 
+BOOST_AUTO_TEST_CASE(e2e_exit_saveas_cancel_does_not_loop) {
+  // Regression for B4: exit flow gets stuck when the user cancels the
+  // SaveAs prompt opened from the kill-confirm prompt. Previously,
+  // _exitPending was left set, so the main loop immediately re-entered
+  // tryExit() and re-opened the kill-confirm prompt for the same buffer.
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Start without any file argument -> the initial buffer is pathless.
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Type some text so the buffer is modified.
+  session.send("hello");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Esc-c -> kill-confirm prompt; 'y' -> save first -> SaveAs prompt opens.
+  session.send("\x1b"
+               "c"
+               "y");
+  // Wait for the SaveAs prompt to render.
+  auto saveAsOut = session.readUntil("Save as", std::chrono::milliseconds{500});
+  BOOST_CHECK(stripAnsi(saveAsOut).find("Save as") != std::string::npos);
+
+  // Esc to abort the SaveAs prompt. With the bug, this would immediately
+  // re-trigger the kill-confirm prompt ("Exiting. Save temporary buffer?")
+  // because _exitPending was left set; with the fix, we return to normal
+  // editing with no prompt.
+  session.send("\x1b");
+  auto afterAbort = session.readOutput(std::chrono::milliseconds{400});
+  auto strippedAbort = stripAnsi(afterAbort);
+  BOOST_CHECK(strippedAbort.find("Save as") == std::string::npos);
+  BOOST_CHECK(strippedAbort.find("Exiting") == std::string::npos);
+  BOOST_CHECK(strippedAbort.find("Save temporary buffer") == std::string::npos);
+
+  // Now we should be able to continue editing and discard via Esc-c + n.
+  session.send(" world");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b"
+               "c"
+               "n");
+  int exitCode = session.waitExit();
+  BOOST_CHECK_EQUAL(exitCode, 0);
+}
+
 BOOST_AUTO_TEST_CASE(e2e_find_basic) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
