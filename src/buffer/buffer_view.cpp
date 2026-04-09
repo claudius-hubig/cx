@@ -863,6 +863,11 @@ void BufferView::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
 
+  // Nothing to do (and avoid a modulo-by-zero in the ring buffer below) when
+  // the panel has no content rows. This happens on narrow terminal splits.
+  if (rows.value == 0)
+    return;
+
   // Reset col offset when switching wrap mode, to avoid stale scroll state.
   if (_wrapMode != wrap) {
     _wrapMode = wrap;

@@ -248,3 +248,17 @@ BOOST_AUTO_TEST_CASE(ensure_visible_through_view) {
   // Viewport should have scrolled to make line 9 visible.
   BOOST_CHECK(view.viewFromRaw().line.value > 0u);
 }
+
+BOOST_AUTO_TEST_CASE(ensure_visible_zero_rows_no_crash) {
+  // Regression: when a terminal resize produces a panel with zero content
+  // rows, ensureVisible must not crash (its ring buffer used to compute
+  // `ringPos + 1 % ringSize` where ringSize is rows.value, causing a
+  // modulo-by-zero).
+  TempFile f("hello\nworld\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(1, 3);
+  // Must not crash.
+  view.ensureVisible(RowIdx{0}, ColIdx{10}, true);
+  view.ensureVisible(RowIdx{0}, ColIdx{10}, false);
+}
