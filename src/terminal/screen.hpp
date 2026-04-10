@@ -74,6 +74,12 @@ private:
   // Update _buf and _view from the focused panel in _layout.
   void updateFocusPointers();
 
+  // Inspect the buffer's detected line ending style. Shows a status
+  // message for mixed endings, or prompts the user to translate CRLF
+  // or lone CR to Unix line endings. Acknowledges the style on the
+  // buffer so it is not flagged again on subsequent switches.
+  void checkLineEndings(Buffer& buf);
+
   // Per-panel overlay buffer accessor (focused panel's prevBuf).
   Buffer*& prevBuf();
 

@@ -263,3 +263,138 @@ BOOST_AUTO_TEST_CASE(setPath_to_txt_resets_mode) {
   buf.setPath("/tmp/cx_test_foo.txt");
   BOOST_CHECK(buf.mode() == BufferMode::Txt);
 }
+
+// --- Line ending detection ---
+
+BOOST_AUTO_TEST_CASE(line_endings_unix_default_for_scratch_buffer) {
+  TB<TextBuffer> buf("scratch");
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_unix_for_empty_file) {
+  TempFile tmp("");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_unix_for_lf_only_file) {
+  TempFile tmp("alpha\nbeta\ngamma\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+  BOOST_CHECK_EQUAL(buf.lineCount(), 4u); // 3 lines + trailing empty
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_crlf_detected) {
+  TempFile tmp("alpha\r\nbeta\r\ngamma\r\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Crlf);
+  // Lines retain their trailing '\r' until normalized.
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha\r");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "beta\r");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "gamma\r");
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_cr_only_detected) {
+  TempFile tmp("alpha\rbeta\rgamma\r");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Cr);
+  // Without '\n' splits, the whole file collapses into a single line
+  // containing embedded '\r' bytes.
+  BOOST_CHECK_EQUAL(buf.lineCount(), 1u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha\rbeta\rgamma\r");
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_mixed_crlf_and_lf) {
+  TempFile tmp("alpha\r\nbeta\ngamma\r\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Mixed);
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_mixed_cr_and_lf) {
+  TempFile tmp("alpha\rbeta\ngamma");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Mixed);
+}
+
+BOOST_AUTO_TEST_CASE(line_endings_acknowledge_clears_style) {
+  TempFile tmp("hi\r\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Crlf);
+  buf.acknowledgeLineEndingStyle();
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+}
+
+// --- Line ending normalization ---
+
+BOOST_AUTO_TEST_CASE(normalize_crlf_strips_trailing_cr) {
+  TempFile tmp("alpha\r\nbeta\r\ngamma\r\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  auto v0 = buf.docVersion();
+  buf.normalizeLineEndings();
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+  BOOST_CHECK(buf.modified());
+  BOOST_CHECK(buf.docVersion() != v0);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "beta");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "gamma");
+}
+
+BOOST_AUTO_TEST_CASE(normalize_cr_splits_lines) {
+  TempFile tmp("alpha\rbeta\rgamma");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK_EQUAL(buf.lineCount(), 1u);
+  buf.normalizeLineEndings();
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+  BOOST_CHECK_EQUAL(buf.lineCount(), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "beta");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "gamma");
+}
+
+BOOST_AUTO_TEST_CASE(normalize_cr_with_trailing_cr) {
+  // A trailing '\r' should produce a trailing empty line, matching the
+  // LF case where "a\nb\n" yields three lines (a, b, empty).
+  TempFile tmp("alpha\rbeta\r");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  buf.normalizeLineEndings();
+  BOOST_CHECK_EQUAL(buf.lineCount(), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "beta");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "");
+}
+
+BOOST_AUTO_TEST_CASE(normalize_unix_is_noop) {
+  TempFile tmp("alpha\nbeta\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  auto v0 = buf.docVersion();
+  buf.normalizeLineEndings();
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+  BOOST_CHECK(!buf.modified());
+  BOOST_CHECK_EQUAL(buf.docVersion(), v0);
+}
+
+BOOST_AUTO_TEST_CASE(normalize_mixed_is_noop) {
+  // Mixed endings cannot be unambiguously translated and must be left
+  // alone; the user is expected to see the status-line warning.
+  TempFile tmp("alpha\r\nbeta\ngamma\r\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Mixed);
+  auto v0 = buf.docVersion();
+  buf.normalizeLineEndings();
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Mixed);
+  BOOST_CHECK(!buf.modified());
+  BOOST_CHECK_EQUAL(buf.docVersion(), v0);
+}
+
+BOOST_AUTO_TEST_CASE(revert_redetects_line_endings) {
+  TempFile tmp("hi\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+  // Externally overwrite the file with CRLF content and revert.
+  {
+    std::ofstream f(tmp.path(), std::ios::binary);
+    f << "hi\r\n";
+  }
+  buf.revert();
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Crlf);
+}

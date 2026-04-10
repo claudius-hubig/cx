@@ -2,6 +2,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_manager.hpp"
+#include "buffer/text_buffer.hpp"
 #include "byte_constants.hpp"
 #include "utf8.hpp"
 #include <poll.h>
@@ -85,7 +86,45 @@ void Screen::setBuffer(Buffer& buf) {
   _pasteState.reset();
   if (_bufMgr && (!buf.readonly() || dynamic_cast<DirBuffer*>(&buf)))
     _bufMgr->touch(buf.name());
+  checkLineEndings(buf);
   draw();
+}
+
+void Screen::checkLineEndings(Buffer& buf) {
+  auto* text = dynamic_cast<TextBuffer*>(&buf);
+  if (!text)
+    return;
+  auto style = text->lineEndingStyle();
+  if (style == LineEndingStyle::Unix)
+    return;
+  // Only ever prompt or alert once per load, regardless of outcome.
+  text->acknowledgeLineEndingStyle();
+  if (style == LineEndingStyle::Mixed) {
+    setStatus("Mixed line endings detected — not translating");
+    return;
+  }
+  // If another prompt is already up (e.g. setBuffer called mid-confirm)
+  // we cannot open a second one — fall back to a status message.
+  if (_prompt) {
+    setStatus(style == LineEndingStyle::Crlf ? "CRLF line endings detected"
+                                             : "CR line endings detected");
+    return;
+  }
+  std::string kind = (style == LineEndingStyle::Crlf) ? "'\\r\\n'" : "'\\r'";
+  // Capture the buffer name rather than a pointer: by the time the
+  // prompt completes the buffer may have been killed.
+  std::string name = buf.name();
+  openConfirmPrompt(
+      "Non-Unix file ending " + kind + " detected. Translate to '\\n' throughout? y/n: ",
+      [this, name](std::string const& answer) {
+        if (answer != "y" || !_bufMgr)
+          return;
+        if (auto* b = _bufMgr->find(name)) {
+          if (auto* t = dynamic_cast<TextBuffer*>(b))
+            t->normalizeLineEndings();
+        }
+      },
+      nullptr);
 }
 
 void Screen::updateFocusPointers() {
