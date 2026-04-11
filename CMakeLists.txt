@@ -254,6 +254,14 @@ target_include_directories(test_paste_ring PRIVATE src)
 target_link_libraries(test_paste_ring Boost::unit_test_framework)
 add_test(NAME paste_ring COMMAND test_paste_ring)
 
+add_executable(test_search
+    tests/test_search.cpp
+    src/utf8.cpp
+)
+target_include_directories(test_search PRIVATE src)
+target_link_libraries(test_search Boost::unit_test_framework)
+add_test(NAME search COMMAND test_search)
+
 add_executable(test_panel_layout
     tests/test_panel_layout.cpp
     src/buffer/buffer.cpp
