@@ -1,5 +1,7 @@
 #include "panel_layout.hpp"
 
+#include <algorithm>
+
 PanelLayout::PanelLayout(Buffer& initialBuf, std::size_t termRows, std::size_t termCols)
     : _termRows(termRows), _termCols(termCols) {
   auto leaf = std::make_unique<LeafNode>();
@@ -91,17 +93,38 @@ bool PanelLayout::closeFocused() {
   if (countImpl(_root) <= 1)
     return false;
 
-  // Remove the focused leaf, promoting its sibling.
-  removeLeaf(_root, _focusedId);
+  int closedId = _focusedId;
 
-  // Pick a new focus: find the first panel.
-  Panel* first = nullptr;
-  forEachPanel([&](Panel& p) {
-    if (!first)
-      first = &p;
-  });
-  if (first)
-    _focusedId = first->id();
+  // Remove the focused leaf, promoting its sibling.
+  removeLeaf(_root, closedId);
+
+  // Drop the closed panel from history if it somehow appears there
+  // (shouldn't, since the focused panel is never in history, but guard
+  // against id reuse).
+  _focusHistory.erase(std::remove(_focusHistory.begin(), _focusHistory.end(), closedId),
+                      _focusHistory.end());
+
+  // Walk the MRU history from the back, picking the most recently
+  // focused panel that still exists.
+  int newFocus = 0;
+  while (!_focusHistory.empty()) {
+    int candidate = _focusHistory.back();
+    _focusHistory.pop_back();
+    if (findPanel(_root, candidate)) {
+      newFocus = candidate;
+      break;
+    }
+  }
+
+  // Fallback: if history is empty or stale, focus the first panel in
+  // tree order.
+  if (newFocus == 0) {
+    forEachPanel([&](Panel& p) {
+      if (newFocus == 0)
+        newFocus = p.id();
+    });
+  }
+  _focusedId = newFocus;
 
   computeRects(_root, PanelRect{0, 0, _termRows, _termCols});
   return true;
@@ -110,6 +133,13 @@ bool PanelLayout::closeFocused() {
 bool PanelLayout::focusPanel(int id) {
   if (!findPanel(_root, id))
     return false;
+  if (id == _focusedId)
+    return true;
+  // Push the previously focused id to the back of the MRU history,
+  // removing any earlier occurrence first.
+  _focusHistory.erase(std::remove(_focusHistory.begin(), _focusHistory.end(), _focusedId),
+                      _focusHistory.end());
+  _focusHistory.push_back(_focusedId);
   _focusedId = id;
   return true;
 }

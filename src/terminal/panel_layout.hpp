@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <variant>
+#include <vector>
 
 class Buffer;
 
@@ -71,6 +72,12 @@ private:
   int _nextId = 2;
   std::size_t _termRows = 0;
   std::size_t _termCols = 0;
+
+  // MRU stack of previously-focused panel ids (back = most recently
+  // focused before the current panel). The currently focused panel is
+  // NOT in this list. Used by closeFocused to restore focus to the
+  // panel the user was at before the one being closed.
+  std::vector<int> _focusHistory;
 
   // Minimum panel dimensions (including modeline + gutter).
   static constexpr std::size_t MinPanelCols = 10;
