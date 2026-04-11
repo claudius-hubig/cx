@@ -564,8 +564,11 @@ void BufferView::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
 bool BufferView::gotoMatchingBracket() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
-  auto match = (_buf.mode() == BufferMode::Jsn) ? findMatchingBracketJson(_buf.lines(), _point)
-                                                : findMatchingBracket(_buf.lines(), _point);
+  auto match = (_buf.mode() == BufferMode::Jsn)
+                   ? findMatchingBracketJson(_buf.lines(), _point)
+                   : findMatchingBracket(_buf.lines(), _point, [this](std::size_t i) {
+                       return _buf.cachedLineTokens(i);
+                     });
   if (!match)
     return false;
   _point = *match;

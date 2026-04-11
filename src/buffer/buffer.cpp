@@ -224,6 +224,11 @@ void Buffer::invalidateSynCache(std::size_t fromLine) {
     _synCacheValidUpto = fromLine;
 }
 
+std::span<SyntaxToken const> Buffer::cachedLineTokens(std::size_t lineIdx) const {
+  ensureSynCache(lineIdx + 1);
+  return _synCache[lineIdx].tokens;
+}
+
 void Buffer::ensureSynCache(std::size_t upToLine) const {
   // Resize if _lines changed (insertions / deletions).
   if (_synCache.size() != _lines.size()) {
@@ -410,8 +415,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     std::size_t lastVisible =
         std::min(viewFrom.line.value + static_cast<std::size_t>(rows.value) + 1, _lines.size());
     ensureSynCache(lastVisible);
-    matchBracket = (_mode == BufferMode::Jsn) ? findMatchingBracketJson(_lines, point)
-                                              : findMatchingBracket(_lines, point);
+    // Bracket matching re-uses the cache. For any line not yet tokenized
+    // (e.g. a forward scan running past the viewport) the cache is
+    // extended incrementally — a single line at a time.
+    matchBracket = (_mode == BufferMode::Jsn)
+                       ? findMatchingBracketJson(_lines, point)
+                       : findMatchingBracket(_lines, point,
+                                             [this](std::size_t i) { return cachedLineTokens(i); });
   }
 
   // Markdown-specific syntax highlight colors.

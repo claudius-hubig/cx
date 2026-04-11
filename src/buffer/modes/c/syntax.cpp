@@ -308,9 +308,125 @@ std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& stat
 }
 
 void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
-  // tokenizeLine already performs the full scan and updates `state` as a side
-  // effect. Discard the returned token vector — only the state matters here.
-  tokenizeLine(line, state);
+  // State-only scan: maintains block-comment and raw-string state while
+  // stepping over strings, character literals, line comments, and raw
+  // string literals. Does not classify identifiers, keywords, or
+  // operators and does not allocate a token vector.
+  std::size_t i = 0, sz = line.size();
+  while (i < sz) {
+    // Inside a raw string literal — scan for closing )delim".
+    if (state.rawDelim.has_value()) {
+      if (line[i] == ')') {
+        auto const& d = *state.rawDelim;
+        std::size_t dlen = d.size();
+        if (i + dlen + 1 < sz && line[i + dlen + 1] == '"') {
+          bool match = true;
+          for (std::size_t k = 0; k < dlen; ++k) {
+            if (line[i + 1 + k] != d[k]) {
+              match = false;
+              break;
+            }
+          }
+          if (match) {
+            i += dlen + 2;
+            state.rawDelim.reset();
+            continue;
+          }
+        }
+      }
+      ++i;
+      continue;
+    }
+
+    // Inside a block comment — scan for */.
+    if (state.inBlockComment) {
+      if (i + 1 < sz && line[i] == '*' && line[i + 1] == '/') {
+        i += 2;
+        state.inBlockComment = false;
+      } else {
+        ++i;
+      }
+      continue;
+    }
+
+    // Line comment — rest of line is ignored, no state change.
+    if (i + 1 < sz && line[i] == '/' && line[i + 1] == '/')
+      return;
+
+    // Block comment start.
+    if (i + 1 < sz && line[i] == '/' && line[i + 1] == '*') {
+      i += 2;
+      state.inBlockComment = true;
+      continue;
+    }
+
+    // Raw string literal: R"delim(...)delim". Only recognized when the
+    // R is not preceded by an identifier character (to avoid matching
+    // trailing R in a user identifier).
+    if (line[i] == 'R' && i + 1 < sz && line[i + 1] == '"' &&
+        (i == 0 || !isIdentChar(line[i - 1]))) {
+      std::size_t dstart = i + 2;
+      std::size_t paren = dstart;
+      while (paren < sz && line[paren] != '(')
+        ++paren;
+      if (paren < sz) {
+        std::string delim(line.data() + dstart, paren - dstart);
+        i = paren + 1;
+        bool closed = false;
+        while (i < sz) {
+          if (line[i] == ')') {
+            std::size_t dlen = delim.size();
+            if (i + dlen + 1 < sz && line[i + dlen + 1] == '"') {
+              bool match = true;
+              for (std::size_t k = 0; k < dlen; ++k) {
+                if (line[i + 1 + k] != delim[k]) {
+                  match = false;
+                  break;
+                }
+              }
+              if (match) {
+                i += dlen + 2;
+                closed = true;
+                break;
+              }
+            }
+          }
+          ++i;
+        }
+        if (!closed)
+          state.rawDelim = std::move(delim);
+        continue;
+      }
+    }
+
+    // Regular string literal "..." — single line, no state change.
+    if (line[i] == '"') {
+      ++i;
+      while (i < sz && line[i] != '"') {
+        if (line[i] == '\\' && i + 1 < sz)
+          ++i;
+        ++i;
+      }
+      if (i < sz)
+        ++i;
+      continue;
+    }
+
+    // Character literal '...' — but NOT digit separator (e.g. 1'000).
+    if (line[i] == '\'' && !(i > 0 && line[i - 1] >= '0' && line[i - 1] <= '9')) {
+      ++i;
+      while (i < sz && line[i] != '\'') {
+        if (line[i] == '\\' && i + 1 < sz)
+          ++i;
+        ++i;
+      }
+      if (i < sz)
+        ++i;
+      continue;
+    }
+
+    ++i;
+  }
 }
 
 // Bracket pairing table.
@@ -351,22 +467,14 @@ static bool isBracketChar(char c, SyntaxToken tok) {
 }
 
 std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
-                                               BufferPoint pos) {
+                                               BufferPoint pos, LineTokensFn const& getTokens) {
   if (pos.line >= lines.size())
     return std::nullopt;
-  auto& line = lines[pos.line];
+  auto const& line = lines[pos.line];
   if (pos.offset >= line.size())
     return std::nullopt;
 
-  // Compute syntax state at the start of pos.line by scanning preceding lines.
-  SyntaxState stateAtLine;
-  for (std::size_t i = 0; i < pos.line; ++i)
-    advanceBlockCommentState(lines[i], stateAtLine);
-
-  // Tokenize pos.line; stateAfterLine becomes the state at the start of the next line.
-  SyntaxState stateAfterLine = stateAtLine;
-  auto curTokens = tokenizeLine(line, stateAfterLine);
-
+  auto curTokens = getTokens(pos.line);
   char ch = line[pos.offset];
   auto curTok = (pos.offset < curTokens.size()) ? curTokens[pos.offset] : SyntaxToken::Normal;
 
@@ -379,10 +487,8 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
     return std::nullopt;
 
   if (isOpenBracket(ch)) {
-    // Scan forward through the remainder of pos.line, then subsequent lines.
     int depth = 1;
-    SyntaxState state = stateAfterLine; // state at start of next line
-
+    // Remainder of pos.line.
     for (std::size_t o = pos.offset + 1; o < line.size(); ++o) {
       auto tok = (o < curTokens.size()) ? curTokens[o] : SyntaxToken::Normal;
       if (isBracketChar(line[o], tok)) {
@@ -392,10 +498,10 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
           return BufferPoint{pos.line, o};
       }
     }
-
+    // Subsequent lines.
     for (std::size_t l = pos.line + 1; l < lines.size(); ++l) {
-      auto& ln = lines[l];
-      auto lnToks = tokenizeLine(ln, state); // advances state past ln
+      auto const& ln = lines[l];
+      auto lnToks = getTokens(l);
       for (std::size_t o = 0; o < ln.size(); ++o) {
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
         if (isBracketChar(ln[o], tok)) {
@@ -407,21 +513,8 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
       }
     }
   } else {
-    // Scan backward. Precompute syntax states at the start of each line so we
-    // can tokenize arbitrary lines without rescanning from the beginning each time.
-    std::vector<SyntaxState> lineStartStates(pos.line + 1);
-    {
-      SyntaxState s;
-      for (std::size_t i = 0; i <= pos.line; ++i) {
-        lineStartStates[i] = s;
-        if (i < pos.line)
-          advanceBlockCommentState(lines[i], s);
-      }
-    }
-
     int depth = 1;
-
-    // Scan pos.line from pos.offset-1 down to 0.
+    // pos.line from pos.offset-1 down to 0.
     for (std::size_t o = pos.offset; o > 0;) {
       --o;
       auto tok = (o < curTokens.size()) ? curTokens[o] : SyntaxToken::Normal;
@@ -432,13 +525,11 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
           return BufferPoint{pos.line, o};
       }
     }
-
-    // Scan lines before pos.line, each tokenized from its cached start state.
+    // Earlier lines.
     for (std::size_t l = pos.line; l > 0;) {
       --l;
-      auto& ln = lines[l];
-      SyntaxState s = lineStartStates[l];
-      auto lnToks = tokenizeLine(ln, s);
+      auto const& ln = lines[l];
+      auto lnToks = getTokens(l);
       for (std::size_t o = ln.size(); o > 0;) {
         --o;
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
@@ -453,4 +544,31 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
   }
 
   return std::nullopt;
+}
+
+std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
+                                               BufferPoint pos) {
+  // Convenience overload for callers without a syntax cache (tests,
+  // ad-hoc uses). Memoizes tokens across the call so each visited line
+  // is tokenized at most once, starting from the file head.
+  struct LocalCache {
+    std::vector<std::string> const& lines;
+    std::vector<std::vector<SyntaxToken>> tokens;
+    std::size_t validUpto = 0;
+    SyntaxState stateAfterValid{};
+
+    explicit LocalCache(std::vector<std::string> const& l) : lines(l), tokens(l.size()) {}
+
+    std::span<SyntaxToken const> at(std::size_t i) {
+      if (i < validUpto)
+        return tokens[i];
+      while (validUpto <= i) {
+        tokens[validUpto] = tokenizeLine(lines[validUpto], stateAfterValid);
+        ++validUpto;
+      }
+      return tokens[i];
+    }
+  };
+  LocalCache cache(lines);
+  return findMatchingBracket(lines, pos, [&](std::size_t i) { return cache.at(i); });
 }

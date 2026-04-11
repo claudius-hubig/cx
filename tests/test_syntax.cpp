@@ -582,6 +582,60 @@ BOOST_AUTO_TEST_CASE(nested_angle_templates_matched) {
 }
 
 // ============================================================
+// findMatchingBracket overload with external token cache
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(findMatchingBracket_with_token_cache_consulted) {
+  // The three-argument overload must query the caller-supplied token
+  // source for every visited line and must not fall back to an
+  // internal tokenization. We verify this by handing in a provider
+  // that returns tokens coloring '(' at offset 10 as Comment — which
+  // isBracketChar rejects, so the forward scan should skip it and
+  // match the next real ')' at offset 13.
+  auto lines = mklines("a(x) + y( )  )");
+  //                    0123456789012345
+  // Normal tokenization would match '(' at offset 8 to ')' at 10.
+  // With our custom provider we mark the real ')' at 10 as Comment,
+  // so it is ignored and depth drops to 0 at ')' at offset 13.
+  std::vector<SyntaxToken> toks(lines[0].size(), SyntaxToken::Normal);
+  toks[1] = SyntaxToken::Paren;
+  toks[3] = SyntaxToken::Paren;
+  toks[8] = SyntaxToken::Paren;
+  toks[10] = SyntaxToken::Comment; // hide the nearer ')'
+  toks[13] = SyntaxToken::Paren;
+  int callCount = 0;
+  auto getTokens = [&](std::size_t i) -> std::span<SyntaxToken const> {
+    ++callCount;
+    BOOST_REQUIRE_EQUAL(i, 0u);
+    return toks;
+  };
+  auto result = findMatchingBracket(lines, {0, 8}, getTokens);
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 13u);
+  // Provider must have been consulted at least once.
+  BOOST_CHECK_GT(callCount, 0);
+}
+
+BOOST_AUTO_TEST_CASE(findMatchingBracket_with_token_cache_backward) {
+  // Backward scan: hide a nearer ')' so depth does not increment at
+  // that position, causing the outermost cursor to match a closer
+  // '(' than it normally would.
+  auto lines = mklines("( ( ) ( ) )");
+  //                    0         1
+  //                    01234567890
+  // Normal tokenization matches offset 10 to offset 0. Hiding the
+  // ')' at offset 8 drops one increment, so depth hits 0 at offset 6.
+  std::vector<SyntaxToken> toks(lines[0].size(), SyntaxToken::Normal);
+  for (std::size_t o : {0u, 2u, 4u, 6u, 10u})
+    toks[o] = SyntaxToken::Paren;
+  toks[8] = SyntaxToken::String; // hide this ')'
+  auto getTokens = [&](std::size_t) -> std::span<SyntaxToken const> { return toks; };
+  auto result = findMatchingBracket(lines, {0, 10}, getTokens);
+  BOOST_REQUIRE(result.has_value());
+  BOOST_CHECK_EQUAL(result->offset, 6u);
+}
+
+// ============================================================
 // Markdown tokenizer
 // ============================================================
 

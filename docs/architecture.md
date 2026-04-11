@@ -330,9 +330,18 @@ The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 `Buffer::render()`.
 
 Per-line tokenisation results are cached in `Buffer::_synCache` and
-invalidated from the edited line forward. Lines above the viewport
-use the cheaper `advanceBlockCommentState()` to maintain only the
-multi-line state without producing tokens.
+invalidated from the edited line forward. `Buffer::render()` extends
+the cache up to just past the last visible line via `ensureSynCache()`;
+`Buffer::cachedLineTokens()` exposes this incrementally-extended cache
+to `findMatchingBracket()`, so jump-to-matching-bracket looks up
+pre-computed tokens for any line in the visible window and only
+tokenises on demand when a forward scan runs off the bottom.
+
+The cheaper `advanceBlockCommentState()` exists for callers that only
+need to maintain the multi-line block-comment / raw-string-literal
+state without producing tokens. Unlike `tokenizeLine()` it skips
+identifier/keyword classification, bracket tagging, and the per-byte
+token vector allocation.
 
 ---
 

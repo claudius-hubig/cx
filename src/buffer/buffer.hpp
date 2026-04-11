@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -150,6 +151,14 @@ public:
   /// {row, col} of the point for cursor positioning.
   virtual std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
                                             RenderParams const& params) const;
+
+  /// Return cached syntax tokens for line `lineIdx`, extending the
+  /// cache if necessary. Intended as the backing store for
+  /// findMatchingBracket and similar tools so that repeated lookups do
+  /// not re-tokenize from scratch. Only valid when the buffer's mode
+  /// uses the C/C++ tokenizer; callers must not request tokens for
+  /// modes without a cache.
+  std::span<SyntaxToken const> cachedLineTokens(std::size_t lineIdx) const;
 
   // --- Saved view state for buffer switching ---
   // When a panel switches away from this buffer, it saves minimal cursor
