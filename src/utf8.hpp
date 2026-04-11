@@ -76,7 +76,8 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, s
 
 /// Encode a Unicode code point as UTF-8.
 /// Returns {byte_count, bytes}. Only the first byte_count entries in
-/// the array are valid. Codepoints above U+10FFFF are clamped to the
+/// the array are valid. Surrogate code points (U+D800..U+DFFF) and
+/// codepoints above U+10FFFF are rejected and encoded as the
 /// replacement character (U+FFFD).
 inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8(uint32_t cp) {
   std::array<unsigned char, 4> buf{};
@@ -90,6 +91,10 @@ inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8
     return {2, buf};
   }
   if (cp < 0x10000) {
+    // Reject UTF-16 surrogate halves — they are not valid Unicode
+    // scalar values and produce ill-formed UTF-8.
+    if (cp >= 0xD800 && cp <= 0xDFFF)
+      return encodeUtf8(0xFFFD);
     buf[0] = static_cast<unsigned char>(0xE0 | (cp >> 12));
     buf[1] = static_cast<unsigned char>(0x80 | ((cp >> 6) & 0x3F));
     buf[2] = static_cast<unsigned char>(0x80 | (cp & 0x3F));

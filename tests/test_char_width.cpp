@@ -164,6 +164,91 @@ BOOST_AUTO_TEST_CASE(decodeUtf8_stray_continuation) {
   BOOST_CHECK_EQUAL(len, 1u);
 }
 
+// --- encodeUtf8 ---
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_ascii) {
+  auto [len, buf] = encodeUtf8(0x41); // 'A'
+  BOOST_CHECK_EQUAL(len, 1u);
+  BOOST_CHECK_EQUAL(buf[0], 0x41u);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_two_byte) {
+  auto [len, buf] = encodeUtf8(0x00E9); // 'é'
+  BOOST_CHECK_EQUAL(len, 2u);
+  BOOST_CHECK_EQUAL(buf[0], 0xC3u);
+  BOOST_CHECK_EQUAL(buf[1], 0xA9u);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_three_byte) {
+  auto [len, buf] = encodeUtf8(0x4E2D); // '中'
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xE4u);
+  BOOST_CHECK_EQUAL(buf[1], 0xB8u);
+  BOOST_CHECK_EQUAL(buf[2], 0xADu);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_four_byte) {
+  auto [len, buf] = encodeUtf8(0x1F600); // emoji
+  BOOST_CHECK_EQUAL(len, 4u);
+  BOOST_CHECK_EQUAL(buf[0], 0xF0u);
+  BOOST_CHECK_EQUAL(buf[1], 0x9Fu);
+  BOOST_CHECK_EQUAL(buf[2], 0x98u);
+  BOOST_CHECK_EQUAL(buf[3], 0x80u);
+}
+
+// Surrogate halves (U+D800..U+DFFF) are not valid Unicode scalar
+// values. encodeUtf8 must substitute U+FFFD rather than silently
+// producing an ill-formed 3-byte sequence.
+BOOST_AUTO_TEST_CASE(encodeUtf8_surrogate_low_replaced_with_fffd) {
+  auto [len, buf] = encodeUtf8(0xD800);
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xEFu);
+  BOOST_CHECK_EQUAL(buf[1], 0xBFu);
+  BOOST_CHECK_EQUAL(buf[2], 0xBDu);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_surrogate_mid_replaced_with_fffd) {
+  auto [len, buf] = encodeUtf8(0xDABC);
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xEFu);
+  BOOST_CHECK_EQUAL(buf[1], 0xBFu);
+  BOOST_CHECK_EQUAL(buf[2], 0xBDu);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_surrogate_high_replaced_with_fffd) {
+  auto [len, buf] = encodeUtf8(0xDFFF);
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xEFu);
+  BOOST_CHECK_EQUAL(buf[1], 0xBFu);
+  BOOST_CHECK_EQUAL(buf[2], 0xBDu);
+}
+
+// Codepoints just outside the surrogate range should still encode
+// normally.
+BOOST_AUTO_TEST_CASE(encodeUtf8_before_surrogate_range_ok) {
+  auto [len, buf] = encodeUtf8(0xD7FF);
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xEDu);
+  BOOST_CHECK_EQUAL(buf[1], 0x9Fu);
+  BOOST_CHECK_EQUAL(buf[2], 0xBFu);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_after_surrogate_range_ok) {
+  auto [len, buf] = encodeUtf8(0xE000);
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xEEu);
+  BOOST_CHECK_EQUAL(buf[1], 0x80u);
+  BOOST_CHECK_EQUAL(buf[2], 0x80u);
+}
+
+BOOST_AUTO_TEST_CASE(encodeUtf8_out_of_range_replaced_with_fffd) {
+  auto [len, buf] = encodeUtf8(0x110000);
+  BOOST_CHECK_EQUAL(len, 3u);
+  BOOST_CHECK_EQUAL(buf[0], 0xEFu);
+  BOOST_CHECK_EQUAL(buf[1], 0xBFu);
+  BOOST_CHECK_EQUAL(buf[2], 0xBDu);
+}
+
 // --- codepointWidth ---
 
 BOOST_AUTO_TEST_CASE(codepointWidth_ascii) {
