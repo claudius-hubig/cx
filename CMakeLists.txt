@@ -247,6 +247,13 @@ target_include_directories(test_buffer_view PRIVATE src .)
 target_link_libraries(test_buffer_view Boost::unit_test_framework)
 add_test(NAME buffer_view COMMAND test_buffer_view)
 
+add_executable(test_paste_ring
+    tests/test_paste_ring.cpp
+)
+target_include_directories(test_paste_ring PRIVATE src)
+target_link_libraries(test_paste_ring Boost::unit_test_framework)
+add_test(NAME paste_ring COMMAND test_paste_ring)
+
 add_executable(test_panel_layout
     tests/test_panel_layout.cpp
     src/buffer/buffer.cpp
