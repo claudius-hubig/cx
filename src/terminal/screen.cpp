@@ -1953,7 +1953,7 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::DirBrowser:
     if (_bufMgr)
-      setBuffer(_bufMgr->openDir(std::filesystem::current_path()));
+      setBuffer(_bufMgr->openDir(bufferWorkDir()));
     break;
   case Action::SplitVertical:
     if (_layout && _buf) {
