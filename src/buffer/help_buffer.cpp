@@ -113,8 +113,21 @@ static std::size_t maxWidth(std::span<std::string const> lines) {
   return w;
 }
 
+// Cached maximum visual widths of the left/right columns. The column
+// content is static (computed once via lambdas in leftColumn/rightColumn),
+// so the widths never change — compute each once and reuse.
+static std::size_t cachedLeftWidth() {
+  static std::size_t const w = maxWidth(leftColumn());
+  return w;
+}
+
+static std::size_t cachedRightWidth() {
+  static std::size_t const w = maxWidth(rightColumn());
+  return w;
+}
+
 static bool isSideBySide(std::size_t cols) {
-  return maxWidth(leftColumn()) + kGap + maxWidth(rightColumn()) <= cols;
+  return cachedLeftWidth() + kGap + cachedRightWidth() <= cols;
 }
 
 // Map a data-line index to an absolute visual row.
@@ -162,8 +175,8 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   // Row 2: blank.
   vlines.push_back({""});
 
-  std::size_t leftW = maxWidth(leftLines);
-  std::size_t rightW = maxWidth(rightLines);
+  std::size_t leftW = cachedLeftWidth();
+  std::size_t rightW = cachedRightWidth();
   std::size_t totalW = leftW + kGap + rightW;
   bool sbs = isSideBySide(c);
   std::size_t leftCount = leftLines.size();
@@ -222,6 +235,22 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   return vlines;
 }
 
+// Return a cached vector of visual lines for the given content width.
+// The help content is static, so we only need to rebuild when the
+// column count changes (e.g. on terminal resize). Single-threaded
+// editor, so a simple function-level static is safe.
+static std::vector<VisualLine> const& cachedVisualLines(std::size_t cols) {
+  static std::vector<VisualLine> cache;
+  static std::size_t cachedCols = 0;
+  static bool cacheValid = false;
+  if (!cacheValid || cachedCols != cols) {
+    cache = buildVisualLines(cols);
+    cachedCols = cols;
+    cacheValid = true;
+  }
+  return cache;
+}
+
 HelpBuffer::HelpBuffer() : Buffer("*help*") {
   _lines.clear();
   auto addLine = [&](std::string_view sv) { _lines.emplace_back(sv.begin(), sv.end()); };
@@ -268,8 +297,8 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t curScreenRow = curVis >= scrollVis ? curVis - scrollVis : 0;
 
   // Cursor column with centering.
-  std::size_t leftW = maxWidth(leftColumn());
-  std::size_t rightW = maxWidth(rightColumn());
+  std::size_t leftW = cachedLeftWidth();
+  std::size_t rightW = cachedRightWidth();
   std::size_t totalW = leftW + kGap + rightW;
   bool sbs = isSideBySide(c);
 
@@ -298,8 +327,9 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
     curCol = fpad + dataCol;
   }
 
-  // Build visual lines and emit from scroll offset.
-  auto vlines = buildVisualLines(c);
+  // Build visual lines and emit from scroll offset (cached — rebuilt
+  // only when the column count changes).
+  auto const& vlines = cachedVisualLines(c);
 
   // Section headers that should be rendered dimmed.
   auto isSectionHeader = [](std::string_view line) {
