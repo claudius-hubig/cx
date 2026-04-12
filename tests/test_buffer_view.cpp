@@ -377,3 +377,83 @@ BOOST_AUTO_TEST_CASE(ensure_visible_zero_rows_no_crash) {
   view.ensureVisible(RowIdx{0}, ColIdx{10}, true);
   view.ensureVisible(RowIdx{0}, ColIdx{10}, false);
 }
+
+// --- clampToBuffer edge cases ---
+//
+// When another view deletes lines or shortens content, a stale
+// BufferView whose _docVersion doesn't match the buffer's needs to
+// clamp its point, mark, and viewport back into valid range on the next
+// operation. These tests simulate that by mutating the buffer through
+// a separate view.
+
+BOOST_AUTO_TEST_CASE(clampToBuffer_point_past_deleted_lines) {
+  TempFile f("aaa\nbbb\nccc\nddd\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView stale(buf);
+  stale.setPoint(3, 2); // on 'ddd', offset 2
+
+  // Delete lines 2-3 via another view.
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{2, 0}, BufferPoint{3, 3});
+  // Buffer is now: "aaa", "bbb", ""
+
+  // Any operation on the stale view triggers clampToBuffer.
+  stale.moveRight();
+  // Point was on line 3, which no longer exists (lineCount is 3,
+  // max line index is 2). Should clamp to last line.
+  BOOST_CHECK(stale.point().line < buf.lineCount());
+}
+
+BOOST_AUTO_TEST_CASE(clampToBuffer_mark_past_deleted_lines) {
+  TempFile f("aaa\nbbb\nccc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView stale(buf);
+  stale.setPoint(0, 0);
+  stale.setMark({2, 2}); // mark on 'ccc', offset 2
+
+  // Delete line 2 via another view.
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{1, 3}, BufferPoint{2, 3});
+  // Buffer is now: "aaa", "bbb"
+
+  stale.moveRight();
+  BOOST_REQUIRE(stale.mark().has_value());
+  BOOST_CHECK(stale.mark()->line < buf.lineCount());
+}
+
+BOOST_AUTO_TEST_CASE(clampToBuffer_offset_past_shortened_line) {
+  TempFile f("longline\nshort\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView stale(buf);
+  stale.setPoint(0, 8); // end of "longline"
+  stale.setMark({0, 6});
+
+  // Shorten line 0 via another view.
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{0, 3}, BufferPoint{0, 8});
+  // Line 0 is now "lon"
+
+  stale.moveRight();
+  BOOST_CHECK(stale.point().offset <= buf.lineContent(0).size());
+  BOOST_REQUIRE(stale.mark().has_value());
+  BOOST_CHECK(stale.mark()->offset <= buf.lineContent(stale.mark()->line).size());
+}
+
+BOOST_AUTO_TEST_CASE(clampToBuffer_viewport_past_deleted_lines) {
+  TempFile f("a\nb\nc\nd\ne\nf\ng\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView stale(buf);
+  // Scroll viewport down so viewFrom is on line 5.
+  stale.setPoint(5, 0);
+  stale.ensureVisible(RowIdx{3}, ColIdx{20}, true);
+  // viewFrom should be somewhere around line 3-5.
+
+  // Delete all lines past line 1 via another view.
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{1, 1}, BufferPoint{7, 0});
+  // Buffer is now: "a", "b"
+
+  // Any operation on the stale view should clamp viewport.
+  stale.moveHome();
+  BOOST_CHECK(stale.point().line < buf.lineCount());
+}
