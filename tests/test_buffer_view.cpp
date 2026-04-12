@@ -186,6 +186,121 @@ BOOST_AUTO_TEST_CASE(insert_text_through_view) {
   BOOST_CHECK_EQUAL(view.point().offset, 3u);
 }
 
+// --- insertText mark adjustment ---
+//
+// When text is inserted via a BufferView, any active mark must be
+// shifted so it keeps referring to the same logical character. The
+// rules are:
+//   * Mark strictly before the insertion point on the same line:
+//     unchanged.
+//   * Mark at/after the insertion offset on the same line: moves with
+//     the inserted text (columns shift, and line bumps by the number
+//     of inserted newlines).
+//   * Mark on a later line: bumps by the number of inserted newlines,
+//     offset unchanged.
+
+BOOST_AUTO_TEST_CASE(insertText_mark_before_insert_unchanged) {
+  TempFile f("hello world\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 2});   // mark on 'l' of "hello"
+  view.setPoint(0, 6);    // cursor on 'w' of "world"
+  view.insertText("NEW"); // "hello NEWworld"
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->line, 0u);
+  BOOST_CHECK_EQUAL(view.mark()->offset, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(insertText_mark_after_insert_shifts_offset) {
+  TempFile f("hello world\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 8});   // mark on 'r' of "world"
+  view.setPoint(0, 6);    // cursor on 'w' of "world"
+  view.insertText("NEW"); // "hello NEWworld"
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->line, 0u);
+  BOOST_CHECK_EQUAL(view.mark()->offset, 11u); // 8 + 3
+}
+
+BOOST_AUTO_TEST_CASE(insertText_mark_at_insertion_offset_shifts) {
+  // When mark sits exactly at the insertion offset it belongs with the
+  // content that was moved rightward — it should follow.
+  TempFile f("abcdef\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 3});
+  view.setPoint(0, 3);
+  view.insertText("X");
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->offset, 4u);
+}
+
+BOOST_AUTO_TEST_CASE(insertText_newline_bumps_mark_on_later_line) {
+  TempFile f("line0\nline1\nline2\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({2, 3});       // mark on 'e' of "line2"
+  view.setPoint(0, 5);        // end of "line0"
+  view.insertText("\nextra"); // inserts a new line below
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->line, 3u); // was 2, now 3
+  BOOST_CHECK_EQUAL(view.mark()->offset, 3u);
+}
+
+BOOST_AUTO_TEST_CASE(insertText_newline_on_same_line_after_mark_pos) {
+  // Insert a newline within a line, before the mark's offset on that
+  // same line. The mark should end up on the new line with its column
+  // remapped.
+  TempFile f("abcdef\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 5}); // on 'f'
+  view.setPoint(0, 2);  // between 'b' and 'c'
+  view.insertText("\n");
+  // After insert: line 0 = "ab", line 1 = "cdef"
+  // Mark was at (0, 5) meaning offset 5 in "abcdef", which corresponds
+  // to 'f' — now at line 1, offset 3.
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->line, 1u);
+  BOOST_CHECK_EQUAL(view.mark()->offset, 3u);
+}
+
+BOOST_AUTO_TEST_CASE(insertText_multiline_before_mark_bumps_line) {
+  TempFile f("one\ntwo\nthree\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({2, 2}); // 'r' in "three"
+  view.setPoint(0, 3);  // end of "one"
+  view.insertText("\nA\nB");
+  // New contents: one, A, B, two, three
+  // Mark's line was 2, two newlines inserted → line 4, offset unchanged.
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->line, 4u);
+  BOOST_CHECK_EQUAL(view.mark()->offset, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(insertText_mark_on_earlier_line_unchanged) {
+  TempFile f("one\ntwo\nthree\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 1});
+  view.setPoint(1, 3); // end of "two"
+  view.insertText("\nmore");
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark()->line, 0u);
+  BOOST_CHECK_EQUAL(view.mark()->offset, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(insertText_no_mark_is_noop_on_mark) {
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 2);
+  view.insertText("X");
+  BOOST_CHECK(!view.mark().has_value());
+}
+
 BOOST_AUTO_TEST_CASE(delete_region_through_view) {
   TempFile f("hello world\n");
   TextBuffer buf(f.path().string(), f.path());
