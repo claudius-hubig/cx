@@ -471,21 +471,82 @@ void Screen::openGoToLinePrompt() {
 }
 
 void Screen::openSaveAsPrompt() {
+  struct CompletionState {
+    std::vector<std::pair<std::string, std::string>> completions;
+    std::optional<std::size_t> idx;
+  };
+  auto state = std::make_shared<CompletionState>();
+
+  auto buildDisplay = [state](std::string const& input) -> PromptDisplay {
+    auto const& completions = state->completions;
+    if (state->idx || completions.empty())
+      return {"", 0};
+    auto hintFor = [&](std::string const& match) -> std::string {
+      if (match.starts_with(input))
+        return match.substr(input.size());
+      return match;
+    };
+    auto hint = hintFor(completions[0].first);
+    if (completions.size() == 1) {
+      if (hint.empty())
+        return {"", 0};
+      return {ansi::Dim + hint + ansi::DimOff, visualWidth(hint)};
+    }
+    if (completions.size() <= 3) {
+      std::string rendered = std::string(ansi::Dim) + "[";
+      std::size_t vw = 1;
+      for (std::size_t i = 0; i < completions.size(); ++i) {
+        if (i > 0) {
+          rendered += "/";
+          vw++;
+        }
+        auto h = hintFor(completions[i].first);
+        if (h.empty())
+          h = completions[i].first;
+        rendered += h;
+        vw += visualWidth(h);
+      }
+      rendered += std::string("]") + ansi::DimOff;
+      vw++;
+      return {std::move(rendered), vw};
+    }
+    auto cnt = " (" + std::to_string(completions.size()) + " matches)";
+    return {ansi::Dim + hint + cnt + ansi::DimOff, visualWidth(hint) + cnt.size()};
+  };
+
   _prompt = Prompt{
       .label = "Save as: ",
+      .autocomplete = [this, state,
+                       buildDisplay](std::string const& input) -> Prompt::AutocompleteResult {
+        if (_bufMgr)
+          state->completions = _bufMgr->completions(input);
+        state->idx.reset();
+        return buildDisplay(input);
+      },
       .onResult =
-          [this](std::string const& value) {
+          [this, state](std::string const& value) {
             if (!_buf || !_bufMgr)
               return;
-            if (std::filesystem::exists(value)) {
+            // Resolve from tab completion or raw input.
+            std::string resolved = value;
+            if (state->idx && *state->idx < state->completions.size())
+              resolved = state->completions[*state->idx].first;
+            else if (state->completions.size() == 1 && !value.empty())
+              resolved = state->completions[0].first;
+            // Strip trailing slash — can't save as a directory.
+            if (!resolved.empty() && resolved.back() == '/')
+              resolved.pop_back();
+            if (resolved.empty())
+              return;
+            if (std::filesystem::exists(resolved)) {
               // Defer rename until the user confirms the overwrite.
               auto savedName = _buf->name();
               openConfirmPrompt(
-                  "Overwrite " + value + "? y/n: ",
-                  [this, savedName, value](std::string const& answer) {
+                  "Overwrite " + resolved + "? y/n: ",
+                  [this, savedName, resolved](std::string const& answer) {
                     if (answer == "y") {
                       if (_buf && _bufMgr) {
-                        _bufMgr->rename(savedName, value);
+                        _bufMgr->rename(savedName, resolved);
                         saveAndMaybeKill();
                       }
                     } else {
@@ -499,7 +560,7 @@ void Screen::openSaveAsPrompt() {
                   });
               return;
             }
-            _bufMgr->rename(_buf->name(), value);
+            _bufMgr->rename(_buf->name(), resolved);
             saveAndMaybeKill();
           },
       // Abort also cancels any in-progress exit flow, so the loop does not
@@ -509,7 +570,36 @@ void Screen::openSaveAsPrompt() {
             _killPending = false;
             _exitPending = false;
           },
+      .onTab = [this, state, buildDisplay](std::string& input) -> PromptDisplay {
+        if (state->completions.empty())
+          return {"", 0};
+        if (!state->idx)
+          state->idx = 0;
+        else
+          state->idx = (*state->idx + 1) % state->completions.size();
+        input = state->completions[*state->idx].first;
+        // Navigate into directories when the match is unambiguous.
+        if (input.ends_with('/') && state->completions.size() == 1) {
+          if (_bufMgr)
+            state->completions = _bufMgr->completions(input);
+          state->idx.reset();
+        }
+        return buildDisplay(input);
+      },
+      .onRightArrow = [this, state, buildDisplay](std::string& input) -> PromptDisplay {
+        if (state->completions.empty())
+          return {"", 0};
+        if (state->idx)
+          input = state->completions[*state->idx].first;
+        else if (state->completions.size() == 1)
+          input = state->completions[0].first;
+        if (_bufMgr)
+          state->completions = _bufMgr->completions(input);
+        state->idx.reset();
+        return buildDisplay(input);
+      },
   };
+  runAutocomplete();
 }
 
 void Screen::openSwitchBufferPrompt() {
