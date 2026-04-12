@@ -298,6 +298,36 @@ state.
 
 ---
 
+### `Panel` (`src/terminal/panel.hpp/.cpp`)
+
+A panel is one pane of the terminal. It owns a `BufferView`, an integer
+id, and a `PanelRect` describing its absolute position and size. Panels
+provide `setBuffer()` to switch to a different buffer (optionally
+restoring saved view state) and `saveViewState()` to persist cursor
+position before the view is destroyed.
+
+---
+
+### `PanelLayout` (`src/terminal/panel_layout.hpp/.cpp`)
+
+Binary split tree managing a set of panels. Each leaf owns a `Panel`;
+internal nodes record a split direction (`Vertical` / `Horizontal`).
+The tree is recomputed on `resize()`, `splitFocused()`, and
+`closeFocused()` to assign each panel an absolute `PanelRect`.
+
+Key operations:
+- `splitFocused(dir, buf)` — replace the focused leaf with a split
+  node; the original panel stays left/top and a new panel is created
+  right/bottom. Returns `nullptr` if the split would make panels
+  smaller than the minimum dimensions (10 cols, 3 rows).
+- `closeFocused()` — remove the focused leaf and promote its sibling.
+  Restores focus to the most recently used panel via an MRU history,
+  falling back to the first panel in tree order.
+- `focusPanel(id)` — switch focus by panel id; updates the MRU history.
+- `forEachPanel(fn)` — visit every panel in tree order.
+
+---
+
 ### `BufferSink` / `BufferManager` interaction
 
 `BufferManager` holds a `BufferSink&` and calls `setBuffer()` on it
@@ -355,6 +385,7 @@ token vector allocation.
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `cx_error.log` for post-mortem inspection                                                     |
+| `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
 ---

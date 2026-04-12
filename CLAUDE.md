@@ -1,4 +1,4 @@
-# cx — Project Guidelines
+#cx — Project Guidelines
 
 ## Project Overview
 
@@ -64,10 +64,14 @@ src/
   prompt.hpp                       Prompt struct, PromptDisplay, PromptHistory
   paste_ring.hpp                   Fixed-capacity ring buffer for cut/copy
   error_log.hpp/.cpp               Diagnostic logging to cx_error.log
+  search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
   terminal/
     setup_terminal.hpp/.cpp        RAII raw mode + alternate screen
     screen.hpp/.cpp                Terminal I/O, input loop, action dispatch, drawing
+    panel.hpp/.cpp                 Single panel: rect, BufferView, saved state
+    panel_layout.hpp/.cpp          Binary split tree managing panel layout and focus
   buffer/
+    buffer_view.hpp/.cpp           Per-view cursor, mark, viewport, editing operations
     buffer_sink.hpp                Abstract interface decoupling BufferManager from Screen
     buffer.hpp/.cpp                Abstract base: text storage, cursor, viewport, rendering
     text_buffer.hpp/.cpp           Editable file-backed buffer
@@ -97,4 +101,9 @@ tests/
   test_prompt_history.cpp          PromptHistory tests
   test_syntax.cpp                  Syntax highlighting tests
   test_e2e.cpp                     End-to-end tests (via PTY)
+  test_buffer_view.cpp             BufferView editing/movement tests
+  test_panel_layout.cpp            PanelLayout split/close/focus tests
+  test_paste_ring.cpp              PasteRing capacity/ordering tests
+  test_paste_ring_buffer.cpp       PasteRingBuffer display tests
+  test_search.cpp                  Smart-find matching logic tests
 ```
