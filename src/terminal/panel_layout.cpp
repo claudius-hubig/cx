@@ -144,6 +144,27 @@ bool PanelLayout::focusPanel(int id) {
   return true;
 }
 
+bool PanelLayout::focusMRU() {
+  if (countImpl(_root) <= 1)
+    return false;
+
+  // Try the MRU history (most recent is at the back).
+  for (auto it = _focusHistory.rbegin(); it != _focusHistory.rend(); ++it) {
+    if (findPanel(_root, *it))
+      return focusPanel(*it);
+  }
+
+  // No history: focus the first panel in tree order that isn't current.
+  int target = 0;
+  forEachPanel([&](Panel const& p) {
+    if (target == 0 && p.id() != _focusedId)
+      target = p.id();
+  });
+  if (target)
+    return focusPanel(target);
+  return false;
+}
+
 void PanelLayout::resize(std::size_t termRows, std::size_t termCols) {
   _termRows = termRows;
   _termCols = termCols;

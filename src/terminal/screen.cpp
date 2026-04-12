@@ -1480,6 +1480,9 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
       _pasteState.reset();
     }
+  } else if (c == '\x18') {
+    // Ctrl-x prefix: read next key for two-key sequence.
+    return handleCtrlXInput();
   } else if (static_cast<unsigned char>(c) < key::PrintableMin) {
     auto s = shortcutFromCtrlChar(c);
     if (auto action = handleShortcut(s))
@@ -1576,6 +1579,46 @@ bool Screen::handleEscChord(char ch) {
   if (auto action = handleShortcut(s)) {
     dispatchAction(*action);
     return true;
+  }
+  return false;
+}
+
+bool Screen::handleCtrlXInput() {
+  setStatus("C-x ...");
+  draw();
+
+  char next = 0;
+  bool gotNext = false;
+  for (;;) {
+    ssize_t nn = read(STDIN_FILENO, &next, 1);
+    if (nn == 1) {
+      gotNext = true;
+      break;
+    }
+    if (nn == -1 && errno == EINTR) {
+      if (g_resized) {
+        g_resized = 0;
+        resize();
+      }
+      setStatus("C-x ...");
+      draw();
+      continue;
+    }
+    break;
+  }
+
+  if (gotNext) {
+    auto s = shortcutFromCxChar(next);
+    if (auto action = handleShortcut(s)) {
+      dispatchAction(*action);
+    } else {
+      setStatus(formatShortcut(s) + " not recognised.");
+    }
+  }
+
+  if (_statusMsg == "C-x ...") {
+    _statusMsg.clear();
+    _statusExpiry.reset();
   }
   return false;
 }
@@ -1963,6 +2006,12 @@ void Screen::dispatchAction(Action action) {
     if (_layout) {
       int id = static_cast<int>(action) - static_cast<int>(Action::FocusPanel1) + 1;
       if (_layout->focusPanel(id))
+        updateFocusPointers();
+    }
+    break;
+  case Action::FocusMRUPanel:
+    if (_layout) {
+      if (_layout->focusMRU())
         updateFocusPointers();
     }
     break;

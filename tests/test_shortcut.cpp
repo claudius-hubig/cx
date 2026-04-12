@@ -78,22 +78,28 @@ BOOST_AUTO_TEST_CASE(ctrl_p_maps_to_pipe_replace) {
   BOOST_CHECK(*action == Action::PipeReplace);
 }
 
-BOOST_AUTO_TEST_CASE(esc_v_maps_to_split_vertical) {
-  auto action = handleShortcut({.esc = true, .key = 'v'});
+BOOST_AUTO_TEST_CASE(cx_v_maps_to_split_vertical) {
+  auto action = handleShortcut({.cx = true, .key = 'v'});
   BOOST_REQUIRE(action.has_value());
   BOOST_CHECK(*action == Action::SplitVertical);
 }
 
-BOOST_AUTO_TEST_CASE(esc_dot_maps_to_close_panel) {
-  auto action = handleShortcut({.esc = true, .key = '.'});
+BOOST_AUTO_TEST_CASE(cx_dot_maps_to_close_panel) {
+  auto action = handleShortcut({.cx = true, .key = '.'});
   BOOST_REQUIRE(action.has_value());
   BOOST_CHECK(*action == Action::ClosePanel);
 }
 
-BOOST_AUTO_TEST_CASE(esc_1_maps_to_focus_panel_1) {
-  auto action = handleShortcut({.esc = true, .key = '1'});
+BOOST_AUTO_TEST_CASE(cx_1_maps_to_focus_panel_1) {
+  auto action = handleShortcut({.cx = true, .key = '1'});
   BOOST_REQUIRE(action.has_value());
   BOOST_CHECK(*action == Action::FocusPanel1);
+}
+
+BOOST_AUTO_TEST_CASE(cx_o_maps_to_focus_mru_panel) {
+  auto action = handleShortcut({.cx = true, .key = 'o'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::FocusMRUPanel);
 }
 
 BOOST_AUTO_TEST_CASE(unrecognised_shortcut_returns_nullopt) {
@@ -324,6 +330,7 @@ BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
                  Action::SplitVertical,
                  Action::SplitHorizontal,
                  Action::ClosePanel,
+                 Action::FocusMRUPanel,
                  Action::FocusPanel1,
                  Action::FocusPanel2,
                  Action::FocusPanel3,
@@ -331,7 +338,7 @@ BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
                  Action::FocusPanel5,
                  Action::FocusPanel6}) {
     auto s = shortcutForAction(a);
-    // Every action should have either ctrl or esc set.
-    BOOST_CHECK(s.ctrl || s.esc);
+    // Every action should have either ctrl, esc, or cx set.
+    BOOST_CHECK(s.ctrl || s.esc || s.cx);
   }
 }

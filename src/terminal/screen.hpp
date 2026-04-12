@@ -65,6 +65,7 @@ private:
   // (so the caller should skip its trailing draw()).
   bool handlePromptInput(char c);
   bool handleEscapeInput(std::optional<char>& pendingChar);
+  bool handleCtrlXInput();
   bool handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
   // Focused panel's content dimensions (rows minus modeline, total cols).

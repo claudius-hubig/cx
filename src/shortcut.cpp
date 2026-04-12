@@ -9,7 +9,7 @@ struct Binding {
 
 // The single source of truth for all keybindings. Help display and input
 // dispatch both read from this table. Order matches the help screen layout.
-static constexpr auto kBindings = std::array<Binding, 33>{{
+static constexpr auto kBindings = std::array<Binding, 34>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},
     {{.ctrl = true, .key = 'o'}, Action::SwitchBuffer, "Switch to buffer/open file"},
@@ -34,15 +34,16 @@ static constexpr auto kBindings = std::array<Binding, 33>{{
     {{.ctrl = true, .key = 'p'}, Action::PipeReplace, "Pipe region through command"},
     {{.esc = true, .key = 'm'}, Action::SetMode, "Set buffer mode"},
     {{.esc = true, .key = 'd'}, Action::DirBrowser, "Directory browser"},
-    {{.esc = true, .key = 'v'}, Action::SplitVertical, "Split panel vertical"},
-    {{.esc = true, .key = 'h'}, Action::SplitHorizontal, "Split panel horizontal"},
-    {{.esc = true, .key = '.'}, Action::ClosePanel, "Close panel"},
-    {{.esc = true, .key = '1'}, Action::FocusPanel1, "Focus panel 1"},
-    {{.esc = true, .key = '2'}, Action::FocusPanel2, "Focus panel 2"},
-    {{.esc = true, .key = '3'}, Action::FocusPanel3, "Focus panel 3"},
-    {{.esc = true, .key = '4'}, Action::FocusPanel4, "Focus panel 4"},
-    {{.esc = true, .key = '5'}, Action::FocusPanel5, "Focus panel 5"},
-    {{.esc = true, .key = '6'}, Action::FocusPanel6, "Focus panel 6"},
+    {{.cx = true, .key = 'v'}, Action::SplitVertical, "Split panel vertical"},
+    {{.cx = true, .key = 'h'}, Action::SplitHorizontal, "Split panel horizontal"},
+    {{.cx = true, .key = '.'}, Action::ClosePanel, "Close panel"},
+    {{.cx = true, .key = 'o'}, Action::FocusMRUPanel, "Other panel (MRU)"},
+    {{.cx = true, .key = '1'}, Action::FocusPanel1, "Focus panel 1"},
+    {{.cx = true, .key = '2'}, Action::FocusPanel2, "Focus panel 2"},
+    {{.cx = true, .key = '3'}, Action::FocusPanel3, "Focus panel 3"},
+    {{.cx = true, .key = '4'}, Action::FocusPanel4, "Focus panel 4"},
+    {{.cx = true, .key = '5'}, Action::FocusPanel5, "Focus panel 5"},
+    {{.cx = true, .key = '6'}, Action::FocusPanel6, "Focus panel 6"},
 }};
 
 std::optional<Action> handleShortcut(Shortcut s) {
@@ -72,7 +73,9 @@ std::string formatShortcut(Shortcut s) {
     return "Ctrl-Bksp";
 
   std::string result;
-  if (s.ctrl)
+  if (s.cx)
+    result = "C-x ";
+  else if (s.ctrl)
     result = "Ctrl-";
   else if (s.esc)
     result = "Esc-";

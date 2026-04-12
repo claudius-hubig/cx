@@ -48,6 +48,11 @@ public:
   /// Returns false if no panel has that id.
   bool focusPanel(int id);
 
+  /// Switch focus to the most recently used panel. If no MRU history
+  /// exists, focuses the first neighbor in tree order. Returns false
+  /// if there is only one panel.
+  bool focusMRU();
+
   /// Recompute all panel rects after a terminal resize.
   void resize(std::size_t termRows, std::size_t termCols);
 

@@ -94,7 +94,8 @@ static std::vector<std::string> const& rightColumn() {
     v.push_back(formatHelpLine(Action::SplitVertical));
     v.push_back(formatHelpLine(Action::SplitHorizontal));
     v.push_back(formatHelpLine(Action::ClosePanel));
-    v.push_back(formatRawLine("Esc-1..6", "Focus panel 1..6"));
+    v.push_back(formatHelpLine(Action::FocusMRUPanel));
+    v.push_back(formatRawLine("C-x 1..6", "Focus panel 1..6"));
     return v;
   }();
   return lines;

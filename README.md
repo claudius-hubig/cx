@@ -31,7 +31,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 - **Save / Save As** — write to the backing file or choose a new path
 - **Revert** — reload a buffer's contents from disk with confirmation
 - **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries
-- **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number
+- **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
 - **Built-in help** — adaptive side-by-side or stacked layout depending on terminal width; generated from the keybinding table so it is always up to date
 
 ## Keyboard Shortcuts
@@ -124,12 +124,13 @@ These shortcuts are active when viewing a directory listing.
 
 ### Panels
 
-| Key     | Action               |
-|---------|----------------------|
-| Esc-v   | Split panel vertical |
-| Esc-h   | Split panel horizontal |
-| Esc-.   | Close panel          |
-| Esc-1..6| Focus panel 1..6     |
+| Key      | Action                 |
+|----------|------------------------|
+| C-x v    | Split panel vertical   |
+| C-x h    | Split panel horizontal |
+| C-x .    | Close panel            |
+| C-x o    | Other panel (MRU)      |
+| C-x 1..6 | Focus panel 1..6       |
 
 ### Deletion
 

@@ -37,11 +37,13 @@ enum class Action {
   FocusPanel4,
   FocusPanel5,
   FocusPanel6,
+  FocusMRUPanel,
 };
 
 struct Shortcut {
   bool esc = false;
   bool ctrl = false;
+  bool cx = false;  // Ctrl-x prefix (two-key sequence)
   uint32_t key = 0; // lowercase letter, ' ' for space, 0x7F for backspace
   bool operator==(Shortcut const&) const = default;
 };
@@ -68,4 +70,9 @@ inline Shortcut shortcutFromCtrlChar(char c) {
 // Convert byte received after ESC to a Shortcut.
 inline Shortcut shortcutFromEscChar(char c) {
   return {.esc = true, .key = static_cast<uint32_t>(static_cast<unsigned char>(c))};
+}
+
+// Convert byte received after Ctrl-x to a Shortcut.
+inline Shortcut shortcutFromCxChar(char c) {
+  return {.cx = true, .key = static_cast<uint32_t>(static_cast<unsigned char>(c))};
 }
