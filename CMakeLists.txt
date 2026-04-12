@@ -254,6 +254,20 @@ target_include_directories(test_paste_ring PRIVATE src)
 target_link_libraries(test_paste_ring Boost::unit_test_framework)
 add_test(NAME paste_ring COMMAND test_paste_ring)
 
+add_executable(test_paste_ring_buffer
+    tests/test_paste_ring_buffer.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+    src/buffer/paste_ring_buffer.cpp
+)
+target_include_directories(test_paste_ring_buffer PRIVATE src)
+target_link_libraries(test_paste_ring_buffer Boost::unit_test_framework)
+add_test(NAME paste_ring_buffer COMMAND test_paste_ring_buffer)
+
 add_executable(test_search
     tests/test_search.cpp
     src/utf8.cpp
