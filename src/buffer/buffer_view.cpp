@@ -2,6 +2,7 @@
 
 #include "modes/c/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
+#include "text_buffer.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
 
@@ -674,6 +675,8 @@ void BufferView::insert(uint32_t cp) {
     if (vcol >= _desiredCol->value)
       _desiredCol.reset();
   }
+
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteAtPoint() {
@@ -693,7 +696,10 @@ void BufferView::deleteAtPoint() {
     delBytes = std::min(delOff + len, lineLen) - delOff;
   }
 
+  auto oldVer = _buf.docVersion();
   _point = _buf.deleteAt(_point);
+  if (_buf.docVersion() == oldVer)
+    return; // end-of-buffer: nothing changed
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
@@ -717,6 +723,8 @@ void BufferView::deleteAtPoint() {
       }
     }
   }
+
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteBeforePoint() {
@@ -728,7 +736,10 @@ void BufferView::deleteBeforePoint() {
   auto beforeLine = _point.line;
   auto beforeOff = _point.offset;
 
+  auto oldVer = _buf.docVersion();
   _point = _buf.deleteBefore(_point);
+  if (_buf.docVersion() == oldVer)
+    return; // start-of-buffer: nothing changed
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
@@ -752,6 +763,8 @@ void BufferView::deleteBeforePoint() {
       }
     }
   }
+
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteChunkAtPoint() {
@@ -835,6 +848,8 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
+
+  _buf.recordVersion(_point);
 }
 
 BufferPoint BufferView::insertText(std::string_view text) {
@@ -864,7 +879,68 @@ BufferPoint BufferView::insertText(std::string_view text) {
     }
   }
 
+  _buf.recordVersion(_point);
   return _point;
+}
+
+// --- History mode ---
+
+void BufferView::enterHistoryMode() {
+  auto* tb = dynamic_cast<TextBuffer*>(&_buf);
+  if (!tb || tb->history().empty())
+    return;
+  tb->setBrowsingHistory(true);
+  _historyIndex = tb->history().size() - 1;
+  _desiredCol.reset();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
+}
+
+void BufferView::stepHistory(int delta) {
+  if (!_historyIndex)
+    return;
+  auto* tb = dynamic_cast<TextBuffer*>(&_buf);
+  if (!tb)
+    return;
+  auto const& h = tb->history();
+  auto size = h.size();
+  if (size == 0)
+    return;
+  long long ni = static_cast<long long>(*_historyIndex) + delta;
+  if (ni < 0)
+    ni = 0;
+  if (ni >= static_cast<long long>(size))
+    ni = static_cast<long long>(size) - 1;
+  auto newIdx = static_cast<std::size_t>(ni);
+  if (newIdx == *_historyIndex)
+    return;
+  _historyIndex = newIdx;
+  auto const& snap = h.at(newIdx);
+  tb->applySnapshot(snap);
+  _docVersion = _buf.docVersion();
+  _point = snap.cursor;
+  // Clamp in case the stored cursor is stale.
+  if (_point.line >= _buf.lineCount())
+    _point.line = _buf.lineCount() - 1;
+  if (_point.offset > _buf.lineContent(_point.line).size())
+    _point.offset = _buf.lineContent(_point.line).size();
+  _mark.reset();
+  _desiredCol.reset();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
+}
+
+void BufferView::exitHistoryModeCommit() {
+  if (!_historyIndex)
+    return;
+  auto* tb = dynamic_cast<TextBuffer*>(&_buf);
+  if (!tb) {
+    _historyIndex.reset();
+    return;
+  }
+  tb->truncateHistoryAfter(*_historyIndex);
+  tb->setBrowsingHistory(false);
+  _historyIndex.reset();
 }
 
 // --- Rendering ---

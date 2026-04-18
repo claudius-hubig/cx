@@ -138,6 +138,11 @@ public:
   /// with '\n' between lines. Arguments are normalised internally.
   std::string extractRegion(BufferPoint from, BufferPoint to) const;
 
+  /// Hook invoked by BufferView after each successful edit. TextBuffer
+  /// overrides this to append a snapshot to its version history;
+  /// read-only buffers ignore it.
+  virtual void recordVersion(BufferPoint /*cursor*/) {}
+
   // --- Rendering ---
 
   /// Compute the 0-indexed screen row of the given point relative to

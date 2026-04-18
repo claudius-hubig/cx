@@ -1,7 +1,9 @@
 #pragma once
 
 #include "buffer.hpp"
+#include "version_history.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -28,9 +30,34 @@ public:
   /// hasPath() still returns true so save() can write to it.
   TextBuffer(std::string name, std::filesystem::path const& path);
 
-  bool readonly() const override { return false; }
+  bool readonly() const override { return _browsingHistory; }
 
   bool hasPath() const override { return _path.has_value(); }
+
+  /// Version history. Snapshots are appended on every edit by recordVersion()
+  /// and survive both save() and revert(). See version_history.hpp for the
+  /// capacity/pruning policy.
+  VersionHistory const& history() const { return _history; }
+
+  /// True while a BufferView is stepping through history (read-only mode).
+  /// Flips readonly() on so every edit path short-circuits.
+  bool browsingHistory() const { return _browsingHistory; }
+  void setBrowsingHistory(bool b) { _browsingHistory = b; }
+
+  /// Append a snapshot to the history. Called by BufferView after each
+  /// successful edit. Safe to call when browsingHistory() is true but the
+  /// caller should normally avoid doing so (stepping through history must
+  /// not create new versions).
+  void recordVersion(BufferPoint cursor) override { _history.capture(_lines, cursor); }
+
+  /// Replace buffer contents with the given snapshot. Bumps docVersion and
+  /// invalidates the syntax cache. Does NOT record a new version.
+  void applySnapshot(VersionSnapshot const& s);
+
+  /// Drop all history entries with index > idx. Used when exiting history
+  /// mode with a committed selection: the selected version becomes the new
+  /// live state and any forward history is discarded.
+  void truncateHistoryAfter(std::size_t idx) { _history.truncateAfter(idx); }
 
   /// Set the backing file path. Updates _name to the path string.
   /// Must coordinate with BufferManager::rename() to keep the map
@@ -73,4 +100,6 @@ private:
 
   std::optional<std::filesystem::path> _path;
   LineEndingStyle _lineEndingStyle = LineEndingStyle::Unix;
+  VersionHistory _history;
+  bool _browsingHistory = false;
 };

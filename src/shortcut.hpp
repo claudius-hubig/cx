@@ -18,6 +18,7 @@ enum class Action {
   PasteCycle,
   DeleteChunkBefore,
   Revert,
+  VersionHistory,
   Find,
   FindBackward,
   BufferList,

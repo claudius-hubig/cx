@@ -86,6 +86,17 @@ public:
   void deleteRegion(BufferPoint from, BufferPoint to);
   BufferPoint insertText(std::string_view text);
 
+  // --- History mode ---
+  // Only meaningful when the underlying buffer is a TextBuffer; no-ops
+  // otherwise. Entering history mode flips the buffer to readonly; all
+  // edit methods already guard on readonly() and become no-ops. Committing
+  // truncates any forward history after the selected version.
+  bool inHistoryMode() const { return _historyIndex.has_value(); }
+  std::optional<std::size_t> historyIndex() const { return _historyIndex; }
+  void enterHistoryMode();
+  void stepHistory(int delta);
+  void exitHistoryModeCommit();
+
   // --- Rendering ---
   void ensureVisible(RowIdx rows, ColIdx cols, bool wrap);
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
@@ -148,4 +159,5 @@ private:
   mutable RowBoundsCache _rowBoundsCache;
 
   std::size_t _docVersion = 0;
+  std::optional<std::size_t> _historyIndex;
 };

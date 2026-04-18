@@ -15,6 +15,7 @@ add_executable(cx
     src/terminal/screen.cpp
     src/buffer/buffer.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
     src/buffer/paste_ring_buffer.cpp
@@ -48,6 +49,7 @@ add_executable(test_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
 )
@@ -64,6 +66,7 @@ add_executable(test_text_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_text_buffer PRIVATE src .)
 target_link_libraries(test_text_buffer Boost::unit_test_framework)
@@ -79,6 +82,8 @@ add_executable(test_help_buffer
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_help_buffer PRIVATE src)
 target_link_libraries(test_help_buffer Boost::unit_test_framework)
@@ -93,6 +98,8 @@ add_executable(test_buffer_list_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/buffer_list_buffer.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_buffer_list_buffer PRIVATE src)
 target_link_libraries(test_buffer_list_buffer Boost::unit_test_framework)
@@ -107,6 +114,7 @@ add_executable(test_buffer_manager
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
     src/buffer/buffer_list_buffer.cpp
     src/buffer/paste_ring_buffer.cpp
@@ -127,6 +135,7 @@ add_executable(test_render
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_render PRIVATE src .)
 target_link_libraries(test_render Boost::unit_test_framework)
@@ -141,6 +150,7 @@ add_executable(test_movement
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_movement PRIVATE src .)
 target_link_libraries(test_movement Boost::unit_test_framework)
@@ -155,6 +165,7 @@ add_executable(test_chunk_delete
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
 )
@@ -171,6 +182,7 @@ add_executable(test_scroll
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_scroll PRIVATE src .)
 target_link_libraries(test_scroll Boost::unit_test_framework)
@@ -200,6 +212,7 @@ add_executable(test_syntax
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_syntax PRIVATE src .)
 target_link_libraries(test_syntax Boost::unit_test_framework)
@@ -214,6 +227,8 @@ add_executable(test_dir_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/dir_buffer.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_dir_buffer PRIVATE src .)
 target_link_libraries(test_dir_buffer Boost::unit_test_framework)
@@ -228,6 +243,7 @@ add_executable(test_e2e
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_e2e PRIVATE src .)
 target_link_libraries(test_e2e Boost::unit_test_framework util)
@@ -242,6 +258,7 @@ add_executable(test_buffer_view
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_buffer_view PRIVATE src .)
 target_link_libraries(test_buffer_view Boost::unit_test_framework)
@@ -254,6 +271,14 @@ target_include_directories(test_paste_ring PRIVATE src)
 target_link_libraries(test_paste_ring Boost::unit_test_framework)
 add_test(NAME paste_ring COMMAND test_paste_ring)
 
+add_executable(test_version_history
+    tests/test_version_history.cpp
+    src/buffer/version_history.cpp
+)
+target_include_directories(test_version_history PRIVATE src)
+target_link_libraries(test_version_history Boost::unit_test_framework)
+add_test(NAME version_history COMMAND test_version_history)
+
 add_executable(test_paste_ring_buffer
     tests/test_paste_ring_buffer.cpp
     src/buffer/buffer.cpp
@@ -263,6 +288,8 @@ add_executable(test_paste_ring_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/paste_ring_buffer.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
 )
 target_include_directories(test_paste_ring_buffer PRIVATE src)
 target_link_libraries(test_paste_ring_buffer Boost::unit_test_framework)
@@ -285,6 +312,7 @@ add_executable(test_panel_layout
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
     src/terminal/panel.cpp
     src/terminal/panel_layout.cpp
 )
