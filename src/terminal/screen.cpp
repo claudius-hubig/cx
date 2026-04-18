@@ -17,6 +17,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -77,6 +78,9 @@ void Screen::setBuffer(Buffer& buf) {
     _layout = std::make_unique<PanelLayout>(buf, rows.value, cols.value);
   } else {
     auto& panel = _layout->focused();
+    // Exit history mode on the old buffer before switching away.
+    if (_view && _view->inHistoryMode())
+      _view->exitHistoryModeCommit();
     // Save view state if this is the last view for the old buffer.
     if (_buf && _layout->viewCountFor(*_buf) == 1)
       panel.saveViewState();
@@ -196,6 +200,22 @@ void Screen::draw() {
         auto [line, col] = view.lineCol();
         status = std::to_string(line) + ":" + std::to_string(col);
         status_vwidth = visualWidth(status);
+      }
+
+      if (view.inHistoryMode()) {
+        if (auto* tb = dynamic_cast<TextBuffer*>(&pbuf); tb && !tb->history().empty()) {
+          auto idx = *view.historyIndex();
+          auto total = tb->history().size();
+          auto t = std::chrono::system_clock::to_time_t(tb->history().at(idx).timestamp);
+          std::tm tm{};
+          localtime_r(&t, &tm);
+          char tbuf[32];
+          std::strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S", &tm);
+          std::string hseg = " | v " + std::to_string(idx + 1) + "/" + std::to_string(total) +
+                             "  " + tbuf + "  [/] step  Ctrl-U commit";
+          status += hseg;
+          status_vwidth = visualWidth(status);
+        }
       }
 
       // Prompt and status messages only on the focused panel.
@@ -1490,6 +1510,18 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     else
       setStatus(formatShortcut(s) + " not recognised.");
   } else {
+    // History mode: '[' and ']' step through versions; all other
+    // printable chars are swallowed (edits are already no-ops via
+    // readonly()).
+    if (_view && _view->inHistoryMode()) {
+      if (c == '[')
+        _view->stepHistory(-1);
+      else if (c == ']')
+        _view->stepHistory(+1);
+      if (_buf)
+        _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      return false;
+    }
     // '?' on a bracket in C/JSON mode → jump to matching bracket.
     if (c == '?' && _buf && (_buf->mode() == BufferMode::Cpp || _buf->mode() == BufferMode::Jsn) &&
         !_buf->readonly() && _view->gotoMatchingBracket()) {
@@ -1788,6 +1820,10 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::Save:
+    if (_view && _view->inHistoryMode()) {
+      setStatus("Exit history mode first (Ctrl-U).");
+      break;
+    }
     if (_buf && !_buf->readonly()) {
       if (_buf->hasPath()) {
         if (!std::filesystem::exists(_buf->name())) {
@@ -1878,7 +1914,28 @@ void Screen::dispatchAction(Action action) {
   case Action::FindBackward:
     openFindPrompt(true);
     break;
+  case Action::VersionHistory:
+    if (_buf && _view) {
+      if (_view->inHistoryMode()) {
+        _view->exitHistoryModeCommit();
+        setStatus("History: committed");
+      } else {
+        auto* tb = dynamic_cast<TextBuffer*>(_buf);
+        if (!tb || tb->history().empty()) {
+          setStatus("No history");
+        } else {
+          _view->enterHistoryMode();
+          _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+        }
+      }
+      _pasteState.reset();
+    }
+    break;
   case Action::Revert:
+    if (_view && _view->inHistoryMode()) {
+      setStatus("Exit history mode first (Ctrl-U).");
+      break;
+    }
     if (_buf && !_buf->readonly()) {
       if (!_buf->hasPath()) {
         setStatus("Can't revert from file in temporary buffers.");

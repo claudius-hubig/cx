@@ -457,3 +457,119 @@ BOOST_AUTO_TEST_CASE(clampToBuffer_viewport_past_deleted_lines) {
   stale.moveHome();
   BOOST_CHECK(stale.point().line < buf.lineCount());
 }
+
+// --- Version history mode ---
+
+BOOST_AUTO_TEST_CASE(edits_grow_history) {
+  TempFile f("hi\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  // Version 0 captured by the constructor.
+  BOOST_CHECK_EQUAL(buf.history().size(), 1u);
+  view.insert('a');
+  BOOST_CHECK_EQUAL(buf.history().size(), 2u);
+  view.insert('b');
+  BOOST_CHECK_EQUAL(buf.history().size(), 3u);
+  view.deleteBeforePoint();
+  BOOST_CHECK_EQUAL(buf.history().size(), 4u);
+}
+
+BOOST_AUTO_TEST_CASE(enter_history_makes_readonly) {
+  TempFile f("abc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  BOOST_CHECK(!buf.readonly());
+  view.enterHistoryMode();
+  BOOST_CHECK(view.inHistoryMode());
+  BOOST_CHECK(buf.readonly());
+  // Edits are no-ops while browsing.
+  auto before = buf.lineContent(0);
+  view.insert('Z');
+  BOOST_CHECK_EQUAL(buf.lineContent(0), before);
+}
+
+BOOST_AUTO_TEST_CASE(step_history_restores_content) {
+  TempFile f("orig\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  // v0 = "orig"
+  view.setPoint(0, 4);
+  view.insert('!');
+  // v1 = "orig!"
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "orig!");
+  view.enterHistoryMode();
+  view.stepHistory(-1);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "orig");
+  view.stepHistory(+1);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "orig!");
+}
+
+BOOST_AUTO_TEST_CASE(commit_truncates_forward_history) {
+  TempFile f("A\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('1');
+  view.insert('2');
+  view.insert('3');
+  // history: v0(ctor), v1, v2, v3 = 4 entries
+  BOOST_CHECK_EQUAL(buf.history().size(), 4u);
+  view.enterHistoryMode();
+  view.stepHistory(-2); // go back 2 steps
+  auto idx = *view.historyIndex();
+  view.exitHistoryModeCommit();
+  BOOST_CHECK(!view.inHistoryMode());
+  BOOST_CHECK(!buf.readonly());
+  BOOST_CHECK_EQUAL(buf.history().size(), idx + 1);
+}
+
+BOOST_AUTO_TEST_CASE(save_preserves_history) {
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  auto sizeBefore = buf.history().size();
+  buf.save();
+  BOOST_CHECK_EQUAL(buf.history().size(), sizeBefore);
+}
+
+BOOST_AUTO_TEST_CASE(revert_adds_history_entry) {
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  auto sizeBefore = buf.history().size();
+  buf.revert();
+  BOOST_CHECK_EQUAL(buf.history().size(), sizeBefore + 1);
+}
+
+BOOST_AUTO_TEST_CASE(exit_history_clears_browsing_flag) {
+  TempFile f("abc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  view.enterHistoryMode();
+  BOOST_CHECK(buf.readonly());
+  // Simulate what setBuffer does: commit and clear.
+  view.exitHistoryModeCommit();
+  BOOST_CHECK(!buf.readonly());
+  BOOST_CHECK(!view.inHistoryMode());
+  // A new view on the same buffer should be able to edit.
+  BufferView view2(buf);
+  auto before = buf.lineContent(0);
+  view2.insert('Z');
+  BOOST_CHECK(buf.lineContent(0) != before);
+}
+
+BOOST_AUTO_TEST_CASE(apply_snapshot_sets_modified) {
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  buf.save();
+  BOOST_CHECK(!buf.modified());
+  // Step back in history — applySnapshot should mark modified.
+  view.enterHistoryMode();
+  view.stepHistory(-1);
+  BOOST_CHECK(buf.modified());
+}

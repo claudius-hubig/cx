@@ -5,12 +5,16 @@
 #include <fstream>
 #include <utility>
 
-TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) { detectMode(); }
+TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) {
+  detectMode();
+  _history.capture(_lines, {0, 0});
+}
 
 TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
     : Buffer(std::move(name)), _path(path) {
   detectMode();
   loadFromFile(path);
+  _history.capture(_lines, {0, 0});
 }
 
 void TextBuffer::loadFromFile(std::filesystem::path const& path) {
@@ -144,5 +148,18 @@ std::expected<void, std::string> TextBuffer::revert() {
   _modified = false;
   ++_docVersion;
   _synCacheValidUpto = 0;
+  _history.capture(_lines, {0, 0});
   return {};
+}
+
+void TextBuffer::applySnapshot(VersionSnapshot const& s) {
+  _lines.clear();
+  _lines.reserve(s.lines.size());
+  for (auto const& lp : s.lines)
+    _lines.push_back(*lp);
+  if (_lines.empty())
+    _lines.emplace_back();
+  _modified = true;
+  ++_docVersion;
+  _synCacheValidUpto = 0;
 }
