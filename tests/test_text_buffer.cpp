@@ -398,3 +398,13 @@ BOOST_AUTO_TEST_CASE(revert_redetects_line_endings) {
   buf.revert();
   BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Crlf);
 }
+
+BOOST_AUTO_TEST_CASE(normalize_line_endings_records_version) {
+  TempFile tmp("a\r\nb\r\n");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Crlf);
+  auto before = buf.history().size();
+  buf.normalizeLineEndings();
+  BOOST_CHECK_EQUAL(buf.history().size(), before + 1);
+  BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
+}

@@ -98,6 +98,7 @@ void TextBuffer::normalizeLineEndings() {
   _modified = true;
   ++_docVersion;
   _synCacheValidUpto = 0;
+  _history.capture(_lines, {0, 0});
 }
 
 void TextBuffer::detectMode() {
