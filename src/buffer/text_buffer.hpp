@@ -46,7 +46,10 @@ public:
   /// successful edit. Safe to call when browsingHistory() is true but the
   /// caller should normally avoid doing so (stepping through history must
   /// not create new versions).
-  void recordVersion(BufferPoint cursor) override { _history.capture(_lines, cursor); }
+  void recordVersion(BufferPoint cursor, std::size_t dirtyFrom = SIZE_MAX,
+                     int lineShift = 0) override {
+    _history.capture(_lines, cursor, dirtyFrom, lineShift);
+  }
 
   /// Replace buffer contents with the given snapshot. Bumps docVersion and
   /// invalidates the syntax cache. Does NOT record a new version.

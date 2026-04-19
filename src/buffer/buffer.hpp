@@ -141,7 +141,8 @@ public:
   /// Hook invoked by BufferView after each successful edit. TextBuffer
   /// overrides this to append a snapshot to its version history;
   /// read-only buffers ignore it.
-  virtual void recordVersion(BufferPoint /*cursor*/) {}
+  virtual void recordVersion(BufferPoint /*cursor*/, std::size_t /*dirtyFrom*/ = SIZE_MAX,
+                             int /*lineShift*/ = 0) {}
 
   // --- History-mode virtual interface ---
   // Default no-ops for buffers without version history. TextBuffer overrides

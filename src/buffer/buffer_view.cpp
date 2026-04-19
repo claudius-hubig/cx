@@ -642,6 +642,7 @@ void BufferView::insert(uint32_t cp) {
 
   auto insertLine = _point.line;
   auto insertOff = _point.offset;
+  auto lineCountBefore = _buf.lineCount();
   _point = _buf.insertAt(cp, _point);
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
@@ -675,7 +676,8 @@ void BufferView::insert(uint32_t cp) {
       _desiredCol.reset();
   }
 
-  _buf.recordVersion(_point);
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, insertLine, shift);
 }
 
 void BufferView::deleteAtPoint() {
@@ -695,6 +697,7 @@ void BufferView::deleteAtPoint() {
     delBytes = std::min(delOff + len, lineLen) - delOff;
   }
 
+  auto lineCountBefore = _buf.lineCount();
   auto oldVer = _buf.docVersion();
   _point = _buf.deleteAt(_point);
   if (_buf.docVersion() == oldVer)
@@ -723,7 +726,8 @@ void BufferView::deleteAtPoint() {
     }
   }
 
-  _buf.recordVersion(_point);
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, delLine, shift);
 }
 
 void BufferView::deleteBeforePoint() {
@@ -734,6 +738,7 @@ void BufferView::deleteBeforePoint() {
 
   auto beforeLine = _point.line;
   auto beforeOff = _point.offset;
+  auto lineCountBefore = _buf.lineCount();
 
   auto oldVer = _buf.docVersion();
   _point = _buf.deleteBefore(_point);
@@ -763,7 +768,8 @@ void BufferView::deleteBeforePoint() {
     }
   }
 
-  _buf.recordVersion(_point);
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, _point.line, shift);
 }
 
 void BufferView::deleteChunkAtPoint() {
@@ -833,12 +839,15 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
 
+  auto lineCountBefore = _buf.lineCount();
+  auto regionStart = (to < from) ? to : from;
+
   auto oldVersion = _buf.docVersion();
   _buf.deleteRegion(from, to);
   if (_buf.docVersion() == oldVersion)
     return; // No-op: don't move point or clear mark.
 
-  _point = (to < from) ? to : from;
+  _point = regionStart;
   if (_point.line >= _buf.lineCount())
     _point.line = _buf.lineCount() - 1;
   if (_point.offset > _buf.lineContent(_point.line).size())
@@ -848,7 +857,8 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
 
-  _buf.recordVersion(_point);
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, regionStart.line, shift);
 }
 
 BufferPoint BufferView::insertText(std::string_view text) {
@@ -859,6 +869,7 @@ BufferPoint BufferView::insertText(std::string_view text) {
 
   auto startLine = _point.line;
   auto startOff = _point.offset;
+  auto lineCountBefore = _buf.lineCount();
   _point = _buf.insertText(text, _point);
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
@@ -878,7 +889,8 @@ BufferPoint BufferView::insertText(std::string_view text) {
     }
   }
 
-  _buf.recordVersion(_point);
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, startLine, shift);
   return _point;
 }
 

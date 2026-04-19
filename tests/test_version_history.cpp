@@ -78,21 +78,34 @@ BOOST_AUTO_TEST_CASE(prune_triggers_when_exceeding_cap) {
     h.capture({std::to_string(i)}, {0, 0});
   BOOST_CHECK_EQUAL(h.size(), VersionHistory::kMaxVersions);
 
-  // One more triggers prune: drop oldest 10 then thin odd indices
-  // kThinFrom..kThinTo (step 2) from what remains.
+  // One more triggers prune: thin the oldest kThinCount entries by
+  // dropping every second one (indices 1, 3, 5, ...).
   h.capture({std::to_string(VersionHistory::kMaxVersions)}, {0, 0});
 
-  std::size_t oddCount = (VersionHistory::kThinTo - VersionHistory::kThinFrom) / 2 + 1;
-  std::size_t expected = VersionHistory::kMaxVersions + 1 - VersionHistory::kDropOldest - oddCount;
+  std::size_t thinned = VersionHistory::kThinCount / 2;
+  std::size_t expected = VersionHistory::kMaxVersions + 1 - thinned;
   BOOST_CHECK_EQUAL(h.size(), expected);
   BOOST_CHECK_LE(h.size(), VersionHistory::kMaxVersions);
 
   // Newest entry survived.
   BOOST_CHECK_EQUAL(*h.at(h.size() - 1).lines[0], std::to_string(VersionHistory::kMaxVersions));
-  // Oldest 10 were dropped (entries "0".."9" should all be gone).
-  for (std::size_t i = 0; i < h.size(); ++i) {
+
+  // The very oldest entry (0) is always preserved.
+  BOOST_CHECK_EQUAL(*h.at(0).lines[0], "0");
+
+  // The oldest kThinCount entries were thinned: only even-indexed
+  // originals survive (0, 2, 4, ...).
+  std::size_t kept = VersionHistory::kThinCount - thinned;
+  for (std::size_t i = 0; i < kept; ++i) {
     int val = std::stoi(*h.at(i).lines[0]);
-    BOOST_CHECK_GE(val, static_cast<int>(VersionHistory::kDropOldest));
+    BOOST_CHECK_EQUAL(val, static_cast<int>(i * 2));
+  }
+
+  // The most recent entries (after the thinned region) are untouched.
+  std::size_t recentStart = VersionHistory::kThinCount;
+  for (std::size_t i = kept; i < h.size(); ++i) {
+    int val = std::stoi(*h.at(i).lines[0]);
+    BOOST_CHECK_EQUAL(val, static_cast<int>(recentStart + (i - kept)));
   }
 }
 
