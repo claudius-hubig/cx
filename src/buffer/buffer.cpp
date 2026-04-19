@@ -19,7 +19,7 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
   auto& line = _lines[at.line];
   if (cp == '\n') {
     std::string tail(line, at.offset);
-    line.erase(at.offset);
+    line.resize(at.offset);
     _lines.insert(_lines.begin() + at.line + 1, std::move(tail));
     at.line++;
     at.offset = 0;
@@ -109,7 +109,7 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
 
   // Save tail past insertion point, truncate the line there.
   std::string tail(_lines[at.line], at.offset);
-  _lines[at.line].erase(at.offset);
+  _lines[at.line].resize(at.offset);
 
   // Open a gap for new lines (single vector shift instead of K shifts).
   _lines.insert(_lines.begin() + at.line + 1, newlineCount, std::string{});
