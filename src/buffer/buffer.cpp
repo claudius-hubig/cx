@@ -91,27 +91,58 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
 
 BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
   invalidateSynCache(at.line);
+  if (text.empty())
+    return at;
 
+  std::size_t newlineCount = 0;
+  for (char c : text)
+    if (c == '\n')
+      ++newlineCount;
+
+  if (newlineCount == 0) {
+    _lines[at.line].insert(at.offset, text.data(), text.size());
+    at.offset += text.size();
+    _modified = true;
+    ++_docVersion;
+    return at;
+  }
+
+  // Save tail past insertion point, truncate the line there.
+  std::string tail(_lines[at.line], at.offset);
+  _lines[at.line].erase(at.offset);
+
+  // Open a gap for new lines (single vector shift instead of K shifts).
+  _lines.insert(_lines.begin() + at.line + 1, newlineCount, std::string{});
+
+  // Fill lines from text chunks separated by '\n'.
+  std::size_t lineIdx = at.line;
   std::size_t i = 0;
   while (i < text.size()) {
-    if (text[i] == '\n') {
-      auto& line = _lines[at.line];
-      std::string tail(line, at.offset);
-      line.erase(at.offset);
-      _lines.insert(_lines.begin() + at.line + 1, std::move(tail));
-      at.line++;
-      at.offset = 0;
-      ++i;
+    auto nl = text.find('\n', i);
+    std::size_t chunkEnd = (nl == std::string_view::npos) ? text.size() : nl;
+
+    if (lineIdx == at.line)
+      _lines[lineIdx].append(text.data() + i, chunkEnd - i);
+    else
+      _lines[lineIdx].assign(text.data() + i, chunkEnd - i);
+
+    if (nl != std::string_view::npos) {
+      ++lineIdx;
+      i = nl + 1;
     } else {
-      auto end = text.find('\n', i);
-      if (end == std::string_view::npos)
-        end = text.size();
-      auto& line = _lines[at.line];
-      line.insert(line.begin() + at.offset, text.begin() + i, text.begin() + end);
-      at.offset += end - i;
-      i = end;
+      at.offset = chunkEnd - i;
+      i = chunkEnd;
     }
   }
+
+  if (text.back() == '\n') {
+    at.line = lineIdx;
+    at.offset = 0;
+  } else {
+    at.line = lineIdx;
+  }
+
+  _lines[at.line].append(tail);
   _modified = true;
   ++_docVersion;
   return at;
