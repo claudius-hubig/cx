@@ -414,6 +414,122 @@ static void benchSearch(std::size_t iters) {
 }
 
 // =========================================================================
+// 6. Cursor movement
+// =========================================================================
+static void benchMovement(std::size_t iters) {
+  std::printf("\n=== Cursor movement ===\n");
+
+  for (std::size_t bufLines : {10000, 50000}) {
+    auto content = generateContent(bufLines);
+    TempFile f(content);
+    TextBuffer buf(f.path().string(), f.path());
+    BufferView view(buf);
+    view.setPoint(0, 0);
+
+    std::vector<double> durations;
+    durations.reserve(iters);
+
+    for (std::size_t i = 0; i < iters; ++i) {
+      auto t0 = Clock::now();
+      view.moveDown(ColIdx{80});
+      auto t1 = Clock::now();
+      durations.push_back(static_cast<double>(std::chrono::duration_cast<us>(t1 - t0).count()));
+    }
+    auto s = computeStats(durations);
+    char label[64];
+    std::snprintf(label, sizeof(label), "moveDown  %zuk lines", bufLines / 1000);
+    printStats(label, s);
+  }
+
+  {
+    std::string content;
+    for (int i = 0; i < 10; ++i) {
+      std::string line(10000, static_cast<char>('a' + (i % 26)));
+      content += line;
+      content += '\n';
+    }
+    TempFile f(content);
+    TextBuffer buf(f.path().string(), f.path());
+    BufferView view(buf);
+    view.setPoint(5, 5000);
+
+    std::vector<double> durations;
+    durations.reserve(iters);
+
+    for (std::size_t i = 0; i < iters; ++i) {
+      auto t0 = Clock::now();
+      view.moveDown(ColIdx{80});
+      auto t1 = Clock::now();
+      durations.push_back(static_cast<double>(std::chrono::duration_cast<us>(t1 - t0).count()));
+    }
+    auto s = computeStats(durations);
+    printStats("moveDown  10k-char wrapped", s);
+
+    durations.clear();
+    for (std::size_t i = 0; i < iters; ++i) {
+      auto t0 = Clock::now();
+      view.moveUp(ColIdx{80});
+      auto t1 = Clock::now();
+      durations.push_back(static_cast<double>(std::chrono::duration_cast<us>(t1 - t0).count()));
+    }
+    s = computeStats(durations);
+    printStats("moveUp    10k-char wrapped", s);
+  }
+}
+
+// =========================================================================
+// 7. Full edit cycle (edit + history capture)
+// =========================================================================
+static void benchFullCycle(std::size_t iters) {
+  std::printf("\n=== Full edit cycle (edit + history) ===\n");
+
+  for (std::size_t bufLines : {1000, 10000, 50000}) {
+    auto content = generateContent(bufLines);
+    std::size_t midLine = bufLines / 2;
+
+    {
+      std::vector<double> durations;
+      durations.reserve(iters);
+      TempFile f(content);
+      TextBuffer buf(f.path().string(), f.path());
+      BufferView view(buf);
+      view.setPoint(midLine, 0);
+
+      for (std::size_t i = 0; i < iters; ++i) {
+        auto t0 = Clock::now();
+        view.insert('x');
+        auto t1 = Clock::now();
+        durations.push_back(static_cast<double>(std::chrono::duration_cast<us>(t1 - t0).count()));
+      }
+      auto s = computeStats(durations);
+      char label[64];
+      std::snprintf(label, sizeof(label), "insert+history  (%zuk lines)", bufLines / 1000);
+      printStats(label, s);
+    }
+
+    {
+      std::vector<double> durations;
+      durations.reserve(iters);
+      TempFile f(content);
+      TextBuffer buf(f.path().string(), f.path());
+      BufferView view(buf);
+      view.setPoint(midLine, 5);
+
+      for (std::size_t i = 0; i < iters; ++i) {
+        auto t0 = Clock::now();
+        view.insert('\n');
+        auto t1 = Clock::now();
+        durations.push_back(static_cast<double>(std::chrono::duration_cast<us>(t1 - t0).count()));
+      }
+      auto s = computeStats(durations);
+      char label[64];
+      std::snprintf(label, sizeof(label), "newline+history (%zuk lines)", bufLines / 1000);
+      printStats(label, s);
+    }
+  }
+}
+
+// =========================================================================
 
 int main(int argc, char* argv[]) {
   std::string section;
@@ -438,4 +554,8 @@ int main(int argc, char* argv[]) {
     benchSyntax(iters);
   if (all || section == "search")
     benchSearch(iters);
+  if (all || section == "movement")
+    benchMovement(iters);
+  if (all || section == "fullcycle")
+    benchFullCycle(iters);
 }
