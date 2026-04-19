@@ -1895,6 +1895,7 @@ void Screen::dispatchAction(Action action) {
       auto start = _view->point();
       auto end = _view->insertText(_pasteRing.at(0));
       _pasteState = PasteState{start, end, 0};
+      setStatus("Region pasted");
       _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
     }
     break;
