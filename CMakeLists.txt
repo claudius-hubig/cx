@@ -310,6 +310,20 @@ target_include_directories(bench_history PRIVATE src .)
 target_compile_options(bench_history PRIVATE -O2)
 target_link_libraries(bench_history util)
 
+add_executable(bench_editing
+    tests/bench_editing.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+)
+target_include_directories(bench_editing PRIVATE src .)
+target_compile_options(bench_editing PRIVATE -O2)
+
 add_executable(test_panel_layout
     tests/test_panel_layout.cpp
     src/buffer/buffer.cpp
