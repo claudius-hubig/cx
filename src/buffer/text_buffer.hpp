@@ -39,10 +39,8 @@ public:
   /// capacity/pruning policy.
   VersionHistory const& history() const { return _history; }
 
-  /// True while a BufferView is stepping through history (read-only mode).
-  /// Flips readonly() on so every edit path short-circuits.
-  bool browsingHistory() const { return _browsingHistory; }
-  void setBrowsingHistory(bool b) { _browsingHistory = b; }
+  bool browsingHistory() const override { return _browsingHistory; }
+  void setBrowsingHistory(bool b) override { _browsingHistory = b; }
 
   /// Append a snapshot to the history. Called by BufferView after each
   /// successful edit. Safe to call when browsingHistory() is true but the
@@ -54,10 +52,17 @@ public:
   /// invalidates the syntax cache. Does NOT record a new version.
   void applySnapshot(VersionSnapshot const& s);
 
-  /// Drop all history entries with index > idx. Used when exiting history
-  /// mode with a committed selection: the selected version becomes the new
-  /// live state and any forward history is discarded.
-  void truncateHistoryAfter(std::size_t idx) { _history.truncateAfter(idx); }
+  VersionHistoryInfo versionHistoryInfo() const override {
+    return {_history.size(), _history.empty()};
+  }
+
+  void applyVersionAt(std::size_t idx, BufferPoint& cursor) override {
+    auto const& snap = _history.at(idx);
+    applySnapshot(snap);
+    cursor = snap.cursor;
+  }
+
+  void truncateHistoryAfter(std::size_t idx) override { _history.truncateAfter(idx); }
 
   /// Set the backing file path. Updates _name to the path string.
   /// Must coordinate with BufferManager::rename() to keep the map

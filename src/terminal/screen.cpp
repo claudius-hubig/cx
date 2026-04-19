@@ -1928,8 +1928,7 @@ void Screen::dispatchAction(Action action) {
         _view->exitHistoryModeCommit();
         setStatus("History: committed");
       } else {
-        auto* tb = dynamic_cast<TextBuffer*>(_buf);
-        if (!tb || tb->history().empty()) {
+        if (_buf->versionHistoryInfo().empty) {
           setStatus("No history");
         } else {
           _view->enterHistoryMode();

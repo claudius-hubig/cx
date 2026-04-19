@@ -82,8 +82,6 @@ add_executable(test_help_buffer
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
-    src/buffer/text_buffer.cpp
-    src/buffer/version_history.cpp
 )
 target_include_directories(test_help_buffer PRIVATE src)
 target_link_libraries(test_help_buffer Boost::unit_test_framework)
@@ -98,8 +96,6 @@ add_executable(test_buffer_list_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/buffer_list_buffer.cpp
-    src/buffer/text_buffer.cpp
-    src/buffer/version_history.cpp
 )
 target_include_directories(test_buffer_list_buffer PRIVATE src)
 target_link_libraries(test_buffer_list_buffer Boost::unit_test_framework)
@@ -227,8 +223,6 @@ add_executable(test_dir_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/dir_buffer.cpp
-    src/buffer/text_buffer.cpp
-    src/buffer/version_history.cpp
 )
 target_include_directories(test_dir_buffer PRIVATE src .)
 target_link_libraries(test_dir_buffer Boost::unit_test_framework)
@@ -288,8 +282,6 @@ add_executable(test_paste_ring_buffer
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/paste_ring_buffer.cpp
-    src/buffer/text_buffer.cpp
-    src/buffer/version_history.cpp
 )
 target_include_directories(test_paste_ring_buffer PRIVATE src)
 target_link_libraries(test_paste_ring_buffer Boost::unit_test_framework)

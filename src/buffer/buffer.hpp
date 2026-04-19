@@ -143,6 +143,28 @@ public:
   /// read-only buffers ignore it.
   virtual void recordVersion(BufferPoint /*cursor*/) {}
 
+  // --- History-mode virtual interface ---
+  // Default no-ops for buffers without version history. TextBuffer overrides
+  // these so BufferView can drive history browsing through the base class
+  // without a concrete dependency on TextBuffer.
+
+  /// True while a view is stepping through history (read-only browsing).
+  virtual bool browsingHistory() const { return false; }
+  virtual void setBrowsingHistory(bool) {}
+
+  struct VersionHistoryInfo {
+    std::size_t size = 0;
+    bool empty = true;
+  };
+  virtual VersionHistoryInfo versionHistoryInfo() const { return {}; }
+
+  /// Replace buffer contents with the version at idx. Sets cursor to
+  /// the stored position from that version.
+  virtual void applyVersionAt(std::size_t /*idx*/, BufferPoint& /*cursor*/) {}
+
+  /// Drop all history entries after idx.
+  virtual void truncateHistoryAfter(std::size_t) {}
+
   // --- Rendering ---
 
   /// Compute the 0-indexed screen row of the given point relative to

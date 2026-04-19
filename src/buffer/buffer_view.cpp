@@ -2,7 +2,6 @@
 
 #include "modes/c/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
-#include "text_buffer.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
 
@@ -886,11 +885,11 @@ BufferPoint BufferView::insertText(std::string_view text) {
 // --- History mode ---
 
 void BufferView::enterHistoryMode() {
-  auto* tb = dynamic_cast<TextBuffer*>(&_buf);
-  if (!tb || tb->history().empty())
+  auto info = _buf.versionHistoryInfo();
+  if (info.empty)
     return;
-  tb->setBrowsingHistory(true);
-  _historyIndex = tb->history().size() - 1;
+  _buf.setBrowsingHistory(true);
+  _historyIndex = info.size - 1;
   _desiredCol.reset();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
@@ -899,27 +898,18 @@ void BufferView::enterHistoryMode() {
 void BufferView::stepHistory(int delta) {
   if (!_historyIndex)
     return;
-  auto* tb = dynamic_cast<TextBuffer*>(&_buf);
-  if (!tb)
-    return;
-  auto const& h = tb->history();
-  auto size = h.size();
-  if (size == 0)
-    return;
+  auto info = _buf.versionHistoryInfo();
   long long ni = static_cast<long long>(*_historyIndex) + delta;
   if (ni < 0)
     ni = 0;
-  if (ni >= static_cast<long long>(size))
-    ni = static_cast<long long>(size) - 1;
+  if (ni >= static_cast<long long>(info.size))
+    ni = static_cast<long long>(info.size) - 1;
   auto newIdx = static_cast<std::size_t>(ni);
   if (newIdx == *_historyIndex)
     return;
   _historyIndex = newIdx;
-  auto const& snap = h.at(newIdx);
-  tb->applySnapshot(snap);
+  _buf.applyVersionAt(newIdx, _point);
   _docVersion = _buf.docVersion();
-  _point = snap.cursor;
-  // Clamp in case the stored cursor is stale.
   if (_point.line >= _buf.lineCount())
     _point.line = _buf.lineCount() - 1;
   if (_point.offset > _buf.lineContent(_point.line).size())
@@ -933,13 +923,8 @@ void BufferView::stepHistory(int delta) {
 void BufferView::exitHistoryModeCommit() {
   if (!_historyIndex)
     return;
-  auto* tb = dynamic_cast<TextBuffer*>(&_buf);
-  if (!tb) {
-    _historyIndex.reset();
-    return;
-  }
-  tb->truncateHistoryAfter(*_historyIndex);
-  tb->setBrowsingHistory(false);
+  _buf.truncateHistoryAfter(*_historyIndex);
+  _buf.setBrowsingHistory(false);
   _historyIndex.reset();
 }
 
