@@ -1,7 +1,8 @@
 #include "syntax.hpp"
 
-std::vector<SyntaxToken> tokenizeMarkdownLine(std::string const& line, SyntaxState& /*state*/) {
-  std::vector<SyntaxToken> tokens(line.size(), SyntaxToken::Normal);
+void tokenizeMarkdownLine(std::string const& line, SyntaxState& /*state*/,
+                          std::vector<SyntaxToken>& tokens) {
+  tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t sz = line.size();
 
   // Heading: line starts with one or more '#' followed by a space (or end of line).
@@ -12,7 +13,7 @@ std::vector<SyntaxToken> tokenizeMarkdownLine(std::string const& line, SyntaxSta
     if (i == sz || line[i] == ' ') {
       for (std::size_t j = 0; j < sz; ++j)
         tokens[j] = SyntaxToken::Heading;
-      return tokens;
+      return;
     }
   }
 
@@ -63,6 +64,4 @@ std::vector<SyntaxToken> tokenizeMarkdownLine(std::string const& line, SyntaxSta
 
     ++i;
   }
-
-  return tokens;
 }

@@ -247,11 +247,11 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
 
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
     if (_mode == BufferMode::Md)
-      _synCache[i].tokens = tokenizeMarkdownLine(_lines[i], state);
+      tokenizeMarkdownLine(_lines[i], state, _synCache[i].tokens);
     else if (_mode == BufferMode::Jsn)
-      _synCache[i].tokens = tokenizeJsonLine(_lines[i], state);
+      tokenizeJsonLine(_lines[i], state, _synCache[i].tokens);
     else
-      _synCache[i].tokens = tokenizeLine(_lines[i], state);
+      tokenizeLine(_lines[i], state, _synCache[i].tokens);
     _synCache[i].stateAfter = state; // state was advanced by tokenizeLine
   }
   _synCacheValidUpto = upToLine;

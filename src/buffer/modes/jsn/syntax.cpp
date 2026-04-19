@@ -6,8 +6,9 @@ static bool isJsonKeyword(std::string_view word) {
   return word == "true" || word == "false" || word == "null";
 }
 
-std::vector<SyntaxToken> tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/) {
-  std::vector<SyntaxToken> tokens(line.size(), SyntaxToken::Normal);
+void tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/,
+                      std::vector<SyntaxToken>& tokens) {
+  tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t i = 0;
   std::size_t sz = line.size();
 
@@ -84,8 +85,6 @@ std::vector<SyntaxToken> tokenizeJsonLine(std::string const& line, SyntaxState& 
     // Everything else: colons, commas, whitespace → Normal.
     ++i;
   }
-
-  return tokens;
 }
 
 // --- Bracket matching for JSON ---
@@ -124,7 +123,8 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
 
   // Tokenize the cursor line (no multi-line state needed for JSON).
   SyntaxState unused;
-  auto curTokens = tokenizeJsonLine(line, unused);
+  std::vector<SyntaxToken> curTokens;
+  tokenizeJsonLine(line, unused, curTokens);
 
   char ch = line[pos.offset];
   auto curTok = (pos.offset < curTokens.size()) ? curTokens[pos.offset] : SyntaxToken::Normal;
@@ -150,10 +150,11 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
       }
     }
 
+    std::vector<SyntaxToken> lnToks;
     for (std::size_t l = pos.line + 1; l < lines.size(); ++l) {
       auto& ln = lines[l];
       SyntaxState s;
-      auto lnToks = tokenizeJsonLine(ln, s);
+      tokenizeJsonLine(ln, s, lnToks);
       for (std::size_t o = 0; o < ln.size(); ++o) {
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
         if (isJsonBracketChar(ln[o], tok)) {
@@ -179,11 +180,12 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
       }
     }
 
+    std::vector<SyntaxToken> lnToks;
     for (std::size_t l = pos.line; l > 0;) {
       --l;
       auto& ln = lines[l];
       SyntaxState s;
-      auto lnToks = tokenizeJsonLine(ln, s);
+      tokenizeJsonLine(ln, s, lnToks);
       for (std::size_t o = ln.size(); o > 0;) {
         --o;
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;

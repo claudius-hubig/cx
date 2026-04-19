@@ -31,10 +31,11 @@ struct SyntaxState {
   std::optional<std::string> rawDelim; // has_value() = inside R"delim(...)delim"
 };
 
-// Tokenize a single line, producing a per-byte SyntaxToken vector.
-// state is the multi-line state entering this line; updated on return
-// to reflect state after this line.
-std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& state);
+// Tokenize a single line, writing per-byte SyntaxToken values into `out`.
+// `out` is resized/overwritten; passing in a previously-used vector lets the
+// caller reuse heap allocations. state is the multi-line state entering this
+// line; updated on return to reflect state after this line.
+void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
 
 // Advance multi-line state across a line without producing tokens.
 // Cheaper than tokenizeLine: skips identifier/keyword classification,

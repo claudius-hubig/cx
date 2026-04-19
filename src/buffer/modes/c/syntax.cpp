@@ -86,8 +86,8 @@ static bool isAngleOperator(std::string const& line, std::size_t i) {
   return false;
 }
 
-std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& state) {
-  std::vector<SyntaxToken> tokens(line.size(), SyntaxToken::Normal);
+void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& tokens) {
+  tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t i = 0;
   std::size_t sz = line.size();
 
@@ -139,7 +139,7 @@ std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& stat
     if (i + 1 < sz && line[i] == '/' && line[i + 1] == '/') {
       for (std::size_t j = i; j < sz; ++j)
         tokens[j] = SyntaxToken::Comment;
-      return tokens;
+      return;
     }
 
     // Block comment start.
@@ -303,8 +303,6 @@ std::vector<SyntaxToken> tokenizeLine(std::string const& line, SyntaxState& stat
     // Everything else is Normal (digits, whitespace, etc.).
     ++i;
   }
-
-  return tokens;
 }
 
 void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
@@ -563,7 +561,7 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
       if (i < validUpto)
         return tokens[i];
       while (validUpto <= i) {
-        tokens[validUpto] = tokenizeLine(lines[validUpto], stateAfterValid);
+        tokenizeLine(lines[validUpto], stateAfterValid, tokens[validUpto]);
         ++validUpto;
       }
       return tokens[i];
