@@ -12,6 +12,16 @@ When the user asks you to discuss or plan before implementing, do NOT implement 
 
 When refactoring across multiple files, run the full test suite after EACH logical change — not just at the end. If a refactor breaks tests, fix them before moving to the next item.
 
+## Performance
+
+When changing `VersionHistory`, `BufferView` editing methods, or `recordVersion()`, run the history benchmark before and after to verify no performance regressions:
+
+```
+./build/bench_history --direct --lines 50000 --inserts 200
+```
+
+Check that p95 stays under 1ms and that no individual insert spikes above 5ms (which would indicate prune-related stalls).
+
 ## Input Handling
 
 When modifying keybindings or terminal input handling, verify there are no byte-level conflicts (e.g., Ctrl-? and Backspace both produce 0x7F, Esc prefix vs bare Esc). Document any conflicts found before implementing.
