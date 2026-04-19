@@ -973,3 +973,39 @@ BOOST_AUTO_TEST_CASE(e2e_dir_navigate_parent_in_split) {
                "c");
   session.waitExit();
 }
+
+BOOST_AUTO_TEST_CASE(e2e_kill_buffer_blocked_in_history_mode) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("original content\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("original", std::chrono::milliseconds{500});
+
+  // Type text to create version history.
+  session.send("added ");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Enter history mode (Ctrl-U), then try to kill buffer (Ctrl-K).
+  session.send("\x15");
+  auto histOut = session.readUntil("step", std::chrono::milliseconds{1000});
+  auto histStripped = stripAnsi(histOut);
+  BOOST_CHECK_MESSAGE(histStripped.find("step") != std::string::npos,
+                      "Expected history modeline: " + histStripped);
+
+  session.send("\x0b");
+  auto output = session.readUntil("Exit history mode", std::chrono::milliseconds{1000});
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK_MESSAGE(stripped.find("Exit history mode") != std::string::npos,
+                      "Expected 'Exit history mode' in: " + stripped);
+
+  // Exit history mode (Ctrl-U again) then quit.
+  session.send("\x15");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}

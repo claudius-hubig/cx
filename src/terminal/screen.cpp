@@ -1802,10 +1802,18 @@ void Screen::dispatchAction(Action action) {
     openGoToLinePrompt();
     break;
   case Action::SwitchBuffer:
+    if (_view && _view->inHistoryMode()) {
+      setStatus("Exit history mode first (Ctrl-U).");
+      break;
+    }
     prevBuf() = nullptr;
     openSwitchBufferPrompt();
     break;
   case Action::KillBuffer:
+    if (_view && _view->inHistoryMode()) {
+      setStatus("Exit history mode first (Ctrl-U).");
+      break;
+    }
     if (_buf && _bufMgr && (dynamic_cast<DirBuffer*>(_buf) || !_buf->readonly())) {
       if (!_buf->modified()) {
         auto name = _buf->name();
@@ -1963,6 +1971,10 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::BufferList:
+    if (_view && _view->inHistoryMode()) {
+      setStatus("Exit history mode first (Ctrl-U).");
+      break;
+    }
     if (_bufMgr) {
       if (_buf && _buf->readonly() && prevBuf()) {
         setBuffer(*prevBuf());
@@ -2016,6 +2028,10 @@ void Screen::dispatchAction(Action action) {
       openSetModePrompt();
     break;
   case Action::DirBrowser:
+    if (_view && _view->inHistoryMode()) {
+      setStatus("Exit history mode first (Ctrl-U).");
+      break;
+    }
     if (_bufMgr)
       setBuffer(_bufMgr->openDir(bufferWorkDir()));
     break;
