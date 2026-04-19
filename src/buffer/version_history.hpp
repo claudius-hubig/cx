@@ -34,7 +34,7 @@ public:
 
   std::size_t size() const { return _versions.size(); }
   bool empty() const { return _versions.empty(); }
-  VersionSnapshot const& at(std::size_t idx) const { return _versions[idx]; }
+  VersionSnapshot const& at(std::size_t idx) const { return _versions.at(idx); }
 
   /// Drop all versions with index > idx.
   void truncateAfter(std::size_t idx);
