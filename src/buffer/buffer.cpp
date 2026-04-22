@@ -20,20 +20,24 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
   if (cp == '\n') {
     std::string tail(line, at.offset);
     line.resize(at.offset);
-    _lines.insert(_lines.begin() + at.line + 1, std::move(tail));
-    at.line++;
-    at.offset = 0;
+
+    std::size_t autoIndent = 0;
     if (_mode == BufferMode::Cpp || _mode == BufferMode::Jsn) {
-      auto& prev = _lines[at.line - 1];
-      std::size_t autoIndent = 0;
-      while (autoIndent < prev.size() && prev[autoIndent] == ' ')
+      while (autoIndent < line.size() && line[autoIndent] == ' ')
         ++autoIndent;
-      if (autoIndent > 0) {
-        auto& cur = _lines[at.line];
-        cur.insert(cur.begin(), autoIndent, ' ');
-        at.offset = autoIndent;
-      }
     }
+
+    if (autoIndent > 0) {
+      std::string indented;
+      indented.reserve(autoIndent + tail.size());
+      indented.append(autoIndent, ' ');
+      indented.append(tail);
+      _lines.insert(_lines.begin() + at.line + 1, std::move(indented));
+    } else {
+      _lines.insert(_lines.begin() + at.line + 1, std::move(tail));
+    }
+    at.line++;
+    at.offset = autoIndent;
   } else {
     auto* p = reinterpret_cast<char const*>(enc.data());
     line.insert(at.offset, p, n);
