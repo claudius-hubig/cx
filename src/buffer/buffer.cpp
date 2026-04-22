@@ -159,12 +159,13 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
   to.offset = std::min(to.offset, _lines[to.line].size());
   from.offset = std::min(from.offset, _lines[from.line].size());
 
-  std::string merged(_lines[from.line], 0, from.offset);
-  merged.append(_lines[to.line], to.offset);
-
-  _lines[from.line] = std::move(merged);
-  if (from.line < to.line)
+  if (from.line == to.line) {
+    _lines[from.line].erase(from.offset, to.offset - from.offset);
+  } else {
+    _lines[from.line].resize(from.offset);
+    _lines[from.line].append(_lines[to.line], to.offset);
     _lines.erase(_lines.begin() + from.line + 1, _lines.begin() + to.line + 1);
+  }
 
   _modified = true;
   ++_docVersion;
