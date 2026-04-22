@@ -212,6 +212,14 @@ protected:
   std::size_t _docVersion = 0; // incremented on every edit
   std::optional<SavedViewState> _savedView;
 
+  // --- Bracket match cache ---
+  struct BracketMatchCache {
+    BufferPoint point;
+    std::size_t docVersion = SIZE_MAX;
+    std::optional<BufferPoint> result;
+  };
+  mutable BracketMatchCache _bracketCache;
+
   // --- Per-line syntax cache ---
   // Populated lazily by render() for modes with syntax highlighting. Each
   // entry stores the tokenisation result and the multi-line state at the

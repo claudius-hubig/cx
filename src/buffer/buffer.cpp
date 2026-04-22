@@ -449,10 +449,16 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // Bracket matching re-uses the cache. For any line not yet tokenized
     // (e.g. a forward scan running past the viewport) the cache is
     // extended incrementally — a single line at a time.
-    matchBracket = (_mode == BufferMode::Jsn)
-                       ? findMatchingBracketJson(_lines, point)
-                       : findMatchingBracket(_lines, point,
-                                             [this](std::size_t i) { return cachedLineTokens(i); });
+    if (_bracketCache.point == point && _bracketCache.docVersion == _docVersion) {
+      matchBracket = _bracketCache.result;
+    } else {
+      matchBracket = (_mode == BufferMode::Jsn)
+                         ? findMatchingBracketJson(_lines, point)
+                         : findMatchingBracket(_lines, point, [this](std::size_t i) {
+                             return cachedLineTokens(i);
+                           });
+      _bracketCache = {point, _docVersion, matchBracket};
+    }
   }
 
   // Markdown-specific syntax highlight colors.
