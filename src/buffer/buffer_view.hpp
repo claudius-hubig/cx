@@ -11,6 +11,15 @@
 #include <tuple>
 #include <vector>
 
+/// Display settings passed to BufferView::render().
+struct BufferRenderArgs {
+  bool showWhitespace = false;
+  bool wrap = true;
+  bool focused = true;
+  std::size_t rowOffset = 0;
+  std::size_t colOffset = 0;
+};
+
 /// Per-view state for a Buffer. Owns the cursor position, selection mark,
 /// viewport scroll, wrap mode, desired column, find highlight, and
 /// per-view caches. Movement, editing, and rendering are implemented
@@ -100,8 +109,7 @@ public:
   // --- Rendering ---
   void ensureVisible(RowIdx rows, ColIdx cols, bool wrap);
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
-                                    bool showWhitespace = false, bool wrap = true,
-                                    std::size_t rowOffset = 0, std::size_t colOffset = 0) const;
+                                    BufferRenderArgs const& args = {}) const;
   std::size_t screenRow(ColIdx cols, bool wrap = true) const;
   bool currentLineWraps(ColIdx cols) const;
 

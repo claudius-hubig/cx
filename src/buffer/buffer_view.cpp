@@ -1059,8 +1059,7 @@ void BufferView::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
 }
 
 std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, ColIdx cols,
-                                              bool showWhitespace, bool wrap, std::size_t rowOffset,
-                                              std::size_t colOffset) const {
+                                              BufferRenderArgs const& args) const {
   if (_docVersion != _buf.docVersion())
     const_cast<BufferView*>(this)->clampToBuffer();
   RenderParams params;
@@ -1068,10 +1067,11 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
   params.viewFrom = _viewFrom;
   params.mark = _mark;
   params.highlight = _highlight;
-  params.showWhitespace = showWhitespace;
-  params.wrap = wrap;
-  params.rowOffset = rowOffset;
-  params.colOffset = colOffset;
+  params.showWhitespace = args.showWhitespace;
+  params.wrap = args.wrap;
+  params.focused = args.focused;
+  params.rowOffset = args.rowOffset;
+  params.colOffset = args.colOffset;
   return _buf.render(out, rows, cols, params);
 }
 

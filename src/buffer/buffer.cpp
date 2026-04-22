@@ -301,6 +301,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   auto const& highlight = params.highlight;
   bool showWhitespace = params.showWhitespace;
   bool wrap = params.wrap;
+  bool focused = params.focused;
   std::size_t rowOffset = params.rowOffset;
   std::size_t colOffset = params.colOffset;
   static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
@@ -397,7 +398,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // `highlight` marks the visual row containing the cursor.
   auto emitGutter = [&](std::size_t r, bool isCursorRow, char const* indicator) {
     out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
-    out += isCursorRow ? ansi::Reset : ansi::ReverseVideo;
+    out += (isCursorRow && focused) ? ansi::Reset : ansi::ReverseVideo;
     out += indicator;
     out += ansi::Reset;
   };

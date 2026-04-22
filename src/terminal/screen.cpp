@@ -184,7 +184,12 @@ void Screen::draw() {
         view.clampToBuffer();
 
       view.ensureVisible(pr, pc, _wrap);
-      auto [cr, cc] = view.render(_renderBuf, pr, pc, _showWhitespace, _wrap, rect.row, rect.col);
+      auto [cr, cc] = view.render(_renderBuf, pr, pc,
+                                  {.showWhitespace = _showWhitespace,
+                                   .wrap = _wrap,
+                                   .focused = focused,
+                                   .rowOffset = rect.row,
+                                   .colOffset = rect.col});
 
       if (focused) {
         cur_row = RowIdx{rect.row + cr.value};

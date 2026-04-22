@@ -108,10 +108,10 @@ BOOST_AUTO_TEST_CASE(render_with_offset) {
   BufferView view = BufferView(buf);
 
   std::string out0;
-  view.render(out0, RowIdx{3}, ColIdx{10}, false, true, 0, 0);
+  view.render(out0, RowIdx{3}, ColIdx{10});
 
   std::string out5;
-  view.render(out5, RowIdx{3}, ColIdx{10}, false, true, 5, 10);
+  view.render(out5, RowIdx{3}, ColIdx{10}, {.rowOffset = 5, .colOffset = 10});
 
   // The offset version should differ (different cursorTo positions).
   BOOST_CHECK(out0 != out5);

@@ -32,6 +32,7 @@ struct RenderParams {
   std::optional<Highlight> highlight;
   bool showWhitespace = false;
   bool wrap = true;
+  bool focused = true;
   std::size_t rowOffset = 0;
   std::size_t colOffset = 0;
 };
