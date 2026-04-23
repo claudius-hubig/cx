@@ -86,10 +86,38 @@ static bool isAngleOperator(std::string const& line, std::size_t i) {
   return false;
 }
 
+// Check whether a line begins a preprocessor directive (# after optional whitespace).
+static bool startsWithHash(std::string const& line) {
+  for (std::size_t j = 0; j < line.size(); ++j) {
+    if (line[j] == '#')
+      return true;
+    if (line[j] != ' ' && line[j] != '\t')
+      return false;
+  }
+  return false;
+}
+
+static bool endsWithBackslash(std::string const& line) {
+  return !line.empty() && line.back() == '\\';
+}
+
 void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& tokens) {
   tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t i = 0;
   std::size_t sz = line.size();
+
+  // Preprocessor directive: entire line highlighted when starting with #
+  // or continuing from a prior line that ended with backslash.
+  if (!state.inBlockComment && !state.rawDelim.has_value()) {
+    if (state.inPreprocessor || startsWithHash(line)) {
+      tokens.assign(sz, SyntaxToken::Preprocessor);
+      bool continuation = endsWithBackslash(line);
+      advanceBlockCommentState(line, state);
+      state.inPreprocessor = continuation;
+      return;
+    }
+  }
+  state.inPreprocessor = false;
 
   while (i < sz) {
     // Inside a raw string literal — scan for closing )delim".
@@ -306,11 +334,20 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
 }
 
 void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
-  // State-only scan: maintains block-comment and raw-string state while
-  // stepping over strings, character literals, line comments, and raw
-  // string literals. Does not classify identifiers, keywords, or
-  // operators and does not allocate a token vector.
+  // State-only scan: maintains block-comment, raw-string, and
+  // preprocessor continuation state while stepping over strings,
+  // character literals, line comments, and raw string literals.
   std::size_t i = 0, sz = line.size();
+
+  // Track preprocessor continuation state.
+  if (!state.inBlockComment && !state.rawDelim.has_value()) {
+    if (state.inPreprocessor || startsWithHash(line))
+      state.inPreprocessor = endsWithBackslash(line);
+    else
+      state.inPreprocessor = false;
+  } else {
+    state.inPreprocessor = false;
+  }
   while (i < sz) {
     // Inside a raw string literal — scan for closing )delim".
     if (state.rawDelim.has_value()) {
@@ -457,7 +494,7 @@ static bool isOpenBracket(char c) { return c == '(' || c == '[' || c == '{' || c
 // bracket during matching. Brackets inside strings and comments are skipped.
 // Angle brackets are only counted when tokenized as Angle (not Operator).
 static bool isBracketChar(char c, SyntaxToken tok) {
-  if (tok == SyntaxToken::Comment || tok == SyntaxToken::String)
+  if (tok == SyntaxToken::Comment || tok == SyntaxToken::String || tok == SyntaxToken::Preprocessor)
     return false;
   if ((c == '<' || c == '>') && tok != SyntaxToken::Angle)
     return false;

@@ -13,21 +13,23 @@ enum class SyntaxToken : uint8_t {
   Normal,
   Keyword,
   Comment,
-  String,   // "...", '...', R"(...)"
-  Operator, // +, -, *, =, &&, ||, etc.
-  Paren,    // ( )
-  Bracket,  // [ ]
-  Brace,    // { }
-  Angle,    // < > (when used as template brackets)
-  Heading,  // Markdown headings (# ...)
-  Bold,     // Markdown bold (**...**)
-  Link,     // Markdown links [text](url)
-  Number,   // JSON numeric literals
+  String,       // "...", '...', R"(...)"
+  Operator,     // +, -, *, =, &&, ||, etc.
+  Paren,        // ( )
+  Bracket,      // [ ]
+  Brace,        // { }
+  Angle,        // < > (when used as template brackets)
+  Heading,      // Markdown headings (# ...)
+  Bold,         // Markdown bold (**...**)
+  Link,         // Markdown links [text](url)
+  Number,       // JSON numeric literals
+  Preprocessor, // C/C++ preprocessor directives (#include, #define, etc.)
 };
 
 /// Multi-line state carried between lines for syntax highlighting.
 struct SyntaxState {
   bool inBlockComment = false;
+  bool inPreprocessor = false; // next line continues a #directive (prior line ended with '\')
   std::optional<std::string> rawDelim; // has_value() = inside R"delim(...)delim"
 };
 

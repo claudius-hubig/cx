@@ -465,6 +465,98 @@ BOOST_AUTO_TEST_CASE(operator_render_uses_purple_color) {
 }
 
 // ============================================================
+// Preprocessor directive highlighting
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(preprocessor_include) {
+  auto line = mkline("#include <stdio.h>");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Preprocessor));
+  BOOST_CHECK(!st.inPreprocessor);
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_define) {
+  auto line = mkline("#define FOO 42");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Preprocessor));
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_with_leading_whitespace) {
+  auto line = mkline("  #ifdef BAR");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Preprocessor));
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_continuation_backslash) {
+  auto line1 = mkline("#define MULTI \\");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line1, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line1.size(), SyntaxToken::Preprocessor));
+  BOOST_CHECK(st.inPreprocessor);
+
+  auto line2 = mkline("  line2 \\");
+  tokenizeLine(line2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line2.size(), SyntaxToken::Preprocessor));
+  BOOST_CHECK(st.inPreprocessor);
+
+  auto line3 = mkline("  line3");
+  tokenizeLine(line3, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line3.size(), SyntaxToken::Preprocessor));
+  BOOST_CHECK(!st.inPreprocessor);
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_not_triggered_by_normal_code) {
+  auto line = mkline("int x = 5;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(toks[0] != SyntaxToken::Preprocessor);
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_not_in_block_comment) {
+  auto line = mkline("#define FOO");
+  SyntaxState st;
+  st.inBlockComment = true;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Comment));
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_advance_state_tracks_continuation) {
+  auto line1 = mkline("#define X \\");
+  SyntaxState st;
+  advanceBlockCommentState(line1, st);
+  BOOST_CHECK(st.inPreprocessor);
+
+  auto line2 = mkline("  Y");
+  advanceBlockCommentState(line2, st);
+  BOOST_CHECK(!st.inPreprocessor);
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_render_uses_amber_color) {
+  TB<TextBuffer> buf("test.cpp");
+  buf.setMode(BufferMode::Cpp);
+  insertString(buf, "#include <x>");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  BOOST_CHECK(out.find("\x1b[38;2;180;140;60m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(preprocessor_bracket_not_matched) {
+  std::vector<std::string> lines = {"#include <stdio.h>", "foo(<bar>);"};
+  auto result = findMatchingBracket(lines, {0, 9});
+  BOOST_CHECK(!result.has_value());
+}
+
+// ============================================================
 // advanceBlockCommentState with raw strings
 // ============================================================
 

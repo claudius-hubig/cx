@@ -317,6 +317,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kSynString = "\x1b[38;2;200;80;80m";     // red
   static constexpr auto kSynOperator = "\x1b[38;2;150;100;200m"; // purple
   static constexpr auto kSynNumber = "\x1b[38;2;100;200;200m";   // light turquoise
+  static constexpr auto kSynPreproc = "\x1b[38;2;180;140;60m";   // amber
   static constexpr auto kSynReset = "\x1b[22;39m";               // bold off + default fg
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
@@ -488,6 +489,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       return kSynLink;
     case SyntaxToken::Number:
       return kSynNumber;
+    case SyntaxToken::Preprocessor:
+      return kSynPreproc;
     default:
       return nullptr; // brackets and Normal have no special color
     }

@@ -53,17 +53,17 @@ Open one or more files for editing, or directories for browsing. With no argumen
 
 ### Search & Edit
 
-| Key        | Action           |
-|------------|------------------|
-| Ctrl-Space | Set / clear mark |
-| Ctrl-w     | Cut region       |
-| Esc-w      | Copy region      |
-| Ctrl-y     | Paste            |
-| Esc-y      | Paste cycle      |
-| Esc-p      | Paste ring       |
+| Key        | Action                       |
+|------------|------------------------------|
+| Ctrl-Space | Set / clear mark             |
+| Ctrl-w     | Cut region                   |
+| Esc-w      | Copy region                  |
+| Ctrl-y     | Paste                        |
+| Esc-y      | Paste cycle                  |
+| Esc-p      | Paste ring                   |
 | Esc-f      | Format buffer/region (C/C++) |
 | Ctrl-p     | Pipe region through command  |
-| Tab        | Format line (C/C++) |
+| Tab        | Format line (C/C++)          |
 
 ### Movement
 
@@ -83,9 +83,9 @@ Open one or more files for editing, or directories for browsing. With no argumen
 
 These shortcuts are active only when the buffer mode is set to `c` (via Esc-m).
 
-| Key | Action                        |
-|-----|-------------------------------|
-| ?   | Jump to matching bracket      |
+| Key | Action                             |
+|-----|------------------------------------|
+| ?   | Jump to matching bracket           |
 | Tab | Format current line (clang-format) |
 
 Note: `?` jumps to the matching bracket when the cursor is on `(`, `)`, `[`, `]`,
@@ -136,12 +136,12 @@ These shortcuts are active when viewing a directory listing.
 
 ### Deletion
 
-| Key       | Action                    |
-|-----------|---------------------------|
-| Bksp      | Delete before cursor      |
-| Ctrl-Bksp | Delete chunk before cursor|
-| Delete    | Delete at cursor          |
-| Ctrl-Del  | Delete chunk at cursor    |
+| Key       | Action                     |
+|-----------|----------------------------|
+| Bksp      | Delete before cursor       |
+| Ctrl-Bksp | Delete chunk before cursor |
+| Delete    | Delete at cursor           |
+| Ctrl-Del  | Delete chunk at cursor     |
 
 ## Goals
 
