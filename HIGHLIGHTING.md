@@ -8,7 +8,7 @@
 | Keyword        | Language keywords (`if`, `for`, `class`, ...)      | C/C++, JSON |
 | Comment        | Line (`//`) and block (`/* */`) comments           | C/C++       |
 | String         | `"..."`, `'...'`, raw string literals              | C/C++, JSON |
-| Operator       | `+`, `-`, `=`, `&&`, `<<`, `<=>` etc.             | C/C++       |
+| Operator       | `+`, `-`, `=`, `&&`, `<<`, `<=>` etc.              | C/C++       |
 | Preprocessor   | `#include`, `#define`, and backslash continuations | C/C++       |
 | Paren          | `(` `)`                                            | C/C++       |
 | Bracket        | `[` `]`                                            | C/C++, JSON |
@@ -23,16 +23,16 @@
 
 | Token         | RGB             | Color Name      | ANSI Escape                |
 |---------------|-----------------|-----------------|----------------------------|
-| Keyword       | (80, 130, 200)  | Blue            | `\x1b[38;2;80;130;200m`   |
-| Comment       | (80, 160, 80)   | Green           | `\x1b[38;2;80;160;80m`    |
-| String        | (200, 80, 80)   | Red             | `\x1b[38;2;200;80;80m`    |
-| Operator      | (150, 100, 200) | Purple          | `\x1b[38;2;150;100;200m`  |
-| Number        | (100, 200, 200) | Light turquoise | `\x1b[38;2;100;200;200m`  |
-| Preprocessor  | (180, 140, 60)  | Amber           | `\x1b[38;2;180;140;60m`   |
-| Heading       | (80, 130, 200)  | Bold + Blue     | `\x1b[1;38;2;80;130;200m` |
-| Bold          | —               | Bold (no color) | `\x1b[1m`                 |
-| Link          | (100, 180, 180) | Teal            | `\x1b[38;2;100;180;180m`  |
-| Bracket match | (60, 170, 170)  | Turquoise       | `\x1b[38;2;60;170;170m`   |
+| Keyword       | (80, 130, 200)  | Blue            | `\x1b[38;2;80;130;200m`    |
+| Comment       | (80, 160, 80)   | Green           | `\x1b[38;2;80;160;80m`     |
+| String        | (200, 80, 80)   | Red             | `\x1b[38;2;200;80;80m`     |
+| Operator      | (150, 100, 200) | Purple          | `\x1b[38;2;150;100;200m`   |
+| Number        | (100, 200, 200) | Light turquoise | `\x1b[38;2;100;200;200m`   |
+| Preprocessor  | (180, 140, 60)  | Amber           | `\x1b[38;2;180;140;60m`    |
+| Heading       | (80, 130, 200)  | Bold + Blue     | `\x1b[1;38;2;80;130;200m`  |
+| Bold          | —               | Bold (no color) | `\x1b[1m`                  |
+| Link          | (100, 180, 180) | Teal            | `\x1b[38;2;100;180;180m`   |
+| Bracket match | (60, 170, 170)  | Turquoise       | `\x1b[38;2;60;170;170m`    |
 
 Paren, Bracket, Brace, and Angle tokens use the default foreground color.
 
