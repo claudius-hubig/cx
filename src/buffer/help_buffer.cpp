@@ -41,7 +41,7 @@ static std::vector<std::string> const& leftColumn() {
           Action::Save, Action::KillBuffer, Action::Revert, Action::VersionHistory})
       v.push_back(formatHelpLine(a));
     v.emplace_back("");
-    v.emplace_back("Search & Edit:");
+    v.emplace_back("Regions & Edit:");
     v.push_back(formatHelpLine(Action::ToggleMark));
     for (auto a : {Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle, Action::PasteRing})
       v.push_back(formatHelpLine(a));
@@ -68,7 +68,7 @@ static std::vector<std::string> const& leftColumn() {
 static std::vector<std::string> const& rightColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
-    v.emplace_back("Movement:");
+    v.emplace_back("Search & Movement:");
     v.push_back(formatHelpLine(Action::Find));
     v.push_back(formatHelpLine(Action::FindBackward));
     v.push_back(

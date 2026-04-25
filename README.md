@@ -51,7 +51,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 | Esc-r  | Revert buffer from file      |
 | Ctrl-u | Undo / version history       |
 
-### Search & Edit
+### Regions & Edit
 
 | Key        | Action                       |
 |------------|------------------------------|
@@ -65,7 +65,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 | Ctrl-p     | Pipe region through command  |
 | Tab        | Format line (C/C++)          |
 
-### Movement
+### Search & Movement
 
 | Key             | Action                       |
 |-----------------|------------------------------|
