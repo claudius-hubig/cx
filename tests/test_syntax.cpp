@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/modes/c/syntax.hpp"
+#include "buffer/modes/diff/syntax.hpp"
 #include "buffer/modes/jsn/syntax.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
@@ -1081,4 +1082,174 @@ BOOST_AUTO_TEST_CASE(json_bracket_match_highlight_in_render) {
   buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
   // Bracket match: turquoise \x1b[38;2;60;170;170m
   BOOST_CHECK(out.find("\x1b[38;2;60;170;170m") != std::string::npos);
+}
+
+// ============================================================
+// Diff tokenizer
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(diff_add_line) {
+  auto line = mkline("+added line");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffAdd));
+}
+
+BOOST_AUTO_TEST_CASE(diff_remove_line) {
+  auto line = mkline("-removed line");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffRemove));
+}
+
+BOOST_AUTO_TEST_CASE(diff_meta_plus_line) {
+  auto line = mkline("+++ b/src/main.cpp");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffMeta));
+}
+
+BOOST_AUTO_TEST_CASE(diff_meta_minus_line) {
+  auto line = mkline("--- a/src/main.cpp");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffMeta));
+}
+
+BOOST_AUTO_TEST_CASE(diff_hunk_header) {
+  auto line = mkline("@@ -10,5 +10,7 @@ void foo()");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffHunk));
+}
+
+BOOST_AUTO_TEST_CASE(diff_context_line) {
+  auto line = mkline(" unchanged context");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(diff_empty_line) {
+  auto line = mkline("");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(toks.empty());
+}
+
+BOOST_AUTO_TEST_CASE(diff_header_line) {
+  auto line = mkline("diff --git a/foo b/foo");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(diff_plus_only) {
+  auto line = mkline("+");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeDiffLine(line, st, toks);
+  BOOST_CHECK_EQUAL(toks.size(), 1u);
+  BOOST_CHECK(toks[0] == SyntaxToken::DiffAdd);
+}
+
+BOOST_AUTO_TEST_CASE(diff_mode_detection) {
+  TempFile tmp("", ".diff");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Diff);
+
+  TempFile tmp2("", ".patch");
+  TB<TextBuffer> buf2(tmp2.path().string(), tmp2.path());
+  BOOST_CHECK(buf2.mode() == BufferMode::Diff);
+}
+
+// ============================================================
+// Conflict marker detection
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(conflict_detected_on_load) {
+  TempFile tmp("line1\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\nline2\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.hasConflicts());
+}
+
+BOOST_AUTO_TEST_CASE(no_conflict_without_markers) {
+  TempFile tmp("line1\nline2\nline3\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(!buf.hasConflicts());
+}
+
+BOOST_AUTO_TEST_CASE(conflict_needs_seven_chars) {
+  TempFile tmp("<<<<<< HEAD\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(!buf.hasConflicts());
+}
+
+BOOST_AUTO_TEST_CASE(conflict_detected_with_equals) {
+  TempFile tmp("=======\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.hasConflicts());
+}
+
+BOOST_AUTO_TEST_CASE(conflict_detected_on_revert) {
+  TempFile tmp("clean\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(!buf.hasConflicts());
+  // Rewrite file with conflict markers and revert.
+  {
+    std::ofstream f(tmp.path(), std::ios::binary);
+    f << "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n";
+  }
+  buf.revert();
+  BOOST_CHECK(buf.hasConflicts());
+}
+
+BOOST_AUTO_TEST_CASE(conflict_tokens_override_cpp_mode) {
+  TempFile tmp("return 0;\n<<<<<<< HEAD\nreturn 1;\n=======\nreturn 2;\n>>>>>>> fix\n", ".cpp");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Cpp);
+  BOOST_CHECK(buf.hasConflicts());
+  // Line 1 ("<<<<<<< HEAD") should have ConflictMarker tokens.
+  auto toks = buf.cachedLineTokens(1);
+  BOOST_CHECK(!toks.empty());
+  BOOST_CHECK(toks[0] == SyntaxToken::ConflictMarker);
+  // Line 0 ("return 0;") should still have normal C++ tokens.
+  auto toks0 = buf.cachedLineTokens(0);
+  BOOST_CHECK(toks0[0] == SyntaxToken::Keyword); // "return"
+}
+
+BOOST_AUTO_TEST_CASE(conflict_tokens_in_txt_mode) {
+  TempFile tmp("hello\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", ".txt");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Txt);
+  BOOST_CHECK(buf.hasConflicts());
+  // Conflict lines should still get ConflictMarker tokens even in Txt mode.
+  auto toks = buf.cachedLineTokens(1);
+  BOOST_CHECK(!toks.empty());
+  BOOST_CHECK(toks[0] == SyntaxToken::ConflictMarker);
+  // Non-conflict line should be Normal.
+  auto toks0 = buf.cachedLineTokens(0);
+  BOOST_CHECK(toks0[0] == SyntaxToken::Normal);
+}
+
+BOOST_AUTO_TEST_CASE(conflict_cleared_after_save) {
+  TempFile tmp("<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.hasConflicts());
+  // Replace entire buffer content with resolved text (no conflict markers).
+  buf.deleteRegion({0, 0}, {buf.lineCount() - 1, buf.lineContent(buf.lineCount() - 1).size()});
+  buf.setPoint(0, 0);
+  insertString(buf, "resolved\n");
+  BOOST_CHECK(buf.hasConflicts()); // still stale before save
+  auto result = buf.save();
+  BOOST_CHECK(result.has_value());
+  BOOST_CHECK(!buf.hasConflicts()); // cleared after save
 }

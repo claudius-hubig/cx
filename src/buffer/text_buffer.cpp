@@ -58,6 +58,8 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
   if (!anyData)
     _lines = {{}};
 
+  scanForConflicts();
+
   int styleCount = (hasLoneLf ? 1 : 0) + (hasCrlf ? 1 : 0) + (hasLoneCr ? 1 : 0);
   if (styleCount > 1)
     _lineEndingStyle = LineEndingStyle::Mixed;
@@ -112,6 +114,8 @@ void TextBuffer::detectMode() {
     _mode = BufferMode::Md;
   else if (ext == ".json")
     _mode = BufferMode::Jsn;
+  else if (ext == ".diff" || ext == ".patch")
+    _mode = BufferMode::Diff;
   else
     _mode = BufferMode::Txt;
 }
@@ -137,6 +141,7 @@ std::expected<void, std::string> TextBuffer::save() {
   if (!file.good())
     return std::unexpected("write error for " + _path->string());
   _modified = false;
+  scanForConflicts();
   return {};
 }
 
@@ -149,6 +154,7 @@ std::expected<void, std::string> TextBuffer::revert() {
   _modified = false;
   ++_docVersion;
   _synCacheValidUpto = 0;
+  scanForConflicts();
   _history.capture(_lines, {0, 0});
   return {};
 }
