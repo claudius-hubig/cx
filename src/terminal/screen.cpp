@@ -245,10 +245,11 @@ void Screen::draw() {
       std::string filename = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
       std::string suffix;
       if (!pbuf.readonly())
-        suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
-                  : pbuf.mode() == BufferMode::Md  ? " [md]"
-                  : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
-                                                   : " [txt]";
+        suffix += pbuf.mode() == BufferMode::Cpp    ? " [c]"
+                  : pbuf.mode() == BufferMode::Md   ? " [md]"
+                  : pbuf.mode() == BufferMode::Jsn  ? " [jsn]"
+                  : pbuf.mode() == BufferMode::Diff ? " [diff]"
+                                                    : " [txt]";
       suffix += pbuf.modified() ? " +" : "  ";
       auto suffix_vwidth = visualWidth(suffix);
       auto filename_vwidth = visualWidth(filename);
@@ -797,7 +798,7 @@ void Screen::openFindPrompt(bool backward) {
 
 void Screen::openSetModePrompt() {
   _prompt = Prompt{
-      .label = "Mode [txt/c/md/jsn]: ",
+      .label = "Mode [txt/c/md/jsn/diff]: ",
       .onResult =
           [this](std::string const& value) {
             if (value == "c" || value == "cpp" || value == "c++") {
@@ -816,8 +817,12 @@ void Screen::openSetModePrompt() {
               if (_buf)
                 _buf->setMode(BufferMode::Txt);
               setStatus("Mode: txt");
+            } else if (value == "diff" || value == "patch") {
+              if (_buf)
+                _buf->setMode(BufferMode::Diff);
+              setStatus("Mode: diff");
             } else {
-              setStatus("Unknown mode: " + value + " (use 'txt', 'c', 'md', or 'jsn')");
+              setStatus("Unknown mode: " + value + " (use 'txt', 'c', 'md', 'jsn', or 'diff')");
             }
           },
   };
@@ -1782,6 +1787,60 @@ void Screen::findPrev() {
   setStatus("Not found");
 }
 
+static bool isBlockTarget(std::string const& line, bool isDiff, bool hasConflicts) {
+  if (isDiff && line.size() >= 2 && line[0] == '@' && line[1] == '@')
+    return true;
+  return hasConflicts && isConflictMarker(line);
+}
+
+void Screen::blockNext() {
+  if (!_buf)
+    return;
+  bool isDiff = _buf->mode() == BufferMode::Diff;
+  bool hasConflicts = _buf->hasConflicts();
+  if (!isDiff && !hasConflicts) {
+    setStatus("No blocks to navigate");
+    return;
+  }
+  std::size_t lineCount = _buf->lineCount();
+  std::size_t startLine = _view->point().line;
+  for (std::size_t count = 1; count < lineCount; ++count) {
+    std::size_t li = (startLine + count) % lineCount;
+    if (isBlockTarget(_buf->lineContent(li), isDiff, hasConflicts)) {
+      _view->setPoint(li, 0);
+      _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+      if (li <= startLine)
+        setStatus("Block (wrapped)");
+      return;
+    }
+  }
+  setStatus("No blocks found");
+}
+
+void Screen::blockPrev() {
+  if (!_buf)
+    return;
+  bool isDiff = _buf->mode() == BufferMode::Diff;
+  bool hasConflicts = _buf->hasConflicts();
+  if (!isDiff && !hasConflicts) {
+    setStatus("No blocks to navigate");
+    return;
+  }
+  std::size_t lineCount = _buf->lineCount();
+  std::size_t startLine = _view->point().line;
+  for (std::size_t count = 1; count < lineCount; ++count) {
+    std::size_t li = (startLine + lineCount - count) % lineCount;
+    if (isBlockTarget(_buf->lineContent(li), isDiff, hasConflicts)) {
+      _view->setPoint(li, 0);
+      _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+      if (li >= startLine)
+        setStatus("Block (wrapped)");
+      return;
+    }
+  }
+  setStatus("No blocks found");
+}
+
 void Screen::dispatchAction(Action action) {
   if (action != Action::Find && action != Action::FindBackward && _buf) {
     _view->clearHighlight();
@@ -2092,6 +2151,12 @@ void Screen::dispatchAction(Action action) {
       if (_layout->focusMRU())
         updateFocusPointers();
     }
+    break;
+  case Action::NextBlock:
+    blockNext();
+    break;
+  case Action::PrevBlock:
+    blockPrev();
     break;
   }
 }

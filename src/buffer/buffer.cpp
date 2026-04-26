@@ -1,6 +1,7 @@
 #include "buffer.hpp"
 #include "byte_constants.hpp"
 #include "modes/c/syntax.hpp"
+#include "modes/diff/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
 #include "modes/md/syntax.hpp"
 #include "utf8.hpp"
@@ -254,6 +255,16 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
   return result;
 }
 
+void Buffer::scanForConflicts() {
+  _hasConflicts = false;
+  for (auto const& line : _lines) {
+    if (isConflictMarker(line)) {
+      _hasConflicts = true;
+      return;
+    }
+  }
+}
+
 void Buffer::invalidateSynCache(std::size_t fromLine) {
   if (fromLine < _synCacheValidUpto)
     _synCacheValidUpto = fromLine;
@@ -286,9 +297,16 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
       tokenizeMarkdownLine(_lines[i], state, _synCache[i].tokens);
     else if (_mode == BufferMode::Jsn)
       tokenizeJsonLine(_lines[i], state, _synCache[i].tokens);
-    else
+    else if (_mode == BufferMode::Diff)
+      tokenizeDiffLine(_lines[i], state, _synCache[i].tokens);
+    else if (_mode == BufferMode::Cpp)
       tokenizeLine(_lines[i], state, _synCache[i].tokens);
-    _synCache[i].stateAfter = state; // state was advanced by tokenizeLine
+    else
+      _synCache[i].tokens.assign(_lines[i].size(), SyntaxToken::Normal);
+    _synCache[i].stateAfter = state;
+
+    if (_hasConflicts && isConflictMarker(_lines[i]))
+      _synCache[i].tokens.assign(_lines[i].size(), SyntaxToken::ConflictMarker);
   }
   _synCacheValidUpto = upToLine;
 }
@@ -322,6 +340,45 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
 
+  // Diff / conflict line background colors.
+  static constexpr auto kDiffAddBg = "\x1b[48;2;30;60;30m";
+  static constexpr auto kDiffRemoveBg = "\x1b[48;2;70;30;30m";
+  static constexpr auto kDiffHunkFg = "\x1b[38;2;120;160;220m";
+  static constexpr auto kConflictOursBg = "\x1b[48;2;40;50;80m";
+  static constexpr auto kConflictDivBg = "\x1b[48;2;70;60;30m";
+  static constexpr auto kConflictTheirsBg = "\x1b[48;2;50;70;40m";
+  static constexpr auto kBgReset = "\x1b[49m";
+
+  // Per-line background for diff/conflict lines.
+  char const* curLineBg = nullptr;
+  auto getLineBg = [&](std::span<SyntaxToken const> const& toks,
+                       std::string const& ln) -> char const* {
+    if (toks.empty())
+      return nullptr;
+    switch (toks[0]) {
+    case SyntaxToken::DiffAdd:
+      return kDiffAddBg;
+    case SyntaxToken::DiffRemove:
+      return kDiffRemoveBg;
+    case SyntaxToken::DiffMeta:
+      return ansi::ReverseVideo;
+    case SyntaxToken::DiffHunk:
+      return nullptr;
+    case SyntaxToken::ConflictMarker:
+      if (!ln.empty()) {
+        if (ln[0] == '<')
+          return kConflictOursBg;
+        if (ln[0] == '=')
+          return kConflictDivBg;
+        if (ln[0] == '>')
+          return kConflictTheirsBg;
+      }
+      return nullptr;
+    default:
+      return nullptr;
+    }
+  };
+
   auto emitRowStart = [&](std::size_t r) { out += ansi::cursorTo(rowOffset + r, colOffset); };
 
   // Per-character rendering state: tracks which ANSI highlight modes are
@@ -354,28 +411,38 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         }
         out += ansi::Reset;
         rs = {};
+        if (curLineBg)
+          out += curLineBg;
       } else if (*data == ' ' && showWhitespace) {
         out += kSpaceStyle;
         out += kWsFg;
         out += "\xc2\xb7";
         out += ansi::Reset;
         rs = {};
+        if (curLineBg)
+          out += curLineBg;
       } else if (u == 0) {
         out += kCtrlColor;
         out += "\\0";
         out += ansi::Reset;
         rs = {};
+        if (curLineBg)
+          out += curLineBg;
       } else if (u == 0x7f) {
         out += kCtrlColor;
         out += "^?";
         out += ansi::Reset;
         rs = {};
+        if (curLineBg)
+          out += curLineBg;
       } else if (u < 0x20) {
         out += kCtrlColor;
         out += '^';
         out += static_cast<char>('@' + u);
         out += ansi::Reset;
         rs = {};
+        if (curLineBg)
+          out += curLineBg;
       } else {
         out += *data;
       }
@@ -387,6 +454,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       out += nibble(u & 0xf);
       out += ansi::Reset;
       rs = {};
+      if (curLineBg)
+        out += curLineBg;
     } else {
       out.append(data, info.len);
     }
@@ -440,8 +509,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       (wrap && std::holds_alternative<ByteOffset>(viewFrom.col)) ? viewFrom.byteOffset() : 0;
 
   // Syntax highlighting pre-computation.
-  bool syntaxActive =
-      _mode == BufferMode::Cpp || _mode == BufferMode::Md || _mode == BufferMode::Jsn;
+  bool syntaxActive = _mode != BufferMode::Txt || _hasConflicts;
   std::optional<BufferPoint> matchBracket;
   std::span<SyntaxToken const> lineTokens;
 
@@ -491,6 +559,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       return kSynNumber;
     case SyntaxToken::Preprocessor:
       return kSynPreproc;
+    case SyntaxToken::DiffHunk:
+      return kDiffHunkFg;
+    case SyntaxToken::DiffAdd:
+    case SyntaxToken::DiffRemove:
+    case SyntaxToken::DiffMeta:
+    case SyntaxToken::ConflictMarker:
+      return nullptr;
     default:
       return nullptr; // brackets and Normal have no special color
     }
@@ -505,12 +580,16 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       if (rs.regionActive) {
         out += ansi::Reset;
         rs.regionActive = false;
+        if (curLineBg)
+          out += curLineBg;
       }
       out += kHighlightOn;
       rs.highlightActive = true;
     } else if (!wantHl && rs.highlightActive) {
       out += ansi::Reset;
       rs.highlightActive = false;
+      if (curLineBg)
+        out += curLineBg;
     }
     if (wantRegion && !rs.regionActive) {
       if (rs.lastSynTok != SyntaxToken::Normal) {
@@ -526,6 +605,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     } else if (!wantRegion && rs.regionActive) {
       out += ansi::Reset;
       rs.regionActive = false;
+      if (curLineBg)
+        out += curLineBg;
     }
 
     // Syntax foreground coloring (skip when region is active).
@@ -578,10 +659,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     if (rs.highlightActive) {
       out += ansi::Reset;
       rs.highlightActive = false;
+      if (curLineBg)
+        out += curLineBg;
     }
     if (rs.regionActive) {
       out += ansi::Reset;
       rs.regionActive = false;
+      if (curLineBg)
+        out += curLineBg;
     }
     if (showWhitespace && lineIdx + 1 < _lines.size() && visCol < maxCol &&
         !inRegion(lineIdx, lineSize)) {
@@ -589,6 +674,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       out += kWsFg;
       out += "\xe2\x86\xb5";
       out += ansi::Reset;
+      if (curLineBg)
+        out += curLineBg;
     }
   };
 
@@ -604,8 +691,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       bool overflows = false; // content extends past visible area
       RenderState rs;
 
-      if (syntaxActive)
+      if (syntaxActive) {
         lineTokens = _synCache[lineIdx].tokens;
+        curLineBg = getLineBg(lineTokens, line);
+      } else {
+        curLineBg = nullptr;
+      }
+      if (curLineBg)
+        out += curLineBg;
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -643,7 +736,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       if (!overflows && vcol >= hScroll)
         emitLineEnd(lineIdx, line.size(), vcol - hScroll, cw, rs);
 
+      if (curLineBg)
+        out += curLineBg;
       out += ansi::EraseLine;
+      if (curLineBg)
+        out += kBgReset;
 
       // Gutter: show ↠ if content extends past the visible area.
       emitGutter(row, row == cur_row && pointFound,
@@ -683,8 +780,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     bool pendingWrap = false;
     RenderState rs;
 
-    if (syntaxActive)
+    if (syntaxActive) {
       lineTokens = _synCache[lineIdx].tokens;
+      curLineBg = getLineBg(lineTokens, line);
+    } else {
+      curLineBg = nullptr;
+    }
+    if (curLineBg)
+      out += curLineBg;
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -707,7 +810,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           out += ansi::Reset;
           rs.regionActive = false;
         }
+        if (curLineBg)
+          out += curLineBg;
         out += ansi::EraseLine;
+        if (curLineBg)
+          out += kBgReset;
         // We know there's more content — this is a true wrap.
         emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
         ++row;
@@ -716,6 +823,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         if (row >= rows.value)
           break;
         emitRowStart(row);
+        if (curLineBg)
+          out += curLineBg;
       }
 
       if (lineIdx == point.line && i == point.offset && !pointFound) {
@@ -756,7 +865,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // indicator).
     if (row < rows.value) {
       emitLineEnd(lineIdx, line.size(), col, cw, rs);
+      if (curLineBg)
+        out += curLineBg;
       out += ansi::EraseLine;
+      if (curLineBg)
+        out += kBgReset;
       emitGutter(row, row == cur_row && pointFound,
                  " "); // natural line end, no indicator
       if (lineIdx + 1 < _lines.size()) {

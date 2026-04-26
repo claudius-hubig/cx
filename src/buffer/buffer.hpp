@@ -14,7 +14,17 @@
 
 /// Buffer mode determines file-type-specific behaviour such as syntax
 /// highlighting, auto-indent, and formatting.
-enum class BufferMode { Txt, Cpp, Md, Jsn };
+enum class BufferMode { Txt, Cpp, Md, Jsn, Diff };
+
+// True if the line starts with 7 identical '<', '=', or '>' characters
+// (standard git merge conflict marker).
+inline bool isConflictMarker(std::string const& line) {
+  if (line.size() < 7)
+    return false;
+  char c = line[0];
+  return (c == '<' || c == '=' || c == '>') && line[1] == c && line[2] == c && line[3] == c &&
+         line[4] == c && line[5] == c && line[6] == c;
+}
 
 /// A search or selection highlight range. Defined outside Buffer so that
 /// RenderParams can reference it without depending on Buffer's definition.
@@ -70,6 +80,7 @@ public:
   /// The buffer's current mode. Determines syntax highlighting,
   /// auto-indent, and formatting behaviour.
   BufferMode mode() const { return _mode; }
+  bool hasConflicts() const { return _hasConflicts; }
   /// Switch the buffer mode. Invalidates the per-line syntax cache so
   /// the next render() recomputes tokenisation from scratch. Callers
   /// are responsible for triggering a redraw afterwards.
@@ -210,6 +221,7 @@ protected:
   BufferMode _mode = BufferMode::Txt;
   std::vector<std::string> _lines{{}};
   bool _modified = false;
+  bool _hasConflicts = false;
   std::size_t _docVersion = 0; // incremented on every edit
   std::optional<SavedViewState> _savedView;
 
@@ -233,6 +245,8 @@ protected:
   mutable std::vector<LineSyntaxCache> _synCache;
   mutable std::size_t _synCacheValidUpto = 0;
 
+  // Scan lines for git merge conflict markers and set _hasConflicts.
+  void scanForConflicts();
   // Mark all cache entries from `fromLine` onwards as stale.
   void invalidateSynCache(std::size_t fromLine);
   // Ensure the cache covers lines [0, upToLine).  Called by render().
