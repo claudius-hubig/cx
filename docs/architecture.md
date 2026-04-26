@@ -61,9 +61,11 @@ Key API:
 
 Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`,
 `SwitchBuffer`, `ToggleMark`, `Cut`, `Copy`, `Paste`, `PasteCycle`,
-`DeleteChunkBefore`, `Revert`, `Find`, `FindBackward`, `BufferList`,
-`PasteRing`, `ToggleWhitespace`, `ToggleWrap`, `Format`, `SetMode`,
-`DirBrowser`, `PipeReplace`.
+`DeleteChunkBefore`, `Revert`, `VersionHistory`, `Find`,
+`FindBackward`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
+`ToggleWrap`, `Format`, `SetMode`, `DirBrowser`, `PipeReplace`,
+`SplitVertical`, `SplitHorizontal`, `ClosePanel`,
+`FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`.
 
 ---
 
@@ -176,9 +178,9 @@ Public API:
 - **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.
-- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`) determines
-  syntax highlighting, auto-indent, and formatting behaviour. Changed
-  via `setMode()`, which invalidates the per-line syntax cache.
+- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`)
+  determines syntax highlighting, auto-indent, and formatting behaviour.
+  Changed via `setMode()`, which invalidates the per-line syntax cache.
 - **Document version**: `docVersion()` is incremented on every edit so
   `BufferView` can detect external modifications made by another view
   sharing the buffer and invoke `clampToBuffer()` to re-validate its
@@ -244,7 +246,7 @@ user-invoked `Revert` action) explicitly reset `_view->setPoint(0,0)`
 and clear the mark. Exposes `setPath()` for the save-as rename
 workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
-otherwise `Txt`).
+`.diff`, `.patch` → `Dif`; otherwise `Txt`).
 
 ---
 
@@ -354,10 +356,20 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   (`# ...`), bold (`**...**`), and links (`[text](url)`). No multi-line
   state needed.
 
+- **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
+  based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file
+  headers), `@@` (hunk headers). No multi-line state needed.
+
+- **Conflict markers**: Regardless of mode, lines matching `<<<<<<<`,
+  `=======`, or `>>>>>>>` (7 identical characters) are overlaid with
+  `ConflictMarker` tokens when `_hasConflicts` is set. The flag is
+  computed on load, revert, and save via `scanForConflicts()`.
+
 The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 `Operator`, `Paren`, `Bracket`, `Brace`, `Angle`, `Heading`, `Bold`,
-`Link`) is shared across modes. Tokens are mapped to ANSI colours in
-`Buffer::render()`.
+`Link`, `Number`, `Preprocessor`, `DiffAdd`, `DiffRemove`, `DiffMeta`,
+`DiffHunk`, `ConflictMarker`) is shared across modes. Tokens are mapped
+to ANSI colours in `Buffer::render()`.
 
 Per-line tokenisation results are cached in `Buffer::_synCache` and
 invalidated from the edited line forward. `Buffer::render()` extends
