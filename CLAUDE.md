@@ -43,6 +43,10 @@ See `docs/architecture.md` for a detailed summary of the codebase.
 
 - Always run `clang-format --style=file -i` on every changed file before committing
 
+## Coding Style
+
+- When adding code to an existing function or file, match the dominant pattern already in use. If the file is inconsistent, unify the style in the same commit rather than deepening the inconsistency.
+
 ## Constraints
 
 - No external libraries or dependencies — stdlib only
