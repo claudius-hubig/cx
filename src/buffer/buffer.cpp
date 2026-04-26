@@ -1,7 +1,7 @@
 #include "buffer.hpp"
 #include "byte_constants.hpp"
 #include "modes/c/syntax.hpp"
-#include "modes/diff/syntax.hpp"
+#include "modes/dif/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
 #include "modes/md/syntax.hpp"
 #include "utf8.hpp"
@@ -297,7 +297,7 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
       tokenizeMarkdownLine(_lines[i], state, _synCache[i].tokens);
     else if (_mode == BufferMode::Jsn)
       tokenizeJsonLine(_lines[i], state, _synCache[i].tokens);
-    else if (_mode == BufferMode::Diff)
+    else if (_mode == BufferMode::Dif)
       tokenizeDiffLine(_lines[i], state, _synCache[i].tokens);
     else if (_mode == BufferMode::Cpp)
       tokenizeLine(_lines[i], state, _synCache[i].tokens);

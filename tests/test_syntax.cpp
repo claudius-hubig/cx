@@ -3,7 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/modes/c/syntax.hpp"
-#include "buffer/modes/diff/syntax.hpp"
+#include "buffer/modes/dif/syntax.hpp"
 #include "buffer/modes/jsn/syntax.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
@@ -1164,11 +1164,11 @@ BOOST_AUTO_TEST_CASE(diff_plus_only) {
 BOOST_AUTO_TEST_CASE(diff_mode_detection) {
   TempFile tmp("", ".diff");
   TB<TextBuffer> buf(tmp.path().string(), tmp.path());
-  BOOST_CHECK(buf.mode() == BufferMode::Diff);
+  BOOST_CHECK(buf.mode() == BufferMode::Dif);
 
   TempFile tmp2("", ".patch");
   TB<TextBuffer> buf2(tmp2.path().string(), tmp2.path());
-  BOOST_CHECK(buf2.mode() == BufferMode::Diff);
+  BOOST_CHECK(buf2.mode() == BufferMode::Dif);
 }
 
 // ============================================================

@@ -115,7 +115,7 @@ void TextBuffer::detectMode() {
   else if (ext == ".json")
     _mode = BufferMode::Jsn;
   else if (ext == ".diff" || ext == ".patch")
-    _mode = BufferMode::Diff;
+    _mode = BufferMode::Dif;
   else
     _mode = BufferMode::Txt;
 }

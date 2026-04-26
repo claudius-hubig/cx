@@ -92,6 +92,7 @@ src/
     buffer_manager.hpp/.cpp        Buffer lifecycle, MRU, completions
     modes/
       c/syntax.hpp/.cpp            C/C++ tokenizer, bracket matching
+      dif/syntax.hpp/.cpp          Diff/patch tokenizer (add, remove, meta, hunk)
       md/syntax.hpp/.cpp           Markdown tokenizer (headings, bold, links)
       jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
 tests/

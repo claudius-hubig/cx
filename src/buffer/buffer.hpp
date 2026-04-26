@@ -14,7 +14,7 @@
 
 /// Buffer mode determines file-type-specific behaviour such as syntax
 /// highlighting, auto-indent, and formatting.
-enum class BufferMode { Txt, Cpp, Md, Jsn, Diff };
+enum class BufferMode { Txt, Cpp, Md, Jsn, Dif };
 
 // True if the line starts with 7 identical '<', '=', or '>' characters
 // (standard git merge conflict marker).

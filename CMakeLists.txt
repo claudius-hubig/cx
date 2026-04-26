@@ -8,6 +8,7 @@ add_executable(cx
     src/error_log.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/shortcut.cpp
@@ -46,6 +47,7 @@ add_executable(test_buffer
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -63,6 +65,7 @@ add_executable(test_text_buffer
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -78,6 +81,7 @@ add_executable(test_help_buffer
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/help_buffer.cpp
@@ -93,6 +97,7 @@ add_executable(test_buffer_list_buffer
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/buffer_list_buffer.cpp
@@ -107,6 +112,7 @@ add_executable(test_buffer_manager
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -128,6 +134,7 @@ add_executable(test_render
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -143,6 +150,7 @@ add_executable(test_movement
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -158,6 +166,7 @@ add_executable(test_chunk_delete
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -175,6 +184,7 @@ add_executable(test_scroll
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -205,6 +215,7 @@ add_executable(test_syntax
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -220,6 +231,7 @@ add_executable(test_dir_buffer
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/dir_buffer.cpp
@@ -234,6 +246,7 @@ add_executable(test_e2e
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -249,6 +262,7 @@ add_executable(test_buffer_view
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp
@@ -279,6 +293,7 @@ add_executable(test_paste_ring_buffer
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/paste_ring_buffer.cpp
@@ -303,6 +318,7 @@ add_executable(bench_history
     src/buffer/version_history.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
 )
@@ -318,6 +334,7 @@ add_executable(bench_editing
     src/buffer/version_history.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
 )
@@ -330,6 +347,7 @@ add_executable(test_panel_layout
     src/buffer/buffer_view.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
     src/buffer/text_buffer.cpp

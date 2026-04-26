@@ -245,11 +245,11 @@ void Screen::draw() {
       std::string filename = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
       std::string suffix;
       if (!pbuf.readonly())
-        suffix += pbuf.mode() == BufferMode::Cpp    ? " [c]"
-                  : pbuf.mode() == BufferMode::Md   ? " [md]"
-                  : pbuf.mode() == BufferMode::Jsn  ? " [jsn]"
-                  : pbuf.mode() == BufferMode::Diff ? " [diff]"
-                                                    : " [txt]";
+        suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
+                  : pbuf.mode() == BufferMode::Md  ? " [md]"
+                  : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
+                  : pbuf.mode() == BufferMode::Dif ? " [dif]"
+                                                   : " [txt]";
       suffix += pbuf.modified() ? " +" : "  ";
       auto suffix_vwidth = visualWidth(suffix);
       auto filename_vwidth = visualWidth(filename);
@@ -798,7 +798,7 @@ void Screen::openFindPrompt(bool backward) {
 
 void Screen::openSetModePrompt() {
   _prompt = Prompt{
-      .label = "Mode [txt/c/md/jsn/diff]: ",
+      .label = "Mode [txt/c/md/jsn/dif]: ",
       .onResult =
           [this](std::string const& value) {
             if (value == "c" || value == "cpp" || value == "c++") {
@@ -817,12 +817,12 @@ void Screen::openSetModePrompt() {
               if (_buf)
                 _buf->setMode(BufferMode::Txt);
               setStatus("Mode: txt");
-            } else if (value == "diff" || value == "patch") {
+            } else if (value == "dif" || value == "diff" || value == "patch") {
               if (_buf)
-                _buf->setMode(BufferMode::Diff);
-              setStatus("Mode: diff");
+                _buf->setMode(BufferMode::Dif);
+              setStatus("Mode: dif");
             } else {
-              setStatus("Unknown mode: " + value + " (use 'txt', 'c', 'md', 'jsn', or 'diff')");
+              setStatus("Unknown mode: " + value + " (use 'txt', 'c', 'md', 'jsn', or 'dif')");
             }
           },
   };
@@ -1796,7 +1796,7 @@ static bool isBlockTarget(std::string const& line, bool isDiff, bool hasConflict
 void Screen::blockNext() {
   if (!_buf)
     return;
-  bool isDiff = _buf->mode() == BufferMode::Diff;
+  bool isDiff = _buf->mode() == BufferMode::Dif;
   bool hasConflicts = _buf->hasConflicts();
   if (!isDiff && !hasConflicts) {
     setStatus("No blocks to navigate");
@@ -1820,7 +1820,7 @@ void Screen::blockNext() {
 void Screen::blockPrev() {
   if (!_buf)
     return;
-  bool isDiff = _buf->mode() == BufferMode::Diff;
+  bool isDiff = _buf->mode() == BufferMode::Dif;
   bool hasConflicts = _buf->hasConflicts();
   if (!isDiff && !hasConflicts) {
     setStatus("No blocks to navigate");

@@ -492,3 +492,115 @@ BOOST_AUTO_TEST_CASE(render_mode_switch_toggles_highlighting) {
   buf.render(out2, RowIdx{5}, ColIdx{40}, renderParams(buf));
   BOOST_CHECK(out2.find("\x1b[38;2;80;130;200m") == std::string::npos);
 }
+
+// --- Diff mode rendering ---
+
+BOOST_AUTO_TEST_CASE(render_diff_add_line_has_green_bg) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, "+added line");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  // DiffAdd bg: \x1b[48;2;30;60;30m
+  BOOST_CHECK(out.find("\x1b[48;2;30;60;30m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_diff_remove_line_has_red_bg) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, "-removed line");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  // DiffRemove bg: \x1b[48;2;70;30;30m
+  BOOST_CHECK(out.find("\x1b[48;2;70;30;30m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_diff_meta_line_has_reverse_video) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, "+++ b/file.cpp");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  // DiffMeta uses reverse video: \x1b[7m
+  BOOST_CHECK(out.find("\x1b[7m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_diff_hunk_line_has_fg_color) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, "@@ -1,3 +1,5 @@");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  // DiffHunk fg: \x1b[38;2;120;160;220m
+  BOOST_CHECK(out.find("\x1b[38;2;120;160;220m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_diff_context_line_no_special_bg) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, " unchanged");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  // No diff background codes should appear.
+  BOOST_CHECK(out.find("\x1b[48;2;30;60;30m") == std::string::npos);
+  BOOST_CHECK(out.find("\x1b[48;2;70;30;30m") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_diff_content_visible) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, "+hello");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  auto grid = renderToGrid(out, 5, 40);
+  BOOST_CHECK(grid[0].find("+hello") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_diff_nowrap_has_bg) {
+  TB<TextBuffer> buf("test.diff");
+  buf.setMode(BufferMode::Dif);
+  insertString(buf, "+added");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf, false, false));
+  BOOST_CHECK(out.find("\x1b[48;2;30;60;30m") != std::string::npos);
+}
+
+// --- Conflict marker rendering ---
+
+BOOST_AUTO_TEST_CASE(render_conflict_ours_has_bg) {
+  TempFile tmp("<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", ".cpp");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_REQUIRE(buf.hasConflicts());
+  buf.gotoLine(1, RowIdx{10});
+  std::string out;
+  buf.render(out, RowIdx{10}, ColIdx{40}, renderParams(buf));
+  // ConflictOurs bg (< line): \x1b[48;2;40;50;80m
+  BOOST_CHECK(out.find("\x1b[48;2;40;50;80m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_conflict_separator_has_bg) {
+  TempFile tmp("<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", ".cpp");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  buf.gotoLine(1, RowIdx{10});
+  std::string out;
+  buf.render(out, RowIdx{10}, ColIdx{40}, renderParams(buf));
+  // ConflictDiv bg (= line): \x1b[48;2;70;60;30m
+  BOOST_CHECK(out.find("\x1b[48;2;70;60;30m") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_conflict_theirs_has_bg) {
+  TempFile tmp("<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", ".cpp");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  buf.gotoLine(1, RowIdx{10});
+  std::string out;
+  buf.render(out, RowIdx{10}, ColIdx{40}, renderParams(buf));
+  // ConflictTheirs bg (> line): \x1b[48;2;50;70;40m
+  BOOST_CHECK(out.find("\x1b[48;2;50;70;40m") != std::string::npos);
+}
