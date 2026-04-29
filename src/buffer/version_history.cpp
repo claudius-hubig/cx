@@ -58,6 +58,22 @@ void VersionHistory::capture(std::vector<std::string> const& currentLines, Buffe
   pruneIfNeeded();
 }
 
+void VersionHistory::captureInitial(std::vector<std::string>& lines, BufferPoint cursor) {
+  VersionSnapshot snap;
+  snap.timestamp = std::chrono::system_clock::now();
+  snap.cursor = cursor;
+  auto block = std::make_shared<std::vector<std::string>>(std::move(lines));
+  snap.lines.reserve(block->size());
+  for (auto const& s : *block)
+    snap.lines.push_back(std::shared_ptr<std::string const>(block, &s));
+  _versions.push_back(std::move(snap));
+  _deltaChainLen = 0;
+  lines.clear();
+  lines.reserve(block->size());
+  for (auto const& s : *block)
+    lines.push_back(s);
+}
+
 void VersionHistory::materialize(std::size_t idx) const {
   if (idx >= _versions.size() || !_versions[idx].isDelta())
     return;

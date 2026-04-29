@@ -341,6 +341,21 @@ add_executable(bench_editing
 target_include_directories(bench_editing PRIVATE src .)
 target_compile_options(bench_editing PRIVATE -O2)
 
+add_executable(bench_open
+    tests/bench_open.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+)
+target_include_directories(bench_open PRIVATE src .)
+target_compile_options(bench_open PRIVATE -O2)
+
 add_executable(test_panel_layout
     tests/test_panel_layout.cpp
     src/buffer/buffer.cpp

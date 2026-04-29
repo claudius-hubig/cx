@@ -44,6 +44,11 @@ public:
   void capture(std::vector<std::string> const& currentLines, BufferPoint cursor,
                std::size_t dirtyFrom = SIZE_MAX, int lineShift = 0);
 
+  /// Move `lines` into a shared block and create aliasing shared_ptrs,
+  /// avoiding N individual make_shared allocations. Rebuilds `lines`
+  /// by copying from the shared block.
+  void captureInitial(std::vector<std::string>& lines, BufferPoint cursor);
+
   std::size_t size() const { return _versions.size(); }
   bool empty() const { return _versions.empty(); }
   VersionSnapshot const& at(std::size_t idx) const {

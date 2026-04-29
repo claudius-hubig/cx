@@ -103,7 +103,6 @@ public:
 private:
   void detectMode();
   /// Read the backing file into `_lines`, populating `_lineEndingStyle`.
-  /// Leaves `\r` bytes intact in the line content.
   void loadFromFile(std::filesystem::path const& path);
 
   std::optional<std::filesystem::path> _path;

@@ -1,5 +1,6 @@
 #include "text_buffer.hpp"
 
+#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <fstream>
@@ -14,7 +15,7 @@ TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
     : Buffer(std::move(name)), _path(path) {
   detectMode();
   loadFromFile(path);
-  _history.capture(_lines, {0, 0});
+  _history.captureInitial(_lines, {0, 0});
 }
 
 void TextBuffer::loadFromFile(std::filesystem::path const& path) {
@@ -23,42 +24,59 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
     _lineEndingStyle = LineEndingStyle::Unix;
     return;
   }
-  // Stream the file in chunks to avoid a full intermediate copy. Lines
-  // are split on '\n'; '\r' bytes are left in place so the user sees the
-  // file verbatim. We scan for line ending style in the same pass so
-  // the caller can decide whether to prompt for translation.
+  auto fileSize = std::filesystem::file_size(path);
+  if (fileSize == 0) {
+    _lines = {{}};
+    _lineEndingStyle = LineEndingStyle::Unix;
+    return;
+  }
+  std::string data(fileSize, '\0');
+  file.read(data.data(), static_cast<std::streamsize>(fileSize));
+  auto bytesRead = static_cast<std::size_t>(file.gcount());
+  data.resize(bytesRead);
+
   _lines.clear();
-  _lines.emplace_back();
+  _lines.reserve(bytesRead / 40 + 1);
+  _hasConflicts = false;
+  char const* p = data.data();
+  char const* end = p + bytesRead;
+  while (p < end) {
+    auto* nl = static_cast<char const*>(std::memchr(p, '\n', end - p));
+    if (nl) {
+      _lines.emplace_back(p, nl - p);
+      if (!_hasConflicts && isConflictMarker(_lines.back()))
+        _hasConflicts = true;
+      p = nl + 1;
+    } else {
+      _lines.emplace_back(p, end - p);
+      if (!_hasConflicts && isConflictMarker(_lines.back()))
+        _hasConflicts = true;
+      p = end;
+    }
+  }
+  if (_lines.empty())
+    _lines.emplace_back();
+  if (bytesRead > 0 && data[bytesRead - 1] == '\n')
+    _lines.emplace_back();
+
+  // Detect line ending style from the raw data.
+  bool hasCr = std::memchr(data.data(), '\r', bytesRead) != nullptr;
   bool hasLoneLf = false, hasCrlf = false, hasLoneCr = false;
-  bool prevCr = false;
-  char buf[8192];
-  bool anyData = false;
-  while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
-    auto n = static_cast<std::size_t>(file.gcount());
-    anyData = true;
-    for (std::size_t i = 0; i < n; ++i) {
-      char c = buf[i];
-      if (c == '\n') {
-        if (prevCr)
+  if (hasCr) {
+    for (std::size_t i = 0; i < bytesRead; ++i) {
+      if (data[i] == '\n') {
+        if (i > 0 && data[i - 1] == '\r')
           hasCrlf = true;
         else
           hasLoneLf = true;
-        prevCr = false;
-        _lines.emplace_back();
-      } else {
-        if (prevCr)
-          hasLoneCr = true; // '\r' was not followed by '\n'
-        prevCr = (c == '\r');
-        _lines.back().push_back(c);
+      } else if (data[i] == '\r') {
+        if (i + 1 >= bytesRead || data[i + 1] != '\n')
+          hasLoneCr = true;
       }
     }
+  } else {
+    hasLoneLf = (std::memchr(data.data(), '\n', bytesRead) != nullptr);
   }
-  if (prevCr)
-    hasLoneCr = true;
-  if (!anyData)
-    _lines = {{}};
-
-  scanForConflicts();
 
   int styleCount = (hasLoneLf ? 1 : 0) + (hasCrlf ? 1 : 0) + (hasLoneCr ? 1 : 0);
   if (styleCount > 1)
@@ -154,7 +172,6 @@ std::expected<void, std::string> TextBuffer::revert() {
   _modified = false;
   ++_docVersion;
   _synCacheValidUpto = 0;
-  scanForConflicts();
   _history.capture(_lines, {0, 0});
   return {};
 }
