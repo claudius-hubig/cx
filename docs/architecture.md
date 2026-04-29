@@ -189,13 +189,27 @@ Public API:
   ({point, viewFrom, mark}) can be stashed on the buffer via
   `setSavedView()` / `savedView()` / `clearSavedView()` and later
   restored by `BufferView::fromSavedState()`.
+- **Version-history hooks**: `recordVersion(cursor, dirtyFrom, lineShift)`
+  is invoked by `BufferView` after every successful edit; the default
+  is a no-op (read-only buffers ignore it). `TextBuffer` overrides it to
+  append a snapshot to its `VersionHistory`. The history-browsing
+  interface (`browsingHistory()`, `setBrowsingHistory()`,
+  `versionHistoryInfo()`, `applyVersionAt()`, `truncateHistoryAfter()`)
+  is virtual on the base class so `BufferView` can drive history
+  navigation through the abstract type without depending on
+  `TextBuffer`.
 
 Editing methods are guarded by `readonly()` (a pure virtual that derived
 classes override). The `_modified` flag is set on any edit and cleared by
-a successful `save()`.
+a successful `save()`. While history browsing is active, `TextBuffer`
+reports `readonly() == true`, so all editing entry points become no-ops
+without any per-method special-casing.
 
 Caching:
 - `_synCache` — per-line syntax tokenisation cache, invalidated on edits.
+- `_bracketCache` — last `findMatchingBracket()` result, keyed by point
+  and `docVersion`. Lets repeated render passes reuse a previously
+  computed match without rescanning.
 
 ### `BufferView` (`src/buffer/buffer_view.hpp/.cpp`)
 
@@ -227,6 +241,14 @@ All user-facing movement, editing, and render operations are methods on
 - **Highlight**: `setHighlight/clearHighlight` for find highlighting.
 - **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to
   the first non-space byte when it is in the leading whitespace.
+- **History mode**: `enterHistoryMode()`, `stepHistory(delta)`, and
+  `exitHistoryModeCommit()` provide read-only browsing of the
+  underlying buffer's version history. Entering flips the buffer to
+  read-only via `setBrowsingHistory(true)`; stepping calls
+  `applyVersionAt()` and updates the cursor; committing truncates any
+  forward history beyond the selected version and re-enables editing.
+  `inHistoryMode()` / `historyIndex()` expose the current state to
+  `Screen` for status-line rendering.
 - **Consistency**: `clampToBuffer()` re-clamps point, mark, and
   viewport to valid positions after the underlying buffer changed
   (e.g. via another view or `revert()`). Called automatically when the
@@ -247,6 +269,13 @@ and clear the mark. Exposes `setPath()` for the save-as rename
 workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
 `.diff`, `.patch` → `Dif`; otherwise `Txt`).
+
+`TextBuffer` owns a `VersionHistory _history` and a
+`bool _browsingHistory` flag. The history is captured on construction,
+on every successful edit (via the inherited `recordVersion()` hook),
+and on `save()` / `revert()` to preserve the on-disk state as a
+restorable snapshot. `readonly()` returns `_browsingHistory`, which
+makes the buffer immutable while a view is stepping through history.
 
 ---
 
@@ -297,6 +326,35 @@ cycling.
 Readonly buffer that displays the paste ring contents. Similar pattern to
 `BufferListBuffer` — `refresh()` rebuilds lines from the current ring
 state.
+
+---
+
+### `VersionHistory` (`src/buffer/version_history.hpp/.cpp`)
+
+Append-only history of buffer snapshots used by `TextBuffer` to
+implement undo and version browsing. Each `VersionSnapshot` records
+the buffer's lines at the time of capture (as a `vector<LinePtr>` of
+`shared_ptr<string const>`), a timestamp, and the cursor position.
+
+To keep capture cost low for the common case — single-line edits — a
+snapshot may instead store a `vector<LinePatch>` describing only the
+lines that changed since its predecessor. These delta snapshots are
+materialised lazily on `at(idx)`. `kMaxDeltaChain` bounds the longest
+chain of consecutive deltas before a full snapshot is forced; this
+keeps materialisation O(chain length) rather than O(history size).
+
+Pruning runs whenever `_versions.size()` exceeds `kMaxVersions` and
+trims the oldest entries down to `kThinCount`. Pruning is also
+delta-aware: dropped entries' patches are merged forward into their
+successors instead of materialising full snapshots first, so prune
+cost is proportional to the number of full snapshots dropped (a small
+constant) rather than to the total history size.
+
+Public surface: `capture()`, `captureInitial()` (initial snapshot,
+moves the buffer's `lines` into a single shared block to avoid N
+individual `make_shared` allocations), `at(idx)`, `truncateAfter(idx)`
+(for committing a history-mode rewind), `size()` / `empty()` /
+`clear()`.
 
 ---
 
@@ -359,6 +417,13 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file
   headers), `@@` (hunk headers). No multi-line state needed.
+
+- **JSON mode** (`modes/jsn/syntax.hpp/.cpp`): Tokenizes strings,
+  numbers, the literal keywords `true`/`false`/`null`, and brackets
+  (`[]`, `{}`). No multi-line state needed (the `SyntaxState`
+  parameter is accepted for interface consistency only). Provides
+  `findMatchingBracketJson()` for jump-to-matching-bracket; only `[]`
+  and `{}` are matched, brackets inside strings are skipped.
 
 - **Conflict markers**: Regardless of mode, lines matching `<<<<<<<`,
   `=======`, or `>>>>>>>` (7 identical characters) are overlaid with

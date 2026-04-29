@@ -32,6 +32,10 @@ When modifying keybindings or terminal input handling, verify there are no byte-
 
 See `docs/architecture.md` for a detailed summary of the codebase.
 
+## Documentation
+
+- `docs/architecture.md` is the canonical class/module-level summary of the codebase. Whenever a change adds, removes, renames, or materially alters a class, file, or subsystem covered by that document, update it in the same commit. Drift here is a defect.
+
 ## Build System
 
 - CMake (minimum 3.10), C++23
