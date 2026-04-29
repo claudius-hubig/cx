@@ -81,6 +81,28 @@ BOOST_AUTO_TEST_CASE(ensureVisible_wrap_subline) {
   BOOST_CHECK(buf.screenRow(ColIdx{4}, buf.point(), buf.viewFromRaw(), true) < 3u);
 }
 
+BOOST_AUTO_TEST_CASE(ensureVisible_one_row_below_smooth_scrolls_not_centers) {
+  // Regression: when point is exactly one visual row below the viewport
+  // bottom — the natural state after a single Down keypress past
+  // unwrapped content — the "far below the viewport" branch in
+  // ensureVisible used to fire (>= rather than >) and jump the viewport
+  // to a centred position instead of advancing it by one row.
+  TB<TextBuffer> buf("test");
+  for (int i = 0; i < 30; ++i) {
+    insertString(buf, "abc"); // short, won't wrap at cw=19
+    if (i < 29)
+      buf.insert('\n');
+  }
+  buf.setPoint(10, 0); // viewFrom stays at line 0; point is rows below
+  BOOST_REQUIRE_EQUAL(buf.viewFrom().line, 0u);
+
+  buf.ensureVisible(RowIdx{10}, ColIdx{20}, true);
+
+  // Smooth one-row scroll: viewFrom advances by one. Pre-fix this was 5
+  // (rows/2, the centred position).
+  BOOST_CHECK_EQUAL(buf.viewFrom().line, 1u);
+}
+
 BOOST_AUTO_TEST_CASE(ensureVisible_far_point_jump) {
   TB<TextBuffer> buf("test");
   for (int i = 0; i < 100; ++i) {

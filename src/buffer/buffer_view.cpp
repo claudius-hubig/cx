@@ -1018,8 +1018,13 @@ void BufferView::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
     vfo = 0;
   }
 
-  // Handle point far below the viewport (line-level jump).
-  if (_point.line >= _viewFrom.line.value + rows.value) {
+  // Handle point far below the viewport (line-level jump). Strict `>`
+  // rather than `>=`: when point.line equals viewFrom.line + rows
+  // (cursor exactly one visual row below the viewport, the natural
+  // outcome of a single Down keypress when content above is unwrapped),
+  // we want a smooth one-row scroll, not a jump-to-centre. The forward
+  // ring-buffer scan below handles that case correctly.
+  if (_point.line > _viewFrom.line.value + rows.value) {
     std::size_t half = rows.value / 2;
     _viewFrom.line = RowIdx{_point.line >= half ? _point.line - half : 0};
     vfo = 0;
