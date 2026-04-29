@@ -81,6 +81,69 @@ BOOST_AUTO_TEST_CASE(delete_before_point) {
   BOOST_CHECK_EQUAL(view.point().offset, 1u);
 }
 
+BOOST_AUTO_TEST_CASE(delete_line_middle) {
+  TempFile f("aaa\nbbb\nccc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(1, 2); // somewhere in "bbb"
+  view.deleteLine();
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 3u); // "aaa", "ccc", ""
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "aaa");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "ccc");
+  BOOST_CHECK_EQUAL(view.point().line, 1u);
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(delete_line_first) {
+  TempFile f("aaa\nbbb\nccc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.deleteLine(); // cursor at (0,0)
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "bbb");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "ccc");
+  BOOST_CHECK_EQUAL(view.point().line, 0u);
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(delete_line_last_nonempty) {
+  // File with no trailing newline: "aaa\nbbb"
+  TempFile f("aaa\nbbb");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(1, 1); // on "bbb"
+  view.deleteLine();
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 1u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "aaa");
+  BOOST_CHECK_EQUAL(view.point().line, 0u);
+  BOOST_CHECK_EQUAL(view.point().offset, 3u); // end of "aaa"
+}
+
+BOOST_AUTO_TEST_CASE(delete_line_only_line) {
+  TempFile f("hello");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 3);
+  view.deleteLine();
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 1u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "");
+  BOOST_CHECK_EQUAL(view.point().line, 0u);
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(delete_line_readonly_noop) {
+  // While the buffer reports readonly (e.g. during history browsing),
+  // deleteLine() must be a no-op. We simulate readonly by enabling
+  // history-mode browsing via the public hook.
+  TempFile f("aaa\nbbb\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  buf.setBrowsingHistory(true);
+  view.setPoint(0, 0);
+  view.deleteLine();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "aaa");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "bbb");
+}
+
 BOOST_AUTO_TEST_CASE(render_matches_buffer) {
   TempFile f("hello\nworld\n");
   TextBuffer buf(f.path().string(), f.path());

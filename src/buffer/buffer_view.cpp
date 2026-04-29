@@ -818,6 +818,33 @@ void BufferView::deleteChunkBeforePoint() {
   } while ((_point.line > 0 || _point.offset > 0) && prevIsBlank() == startBlank);
 }
 
+void BufferView::deleteLine() {
+  if (_buf.readonly())
+    return;
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+
+  std::size_t lc = _buf.lineCount();
+  std::size_t li = _point.line;
+  // Delete the entire physical line, including its trailing newline.
+  // The single-line case (only line in the buffer) collapses to an empty
+  // line by deleting just the line's content.
+  BufferPoint from{li, 0};
+  BufferPoint to;
+  if (li + 1 < lc) {
+    to = {li + 1, 0};
+  } else if (li > 0) {
+    // Last line, but not the only line: also remove the preceding newline
+    // by extending the deletion back from the end of the previous line.
+    from = {li - 1, _buf.lineContent(li - 1).size()};
+    to = {li, _buf.lineContent(li).size()};
+  } else {
+    // Only line in the buffer: just clear its content.
+    to = {li, _buf.lineContent(li).size()};
+  }
+  deleteRegion(from, to);
+}
+
 void BufferView::adjustCursorToIndent() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();

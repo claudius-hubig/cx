@@ -89,6 +89,7 @@ static std::vector<std::string> const& rightColumn() {
     v.push_back(formatHelpLine(Action::DeleteChunkBefore));
     v.push_back(formatRawLine("Delete", "Delete at cursor"));
     v.push_back(formatRawLine("Ctrl-Del", "Delete chunk at cursor"));
+    v.push_back(formatHelpLine(Action::DeleteLine));
     v.emplace_back("");
     v.emplace_back("Panels:");
     for (auto a : {Action::SplitVertical, Action::SplitHorizontal, Action::ClosePanel,

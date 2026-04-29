@@ -10,6 +10,7 @@ enum class Action {
   GoToLine,
   Save,
   KillBuffer,
+  DeleteLine,
   SwitchBuffer,
   ToggleMark,
   Cut,

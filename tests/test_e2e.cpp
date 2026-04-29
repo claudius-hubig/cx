@@ -989,14 +989,14 @@ BOOST_AUTO_TEST_CASE(e2e_kill_buffer_blocked_in_history_mode) {
   session.send("added ");
   session.readOutput(std::chrono::milliseconds{300});
 
-  // Enter history mode (Ctrl-U), then try to kill buffer (Ctrl-K).
+  // Enter history mode (Ctrl-U), then try to kill buffer (C-x k).
   session.send("\x15");
   auto histOut = session.readUntil("step", std::chrono::milliseconds{1000});
   auto histStripped = stripAnsi(histOut);
   BOOST_CHECK_MESSAGE(histStripped.find("step") != std::string::npos,
                       "Expected history modeline: " + histStripped);
 
-  session.send("\x0b");
+  session.send("\x18k");
   auto output = session.readUntil("Exit history mode", std::chrono::milliseconds{1000});
   auto stripped = stripAnsi(output);
   BOOST_CHECK_MESSAGE(stripped.find("Exit history mode") != std::string::npos,

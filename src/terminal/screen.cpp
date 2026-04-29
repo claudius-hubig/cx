@@ -1981,6 +1981,13 @@ void Screen::dispatchAction(Action action) {
     if (_buf)
       _view->deleteChunkBeforePoint();
     break;
+  case Action::DeleteLine:
+    if (_buf) {
+      _view->deleteLine();
+      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      _pasteState.reset();
+    }
+    break;
   case Action::Find:
     openFindPrompt(false);
     break;

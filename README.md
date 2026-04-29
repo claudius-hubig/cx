@@ -1,6 +1,6 @@
 # cx
 
-A simple terminal text editor written in C++, using only the C++ standard library.
+A simple terminal text editor. Esc-? for help text. No configuration.
 
 ## Building
 
@@ -33,7 +33,6 @@ Open one or more files for editing, or directories for browsing. With no argumen
 - **Undo / version history** — `Ctrl-u` enters a read-only history mode: `[` and `]` step through earlier/later versions, and `Ctrl-u` again commits the selected version as the new live state. History survives save and revert.
 - **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
-- **Built-in help** — adaptive side-by-side or stacked layout depending on terminal width; generated from the keybinding table so it is always up to date
 
 ## Keyboard Shortcuts
 
@@ -47,7 +46,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 | Esc-b  | Buffer list                  |
 | Esc-d  | Directory browser            |
 | Ctrl-s | Save file                    |
-| Ctrl-k | Kill buffer                  |
+| C-x k  | Kill buffer                  |
 | Esc-r  | Revert buffer from file      |
 | Ctrl-u | Undo / version history       |
 
@@ -144,8 +143,4 @@ These shortcuts are active when viewing a directory listing.
 | Ctrl-Bksp | Delete chunk before cursor |
 | Delete    | Delete at cursor           |
 | Ctrl-Del  | Delete chunk at cursor     |
-
-## Goals
-
-- Lightweight and dependency-free (C++ stdlib only)
-- Simple, readable codebase
+| Ctrl-k    | Delete current line        |

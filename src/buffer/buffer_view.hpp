@@ -88,6 +88,7 @@ public:
   void deleteBeforePoint();
   void deleteChunkAtPoint();
   void deleteChunkBeforePoint();
+  void deleteLine();
   void adjustCursorToIndent();
 
   // Region operations.

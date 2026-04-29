@@ -54,6 +54,18 @@ BOOST_AUTO_TEST_CASE(ctrl_space_maps_to_toggle_mark) {
   BOOST_CHECK(*action == Action::ToggleMark);
 }
 
+BOOST_AUTO_TEST_CASE(ctrl_k_maps_to_delete_line) {
+  auto action = handleShortcut({.ctrl = true, .key = 'k'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::DeleteLine);
+}
+
+BOOST_AUTO_TEST_CASE(cx_k_maps_to_kill_buffer) {
+  auto action = handleShortcut({.cx = true, .key = 'k'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::KillBuffer);
+}
+
 BOOST_AUTO_TEST_CASE(ctrl_h_maps_to_delete_chunk_before) {
   auto action = handleShortcut({.ctrl = true, .key = 'h'});
   BOOST_REQUIRE(action.has_value());
@@ -270,6 +282,7 @@ BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
                  Action::GoToLine,
                  Action::Save,
                  Action::KillBuffer,
+                 Action::DeleteLine,
                  Action::SwitchBuffer,
                  Action::ToggleMark,
                  Action::Cut,
@@ -311,6 +324,7 @@ BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
                  Action::GoToLine,
                  Action::Save,
                  Action::KillBuffer,
+                 Action::DeleteLine,
                  Action::SwitchBuffer,
                  Action::ToggleMark,
                  Action::Cut,
