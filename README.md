@@ -75,6 +75,8 @@ Open one or more files for editing, or directories for browsing. With no argumen
 | Ctrl-Left/Right | Move by word                 |
 | Ctrl-Up/Down    | Move by paragraph            |
 | Ctrl-g          | Go to line                   |
+| Ctrl-n          | Next block (hunk/conflict)   |
+| Ctrl-b          | Prev block (hunk/conflict)   |
 | PgUp / PgDn     | Page up / down (half screen) |
 | Home / End      | Start / end of line          |
 | Ctrl-Home/End   | Start / end of file          |

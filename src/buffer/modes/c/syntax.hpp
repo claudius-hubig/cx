@@ -13,17 +13,22 @@ enum class SyntaxToken : uint8_t {
   Normal,
   Keyword,
   Comment,
-  String,       // "...", '...', R"(...)"
-  Operator,     // +, -, *, =, &&, ||, etc.
-  Paren,        // ( )
-  Bracket,      // [ ]
-  Brace,        // { }
-  Angle,        // < > (when used as template brackets)
-  Heading,      // Markdown headings (# ...)
-  Bold,         // Markdown bold (**...**)
-  Link,         // Markdown links [text](url)
-  Number,       // JSON numeric literals
-  Preprocessor, // C/C++ preprocessor directives (#include, #define, etc.)
+  String,         // "...", '...', R"(...)"
+  Operator,       // +, -, *, =, &&, ||, etc.
+  Paren,          // ( )
+  Bracket,        // [ ]
+  Brace,          // { }
+  Angle,          // < > (when used as template brackets)
+  Heading,        // Markdown headings (# ...)
+  Bold,           // Markdown bold (**...**)
+  Link,           // Markdown links [text](url)
+  Number,         // JSON numeric literals
+  Preprocessor,   // C/C++ preprocessor directives (#include, #define, etc.)
+  DiffAdd,        // + lines in unified diff
+  DiffRemove,     // - lines in unified diff
+  DiffMeta,       // +++ / --- file headers in unified diff
+  DiffHunk,       // @@ hunk headers in unified diff
+  ConflictMarker, // <<<<<<<, =======, >>>>>>> merge conflict markers
 };
 
 /// Multi-line state carried between lines for syntax highlighting.

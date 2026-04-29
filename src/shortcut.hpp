@@ -39,6 +39,8 @@ enum class Action {
   FocusPanel5,
   FocusPanel6,
   FocusMRUPanel,
+  NextBlock,
+  PrevBlock,
 };
 
 struct Shortcut {

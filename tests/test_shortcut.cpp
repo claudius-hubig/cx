@@ -296,7 +296,9 @@ BOOST_AUTO_TEST_CASE(all_actions_have_descriptions) {
                  Action::FocusPanel3,
                  Action::FocusPanel4,
                  Action::FocusPanel5,
-                 Action::FocusPanel6}) {
+                 Action::FocusPanel6,
+                 Action::NextBlock,
+                 Action::PrevBlock}) {
     BOOST_CHECK(!descriptionForAction(a).empty());
   }
 }
@@ -336,9 +338,45 @@ BOOST_AUTO_TEST_CASE(all_actions_have_shortcuts) {
                  Action::FocusPanel3,
                  Action::FocusPanel4,
                  Action::FocusPanel5,
-                 Action::FocusPanel6}) {
+                 Action::FocusPanel6,
+                 Action::NextBlock,
+                 Action::PrevBlock}) {
     auto s = shortcutForAction(a);
     // Every action should have either ctrl, esc, or cx set.
     BOOST_CHECK(s.ctrl || s.esc || s.cx);
   }
+}
+
+// --- Block navigation shortcuts ---
+
+BOOST_AUTO_TEST_CASE(ctrl_n_maps_to_next_block) {
+  auto action = handleShortcut({.ctrl = true, .key = 'n'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::NextBlock);
+}
+
+BOOST_AUTO_TEST_CASE(ctrl_b_maps_to_prev_block) {
+  auto action = handleShortcut({.ctrl = true, .key = 'b'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::PrevBlock);
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_next_block) {
+  auto s = shortcutForAction(Action::NextBlock);
+  BOOST_CHECK(s.ctrl);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('n'));
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_prev_block) {
+  auto s = shortcutForAction(Action::PrevBlock);
+  BOOST_CHECK(s.ctrl);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('b'));
+}
+
+BOOST_AUTO_TEST_CASE(format_ctrl_n) {
+  BOOST_CHECK_EQUAL(formatShortcut({.ctrl = true, .key = 'n'}), "Ctrl-n");
+}
+
+BOOST_AUTO_TEST_CASE(format_ctrl_b) {
+  BOOST_CHECK_EQUAL(formatShortcut({.ctrl = true, .key = 'b'}), "Ctrl-b");
 }
