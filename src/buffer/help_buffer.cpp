@@ -4,6 +4,7 @@
 #include "utf8.hpp"
 
 #include <algorithm>
+#include <array>
 #include <span>
 #include <string>
 #include <string_view>
@@ -99,8 +100,22 @@ static std::vector<std::string> const& rightColumn() {
   return lines;
 }
 
-static constexpr std::string_view kFooterText =
-    "Press 'q', Esc-Esc, or Esc-? to return to editing.";
+static constexpr auto kFooterLines = std::to_array<std::string_view>({
+    "Press 'q', Esc-Esc, or Esc-? to return to editing.",
+    "",
+    "cx text editor",
+    "Copyright (C) 2026 Claudius",
+    "",
+    "This program is free software: you can redistribute it and/or modify it",
+    "under the terms of the GNU General Public License as published by the",
+    "Free Software Foundation, either version 3 of the License, or (at your",
+    "option) any later version.",
+    "",
+    "This program is distributed in the hope that it will be useful, but",
+    "WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY",
+    "or FITNESS FOR A PARTICULAR PURPOSE.",
+    "See the GNU General Public License for more details.",
+});
 static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
 static constexpr std::size_t kHeaderLines = 3;
@@ -223,11 +238,12 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   // Blank before footer.
   vlines.push_back({""});
 
-  // Footer centered.
-  {
-    std::size_t fpad = (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
+  // Footer: center each line individually.
+  for (auto fl : kFooterLines) {
+    auto flw = visualWidth(fl);
+    std::size_t fpad = (c > flw) ? (c - flw) / 2 : 0;
     std::string s(fpad, ' ');
-    s += kFooterText;
+    s += fl;
     vlines.push_back({s});
   }
 
@@ -262,7 +278,8 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
   for (auto& l : rightColumn())
     addLine(l);
   addLine({});
-  addLine(kFooterText);
+  for (auto fl : kFooterLines)
+    addLine(fl);
 }
 
 std::size_t HelpBuffer::screenRow(ColIdx cols, BufferPoint point, ViewFrom viewFrom,
@@ -286,7 +303,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   std::size_t leftEnd = kHeaderLines + leftColumn().size();
   std::size_t rightStart = leftEnd + 1;
   std::size_t rightEnd = rightStart + rightColumn().size();
-  std::size_t footer = rightEnd + 1;
+  std::size_t footerStart = rightEnd + 1;
 
   // Scroll offset: visual row corresponding to viewFrom.
   std::size_t scrollVis = dataLineToVisualRow(params.viewFrom.line.value, c);
@@ -321,8 +338,10 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
       curCol = leftPad + leftW + kGap + dataCol;
     else
       curCol = leftPad + dataCol;
-  } else if (dataLine == footer) {
-    std::size_t fpad = (c > kFooterText.size()) ? (c - kFooterText.size()) / 2 : 0;
+  } else if (dataLine >= footerStart && dataLine < footerStart + kFooterLines.size()) {
+    auto fl = kFooterLines[dataLine - footerStart];
+    auto flw = visualWidth(fl);
+    std::size_t fpad = (c > flw) ? (c - flw) / 2 : 0;
     curCol = fpad + dataCol;
   }
 
