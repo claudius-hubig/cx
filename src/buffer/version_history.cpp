@@ -127,6 +127,25 @@ void VersionHistory::pruneIfNeeded() {
   for (std::size_t i = thin; i < _versions.size(); ++i)
     kept.push_back(std::move(_versions[i]));
   _versions = std::move(kept);
+
+  // Pruning can leave delta chains longer than kMaxDeltaChain: capture
+  // enforces the bound, but merging dropped patches into successors
+  // grows interior chains. Walk the rebuilt deque and force-materialize
+  // any delta whose distance from the last full snapshot exceeds the
+  // bound, so `at()` never walks beyond kMaxDeltaChain entries.
+  std::size_t chain = 0;
+  for (std::size_t i = 0; i < _versions.size(); ++i) {
+    if (!_versions[i].isDelta()) {
+      chain = 0;
+      continue;
+    }
+    ++chain;
+    if (chain > kMaxDeltaChain) {
+      materialize(i);
+      chain = 0;
+    }
+  }
+
   _deltaChainLen = 0;
   for (auto it = _versions.rbegin(); it != _versions.rend() && it->isDelta(); ++it)
     ++_deltaChainLen;

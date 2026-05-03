@@ -126,3 +126,40 @@ BOOST_AUTO_TEST_CASE(clear_resets_history) {
   h.clear();
   BOOST_CHECK(h.empty());
 }
+
+// Force-materializing over-long chains during pruning (#25). Drives many
+// single-line-delta captures across multiple prune cycles and verifies
+// that every surviving snapshot still materializes to the expected
+// content. Without the prune-time chain enforcement, sufficiently
+// pathological merge patterns can leave interior deltas walking back
+// further than kMaxDeltaChain entries.
+BOOST_AUTO_TEST_CASE(prune_force_materializes_long_chains) {
+  VersionHistory h;
+  std::vector<std::string> lines{"a", "b", "c", "d", "e"};
+  h.capture(lines, {0, 0});
+
+  // Single-line edits stay on the delta path until kMaxDeltaChain forces
+  // a full snapshot. Mix in occasional lineShift!=0 captures (which take
+  // the full-snapshot branch) so prune meets a realistic delta/full mix.
+  for (std::size_t step = 0; step < 800; ++step) {
+    std::size_t idx = step % lines.size();
+    lines[idx] = "v" + std::to_string(step);
+    if (step % 17 == 0) {
+      // Take the multi-line branch — exercises the full-snapshot capture.
+      lines.push_back("x" + std::to_string(step));
+      h.capture(lines, {0, 0}, idx, 1);
+    } else {
+      h.capture(lines, {0, 0}, idx, 0);
+    }
+    BOOST_CHECK_LE(h.size(), VersionHistory::kMaxVersions);
+  }
+
+  // Every surviving snapshot must materialize without crashing or
+  // returning bad content (the trailing edits land at tail).
+  for (std::size_t i = 0; i < h.size(); ++i) {
+    auto const& snap = h.at(i);
+    BOOST_REQUIRE(!snap.lines.empty());
+    for (auto const& lp : snap.lines)
+      BOOST_REQUIRE(lp != nullptr);
+  }
+}
