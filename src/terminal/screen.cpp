@@ -59,10 +59,19 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
 
   // Use sigaction() instead of signal() to avoid SA_RESTART, which glibc
   // sets by default. Without SA_RESTART, read() returns EINTR on SIGWINCH
-  // so the loop can detect the resize promptly.
+  // so the loop can detect the resize promptly. POSIX leaves sigset_t
+  // opaque, so we cannot rely on value-init producing an empty mask.
   struct sigaction sa = {};
+  sigemptyset(&sa.sa_mask);
   sa.sa_handler = handle_sigwinch;
   sigaction(SIGWINCH, &sa, nullptr);
+
+  // Pipe-based formatters and similar tools may close their stdin
+  // before reading all our input (e.g. `head -n 1`). Default SIGPIPE
+  // disposition would terminate the editor outright, skipping the
+  // SetupTerminal destructor and leaving the user's terminal in raw
+  // mode. Ignoring lets `write` return EPIPE so we can recover.
+  signal(SIGPIPE, SIG_IGN);
 
   // Set the terminal title.
   auto cwd = std::filesystem::current_path().string();
@@ -991,8 +1000,20 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
 
   if (pid == 0) {
     // Child: wire up pipes and exec.
-    if (!workDir.empty())
-      (void)chdir(workDir.c_str());
+    // Reset SIGWINCH to default — execvp() will reset it anyway, but if
+    // we fail before exec the child should not run our handler against
+    // its (separate) copy of g_resized.
+    signal(SIGWINCH, SIG_DFL);
+    // Restore default SIGPIPE so the child sees the conventional
+    // shell-style behaviour rather than our parent-only ignore.
+    signal(SIGPIPE, SIG_DFL);
+    if (!workDir.empty()) {
+      if (chdir(workDir.c_str()) < 0) {
+        auto msg = std::string("chdir(") + workDir + "): " + std::strerror(errno) + "\n";
+        writeAll(pipeErr[1], msg.data(), msg.size());
+        _exit(126);
+      }
+    }
     dup2(pipeIn[0], STDIN_FILENO);
     dup2(pipeOut[1], STDOUT_FILENO);
     dup2(pipeErr[1], STDERR_FILENO);
@@ -1009,7 +1030,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
     argv.push_back(nullptr);
     execvp(argv[0], argv.data());
     auto msg = std::string("exec: ") + std::strerror(errno) + "\n";
-    (void)write(STDERR_FILENO, msg.data(), msg.size());
+    writeAll(STDERR_FILENO, msg.data(), msg.size());
     _exit(127);
   }
 
@@ -1120,10 +1141,25 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
             }
             for (int i = 0; i < 10; ++i) {
               int wstatus;
-              if (waitpid(pid, &wstatus, WNOHANG) > 0)
+              pid_t wp;
+              while ((wp = waitpid(pid, &wstatus, WNOHANG)) < 0 && errno == EINTR) {
+              }
+              if (wp > 0)
                 return killReturn();
               pollfd drain[] = {{pipeOut[0], POLLIN, 0}, {pipeErr[0], POLLIN, 0}};
-              poll(drain, 2, 100);
+              int pr = poll(drain, 2, 100);
+              if (pr < 0 && errno == EINTR) {
+                // SIGWINCH (or other) interrupted — surface a redraw and
+                // retry without trusting stale revents.
+                if (g_resized) {
+                  g_resized = 0;
+                  resize();
+                  draw();
+                }
+                continue;
+              }
+              if (pr <= 0)
+                continue;
               bool dummy = false;
               readPipe(pipeOut[0], drain[0].revents, stdoutData, dummy);
               readPipe(pipeErr[0], drain[1].revents, stderrData, dummy);
@@ -1131,7 +1167,8 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
             kill(pid, SIGKILL);
             {
               int wstatus;
-              waitpid(pid, &wstatus, 0);
+              while (waitpid(pid, &wstatus, 0) < 0 && errno == EINTR) {
+              }
             }
             return killReturn();
           } else if (ch == 'n' || ch == 'N') {
@@ -1165,7 +1202,8 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   close(pipeErr[0]);
 
   int status = 0;
-  waitpid(pid, &status, 0);
+  while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+  }
   int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 
   _statusMsg.clear();
