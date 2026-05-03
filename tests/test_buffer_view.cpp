@@ -636,3 +636,106 @@ BOOST_AUTO_TEST_CASE(apply_snapshot_sets_modified) {
   view.stepHistory(-1);
   BOOST_CHECK(buf.modified());
 }
+
+// gotoLine in no-wrap mode previously assigned `_viewFrom.col = ByteOffset{0}`
+// unconditionally. With a saved no-wrap state (VisualCol alternative),
+// any subsequent hScroll() access threw bad_variant_access. The fix
+// preserves whichever variant alternative is active.
+BOOST_AUTO_TEST_CASE(gotoLine_preserves_variant_alternative_in_nowrap) {
+  TempFile f("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
+  TextBuffer buf(f.path().string(), f.path());
+  // Seed a no-wrap saved state — VisualCol alternative.
+  ViewFrom vf{};
+  vf.col = VisualCol{0};
+  buf.setSavedView({{0, 0}, vf, {}, {}, /*wrapMode=*/false});
+  BufferView view = BufferView::fromSavedState(buf);
+  view.gotoLine(5, RowIdx{4});
+  // hScroll() must be reachable without bad_variant_access.
+  BOOST_CHECK(std::holds_alternative<VisualCol>(view.viewFromRaw().col));
+  BOOST_CHECK_NO_THROW((void)view.viewFromRaw().hScroll());
+}
+
+BOOST_AUTO_TEST_CASE(gotoLine_resets_desiredCol) {
+  TempFile f("short\nlonger line\nhi\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  // Build a desiredCol intent at column 11.
+  view.setPoint(1, 11);
+  view.moveUp(ColIdx{80});
+  // Now jump elsewhere — the prior intent must not survive.
+  view.gotoLine(3, RowIdx{4});
+  view.moveDown(ColIdx{80});
+  // If desiredCol persisted we'd land at column 11; with reset, column 0.
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+// clampToBuffer must drop the desiredCol cache so a vertical move after an
+// external edit doesn't honor a column from a now-stale logical line.
+BOOST_AUTO_TEST_CASE(clampToBuffer_resets_desiredCol) {
+  TempFile f("short\nlonger line\nhi\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView stale(buf);
+  stale.setPoint(1, 11);
+  stale.moveUp(ColIdx{80}); // stale now has desiredCol=11
+
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{1, 0}, BufferPoint{1, 11});
+  // line 1 is now empty.
+
+  // Triggering clampToBuffer via any public access should drop desiredCol.
+  stale.moveDown(ColIdx{80});
+  // If desiredCol survived the clamp, point would jump back to col 11
+  // on a new line; with reset, it stays at col 0.
+  BOOST_CHECK_EQUAL(stale.point().offset, 0u);
+}
+
+// In wrap mode a stale ByteOffset can land past the new line size after
+// another view shortens the viewport's first physical line. Render uses
+// that offset to start iteration; it must be clamped first.
+BOOST_AUTO_TEST_CASE(clampToBuffer_clamps_viewFrom_byteOffset) {
+  TempFile f("aaaaaaaaaa\nbbbbbbbbbb\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 8);
+  // Force a wrap-mode viewFrom with a non-zero ByteOffset on line 0.
+  view.ensureVisible(RowIdx{2}, ColIdx{6}, /*wrap=*/true);
+
+  // Shorten line 0 from another view so the cached ByteOffset is past EOL.
+  BufferView other(buf);
+  other.deleteRegion(BufferPoint{0, 2}, BufferPoint{0, 10});
+
+  // Clamp via any public method.
+  view.moveLeft();
+  auto vfo = std::get_if<ByteOffset>(&view.viewFromRaw().col);
+  if (vfo)
+    BOOST_CHECK(vfo->value <= buf.lineContent(view.viewFromRaw().line.value).size());
+}
+
+// deleteRegion previously left _desiredCol stale so a vertical move after
+// a region delete overshot.
+BOOST_AUTO_TEST_CASE(deleteRegion_resets_desiredCol) {
+  TempFile f("short\nlonger line\nhi\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(1, 11);
+  view.moveUp(ColIdx{80}); // desiredCol = 11
+  // Now delete a region; resulting point lands at the region start.
+  view.setPoint(1, 11);
+  view.deleteRegion(BufferPoint{1, 0}, BufferPoint{1, 11});
+  view.moveDown(ColIdx{80});
+  // If desiredCol leaked through deleteRegion, we'd seek toward col 11.
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+// Entering history mode previously did not clear the mark (stepHistory
+// did). The mark cannot meaningfully refer to a snapshot position.
+BOOST_AUTO_TEST_CASE(enterHistoryMode_clears_mark) {
+  TempFile f("abc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  view.setMark({0, 1});
+  BOOST_REQUIRE(view.mark().has_value());
+  view.enterHistoryMode();
+  BOOST_CHECK(!view.mark().has_value());
+}

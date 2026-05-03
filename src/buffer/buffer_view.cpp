@@ -6,6 +6,7 @@
 #include "utf8.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <variant>
 
 BufferView::BufferView(Buffer& buf) : _buf(buf), _docVersion(buf.docVersion()) {}
@@ -26,6 +27,11 @@ BufferView BufferView::fromSavedState(Buffer& buf) {
 }
 
 void BufferView::clampToBuffer() {
+  // Buffer guarantees at least one line; assert here so any subclass
+  // regression that drops the invariant fails loudly instead of
+  // underflowing the lineCount() - 1 expressions below.
+  assert(_buf.lineCount() > 0);
+
   _docVersion = _buf.docVersion();
   // Clamp point.
   if (_point.line >= _buf.lineCount())
@@ -42,9 +48,20 @@ void BufferView::clampToBuffer() {
   // Clamp viewport.
   if (_viewFrom.line.value >= _buf.lineCount())
     _viewFrom.line = RowIdx{_buf.lineCount() - 1};
-  // Invalidate per-view caches.
+  // In wrap mode the viewport's sub-line ByteOffset can land mid-codepoint
+  // or past the new line size after another view shortens this line.
+  // VisualCol is purely a horizontal column (not a byte index) so it
+  // does not need clamping here.
+  if (auto* off = std::get_if<ByteOffset>(&_viewFrom.col)) {
+    std::size_t maxOff = _buf.lineContent(_viewFrom.line.value).size();
+    if (off->value > maxOff)
+      *off = ByteOffset{maxOff};
+  }
+  // Invalidate per-view caches and the desired-column memory: the line
+  // it referred to may have changed shape.
   _pointColCache.line = SIZE_MAX;
   _rowBoundsCache.lineIdx = SIZE_MAX;
+  _desiredCol.reset();
 }
 
 void BufferView::saveViewState() {
@@ -591,7 +608,18 @@ void BufferView::gotoLine(std::size_t line, RowIdx screenRows) {
   // Center _viewFrom so the target line is in the middle of the screen.
   std::size_t half = screenRows.value / 2;
   _viewFrom.line = RowIdx{idx >= half ? idx - half : 0};
-  _viewFrom.col = ByteOffset{0};
+  // Preserve the current variant alternative (ByteOffset for wrap, VisualCol
+  // for no-wrap) and just zero it. Unconditionally writing ByteOffset would
+  // clobber a no-wrap saved state and any subsequent hScroll() access would
+  // throw bad_variant_access. ensureVisible() re-syncs the variant against
+  // the active wrap mode on its next call.
+  if (std::holds_alternative<ByteOffset>(_viewFrom.col))
+    _viewFrom.col = ByteOffset{0};
+  else
+    _viewFrom.col = VisualCol{0};
+  // Drop the desired-column memory: the user is explicitly relocating and
+  // any prior column intent is stale.
+  _desiredCol.reset();
 }
 
 void BufferView::scrollDown() {
@@ -883,6 +911,7 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
+  _desiredCol.reset();
 
   int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
   _buf.recordVersion(_point, regionStart.line, shift);
@@ -929,6 +958,9 @@ void BufferView::enterHistoryMode() {
     return;
   _buf.setBrowsingHistory(true);
   _historyIndex = info.size - 1;
+  // Match stepHistory(): the mark cannot meaningfully refer to a position
+  // in a snapshot that may differ from the current contents.
+  _mark.reset();
   _desiredCol.reset();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
