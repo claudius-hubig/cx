@@ -4,6 +4,7 @@
 #include "buffer/buffer_manager.hpp"
 #include "buffer/text_buffer.hpp"
 #include "byte_constants.hpp"
+#include "error_log.hpp"
 #include "search.hpp"
 #include "utf8.hpp"
 #include <poll.h>
@@ -43,10 +44,28 @@ static void writeAll(int fd, char const* data, std::size_t len) {
   }
 }
 
-// Set by the SIGWINCH handler; checked in loop() to trigger a resize.
+// Set by the SIGWINCH handler from signal context; read and cleared by the
+// main thread in loop(), handleEscapeInput()/handlePromptInput() (via
+// readByte), and runPipeCommand(). Single-consumer at any moment because
+// only one of those code paths runs at a time on the main thread.
 static sig_atomic_t volatile g_resized = 0;
 
 static void handle_sigwinch(int) { g_resized = 1; }
+
+// Read a single byte from stdin, retrying on EINTR. Returns true on a
+// successful 1-byte read, false on EOF or non-EINTR error. Used by the
+// escape-sequence and prompt input paths so a SIGWINCH mid-CSI doesn't
+// drop the next byte and corrupt arrow-key dispatch.
+static bool readByte(char& out) {
+  for (;;) {
+    ssize_t n = read(STDIN_FILENO, &out, 1);
+    if (n == 1)
+      return true;
+    if (n == -1 && errno == EINTR)
+      continue;
+    return false;
+  }
+}
 
 Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
   // TIOCGWINSZ is the standard POSIX ioctl for querying the terminal
@@ -340,8 +359,16 @@ void Screen::loop() {
         }
         continue;
       }
-      if (n != 1)
-        break;
+      if (n == 0)
+        break; // clean EOF — stdin closed, exit loop
+      if (n < 0) {
+        // Transient error (e.g. EIO if the controlling tty is severed,
+        // or EAGAIN if stdin was somehow flipped to non-blocking). Log
+        // and retry rather than treating it as EOF; if it's persistent
+        // the next read will fail again.
+        logError(std::string("stdin read: ") + std::strerror(errno));
+        continue;
+      }
 
       // Also check after a successful read, in case the signal arrived
       // between loop iterations rather than during a blocked read().
@@ -387,8 +414,7 @@ bool Screen::handlePromptInput(char c) {
     struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
     if (poll(&pfd, 1, 50) > 0) {
       char seq[2];
-      if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == ansi::CsiIntro &&
-          read(STDIN_FILENO, &seq[1], 1) == 1) {
+      if (readByte(seq[0]) && seq[0] == ansi::CsiIntro && readByte(seq[1])) {
         if (seq[1] == ansi::UpArrow) {
           // History: browse backward.
           auto* hist = _promptHistory.get(_prompt->label);
@@ -1312,8 +1338,8 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
   if (poll(&pfd, 1, 50) > 0) {
     // Escape sequence: read the next bytes to identify the key.
     char seq[2];
-    if (read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == ansi::CsiIntro) {
-      if (read(STDIN_FILENO, &seq[1], 1) == 1) {
+    if (readByte(seq[0]) && seq[0] == ansi::CsiIntro) {
+      if (readByte(seq[1])) {
         switch (seq[1]) {
         case ansi::UpArrow:
           if (_buf) {
@@ -1357,8 +1383,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         case ansi::ModifiedKey: {
           // Modified key: ESC[1;modX (e.g. Ctrl+Arrow = ESC[1;5X)
           char semi, mod, dir;
-          if (read(STDIN_FILENO, &semi, 1) == 1 && semi == ansi::Separator &&
-              read(STDIN_FILENO, &mod, 1) == 1 && read(STDIN_FILENO, &dir, 1) == 1) {
+          if (readByte(semi) && semi == ansi::Separator && readByte(mod) && readByte(dir)) {
             if (mod == ansi::ModCtrl && _buf) {
               switch (dir) {
               case ansi::RightArrow:
@@ -1394,7 +1419,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         }
         case ansi::Delete: {
           char next;
-          if (read(STDIN_FILENO, &next, 1) == 1) {
+          if (readByte(next)) {
             if (next == ansi::Terminator) {
               // Plain Delete: ESC[3~
               if (_buf && _view->mark()) {
@@ -1407,8 +1432,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
             } else if (next == ansi::Separator) {
               // Modified Delete: ESC[3;mod~
               char mod, tilde;
-              if (read(STDIN_FILENO, &mod, 1) == 1 && read(STDIN_FILENO, &tilde, 1) == 1 &&
-                  tilde == ansi::Terminator) {
+              if (readByte(mod) && readByte(tilde) && tilde == ansi::Terminator) {
                 if (mod == ansi::ModCtrl && _buf)
                   _view->deleteChunkAtPoint();
               }
@@ -1418,13 +1442,13 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         }
         case ansi::PageUp: {
           char tilde;
-          if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
+          if (readByte(tilde) && tilde == ansi::Terminator && _buf)
             _view->pageUp(rowsForBuffer(), pcols, _wrap);
           break;
         }
         case ansi::PageDown: {
           char tilde;
-          if (read(STDIN_FILENO, &tilde, 1) == 1 && tilde == ansi::Terminator && _buf)
+          if (readByte(tilde) && tilde == ansi::Terminator && _buf)
             _view->pageDown(rowsForBuffer(), pcols, _wrap);
           break;
         }
@@ -1433,7 +1457,7 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
           char discard;
           struct pollfd dp = {STDIN_FILENO, POLLIN, 0};
           while (poll(&dp, 1, 0) > 0)
-            if (read(STDIN_FILENO, &discard, 1) != 1)
+            if (!readByte(discard))
               break;
           break;
         }
