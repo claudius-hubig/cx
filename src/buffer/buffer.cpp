@@ -682,6 +682,41 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     }
   };
 
+  // Resolve per-line syntax tokens + background colour and emit the
+  // background (if any). Shared between the wrap and no-wrap branches.
+  auto setupLine = [&](std::size_t lineIdx, std::string const& line) {
+    if (syntaxActive) {
+      lineTokens = _synCache[lineIdx].tokens;
+      curLineBg = getLineBg(lineTokens, line);
+    } else {
+      curLineBg = nullptr;
+    }
+    if (curLineBg)
+      out += curLineBg;
+  };
+
+  // Emit `EraseLine` framed by the current line background so the rest
+  // of the row is painted in the line's diff/conflict colour rather
+  // than reverting to the default. Used at every visual-row boundary.
+  auto emitEraseLineWithBg = [&]() {
+    if (curLineBg)
+      out += curLineBg;
+    out += ansi::EraseLine;
+    if (curLineBg)
+      out += kBgReset;
+  };
+
+  // Fill rows [startRow, rows.value) with empty content + gutter. Both
+  // wrap and no-wrap modes use this as the trailing-blank-row teardown.
+  auto fillTrailingRows = [&](std::size_t startRow) {
+    for (std::size_t r = startRow; r < rows.value; ++r) {
+      if (r > startRow)
+        emitRowStart(r);
+      out += ansi::EraseLine;
+      emitGutter(r, false, " ");
+    }
+  };
+
   if (!wrap) {
     // No-wrap: each physical line is one screen row, horizontally scrolled.
     std::size_t row = 0;
@@ -694,14 +729,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       bool overflows = false; // content extends past visible area
       RenderState rs;
 
-      if (syntaxActive) {
-        lineTokens = _synCache[lineIdx].tokens;
-        curLineBg = getLineBg(lineTokens, line);
-      } else {
-        curLineBg = nullptr;
-      }
-      if (curLineBg)
-        out += curLineBg;
+      setupLine(lineIdx, line);
 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -739,11 +767,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       if (!overflows && vcol >= hScroll)
         emitLineEnd(lineIdx, line.size(), vcol - hScroll, cw, rs);
 
-      if (curLineBg)
-        out += curLineBg;
-      out += ansi::EraseLine;
-      if (curLineBg)
-        out += kBgReset;
+      emitEraseLineWithBg();
 
       // Gutter: show ↠ if content extends past the visible area.
       emitGutter(row, row == cur_row && pointFound,
@@ -759,12 +783,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       cur_col = 0;
     }
 
-    for (std::size_t r = row; r < rows.value; ++r) {
-      if (r > row)
-        emitRowStart(r);
-      out += ansi::EraseLine;
-      emitGutter(r, false, " ");
-    }
+    fillTrailingRows(row);
 
     return {RowIdx{cur_row}, ColIdx{cur_col}};
   }
@@ -783,14 +802,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     bool pendingWrap = false;
     RenderState rs;
 
-    if (syntaxActive) {
-      lineTokens = _synCache[lineIdx].tokens;
-      curLineBg = getLineBg(lineTokens, line);
-    } else {
-      curLineBg = nullptr;
-    }
-    if (curLineBg)
-      out += curLineBg;
+    setupLine(lineIdx, line);
 
     for (std::size_t i = startByte; i < line.size() && row < rows.value;) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
@@ -813,11 +825,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           out += ansi::Reset;
           rs.regionActive = false;
         }
-        if (curLineBg)
-          out += curLineBg;
-        out += ansi::EraseLine;
-        if (curLineBg)
-          out += kBgReset;
+        emitEraseLineWithBg();
         // We know there's more content — this is a true wrap.
         emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
         ++row;
@@ -868,11 +876,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // indicator).
     if (row < rows.value) {
       emitLineEnd(lineIdx, line.size(), col, cw, rs);
-      if (curLineBg)
-        out += curLineBg;
-      out += ansi::EraseLine;
-      if (curLineBg)
-        out += kBgReset;
+      emitEraseLineWithBg();
       emitGutter(row, row == cur_row && pointFound,
                  " "); // natural line end, no indicator
       if (lineIdx + 1 < _lines.size()) {
@@ -890,13 +894,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     cur_col = col;
   }
 
-  // Clear remaining rows.
-  for (std::size_t r = row; r < rows.value; ++r) {
-    if (r > row)
-      emitRowStart(r);
-    out += ansi::EraseLine;
-    emitGutter(r, false, " ");
-  }
+  fillTrailingRows(row);
 
   return {RowIdx{cur_row}, ColIdx{cur_col}};
 }
