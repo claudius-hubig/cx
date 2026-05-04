@@ -551,7 +551,7 @@ void Screen::openSaveAsPrompt() {
     if (completions.size() == 1) {
       if (hint.empty())
         return {"", 0};
-      return {ansi::Dim + hint + ansi::DimOff, visualWidth(hint)};
+      return {std::string(ansi::Dim) + hint + std::string(ansi::DimOff), visualWidth(hint)};
     }
     if (completions.size() <= 3) {
       std::string rendered = std::string(ansi::Dim) + "[";
@@ -567,12 +567,13 @@ void Screen::openSaveAsPrompt() {
         rendered += h;
         vw += visualWidth(h);
       }
-      rendered += std::string("]") + ansi::DimOff;
+      rendered += std::string("]") + std::string(ansi::DimOff);
       vw++;
       return {std::move(rendered), vw};
     }
     auto cnt = " (" + std::to_string(completions.size()) + " matches)";
-    return {ansi::Dim + hint + cnt + ansi::DimOff, visualWidth(hint) + cnt.size()};
+    return {std::string(ansi::Dim) + hint + cnt + std::string(ansi::DimOff),
+            visualWidth(hint) + cnt.size()};
   };
 
   _prompt = Prompt{
@@ -686,7 +687,7 @@ void Screen::openSwitchBufferPrompt() {
     if (completions.size() == 1) {
       if (hint.empty())
         return {"", 0};
-      return {ansi::Dim + hint + ansi::DimOff, visualWidth(hint)};
+      return {std::string(ansi::Dim) + hint + std::string(ansi::DimOff), visualWidth(hint)};
     }
     if (completions.size() <= 3) {
       std::string rendered = std::string(ansi::Dim) + "[";
@@ -702,12 +703,13 @@ void Screen::openSwitchBufferPrompt() {
         rendered += h;
         vw += visualWidth(h);
       }
-      rendered += std::string("]") + ansi::DimOff;
+      rendered += std::string("]") + std::string(ansi::DimOff);
       vw++;
       return {std::move(rendered), vw};
     }
     auto cnt = " (" + std::to_string(completions.size()) + " matches)";
-    return {ansi::Dim + hint + cnt + ansi::DimOff, visualWidth(hint) + cnt.size()};
+    return {std::string(ansi::Dim) + hint + cnt + std::string(ansi::DimOff),
+            visualWidth(hint) + cnt.size()};
   };
 
   _prompt = Prompt{
@@ -796,7 +798,8 @@ void Screen::openFindPrompt(bool backward) {
       .label = "Find: ",
       .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
         if (input.empty() && !_lastSearch.empty())
-          return PromptDisplay{ansi::Dim + _lastSearch + ansi::DimOff, visualWidth(_lastSearch)};
+          return PromptDisplay{std::string(ansi::Dim) + _lastSearch + std::string(ansi::DimOff),
+                               visualWidth(_lastSearch)};
         return PromptDisplay{"", 0};
       },
       .onResult =
@@ -1572,7 +1575,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
       _pasteState.reset();
     }
-  } else if (c == '\x18') {
+  } else if (c == key::CtrlX) {
     // Ctrl-x prefix: read next key for two-key sequence.
     return handleCtrlXInput();
   } else if (static_cast<unsigned char>(c) < key::PrintableMin) {

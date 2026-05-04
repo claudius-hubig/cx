@@ -361,7 +361,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     case SyntaxToken::DiffRemove:
       return kDiffRemoveBg;
     case SyntaxToken::DiffMeta:
-      return ansi::ReverseVideo;
+      return ansi::ReverseVideo.data();
     case SyntaxToken::DiffHunk:
       return nullptr;
     case SyntaxToken::ConflictMarker:
@@ -552,7 +552,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     case SyntaxToken::Heading:
       return kSynHeading;
     case SyntaxToken::Bold:
-      return ansi::Bold;
+      return ansi::Bold.data();
     case SyntaxToken::Link:
       return kSynLink;
     case SyntaxToken::Number:
