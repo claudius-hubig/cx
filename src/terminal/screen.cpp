@@ -188,6 +188,14 @@ void Screen::updateFocusPointers() {
 
 void Screen::setBufferManager(BufferManager& mgr) { _bufMgr = &mgr; }
 
+bool Screen::requireNotInHistoryMode() {
+  if (_view && _view->inHistoryMode()) {
+    setStatus("Exit history mode first (Ctrl-U).");
+    return true;
+  }
+  return false;
+}
+
 void Screen::drawModeline(Panel& panel, bool focused) {
   auto& view = panel.view();
   auto& pbuf = panel.buffer();
@@ -1956,18 +1964,14 @@ void Screen::dispatchAction(Action action) {
     openGoToLinePrompt();
     break;
   case Action::SwitchBuffer:
-    if (_view && _view->inHistoryMode()) {
-      setStatus("Exit history mode first (Ctrl-U).");
+    if (requireNotInHistoryMode())
       break;
-    }
     prevBuf() = nullptr;
     openSwitchBufferPrompt();
     break;
   case Action::KillBuffer:
-    if (_view && _view->inHistoryMode()) {
-      setStatus("Exit history mode first (Ctrl-U).");
+    if (requireNotInHistoryMode())
       break;
-    }
     if (_buf && _bufMgr && (dynamic_cast<DirBuffer*>(_buf) || !_buf->readonly())) {
       if (!_buf->modified()) {
         auto name = _buf->name();
@@ -1982,10 +1986,8 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::Save:
-    if (_view && _view->inHistoryMode()) {
-      setStatus("Exit history mode first (Ctrl-U).");
+    if (requireNotInHistoryMode())
       break;
-    }
     if (_buf && !_buf->readonly()) {
       if (_buf->hasPath()) {
         if (!std::filesystem::exists(_buf->name())) {
@@ -2101,10 +2103,8 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::Revert:
-    if (_view && _view->inHistoryMode()) {
-      setStatus("Exit history mode first (Ctrl-U).");
+    if (requireNotInHistoryMode())
       break;
-    }
     if (_buf && !_buf->readonly()) {
       if (!_buf->hasPath()) {
         setStatus("Can't revert from file in temporary buffers.");
@@ -2132,10 +2132,8 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::BufferList:
-    if (_view && _view->inHistoryMode()) {
-      setStatus("Exit history mode first (Ctrl-U).");
+    if (requireNotInHistoryMode())
       break;
-    }
     if (_bufMgr) {
       if (_buf && _buf->readonly() && prevBuf()) {
         setBuffer(*prevBuf());
@@ -2189,10 +2187,8 @@ void Screen::dispatchAction(Action action) {
       openSetModePrompt();
     break;
   case Action::DirBrowser:
-    if (_view && _view->inHistoryMode()) {
-      setStatus("Exit history mode first (Ctrl-U).");
+    if (requireNotInHistoryMode())
       break;
-    }
     if (_bufMgr)
       setBuffer(_bufMgr->openDir(bufferWorkDir()));
     break;

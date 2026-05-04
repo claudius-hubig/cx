@@ -53,6 +53,11 @@ private:
   // the byte was a recognised command, false otherwise.
   bool handleEscChord(char ch);
 
+  // Returns true and sets a status message if the current view is in
+  // history mode (i.e. read-only-browse), so the caller can `break`
+  // out of the action handler. Returns false otherwise.
+  bool requireNotInHistoryMode();
+
   // draw() helpers. Both append directly to _renderBuf.
   // drawModeline composes the focused-or-non-focused modeline for a
   // panel: cursor row:col + history badge + prompt/status + buffer
