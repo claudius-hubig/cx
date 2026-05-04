@@ -59,6 +59,16 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("h", "Toggle hidden files"));
     v.push_back(formatRawLine("d", "Mark / unmark for deletion"));
     v.push_back(formatRawLine("x", "Delete marked items"));
+    v.emplace_back("");
+    // History-mode keys are dispatched inline in handleNormalInput rather
+    // than through the central shortcut table, so they are listed here
+    // as raw entries so users can still discover them via Esc-?.
+    v.emplace_back("History mode:");
+    v.push_back(formatHelpLine(Action::VersionHistory));
+    v.push_back(formatRawLine("[", "Step to older version"));
+    v.push_back(formatRawLine("]", "Step to newer version"));
+    v.push_back(formatRawLine("Enter", "Commit selected version"));
+    v.push_back(formatRawLine("Esc-Esc", "Cancel and return to latest"));
     return v;
   }();
   return lines;
@@ -141,14 +151,27 @@ static std::size_t cachedRightWidth() {
   return w;
 }
 
+// Counts mirror the widths above. dataLineToVisualRow runs per cursor
+// movement and was calling .size() on the function-static vector each
+// time; cache the length so the hot path is purely arithmetic.
+static std::size_t cachedLeftCount() {
+  static std::size_t const n = leftColumn().size();
+  return n;
+}
+
+static std::size_t cachedRightCount() {
+  static std::size_t const n = rightColumn().size();
+  return n;
+}
+
 static bool isSideBySide(std::size_t cols) {
   return cachedLeftWidth() + kGap + cachedRightWidth() <= cols;
 }
 
 // Map a data-line index to an absolute visual row.
 static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
-  auto leftCount = leftColumn().size();
-  auto rightCount = rightColumn().size();
+  auto leftCount = cachedLeftCount();
+  auto rightCount = cachedRightCount();
   std::size_t leftEnd = kHeaderLines + leftCount;
   std::size_t rightStart = leftEnd + 1;
   std::size_t rightEnd = rightStart + rightCount;
@@ -156,11 +179,19 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
   if (!isSideBySide(cols))
     return dataLine; // stacked: 1:1
 
-  if (dataLine < rightStart)
+  // Side-by-side: left and right columns share visual rows
+  // [kHeaderLines .. kHeaderLines + max(leftCount, rightCount)).
+  // The data-line layout still has a blank between blocks at index
+  // leftEnd; map that blank to the slot just past the merged block
+  // (the same row we use as "blank before footer") so a cursor on it
+  // does not land on a row that still has right-column content.
+  std::size_t mergedRows = std::max(leftCount, rightCount);
+  if (dataLine < leftEnd)
     return dataLine;
+  if (dataLine == leftEnd)
+    return kHeaderLines + mergedRows; // blank slot
   if (dataLine < rightEnd)
     return kHeaderLines + (dataLine - rightStart);
-  std::size_t mergedRows = std::max(leftCount, rightCount);
   return kHeaderLines + mergedRows + (dataLine - rightEnd);
 }
 
@@ -283,6 +314,13 @@ HelpBuffer::HelpBuffer() : Buffer("*help*") {
     addLine(fl);
 }
 
+// Help layout assumes one data line per visual row. The `wrap` parameter
+// is intentionally ignored: the help text is composed in-process and is
+// laid out from `kTitle`, `leftColumn()`, `rightColumn()` and
+// `kFooterLines`, all of which are short. If the terminal is narrower
+// than any of those entries the visual count diverges from
+// dataLineToVisualRow's output and cursor placement is approximate;
+// sub-30-column terminals are unsupported by design.
 std::size_t HelpBuffer::screenRow(ColIdx cols, BufferPoint point, ViewFrom viewFrom,
                                   bool /*wrap*/) const {
   std::size_t pointVis = dataLineToVisualRow(point.line, cols.value);
@@ -296,14 +334,20 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
   // Content width excludes the gutter column.
   std::size_t c = contentWidth(cols);
 
+  // Hoist references to the function-static column vectors once per
+  // render() so the per-row paths below (and isSectionHeader checks)
+  // do not re-call the wrappers.
+  auto const& left = leftColumn();
+  auto const& right = rightColumn();
+
   // Cursor data-line and column within that line.
   std::size_t dataLine = params.point.line;
   std::size_t dataCol = params.point.offset;
 
   // Layout indices computed from generated vectors.
-  std::size_t leftEnd = kHeaderLines + leftColumn().size();
+  std::size_t leftEnd = kHeaderLines + left.size();
   std::size_t rightStart = leftEnd + 1;
-  std::size_t rightEnd = rightStart + rightColumn().size();
+  std::size_t rightEnd = rightStart + right.size();
   std::size_t footerStart = rightEnd + 1;
 
   // Scroll offset: visual row corresponding to viewFrom.
@@ -365,8 +409,8 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
       bool hasDim = false;
       if (sbs && vi >= kHeaderLines) {
         std::size_t idx = vi - kHeaderLines;
-        bool leftIsHeader = idx < leftColumn().size() && isSectionHeader(leftColumn()[idx]);
-        bool rightIsHeader = idx < rightColumn().size() && isSectionHeader(rightColumn()[idx]);
+        bool leftIsHeader = idx < left.size() && isSectionHeader(left[idx]);
+        bool rightIsHeader = idx < right.size() && isSectionHeader(right[idx]);
         if (leftIsHeader || rightIsHeader) {
           // Emit with dim applied to header portions.
           // The line is: leftPad + leftContent + gap + rightContent.
