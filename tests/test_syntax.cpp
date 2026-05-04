@@ -855,6 +855,21 @@ BOOST_AUTO_TEST_CASE(md_bold_and_link_same_line) {
   BOOST_CHECK(allTokens(toks, 13, 24, SyntaxToken::Link));
 }
 
+// Unclosed bold previously caused the inner scan to walk to end-of-line and
+// the outer loop to break, leaving any subsequent markup unhighlighted.
+// Now: the unmatched `**` is left as Normal and scanning resumes past it
+// so a trailing link still highlights.
+BOOST_AUTO_TEST_CASE(md_unclosed_bold_does_not_eat_trailing_link) {
+  auto line = mkline("**unfinished [link](url)");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(line, st, toks);
+  // The `**` itself stays Normal.
+  BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Normal));
+  // The link "[link](url)" at position 13..24 must highlight.
+  BOOST_CHECK(allTokens(toks, 13, 24, SyntaxToken::Link));
+}
+
 BOOST_AUTO_TEST_CASE(md_mode_detection) {
   TempFile tmp("# Hello\n", ".md");
   TB<TextBuffer> buf(tmp.path().string(), tmp.path());
@@ -949,6 +964,25 @@ BOOST_AUTO_TEST_CASE(json_scientific_is_number) {
   std::vector<SyntaxToken> toks;
   tokenizeJsonLine(mkline("1.5e10"), state, toks);
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Number));
+}
+
+// RFC 8259 disallows trailing '.' or empty exponent. The highlighter now
+// stops the number token at the integer prefix rather than greedily
+// extending across an invalid suffix.
+BOOST_AUTO_TEST_CASE(json_trailing_dot_does_not_extend_number_token) {
+  SyntaxState state;
+  std::vector<SyntaxToken> toks;
+  tokenizeJsonLine(mkline("1."), state, toks);
+  BOOST_CHECK(allTokens(toks, 0, 1, SyntaxToken::Number));
+  BOOST_CHECK(allTokens(toks, 1, 2, SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(json_empty_exponent_does_not_extend_number_token) {
+  SyntaxState state;
+  std::vector<SyntaxToken> toks;
+  tokenizeJsonLine(mkline("1e"), state, toks);
+  BOOST_CHECK(allTokens(toks, 0, 1, SyntaxToken::Number));
+  BOOST_CHECK(allTokens(toks, 1, 2, SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(json_scientific_negative_exp) {

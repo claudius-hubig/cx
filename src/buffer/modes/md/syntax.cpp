@@ -22,42 +22,48 @@ void tokenizeMarkdownLine(std::string const& line, SyntaxState& /*state*/,
     // Bold: **...**
     if (i + 1 < sz && line[i] == '*' && line[i + 1] == '*') {
       std::size_t start = i;
-      i += 2;
-      // Find closing **
-      while (i + 1 < sz) {
-        if (line[i] == '*' && line[i + 1] == '*') {
-          i += 2;
-          for (std::size_t j = start; j < i; ++j)
+      bool closed = false;
+      std::size_t scan = i + 2;
+      while (scan + 1 < sz) {
+        if (line[scan] == '*' && line[scan + 1] == '*') {
+          scan += 2;
+          for (std::size_t j = start; j < scan; ++j)
             tokens[j] = SyntaxToken::Bold;
+          i = scan;
+          closed = true;
           break;
         }
-        ++i;
+        ++scan;
       }
-      if (i >= sz)
-        break; // unclosed — leave as Normal
+      if (!closed) {
+        // Unclosed: leave the `**` as Normal and continue scanning past it
+        // so any subsequent links/markup on the same line still highlight.
+        i = start + 2;
+      }
       continue;
     }
 
-    // Link: [text](url)
+    // Link: [text](url). Disallow nested '[' inside the label so a
+    // mismatched outer `[` does not greedily consume a real link further
+    // along the line; on a no-match, resume just past the failed `[`.
     if (line[i] == '[') {
       std::size_t start = i;
-      ++i;
-      // Find closing ]
-      while (i < sz && line[i] != ']')
-        ++i;
-      if (i < sz && i + 1 < sz && line[i + 1] == '(') {
-        i += 2;
-        // Find closing )
-        while (i < sz && line[i] != ')')
-          ++i;
-        if (i < sz) {
-          ++i;
-          for (std::size_t j = start; j < i; ++j)
+      std::size_t scan = i + 1;
+      while (scan < sz && line[scan] != ']' && line[scan] != '[')
+        ++scan;
+      if (scan < sz && line[scan] == ']' && scan + 1 < sz && line[scan + 1] == '(') {
+        scan += 2;
+        while (scan < sz && line[scan] != ')')
+          ++scan;
+        if (scan < sz) {
+          ++scan;
+          for (std::size_t j = start; j < scan; ++j)
             tokens[j] = SyntaxToken::Link;
+          i = scan;
           continue;
         }
       }
-      // Not a valid link, skip
+      // Not a valid link.
       i = start + 1;
       continue;
     }

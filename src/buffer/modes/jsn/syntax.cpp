@@ -46,6 +46,9 @@ void tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/,
     }
 
     // Numbers: optional '-', digits, optional '.digits', optional 'e/E[+/-]digits'.
+    // RFC 8259 requires at least one digit after '.' and after 'e'/'E', so
+    // back off (don't extend the token across a '.' or 'e' that lacks
+    // following digits) to keep highlighting honest.
     if ((line[i] >= '0' && line[i] <= '9') ||
         (line[i] == '-' && i + 1 < sz && line[i + 1] >= '0' && line[i + 1] <= '9')) {
       std::size_t start = i;
@@ -53,17 +56,22 @@ void tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/,
         ++i;
       while (i < sz && line[i] >= '0' && line[i] <= '9')
         ++i;
-      if (i < sz && line[i] == '.') {
-        ++i;
+      if (i + 1 < sz && line[i] == '.' && line[i + 1] >= '0' && line[i + 1] <= '9') {
+        ++i; // '.'
         while (i < sz && line[i] >= '0' && line[i] <= '9')
           ++i;
       }
       if (i < sz && (line[i] == 'e' || line[i] == 'E')) {
-        ++i;
-        if (i < sz && (line[i] == '+' || line[i] == '-'))
-          ++i;
-        while (i < sz && line[i] >= '0' && line[i] <= '9')
-          ++i;
+        // Exponent must end with at least one digit; require it before
+        // committing to extend the number token.
+        std::size_t es = i + 1;
+        if (es < sz && (line[es] == '+' || line[es] == '-'))
+          ++es;
+        if (es < sz && line[es] >= '0' && line[es] <= '9') {
+          i = es;
+          while (i < sz && line[i] >= '0' && line[i] <= '9')
+            ++i;
+        }
       }
       for (std::size_t j = start; j < i; ++j)
         tokens[j] = SyntaxToken::Number;
