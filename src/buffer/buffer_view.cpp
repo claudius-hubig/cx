@@ -68,7 +68,11 @@ void BufferView::saveViewState() {
   std::optional<std::size_t> dc;
   if (_desiredCol)
     dc = _desiredCol->value;
-  _buf.setSavedView({_point, _viewFrom, _mark, dc, _wrapMode});
+  _buf.setSavedView({.point = _point,
+                     .viewFrom = _viewFrom,
+                     .mark = _mark,
+                     .desiredCol = dc,
+                     .wrapMode = _wrapMode});
 }
 
 // --- Private helpers ---

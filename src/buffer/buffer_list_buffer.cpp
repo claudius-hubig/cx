@@ -112,7 +112,7 @@ BufferListBuffer::BufferListBuffer(std::vector<std::string> names,
                                    std::vector<std::string> dirNames, std::string const& startName)
     : Buffer("*buffers*") {
   auto hint = refresh(std::move(names), std::move(dirNames), startName);
-  setSavedView({hint.point, hint.viewFrom, std::nullopt});
+  setSavedView({.point = hint.point, .viewFrom = hint.viewFrom});
 }
 
 ViewHint BufferListBuffer::refresh(std::vector<std::string> names,

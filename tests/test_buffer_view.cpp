@@ -17,7 +17,7 @@ BOOST_AUTO_TEST_CASE(default_construction) {
 BOOST_AUTO_TEST_CASE(from_saved_state) {
   TempFile f("hello\nworld\n");
   TextBuffer buf(f.path().string(), f.path());
-  buf.setSavedView({{1, 3}, {}, {}});
+  buf.setSavedView({.point = {1, 3}});
   BufferView view = BufferView::fromSavedState(buf);
   BOOST_CHECK_EQUAL(view.point().line, 1u);
   BOOST_CHECK_EQUAL(view.point().offset, 3u);
@@ -647,7 +647,7 @@ BOOST_AUTO_TEST_CASE(gotoLine_preserves_variant_alternative_in_nowrap) {
   // Seed a no-wrap saved state — VisualCol alternative.
   ViewFrom vf{};
   vf.col = VisualCol{0};
-  buf.setSavedView({{0, 0}, vf, {}, {}, /*wrapMode=*/false});
+  buf.setSavedView({.point = {0, 0}, .viewFrom = vf, .wrapMode = false});
   BufferView view = BufferView::fromSavedState(buf);
   view.gotoLine(5, RowIdx{4});
   // hScroll() must be reachable without bad_variant_access.

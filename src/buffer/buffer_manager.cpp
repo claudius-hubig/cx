@@ -50,7 +50,7 @@ BufferListBuffer& BufferManager::bufferListBuffer() {
         std::make_unique<BufferListBuffer>(std::move(names), std::move(dirNames), target);
   } else {
     auto hint = _bufferListBuffer->refresh(std::move(names), std::move(dirNames), target);
-    _bufferListBuffer->setSavedView({hint.point, hint.viewFrom, std::nullopt});
+    _bufferListBuffer->setSavedView({.point = hint.point, .viewFrom = hint.viewFrom});
   }
   return *_bufferListBuffer;
 }
@@ -59,7 +59,7 @@ PasteRingBuffer& BufferManager::pasteRingBuffer(PasteRing const& pr) {
   if (!_pasteRingBuffer)
     _pasteRingBuffer = std::make_unique<PasteRingBuffer>();
   auto hint = _pasteRingBuffer->refresh(pr);
-  _pasteRingBuffer->setSavedView({hint.point, hint.viewFrom, std::nullopt});
+  _pasteRingBuffer->setSavedView({.point = hint.point, .viewFrom = hint.viewFrom});
   return *_pasteRingBuffer;
 }
 
