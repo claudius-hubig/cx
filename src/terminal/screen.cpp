@@ -50,6 +50,52 @@ static void writeAll(int fd, char const* data, std::size_t len) {
 // only one of those code paths runs at a time on the main thread.
 static sig_atomic_t volatile g_resized = 0;
 
+// Build a PromptDisplay summarising the current completions list,
+// shared by openSaveAsPrompt and openSwitchBufferPrompt: dim-styled
+// hint after the input, optional [a/b/c] for a small number of
+// alternatives, or an "(N matches)" suffix when there are too many.
+// Caller is responsible for tracking the user's selected index in
+// `idxSelected` so we can suppress the hint mid-tab-cycle.
+static PromptDisplay
+buildCompletionDisplay(std::string const& input,
+                       std::vector<std::pair<std::string, std::string>> const& completions,
+                       bool idxSelected) {
+  if (idxSelected || completions.empty())
+    return {"", 0};
+  auto hintFor = [&](std::string const& match) -> std::string {
+    if (match.starts_with(input))
+      return match.substr(input.size());
+    return match;
+  };
+  auto hint = hintFor(completions[0].first);
+  if (completions.size() == 1) {
+    if (hint.empty())
+      return {"", 0};
+    return {std::string(ansi::Dim) + hint + std::string(ansi::DimOff), visualWidth(hint)};
+  }
+  if (completions.size() <= 3) {
+    std::string rendered = std::string(ansi::Dim) + "[";
+    std::size_t vw = 1;
+    for (std::size_t i = 0; i < completions.size(); ++i) {
+      if (i > 0) {
+        rendered += "/";
+        vw++;
+      }
+      auto h = hintFor(completions[i].first);
+      if (h.empty())
+        h = completions[i].first;
+      rendered += h;
+      vw += visualWidth(h);
+    }
+    rendered += std::string("]") + std::string(ansi::DimOff);
+    vw++;
+    return {std::move(rendered), vw};
+  }
+  auto cnt = " (" + std::to_string(completions.size()) + " matches)";
+  return {std::string(ansi::Dim) + hint + cnt + std::string(ansi::DimOff),
+          visualWidth(hint) + cnt.size()};
+}
+
 // Tunable time constants. Grouped here so the inline numbers below
 // describe a tunable rather than a magic number.
 namespace {
@@ -573,41 +619,7 @@ void Screen::openSaveAsPrompt() {
   auto state = std::make_shared<CompletionState>();
 
   auto buildDisplay = [state](std::string const& input) -> PromptDisplay {
-    auto const& completions = state->completions;
-    if (state->idx || completions.empty())
-      return {"", 0};
-    auto hintFor = [&](std::string const& match) -> std::string {
-      if (match.starts_with(input))
-        return match.substr(input.size());
-      return match;
-    };
-    auto hint = hintFor(completions[0].first);
-    if (completions.size() == 1) {
-      if (hint.empty())
-        return {"", 0};
-      return {std::string(ansi::Dim) + hint + std::string(ansi::DimOff), visualWidth(hint)};
-    }
-    if (completions.size() <= 3) {
-      std::string rendered = std::string(ansi::Dim) + "[";
-      std::size_t vw = 1;
-      for (std::size_t i = 0; i < completions.size(); ++i) {
-        if (i > 0) {
-          rendered += "/";
-          vw++;
-        }
-        auto h = hintFor(completions[i].first);
-        if (h.empty())
-          h = completions[i].first;
-        rendered += h;
-        vw += visualWidth(h);
-      }
-      rendered += std::string("]") + std::string(ansi::DimOff);
-      vw++;
-      return {std::move(rendered), vw};
-    }
-    auto cnt = " (" + std::to_string(completions.size()) + " matches)";
-    return {std::string(ansi::Dim) + hint + cnt + std::string(ansi::DimOff),
-            visualWidth(hint) + cnt.size()};
+    return buildCompletionDisplay(input, state->completions, state->idx.has_value());
   };
 
   _prompt = Prompt{
@@ -709,41 +721,7 @@ void Screen::openSwitchBufferPrompt() {
 
   // Build a PromptDisplay from the current completion state.
   auto buildDisplay = [state](std::string const& input) -> PromptDisplay {
-    auto const& completions = state->completions;
-    if (state->idx || completions.empty())
-      return {"", 0};
-    auto hintFor = [&](std::string const& match) -> std::string {
-      if (match.starts_with(input))
-        return match.substr(input.size());
-      return match;
-    };
-    auto hint = hintFor(completions[0].first);
-    if (completions.size() == 1) {
-      if (hint.empty())
-        return {"", 0};
-      return {std::string(ansi::Dim) + hint + std::string(ansi::DimOff), visualWidth(hint)};
-    }
-    if (completions.size() <= 3) {
-      std::string rendered = std::string(ansi::Dim) + "[";
-      std::size_t vw = 1;
-      for (std::size_t i = 0; i < completions.size(); ++i) {
-        if (i > 0) {
-          rendered += "/";
-          vw++;
-        }
-        auto h = hintFor(completions[i].first);
-        if (h.empty())
-          h = completions[i].first;
-        rendered += h;
-        vw += visualWidth(h);
-      }
-      rendered += std::string("]") + std::string(ansi::DimOff);
-      vw++;
-      return {std::move(rendered), vw};
-    }
-    auto cnt = " (" + std::to_string(completions.size()) + " matches)";
-    return {std::string(ansi::Dim) + hint + cnt + std::string(ansi::DimOff),
-            visualWidth(hint) + cnt.size()};
+    return buildCompletionDisplay(input, state->completions, state->idx.has_value());
   };
 
   _prompt = Prompt{

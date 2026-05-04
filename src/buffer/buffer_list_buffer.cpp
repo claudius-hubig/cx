@@ -14,8 +14,11 @@ struct DirNode {
   std::string dirBufferName;
 };
 
-void insertPath(DirNode& root, std::string const& fullPath) {
-  // Split on '/', skipping the leading '/'.
+// Split an absolute path on '/', skipping the leading '/'. A trailing
+// '/' produces an empty final component (matching the prior behavior
+// of insertPath/insertDirBuffer); callers either ignore that or
+// inspect parts.empty() before walking the result.
+std::vector<std::string> splitPath(std::string const& fullPath) {
   std::vector<std::string> parts;
   std::size_t start = 1;
   while (start < fullPath.size()) {
@@ -25,6 +28,11 @@ void insertPath(DirNode& root, std::string const& fullPath) {
     parts.push_back(fullPath.substr(start, end - start));
     start = end + 1;
   }
+  return parts;
+}
+
+void insertPath(DirNode& root, std::string const& fullPath) {
+  auto parts = splitPath(fullPath);
   if (parts.empty())
     return;
 
@@ -38,15 +46,7 @@ void insertPath(DirNode& root, std::string const& fullPath) {
 // node so it renders as a selectable directory header. Returns true
 // if the path was placed on an existing or newly created node.
 bool insertDirBuffer(DirNode& root, std::string const& fullPath) {
-  std::vector<std::string> parts;
-  std::size_t start = 1;
-  while (start < fullPath.size()) {
-    auto end = fullPath.find('/', start);
-    if (end == std::string::npos)
-      end = fullPath.size();
-    parts.push_back(fullPath.substr(start, end - start));
-    start = end + 1;
-  }
+  auto parts = splitPath(fullPath);
   if (parts.empty())
     return false;
 
