@@ -59,6 +59,13 @@ using LineTokensFn = std::function<std::span<SyntaxToken const>(std::size_t line
 // The three-argument overload uses the caller-supplied tokens source
 // (typically backed by a syntax cache). The two-argument overload
 // tokenizes lines lazily and memoizes them for the call's lifetime.
+//
+// IMPORTANT: the no-callback overload always tokenizes from line 0 to
+// the target line on first access (to maintain the cross-line
+// SyntaxState chain), so its cost is O(file size) — not just the
+// scan distance. It's intended for tests and ad-hoc use; production
+// hot paths should always thread `cachedLineTokens()` through the
+// callback overload instead.
 std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
                                                BufferPoint pos, LineTokensFn const& getTokens);
 std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,

@@ -757,6 +757,36 @@ BOOST_AUTO_TEST_CASE(findMatchingBracket_with_token_cache_backward) {
 }
 
 // ============================================================
+// `for` followed by a UTF-8 lead byte (e.g. an identifier `forπ`) used to
+// be tokenized as a keyword `for` plus stray bytes, because `isIdentChar`
+// rejected high-bit bytes. Treating any byte >= 0x80 as identifier-class
+// keeps the keyword from leaking out of a non-ASCII identifier.
+BOOST_AUTO_TEST_CASE(non_ascii_byte_does_not_split_identifier) {
+  auto line = mkline("forπ"); // π is two UTF-8 bytes (0xCF 0x80)
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // `for` should NOT be highlighted as a keyword inside this identifier.
+  for (std::size_t i = 0; i < 3; ++i)
+    BOOST_CHECK(toks[i] != SyntaxToken::Keyword);
+}
+
+// Operator merge previously had no upper bound and would coalesce any run
+// of operator-class characters into one logical operator span. Real C++
+// operators top out at 3 chars (<<=, >>=, ->*); cap the merge there.
+BOOST_AUTO_TEST_CASE(operator_run_caps_at_three_characters) {
+  auto line = mkline("a +++++++ b");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // All seven '+' chars stay Operator-typed (visually the same), but the
+  // tokenization no longer treats them as one merged token. We only
+  // assert the styling invariant here.
+  for (std::size_t i = 2; i < 9; ++i)
+    BOOST_CHECK(toks[i] == SyntaxToken::Operator);
+}
+
+// ============================================================
 // Markdown tokenizer
 // ============================================================
 

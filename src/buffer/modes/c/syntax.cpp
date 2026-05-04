@@ -23,7 +23,16 @@ static bool isIdentStart(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
-static bool isIdentChar(char c) { return isIdentStart(c) || (c >= '0' && c <= '9'); }
+// Treat any high-bit byte (>= 0x80) as part of an identifier so a UTF-8
+// lead byte does not split an identifier and cause an adjacent ASCII
+// keyword to be highlighted in error. C++ permits non-ASCII characters
+// in identifiers (UAX #31); this is a coarse approximation that matches
+// every byte of any UTF-8 sequence and keeps highlighting honest at the
+// cost of accepting some bytes that are not technically XID_Continue.
+static bool isIdentChar(char c) {
+  unsigned char u = static_cast<unsigned char>(c);
+  return isIdentStart(c) || (u >= '0' && u <= '9') || u >= 0x80;
+}
 
 static bool isKeyword(std::string_view word) {
   return std::binary_search(std::begin(kKeywords), std::end(kKeywords), word);
@@ -102,12 +111,12 @@ static bool endsWithBackslash(std::string const& line) {
 }
 
 void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& tokens) {
-  tokens.assign(line.size(), SyntaxToken::Normal);
-  std::size_t i = 0;
   std::size_t sz = line.size();
 
   // Preprocessor directive: entire line highlighted when starting with #
-  // or continuing from a prior line that ended with backslash.
+  // or continuing from a prior line that ended with backslash. Detect
+  // this before the bulk Normal-fill below so we don't pay for the
+  // assign twice on preprocessor lines.
   if (!state.inBlockComment && !state.rawDelim.has_value()) {
     if (state.inPreprocessor || startsWithHash(line)) {
       tokens.assign(sz, SyntaxToken::Preprocessor);
@@ -118,6 +127,8 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
     }
   }
   state.inPreprocessor = false;
+  tokens.assign(sz, SyntaxToken::Normal);
+  std::size_t i = 0;
 
   while (i < sz) {
     // Inside a raw string literal — scan for closing )delim".
@@ -190,7 +201,10 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
       while (paren < sz && line[paren] != '(')
         ++paren;
       if (paren < sz) {
-        std::string delim(line.data() + dstart, paren - dstart);
+        // Use a string_view for the in-line scan; only materialize a
+        // std::string when the literal crosses a line boundary and we
+        // need to persist the delimiter into state.
+        std::string_view delim(line.data() + dstart, paren - dstart);
         // Mark R"delim( as String.
         for (std::size_t k = i; k <= paren; ++k)
           tokens[k] = SyntaxToken::String;
@@ -221,7 +235,7 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
           ++i;
         }
         if (!closed)
-          state.rawDelim = delim;
+          state.rawDelim = std::string(delim);
         continue;
       }
     }
@@ -246,6 +260,10 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
     }
 
     // Character literal '...' — but NOT digit separator (e.g. 1'000).
+    // The "preceded-by-digit" check is a coarse heuristic and will
+    // misclassify contrived constructs like `0'a'` (two adjacent tokens
+    // that are not legal C++ in any common context); we accept that
+    // limitation in exchange for catching the common 1'000 case.
     if (line[i] == '\'' && !(i > 0 && line[i - 1] >= '0' && line[i - 1] <= '9')) {
       tokens[i] = SyntaxToken::String;
       ++i;
@@ -316,15 +334,21 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
       continue;
     }
 
-    // Operators.
+    // Operators. Cap at 3 characters: real C++ operators are at most 3
+    // chars long (<<=, >>=, ->* etc.) so longer runs of operator-class
+    // characters are likely two adjacent tokens that should be styled
+    // identically without being merged into one logical operator.
     if (isOperatorChar(line[i])) {
       tokens[i] = SyntaxToken::Operator;
       ++i;
-      // Consume multi-character operators (e.g. !=, &&, ||, >>=, etc.).
-      while (i < sz && isOperatorChar(line[i])) {
+      std::size_t merged = 1;
+      while (i < sz && merged < 3 && isOperatorChar(line[i])) {
         tokens[i] = SyntaxToken::Operator;
         ++i;
+        ++merged;
       }
+      // Any further operator-class chars get their own single-char tokens
+      // via subsequent loop iterations.
       continue;
     }
 
@@ -405,7 +429,7 @@ void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
       while (paren < sz && line[paren] != '(')
         ++paren;
       if (paren < sz) {
-        std::string delim(line.data() + dstart, paren - dstart);
+        std::string_view delim(line.data() + dstart, paren - dstart);
         i = paren + 1;
         bool closed = false;
         while (i < sz) {
@@ -429,7 +453,7 @@ void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
           ++i;
         }
         if (!closed)
-          state.rawDelim = std::move(delim);
+          state.rawDelim = std::string(delim);
         continue;
       }
     }
@@ -448,6 +472,10 @@ void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
     }
 
     // Character literal '...' — but NOT digit separator (e.g. 1'000).
+    // The "preceded-by-digit" check is a coarse heuristic and will
+    // misclassify contrived constructs like `0'a'` (two adjacent tokens
+    // that are not legal C++ in any common context); we accept that
+    // limitation in exchange for catching the common 1'000 case.
     if (line[i] == '\'' && !(i > 0 && line[i - 1] >= '0' && line[i - 1] <= '9')) {
       ++i;
       while (i < sz && line[i] != '\'') {
