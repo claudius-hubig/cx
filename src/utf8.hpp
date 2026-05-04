@@ -92,9 +92,14 @@ inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8
   }
   if (cp < 0x10000) {
     // Reject UTF-16 surrogate halves — they are not valid Unicode
-    // scalar values and produce ill-formed UTF-8.
-    if (cp >= 0xD800 && cp <= 0xDFFF)
-      return encodeUtf8(0xFFFD);
+    // scalar values and produce ill-formed UTF-8. Inline the U+FFFD
+    // encoding rather than recursing.
+    if (cp >= 0xD800 && cp <= 0xDFFF) {
+      buf[0] = 0xEF;
+      buf[1] = 0xBF;
+      buf[2] = 0xBD;
+      return {3, buf};
+    }
     buf[0] = static_cast<unsigned char>(0xE0 | (cp >> 12));
     buf[1] = static_cast<unsigned char>(0x80 | ((cp >> 6) & 0x3F));
     buf[2] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
@@ -107,8 +112,11 @@ inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8
     buf[3] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
     return {4, buf};
   }
-  // Out of range — encode U+FFFD (replacement character).
-  return encodeUtf8(0xFFFD);
+  // Out of range — encode U+FFFD (replacement character) inline.
+  buf[0] = 0xEF;
+  buf[1] = 0xBF;
+  buf[2] = 0xBD;
+  return {3, buf};
 }
 
 /// True if c is a horizontal whitespace character (space or tab).

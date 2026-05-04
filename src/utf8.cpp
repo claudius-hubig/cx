@@ -1,6 +1,7 @@
 #include "utf8.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <unistd.h>
 
 std::size_t visualWidth(std::string_view s) {
@@ -115,6 +116,11 @@ std::size_t lastVisualRowStart(std::string const& line, std::size_t cols) {
 
 VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts, std::size_t byteOff,
                                   std::size_t lineSize) {
+  // computeRowBounds always pushes 0 first, so callers see a non-empty
+  // vector. Make the precondition explicit so any future regression
+  // (e.g. a reset path that forgets the seed) fails loudly rather than
+  // underflowing the rowIdx subtraction below.
+  assert(!rowStarts.empty());
   auto it = std::upper_bound(rowStarts.begin(), rowStarts.end(), byteOff);
   std::size_t rowIdx = static_cast<std::size_t>(it - rowStarts.begin()) - 1;
 

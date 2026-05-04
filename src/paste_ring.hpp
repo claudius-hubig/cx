@@ -7,9 +7,20 @@
 // Global ring buffer for cut/copied text. Stores entries as std::string
 // with embedded '\n' for line breaks. Fixed capacity (default 20).
 // Index 0 = most recent.
+//
+// The ring never shrinks past evictions: push() either grows up to
+// _capacity or pops the oldest. PasteCycle indices in Screen mod by
+// size() and so survive evictions; clients must not assume index
+// stability across pushes.
 class PasteRing {
 public:
   static constexpr std::size_t kDefaultCapacity = 20;
+
+  // Default-constructible at the standard capacity. The explicit
+  // overload exists so tests can exercise capacity-edge behaviour
+  // without depending on the default value.
+  PasteRing() = default;
+  explicit PasteRing(std::size_t capacity) : _capacity(capacity) {}
 
   void push(std::string text) {
     _entries.push_front(std::move(text));

@@ -107,3 +107,17 @@ BOOST_AUTO_TEST_CASE(push_empty_string) {
   BOOST_CHECK_EQUAL(ring.size(), 1u);
   BOOST_CHECK_EQUAL(ring.at(0), "");
 }
+
+// Custom capacity: previously _capacity had no setter and was always
+// kDefaultCapacity. Now constructible with an explicit cap.
+BOOST_AUTO_TEST_CASE(custom_capacity_evicts_at_smaller_threshold) {
+  PasteRing ring(3);
+  ring.push("a");
+  ring.push("b");
+  ring.push("c");
+  ring.push("d");
+  BOOST_CHECK_EQUAL(ring.size(), 3u);
+  BOOST_CHECK_EQUAL(ring.at(0), "d");
+  BOOST_CHECK_EQUAL(ring.at(1), "c");
+  BOOST_CHECK_EQUAL(ring.at(2), "b");
+}
