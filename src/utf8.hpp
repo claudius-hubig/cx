@@ -236,10 +236,15 @@ VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts, std
 std::vector<std::size_t> computeRowBounds(std::string const& line, std::size_t cols);
 
 /// Read the remaining bytes of a UTF-8 sequence from stdin, given the lead
-/// byte. Appends continuation bytes to `dest`. Defined in utf8.cpp.
+/// byte. Appends continuation bytes to `dest`. On a read error or EOF
+/// mid-sequence the tail is silently truncated — the caller gets only
+/// the bytes that did arrive. Defined in utf8.cpp.
 void readUtf8Tail(unsigned char lead, std::string& dest);
 
 /// Read a complete UTF-8 codepoint from stdin given the lead byte.
 /// For ASCII (< 0x80), returns the byte directly. For multi-byte sequences,
-/// reads the continuation bytes from stdin and decodes. Defined in utf8.cpp.
+/// reads the continuation bytes from stdin and decodes. On a read error
+/// or EOF mid-sequence the partial buffer is fed to decodeUtf8, which
+/// returns the lead byte itself with len=1 — the caller therefore sees
+/// the lead byte rather than a malformed codepoint. Defined in utf8.cpp.
 uint32_t readUtf8Codepoint(unsigned char lead);

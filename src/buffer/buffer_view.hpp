@@ -114,13 +114,19 @@ public:
   std::size_t screenRow(ColIdx cols, bool wrap = true) const;
   bool currentLineWraps(ColIdx cols) const;
 
-  /// Clamp point/mark to valid buffer positions after external edits.
-  /// Call this when another view may have modified the buffer's content.
+  /// Clamp point/mark/viewport to valid buffer positions after external
+  /// edits, drop the desired-column memory, and invalidate per-view
+  /// caches. Automatically invoked by all public methods on a
+  /// docVersion mismatch; exposed publicly so `Screen` can call it
+  /// explicitly after large buffer rebuilds (e.g. a buffer-list refresh).
   void clampToBuffer();
 
-  /// Save this view's cursor/viewport into the buffer's saved-state slot.
-  /// Called when this is the last view before destruction, to preserve
-  /// cursor position for later restoration via fromSavedState().
+  /// Persist this view's state to the buffer's saved-state slot, so a
+  /// later view constructed via `fromSavedState()` can restore it.
+  /// Preserved fields: point, viewFrom (variant alternative + value),
+  /// mark, desired column, and wrap mode. Called whenever a panel is
+  /// about to drop its `BufferView` — buffer switch or panel close —
+  /// not just at last-view destruction.
   void saveViewState();
 
 private:

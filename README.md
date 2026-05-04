@@ -22,7 +22,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 - **UTF-8 support** — full Unicode text editing and display, including CJK wide characters
 - **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
-- **Find** — smart incremental search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. Ctrl-F again advances to the next match while re-prompting for a new search string. Matched text is temporarily highlighted.
+- **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter; Ctrl-F again advances to the next match while re-prompting for a new search string. Matched text is temporarily highlighted.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Word and paragraph navigation** — move by word, paragraph, or go to a specific line
 - **Chunk deletion** — delete contiguous runs of whitespace or non-whitespace in either direction

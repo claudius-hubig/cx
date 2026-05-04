@@ -9,6 +9,9 @@
 
 namespace {
 
+// Suffixes are 1024-based (KiB/MiB/GiB) but rendered without the 'i'
+// to match the long-standing POSIX `ls -h` convention. Strictly
+// ambiguous with the SI 1000-based meaning of K/M/G.
 std::string formatSize(std::uintmax_t bytes) {
   if (bytes < 1024)
     return std::to_string(bytes);

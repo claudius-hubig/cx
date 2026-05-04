@@ -24,8 +24,9 @@ class BufferManager;
 // Manages terminal I/O and the main input loop.
 //
 // On construction, queries the terminal size. draw() calls Buffer::render()
-// to produce a screen image and writes it row-by-row to the terminal.
-// loop() reads raw keystrokes and forwards them to the Buffer.
+// to produce a screen image into an internal buffer, then writes it in a
+// single writeAll() syscall. loop() reads raw keystrokes and forwards
+// them to the Buffer.
 class Screen : public BufferSink {
 public:
   Screen();

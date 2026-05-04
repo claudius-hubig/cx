@@ -32,6 +32,13 @@ enum class SyntaxToken : uint8_t {
 };
 
 /// Multi-line state carried between lines for syntax highlighting.
+///
+/// Invariant: at the start of any line at most one of
+/// {inBlockComment, rawDelim.has_value(), inPreprocessor} is true.
+/// `tokenizeLine` and `advanceBlockCommentState` both gate
+/// `inPreprocessor` evaluation behind `!inBlockComment &&
+/// !rawDelim.has_value()`, and the raw-string and block-comment
+/// branches are mutually exclusive entry/exit points.
 struct SyntaxState {
   bool inBlockComment = false;
   bool inPreprocessor = false; // next line continues a #directive (prior line ended with '\')

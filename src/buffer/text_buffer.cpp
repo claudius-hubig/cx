@@ -67,6 +67,11 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
   }
   if (_lines.empty())
     _lines.emplace_back();
+  // Trailing-empty-line invariant (see Buffer::_lines doc in buffer.hpp:
+  // "A file ending with '\n' is represented by an empty trailing entry"):
+  // the save site at line ~158 mirrors this by writing a '\n' between
+  // every adjacent pair of lines, so the empty trailing entry round-trips
+  // back to a file that ends in '\n'.
   if (bytesRead > 0 && data[bytesRead - 1] == '\n')
     _lines.emplace_back();
 
@@ -161,6 +166,10 @@ std::expected<void, std::string> TextBuffer::save() {
   std::ofstream file(*_path, std::ios::binary);
   if (!file)
     return std::unexpected("cannot open " + _path->string());
+  // Mirrors the load site (see loadFromFile): a '\n' is written between
+  // every adjacent pair of lines but never after the last, so a buffer
+  // whose representation has an empty trailing entry (per the invariant
+  // documented in buffer.hpp) round-trips to a file ending in '\n'.
   for (std::size_t i = 0; i < _lines.size(); ++i) {
     if (!_lines[i].empty())
       file.write(_lines[i].data(), static_cast<std::streamsize>(_lines[i].size()));

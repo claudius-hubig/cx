@@ -62,6 +62,10 @@ void VersionHistory::captureInitial(std::vector<std::string>& lines, BufferPoint
   VersionSnapshot snap;
   snap.timestamp = std::chrono::system_clock::now();
   snap.cursor = cursor;
+  // IMPORTANT: *block must never be mutated after this point —
+  // VersionSnapshot::lines aliases each string inside it via the
+  // aliasing shared_ptr constructor, and any in-place mutation of
+  // those strings would invalidate every aliasing handle.
   auto block = std::make_shared<std::vector<std::string>>(std::move(lines));
   snap.lines.reserve(block->size());
   for (auto const& s : *block)
@@ -82,6 +86,10 @@ void VersionHistory::materialize(std::size_t idx) const {
   while (base > 0 && _versions[base].isDelta())
     --base;
 
+  // Value-copy the vector of LinePtr; this aliases the inner
+  // shared_ptr<string const> handles rather than deep-copying their
+  // string contents. Aliasing is safe because the strings are
+  // immutable (shared_ptr<string const>).
   auto lines = _versions[base].lines;
   for (std::size_t i = base + 1; i <= idx; ++i)
     for (auto const& p : _versions[i].patches)
