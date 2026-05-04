@@ -379,7 +379,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     }
   };
 
-  auto emitRowStart = [&](std::size_t r) { out += ansi::cursorTo(rowOffset + r, colOffset); };
+  auto emitRowStart = [&](std::size_t r) { ansi::appendCursorTo(out, rowOffset + r, colOffset); };
 
   // Per-character rendering state: tracks which ANSI highlight modes are
   // currently active so we can emit transitions only when they change.
@@ -467,7 +467,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // Emit the gutter character at column cols.value for a given row.
   // `highlight` marks the visual row containing the cursor.
   auto emitGutter = [&](std::size_t r, bool isCursorRow, char const* indicator) {
-    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
+    ansi::appendCursorTo(out, rowOffset + r, colOffset + cols.value - 1);
     out += (isCursorRow && focused) ? ansi::Reset : ansi::ReverseVideo;
     out += indicator;
     out += ansi::Reset;

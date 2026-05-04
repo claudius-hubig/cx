@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <charconv>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -70,6 +72,21 @@ constexpr std::string_view CsiPrefix = "\x1b["; // start of CUP / parameterised 
 /// Both row and col are 0-based and converted to 1-based for the terminal.
 inline std::string cursorTo(std::size_t row, std::size_t col) {
   return "\x1b[" + std::to_string(row + 1) + ";" + std::to_string(col + 1) + "H";
+}
+
+/// Append the ANSI CUP sequence directly to `out` without allocating an
+/// intermediate std::string. Used by Buffer::render which emits one
+/// cursorTo per visual row per frame; the no-alloc variant saves N
+/// small heap allocations per draw on a tall terminal.
+inline void appendCursorTo(std::string& out, std::size_t row, std::size_t col) {
+  out += "\x1b[";
+  std::array<char, 32> buf;
+  auto end = std::to_chars(buf.data(), buf.data() + buf.size(), row + 1).ptr;
+  out.append(buf.data(), end);
+  out += ';';
+  end = std::to_chars(buf.data(), buf.data() + buf.size(), col + 1).ptr;
+  out.append(buf.data(), end);
+  out += 'H';
 }
 
 } // namespace ansi

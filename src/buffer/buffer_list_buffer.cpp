@@ -173,7 +173,7 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx row
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;
-    out += ansi::cursorTo(params.rowOffset + r, params.colOffset);
+    ansi::appendCursorTo(out, params.rowOffset + r, params.colOffset);
 
     if (lineIdx < _displayLines.size()) {
       bool highlight = (lineIdx == curLine);
@@ -187,7 +187,7 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx row
       out += ansi::EraseLine;
     }
     // Gutter column.
-    out += ansi::cursorTo(params.rowOffset + r, params.colOffset + cols.value - 1);
+    ansi::appendCursorTo(out, params.rowOffset + r, params.colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

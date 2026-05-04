@@ -401,7 +401,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t vi = scrollVis + r;
-    out += ansi::cursorTo(params.rowOffset + r, params.colOffset);
+    ansi::appendCursorTo(out, params.rowOffset + r, params.colOffset);
     if (vi < vlines.size()) {
       auto& content = vlines[vi].content;
       // Check if any section header appears in this visual line.
@@ -474,7 +474,7 @@ std::tuple<RowIdx, ColIdx> HelpBuffer::render(std::string& out, RowIdx rows, Col
     }
     out += ansi::EraseLine;
     // Gutter column.
-    out += ansi::cursorTo(params.rowOffset + r, params.colOffset + cols.value - 1);
+    ansi::appendCursorTo(out, params.rowOffset + r, params.colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

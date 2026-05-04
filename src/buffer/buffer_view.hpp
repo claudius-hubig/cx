@@ -173,6 +173,15 @@ private:
   mutable PointColCache _pointColCache;
   mutable RowBoundsCache _rowBoundsCache;
 
+  /// Scratch ring buffer for ensureVisible's forward scan. Stored as a
+  /// member so the per-call resize is in-place rather than a fresh heap
+  /// allocation on every cursor move and render.
+  struct ViewPos {
+    std::size_t line;
+    std::size_t byteOff;
+  };
+  mutable std::vector<ViewPos> _ensureVisibleRing;
+
   std::size_t _docVersion = 0;
   std::optional<std::size_t> _historyIndex;
 };

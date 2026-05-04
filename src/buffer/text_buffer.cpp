@@ -50,18 +50,38 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
   _lines.clear();
   _lines.reserve(bytesRead / 40 + 1);
   char const* p = data.data();
+  // Single pass: split lines on '\n' and classify each line ending in
+  // place by inspecting the preceding byte (data[nl-1]) for '\r'. A
+  // separate pass tracking lone-CR bytes is unnecessary because every
+  // '\r' that is not immediately followed by '\n' is by definition not
+  // part of a CRLF, and any CR that is followed by '\n' is captured as
+  // CRLF when we visit that '\n'. Lone CRs are detected by walking
+  // each line we collect (which preserves embedded '\r').
   char const* end = p + bytesRead;
+  bool hasLoneLf = false, hasCrlf = false, hasLoneCr = false;
   while (p < end) {
     auto* nl = static_cast<char const*>(std::memchr(p, '\n', end - p));
+    char const* lineEnd = nl ? nl : end;
+    _lines.emplace_back(p, lineEnd - p);
+    auto const& just = _lines.back();
+    if (!_hasConflicts && isConflictMarker(just))
+      _hasConflicts = true;
     if (nl) {
-      _lines.emplace_back(p, nl - p);
-      if (!_hasConflicts && isConflictMarker(_lines.back()))
-        _hasConflicts = true;
+      if (nl > p && nl[-1] == '\r')
+        hasCrlf = true;
+      else
+        hasLoneLf = true;
+      // Any '\r' inside this line (i.e. not the trailing CRLF marker
+      // which already lives in `just` if present) is a lone CR.
+      std::size_t scanLimit =
+          (hasCrlf && !just.empty() && just.back() == '\r') ? just.size() - 1 : just.size();
+      if (!hasLoneCr && std::memchr(just.data(), '\r', scanLimit) != nullptr)
+        hasLoneCr = true;
       p = nl + 1;
     } else {
-      _lines.emplace_back(p, end - p);
-      if (!_hasConflicts && isConflictMarker(_lines.back()))
-        _hasConflicts = true;
+      // Final partial line (no trailing '\n').
+      if (!hasLoneCr && std::memchr(just.data(), '\r', just.size()) != nullptr)
+        hasLoneCr = true;
       p = end;
     }
   }
@@ -74,25 +94,6 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
   // back to a file that ends in '\n'.
   if (bytesRead > 0 && data[bytesRead - 1] == '\n')
     _lines.emplace_back();
-
-  // Detect line ending style from the raw data.
-  bool hasCr = std::memchr(data.data(), '\r', bytesRead) != nullptr;
-  bool hasLoneLf = false, hasCrlf = false, hasLoneCr = false;
-  if (hasCr) {
-    for (std::size_t i = 0; i < bytesRead; ++i) {
-      if (data[i] == '\n') {
-        if (i > 0 && data[i - 1] == '\r')
-          hasCrlf = true;
-        else
-          hasLoneLf = true;
-      } else if (data[i] == '\r') {
-        if (i + 1 >= bytesRead || data[i + 1] != '\n')
-          hasLoneCr = true;
-      }
-    }
-  } else {
-    hasLoneLf = (std::memchr(data.data(), '\n', bytesRead) != nullptr);
-  }
 
   int styleCount = (hasLoneLf ? 1 : 0) + (hasCrlf ? 1 : 0) + (hasLoneCr ? 1 : 0);
   if (styleCount > 1)

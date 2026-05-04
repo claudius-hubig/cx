@@ -92,9 +92,14 @@ private:
   std::vector<std::string> _mru; // most recently used first
   BufferSink& _sink;
 
-  // Cache for directory listings used by completions().
+  // Cache for directory listings used by completions(). The
+  // canonicalised directory path is cached alongside the listing
+  // because weakly_canonical() walks every component with stat() —
+  // recomputing it per keystroke is the dominant cost when completions
+  // sees the cache hit fast path.
   struct DirCacheEntry {
     std::string dir;
+    std::filesystem::path canonDir;
     std::vector<std::pair<std::string, bool>> entries; // {filename, isDir}
   };
   mutable DirCacheEntry _dirCache;

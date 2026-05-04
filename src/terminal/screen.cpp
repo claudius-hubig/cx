@@ -176,7 +176,13 @@ void Screen::draw() {
   auto& [rows, cols] = _size;
 
   _renderBuf.clear();
-  std::size_t estimate = rows.value * cols.value * 2;
+  // 2× per cell underestimates a syntax-highlighted, reverse-video, or
+  // diff-line-background frame, where SGR escape sequences plus the
+  // per-row cursorTo can easily push real output past 8× cell count.
+  // _renderBuf.capacity() persists across frames, so this only matters
+  // on the first draw and after resizes — bias toward over-reservation
+  // so the steady-state path never reallocates.
+  std::size_t estimate = rows.value * cols.value * 8;
   if (_renderBuf.capacity() < estimate)
     _renderBuf.reserve(estimate);
 

@@ -1076,12 +1076,11 @@ void BufferView::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   // iteration, avoiding the O(N^2) cost of re-scanning from the viewport
   // on every line advance.
 
-  struct ViewPos {
-    std::size_t line;
-    std::size_t byteOff;
-  };
   std::size_t ringSize = rows.value;
-  std::vector<ViewPos> ring(ringSize, {_viewFrom.line.value, vfo});
+  // Reuse the scratch member; assign rather than reallocate to keep
+  // capacity stable across calls (so cursor moves don't touch the heap).
+  _ensureVisibleRing.assign(ringSize, {_viewFrom.line.value, vfo});
+  auto& ring = _ensureVisibleRing;
   std::size_t ringPos = 0;
   std::size_t visRow = 0;
 

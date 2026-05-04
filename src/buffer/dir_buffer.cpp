@@ -209,6 +209,10 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
   // Format: "    permissions  owner  group  size  mtime  name" (4-space prefix for DEL marker).
   for (auto& e : _entries) {
     std::string line;
+    // 4 (prefix) + permissions(~10) + 2 + owner + 2 + group + 2 + size + 2
+    // + mtime(~19) + 2 + name + optional '/'. Reserve a sane minimum so
+    // the per-segment += never needs to grow the small-string allocation.
+    line.reserve(80 + e.name.size());
     // 4-space prefix (overwritten with "DEL " in render for marked items).
     line += "    ";
     line += e.permissions;
@@ -264,7 +268,7 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
 
   for (std::size_t r = 0; r < rows.value; ++r) {
     std::size_t lineIdx = scrollLine + r;
-    out += ansi::cursorTo(rowOffset + r, colOffset);
+    ansi::appendCursorTo(out, rowOffset + r, colOffset);
 
     if (lineIdx < _displayLines.size()) {
       bool highlight = (lineIdx == curLine);
@@ -291,7 +295,7 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
     }
 
     // Gutter column.
-    out += ansi::cursorTo(rowOffset + r, colOffset + cols.value - 1);
+    ansi::appendCursorTo(out, rowOffset + r, colOffset + cols.value - 1);
     out += ansi::ReverseVideo;
     out += ' ';
     out += ansi::Reset;

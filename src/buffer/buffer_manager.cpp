@@ -175,6 +175,10 @@ BufferManager::completions(std::string const& prefix) const {
     if (_dirCache.dir != dirStr) {
       _dirCache.dir = dirStr;
       _dirCache.entries.clear();
+      // weakly_canonical(absolute(dir)) does a stat() per path
+      // component; recompute only on the cache-miss path so a typing
+      // user does not pay it on every keystroke.
+      _dirCache.canonDir = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
       std::error_code ec;
       for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
         auto filename = entry.path().filename().string();
@@ -182,9 +186,7 @@ BufferManager::completions(std::string const& prefix) const {
           _dirCache.entries.push_back({filename, entry.is_directory(ec)});
       }
     }
-
-    // Canonicalize the directory once, not per-entry.
-    auto canonDir = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
+    auto const& canonDir = _dirCache.canonDir;
 
     for (auto& [filename, isDir] : _dirCache.entries) {
       if (!filename.starts_with(filePrefix))
