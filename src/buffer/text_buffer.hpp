@@ -43,11 +43,14 @@ public:
   void setBrowsingHistory(bool b) override { _browsingHistory = b; }
 
   /// Append a snapshot to the history. Called by BufferView after each
-  /// successful edit. Safe to call when browsingHistory() is true but the
-  /// caller should normally avoid doing so (stepping through history must
-  /// not create new versions).
+  /// successful edit. Silently no-ops while `browsingHistory()` is true
+  /// so any debug helper or script-driven edit that bypasses BufferView
+  /// (which already gates on readonly()) cannot corrupt the history
+  /// chain by inserting a new version mid-browse.
   void recordVersion(BufferPoint cursor, std::size_t dirtyFrom = SIZE_MAX,
                      int lineShift = 0) override {
+    if (_browsingHistory)
+      return;
     _history.capture(_lines, cursor, dirtyFrom, lineShift);
   }
 

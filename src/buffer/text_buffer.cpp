@@ -19,12 +19,24 @@ TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
 }
 
 void TextBuffer::loadFromFile(std::filesystem::path const& path) {
+  // Reset before any early return so that revert() to a now-empty or
+  // unreadable file doesn't leave stale conflict-marker overlays from
+  // before, and so loadFromFile is idempotent on its bookkeeping.
+  _hasConflicts = false;
   std::ifstream file(path, std::ios::binary);
   if (!file) {
     _lineEndingStyle = LineEndingStyle::Unix;
     return;
   }
-  auto fileSize = std::filesystem::file_size(path);
+  // Use the error_code overload so a transient EACCES or stale NFS
+  // handle is treated as "open empty" (consistent with the !file
+  // branch above) rather than throwing out of a constructor or revert.
+  std::error_code ec;
+  auto fileSize = std::filesystem::file_size(path, ec);
+  if (ec) {
+    _lineEndingStyle = LineEndingStyle::Unix;
+    return;
+  }
   if (fileSize == 0) {
     _lines = {{}};
     _lineEndingStyle = LineEndingStyle::Unix;
@@ -37,7 +49,6 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
 
   _lines.clear();
   _lines.reserve(bytesRead / 40 + 1);
-  _hasConflicts = false;
   char const* p = data.data();
   char const* end = p + bytesRead;
   while (p < end) {
@@ -172,6 +183,11 @@ std::expected<void, std::string> TextBuffer::revert() {
   _modified = false;
   ++_docVersion;
   _synCacheValidUpto = 0;
+  // Append (rather than clear) so the user can undo a revert. The
+  // capture takes the SIZE_MAX/full-diff branch and is therefore O(N)
+  // line comparisons against the previous snapshot — acceptable for
+  // an interactive operation and the cost of preserving undo across
+  // reverts.
   _history.capture(_lines, {0, 0});
   return {};
 }

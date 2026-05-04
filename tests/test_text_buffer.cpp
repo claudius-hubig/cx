@@ -408,3 +408,35 @@ BOOST_AUTO_TEST_CASE(normalize_line_endings_records_version) {
   BOOST_CHECK_EQUAL(buf.history().size(), before + 1);
   BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Unix);
 }
+
+// recordVersion previously appended unconditionally. While browsingHistory()
+// is true a debug helper that bypasses BufferView's readonly() gate could
+// corrupt the history chain by inserting a new version mid-browse. The
+// override now silently no-ops in that state.
+BOOST_AUTO_TEST_CASE(recordVersion_noop_while_browsing_history) {
+  TempFile tmp("hi\n");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  buf.recordVersion({0, 0});
+  auto before = buf.history().size();
+  buf.setBrowsingHistory(true);
+  buf.recordVersion({0, 0});
+  BOOST_CHECK_EQUAL(buf.history().size(), before);
+  buf.setBrowsingHistory(false);
+  buf.recordVersion({0, 0});
+  BOOST_CHECK_EQUAL(buf.history().size(), before + 1);
+}
+
+// Reverting to an externally-emptied file used to leave _hasConflicts set
+// from before the revert. The reset now happens at the top of
+// loadFromFile so all early-return paths share it.
+BOOST_AUTO_TEST_CASE(loadFromFile_resets_hasConflicts_on_empty_revert) {
+  TempFile tmp("<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> feat\n");
+  TextBuffer buf(tmp.path().string(), tmp.path());
+  BOOST_REQUIRE(buf.hasConflicts());
+  // Externally truncate the file and revert.
+  {
+    std::ofstream f(tmp.path(), std::ios::binary);
+  }
+  buf.revert();
+  BOOST_CHECK(!buf.hasConflicts());
+}
