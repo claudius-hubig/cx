@@ -52,6 +52,15 @@ private:
   // Try to dispatch an Esc-chord for the given byte. Returns true if
   // the byte was a recognised command, false otherwise.
   bool handleEscChord(char ch);
+
+  // draw() helpers. Both append directly to _renderBuf.
+  // drawModeline composes the focused-or-non-focused modeline for a
+  // panel: cursor row:col + history badge + prompt/status + buffer
+  // name and mode suffix, with truncation and right-alignment.
+  void drawModeline(Panel& panel, bool focused);
+  // placePanelId emits the small panel-id digit in the gutter's
+  // top-right cell when there are multiple panels.
+  void placePanelId(Panel const& panel, bool multiPanel);
   // Walk buffers looking for the next modified one. If found, switch to
   // it and show a save prompt. Returns true when no modified buffers
   // remain (caller should exit the loop).

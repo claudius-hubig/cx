@@ -188,6 +188,119 @@ void Screen::updateFocusPointers() {
 
 void Screen::setBufferManager(BufferManager& mgr) { _bufMgr = &mgr; }
 
+void Screen::drawModeline(Panel& panel, bool focused) {
+  auto& view = panel.view();
+  auto& pbuf = panel.buffer();
+  auto rect = panel.rect();
+  auto pc = panel.totalCols();
+
+  // Cursor position prefix.
+  std::string status;
+  std::size_t status_vwidth = 0;
+  {
+    auto [line, col] = view.lineCol();
+    status = std::to_string(line) + ":" + std::to_string(col);
+    status_vwidth = visualWidth(status);
+  }
+
+  // History-mode badge.
+  if (view.inHistoryMode()) {
+    if (auto* tb = dynamic_cast<TextBuffer*>(&pbuf); tb && !tb->history().empty()) {
+      auto idx = *view.historyIndex();
+      auto total = tb->history().size();
+      auto t = std::chrono::system_clock::to_time_t(tb->history().at(idx).timestamp);
+      std::tm tm{};
+      localtime_r(&t, &tm);
+      char tbuf[32];
+      std::strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S", &tm);
+      std::string hseg = " | v " + std::to_string(idx + 1) + "/" + std::to_string(total) + "  " +
+                         tbuf + "  [/] step  Ctrl-U commit";
+      status += hseg;
+      status_vwidth = visualWidth(status);
+    }
+  }
+
+  // Prompt and status messages only on the focused panel.
+  if (focused) {
+    if (_prompt) {
+      status += " | " + _prompt->label;
+      if (_prompt->showInput)
+        status += _prompt->input;
+      status_vwidth = visualWidth(status);
+      status += _prompt->display.rendered;
+      status_vwidth += _prompt->display.visualWidth;
+    } else if (!_statusMsg.empty()) {
+      status += " | " + _statusMsg;
+      status_vwidth = visualWidth(status);
+    }
+  }
+
+  // Right-align: buffer name + mode + modification indicator.
+  std::string filename = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
+  std::string suffix;
+  if (!pbuf.readonly())
+    suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
+              : pbuf.mode() == BufferMode::Md  ? " [md]"
+              : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
+              : pbuf.mode() == BufferMode::Dif ? " [dif]"
+                                               : " [txt]";
+  suffix += pbuf.modified() ? " +" : "  ";
+  auto suffix_vwidth = visualWidth(suffix);
+  auto filename_vwidth = visualWidth(filename);
+  auto buf_name_vwidth = filename_vwidth + suffix_vwidth;
+
+  if (status_vwidth + buf_name_vwidth + 2 <= pc.value) {
+    // Everything fits: pad between status and the buffer name block.
+    status.append(pc.value - buf_name_vwidth - status_vwidth, ' ');
+    status += filename + suffix;
+  } else if (pc.value >= status_vwidth + 2 + suffix_vwidth + 1) {
+    // Truncate the filename from the front to fit, preserving the
+    // suffix and at least one column for the ellipsis.
+    std::size_t filenameAvail = pc.value - status_vwidth - 2 - suffix_vwidth;
+    std::string truncated = truncateVisualFromFront(filename, filenameAvail);
+    std::size_t used = status_vwidth + visualWidth(truncated) + suffix_vwidth;
+    if (used < pc.value)
+      status.append(pc.value - used, ' ');
+    status += truncated + suffix;
+  } else if (status_vwidth < pc.value) {
+    // No room for a meaningful buffer name — pad the rest with spaces.
+    status.append(pc.value - status_vwidth, ' ');
+  } else if (status_vwidth > pc.value) {
+    // Status itself overflows (e.g. very long prompt); truncate from
+    // the back so we never spill past the panel.
+    std::size_t keep = 0;
+    std::size_t w = 0;
+    while (keep < status.size()) {
+      auto info = charInfoAt(status.data() + keep, status.size() - keep);
+      if (w + info.width > pc.value)
+        break;
+      w += info.width;
+      keep += info.len;
+    }
+    status.resize(keep);
+  }
+
+  std::size_t modelineRow = rect.row + rect.rows - 1;
+  ansi::appendCursorTo(_renderBuf, modelineRow, rect.col);
+  if (focused)
+    _renderBuf += ansi::Bold;
+  else
+    _renderBuf += ansi::Dim;
+  _renderBuf += ansi::ReverseVideo;
+  _renderBuf += status;
+  _renderBuf += ansi::Reset;
+}
+
+void Screen::placePanelId(Panel const& panel, bool multiPanel) {
+  if (!multiPanel || panel.id() < 1 || panel.id() > 9)
+    return;
+  auto rect = panel.rect();
+  ansi::appendCursorTo(_renderBuf, rect.row, rect.col + rect.cols - 1);
+  _renderBuf += ansi::Dim;
+  _renderBuf += static_cast<char>('0' + panel.id());
+  _renderBuf += ansi::DimOff;
+}
+
 void Screen::draw() {
   auto& [rows, cols] = _size;
 
@@ -246,117 +359,12 @@ void Screen::draw() {
         cur_col = ColIdx{rect.col + cc.value};
       }
 
-      // --- Modeline at the bottom row of this panel ---
-      auto& pbuf = panel.buffer();
-      std::string status;
-      std::size_t status_vwidth = 0;
-
-      {
-        auto [line, col] = view.lineCol();
-        status = std::to_string(line) + ":" + std::to_string(col);
-        status_vwidth = visualWidth(status);
-      }
-
-      if (view.inHistoryMode()) {
-        if (auto* tb = dynamic_cast<TextBuffer*>(&pbuf); tb && !tb->history().empty()) {
-          auto idx = *view.historyIndex();
-          auto total = tb->history().size();
-          auto t = std::chrono::system_clock::to_time_t(tb->history().at(idx).timestamp);
-          std::tm tm{};
-          localtime_r(&t, &tm);
-          char tbuf[32];
-          std::strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S", &tm);
-          std::string hseg = " | v " + std::to_string(idx + 1) + "/" + std::to_string(total) +
-                             "  " + tbuf + "  [/] step  Ctrl-U commit";
-          status += hseg;
-          status_vwidth = visualWidth(status);
-        }
-      }
-
-      // Prompt and status messages only on the focused panel.
-      if (focused) {
-        if (_prompt) {
-          status += " | " + _prompt->label;
-          if (_prompt->showInput)
-            status += _prompt->input;
-          status_vwidth = visualWidth(status);
-          status += _prompt->display.rendered;
-          status_vwidth += _prompt->display.visualWidth;
-        } else if (!_statusMsg.empty()) {
-          status += " | " + _statusMsg;
-          status_vwidth = visualWidth(status);
-        }
-      }
-
-      // Right-align: buffer name + mode + modification indicator. The
-      // filename may be truncated from the front when the panel is too
-      // narrow to fit the full modeline; the mode/modified suffix is
-      // always preserved so the user can still see it.
-      std::string filename = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
-      std::string suffix;
-      if (!pbuf.readonly())
-        suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
-                  : pbuf.mode() == BufferMode::Md  ? " [md]"
-                  : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
-                  : pbuf.mode() == BufferMode::Dif ? " [dif]"
-                                                   : " [txt]";
-      suffix += pbuf.modified() ? " +" : "  ";
-      auto suffix_vwidth = visualWidth(suffix);
-      auto filename_vwidth = visualWidth(filename);
-      auto buf_name_vwidth = filename_vwidth + suffix_vwidth;
-
-      if (status_vwidth + buf_name_vwidth + 2 <= pc.value) {
-        // Everything fits: pad between status and the buffer name block.
-        status.append(pc.value - buf_name_vwidth - status_vwidth, ' ');
-        status += filename + suffix;
-      } else if (pc.value >= status_vwidth + 2 + suffix_vwidth + 1) {
-        // Truncate the filename from the front to fit, preserving the
-        // suffix and at least one column for the ellipsis.
-        std::size_t filenameAvail = pc.value - status_vwidth - 2 - suffix_vwidth;
-        std::string truncated = truncateVisualFromFront(filename, filenameAvail);
-        std::size_t used = status_vwidth + visualWidth(truncated) + suffix_vwidth;
-        if (used < pc.value)
-          status.append(pc.value - used, ' ');
-        status += truncated + suffix;
-      } else if (status_vwidth < pc.value) {
-        // No room for a meaningful buffer name — pad the rest with spaces.
-        status.append(pc.value - status_vwidth, ' ');
-      } else if (status_vwidth > pc.value) {
-        // Status itself overflows (e.g. very long prompt); truncate from
-        // the back so we never spill past the panel.
-        std::size_t keep = 0;
-        std::size_t w = 0;
-        while (keep < status.size()) {
-          auto info = charInfoAt(status.data() + keep, status.size() - keep);
-          if (w + info.width > pc.value)
-            break;
-          w += info.width;
-          keep += info.len;
-        }
-        status.resize(keep);
-      }
-
-      std::size_t modelineRow = rect.row + rect.rows - 1;
-      _renderBuf += ansi::cursorTo(modelineRow, rect.col);
-      if (focused)
-        _renderBuf += ansi::Bold;
-      else
-        _renderBuf += ansi::Dim;
-      _renderBuf += ansi::ReverseVideo;
-      _renderBuf += status;
-      _renderBuf += ansi::Reset;
-
-      // Panel ID in the gutter's top-right cell (only when multiple panels).
-      if (multiPanel && panel.id() >= 1 && panel.id() <= 9) {
-        _renderBuf += ansi::cursorTo(rect.row, rect.col + rect.cols - 1);
-        _renderBuf += ansi::Dim;
-        _renderBuf += static_cast<char>('0' + panel.id());
-        _renderBuf += ansi::DimOff;
-      }
+      drawModeline(panel, focused);
+      placePanelId(panel, multiPanel);
     });
   }
 
-  _renderBuf += ansi::cursorTo(cur_row.value, cur_col.value);
+  ansi::appendCursorTo(_renderBuf, cur_row.value, cur_col.value);
   _renderBuf += ansi::ShowCursor;
 
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
