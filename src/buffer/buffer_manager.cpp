@@ -80,13 +80,15 @@ DirBuffer& BufferManager::openDir(std::filesystem::path const& dir) {
 }
 
 Buffer& BufferManager::create(std::string name) {
-  auto [it, inserted] = _buffers.emplace(name, nullptr);
+  // try_emplace lets us move `name` into the map key without the
+  // copy that emplace(name, nullptr) would force; the buffer
+  // constructor then receives the key by const reference.
+  auto [it, inserted] = _buffers.try_emplace(std::move(name), nullptr);
   if (!inserted)
     return *it->second;
-  auto key = it->first;
-  it->second = std::make_unique<TextBuffer>(std::move(name));
+  it->second = std::make_unique<TextBuffer>(it->first);
   refreshDisplayNames();
-  touch(key);
+  touch(it->first);
   return *it->second;
 }
 

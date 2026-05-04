@@ -50,6 +50,22 @@ static void writeAll(int fd, char const* data, std::size_t len) {
 // only one of those code paths runs at a time on the main thread.
 static sig_atomic_t volatile g_resized = 0;
 
+// Tunable time constants. Grouped here so the inline numbers below
+// describe a tunable rather than a magic number.
+namespace {
+// Time after which a status message ages out of the modeline.
+constexpr auto kStatusMessageTtl = std::chrono::seconds(10);
+// Time after which a Find highlight ages out and is cleared.
+constexpr auto kHighlightTtl = std::chrono::seconds(3);
+// Time the kill-prompt waits before showing "Kill? y/n" for a long
+// pipe command (and the same value used to refresh the deadline if
+// the user answers no).
+constexpr auto kKillPromptDelay = std::chrono::seconds(10);
+// Initial poll timeout when distinguishing bare-Esc from the start of
+// an escape sequence on the input stream.
+constexpr int kEscDisambiguationMs = 50;
+} // namespace
+
 static void handle_sigwinch(int) { g_resized = 1; }
 
 // Read a single byte from stdin, retrying on EINTR. Returns true on a
@@ -385,11 +401,10 @@ void Screen::loop() {
       }
     }
 
-    bool drew = false;
     if (_prompt)
-      drew = handlePromptInput(c);
+      handlePromptInput(c);
     else
-      drew = handleNormalInput(c, pendingChar);
+      handleNormalInput(c, pendingChar);
 
     // Process pending exit: walk modified buffers or break.
     if (_exitPending && !_prompt) {
@@ -397,15 +412,14 @@ void Screen::loop() {
         break;
     }
 
-    if (!drew)
-      draw();
+    draw();
   }
 }
 
-bool Screen::handlePromptInput(char c) {
+void Screen::handlePromptInput(char c) {
   if (c == key::Enter || c == key::Newline) {
     if (!_prompt->showInput)
-      return false; // Enter is ignored on confirm prompts
+      return; // Enter is ignored on confirm prompts
     if (!_prompt->input.empty()) {
       _promptHistory.push(_prompt->label, _prompt->input);
       auto resultFn = std::move(_prompt->onResult);
@@ -418,7 +432,7 @@ bool Screen::handlePromptInput(char c) {
   } else if (c == key::Escape) {
     // Distinguish bare Esc (cancel) from escape sequences.
     struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
-    if (poll(&pfd, 1, 50) > 0) {
+    if (poll(&pfd, 1, kEscDisambiguationMs) > 0) {
       char seq[2];
       if (readByte(seq[0]) && seq[0] == ansi::CsiIntro && readByte(seq[1])) {
         if (seq[1] == ansi::UpArrow) {
@@ -478,13 +492,11 @@ bool Screen::handlePromptInput(char c) {
     if (u >= 0x80)
       readUtf8Tail(u, _prompt->input);
     _prompt->historyIdx.reset();
-    if (runAutocomplete())
-      return false; // Prompt was closed by early-exit result
+    runAutocomplete();
   } else if (_prompt->onSpecialKey) {
     if (_prompt->onSpecialKey(c, _prompt->input))
       runAutocomplete();
   }
-  return false;
 }
 
 bool Screen::runAutocomplete() {
@@ -1078,7 +1090,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   std::size_t written = 0;
   bool stdinOpen = true;
   bool killPromptShowing = false;
-  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  auto deadline = std::chrono::steady_clock::now() + kKillPromptDelay;
 
   // Read one chunk from an output pipe into the target string; set done=true on EOF.
   auto readPipe = [](int fd, short revents, std::string& out, bool& done) {
@@ -1341,7 +1353,7 @@ void Screen::executePipeReplace(std::string command) {
   _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
 }
 
-bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
+void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
   auto pcols = colsForBuffer();
   struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
   if (poll(&pfd, 1, 50) > 0) {
@@ -1522,10 +1534,9 @@ bool Screen::handleEscapeInput(std::optional<char>& pendingChar) {
       _statusExpiry.reset();
     }
   }
-  return false;
 }
 
-bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
+void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
   if (_view && _highlightExpiry) {
     _view->clearHighlight();
     _highlightExpiry.reset();
@@ -1564,7 +1575,8 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _pasteState.reset();
     }
   } else if (c == key::Escape) {
-    return handleEscapeInput(pendingChar);
+    handleEscapeInput(pendingChar);
+    return;
   } else if (c == key::Tab) {
     if (_buf && !_buf->readonly()) {
       if (_buf->mode() == BufferMode::Cpp) {
@@ -1583,7 +1595,8 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
     }
   } else if (c == key::CtrlX) {
     // Ctrl-x prefix: read next key for two-key sequence.
-    return handleCtrlXInput();
+    handleCtrlXInput();
+    return;
   } else if (static_cast<unsigned char>(c) < key::PrintableMin) {
     auto s = shortcutFromCtrlChar(c);
     if (auto action = handleShortcut(s))
@@ -1601,7 +1614,7 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         _view->stepHistory(+1);
       if (_buf)
         _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
-      return false;
+      return;
     }
     // '?' on a bracket in C/JSON mode → jump to matching bracket.
     if (c == '?' && _buf && (_buf->mode() == BufferMode::Cpp || _buf->mode() == BufferMode::Jsn) &&
@@ -1654,7 +1667,6 @@ bool Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       _pasteState.reset();
     }
   }
-  return false;
 }
 
 RowIdx Screen::rowsForBuffer() const {
@@ -1684,7 +1696,7 @@ void Screen::resize() {
 
 void Screen::setStatus(std::string msg) {
   _statusMsg = std::move(msg);
-  _statusExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  _statusExpiry = std::chrono::steady_clock::now() + kStatusMessageTtl;
 }
 
 bool Screen::handleEscChord(char ch) {
@@ -1696,7 +1708,7 @@ bool Screen::handleEscChord(char ch) {
   return false;
 }
 
-bool Screen::handleCtrlXInput() {
+void Screen::handleCtrlXInput() {
   setStatus("C-x ...");
   draw();
 
@@ -1733,7 +1745,6 @@ bool Screen::handleCtrlXInput() {
     _statusMsg.clear();
     _statusExpiry.reset();
   }
-  return false;
 }
 
 bool Screen::tryExit() {
@@ -1768,7 +1779,7 @@ void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t m
   _view->setPoint(line, matchEnd);
   _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
   _view->setHighlight({line, matchStart}, {line, matchEnd});
-  _highlightExpiry = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  _highlightExpiry = std::chrono::steady_clock::now() + kHighlightTtl;
   _pasteState.reset();
   if (wrapped)
     setStatus("Found (wrapped)");

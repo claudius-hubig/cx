@@ -238,7 +238,10 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
     auto& line = _lines[l];
     std::size_t start = (l == from.line) ? std::min(from.offset, line.size()) : 0;
     std::size_t end = (l == to.line) ? std::min(to.offset, line.size()) : line.size();
-    estimate += end - start + 1; // +1 for newline
+    // +1 for the inter-line '\n'. The emission loop only writes one
+    // between adjacent lines, never after the last, so omit the +1
+    // for the final line and avoid a 1-byte over-reservation.
+    estimate += end - start + (l < to.line ? 1 : 0);
   }
   std::string result;
   result.reserve(estimate);

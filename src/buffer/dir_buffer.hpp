@@ -74,7 +74,7 @@ public:
   std::vector<Entry> const& entries() const { return _entries; }
 
   /// Check if an index is marked for deletion (for testing).
-  bool isMarked(std::size_t idx) const { return _markedForDelete.count(idx) > 0; }
+  bool isMarked(std::size_t idx) const { return _markedForDelete.contains(idx); }
 
 private:
   /// Rebuild the entry list and display lines. If `prevName` is non-empty,

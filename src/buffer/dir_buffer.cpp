@@ -73,7 +73,7 @@ void DirBuffer::toggleDeleteMark(BufferPoint p) {
   // Refuse to mark . and .. (always at indices 0 and 1).
   if (p.line < 2 || p.line >= _entries.size())
     return;
-  if (_markedForDelete.count(p.line))
+  if (_markedForDelete.contains(p.line))
     _markedForDelete.erase(p.line);
   else
     _markedForDelete.insert(p.line);
@@ -272,7 +272,7 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
 
     if (lineIdx < _displayLines.size()) {
       bool highlight = (lineIdx == curLine);
-      bool marked = _markedForDelete.count(lineIdx) > 0;
+      bool marked = _markedForDelete.contains(lineIdx);
 
       if (highlight)
         out += ansi::ReverseVideo;

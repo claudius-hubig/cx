@@ -14,10 +14,13 @@ ViewHint PasteRingBuffer::refresh(PasteRing const& pr) {
       std::string header = "--- Entry " + std::to_string(i + 1) + " ---";
       _lines.emplace_back(header.begin(), header.end());
 
-      // Entry content, split on '\n'.
+      // Entry content, split on '\n'. Use `<` rather than `<=` so an
+      // entry that ends in '\n' does not produce a phantom empty
+      // trailing display line. The blank between entries below is
+      // sufficient to visually separate adjacent entries.
       auto const& text = pr.at(i);
       std::size_t pos = 0;
-      while (pos <= text.size()) {
+      while (pos < text.size()) {
         auto nl = text.find('\n', pos);
         if (nl == std::string::npos) {
           _lines.emplace_back(text.begin() + pos, text.end());

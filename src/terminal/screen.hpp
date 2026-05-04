@@ -62,12 +62,14 @@ private:
   // clear its own prevBuf before calling if appropriate.
   void killBufferAndSwitchPanels(std::string const& name);
 
-  // Loop sub-handlers. Each returns true if it already called draw()
-  // (so the caller should skip its trailing draw()).
-  bool handlePromptInput(char c);
-  bool handleEscapeInput(std::optional<char>& pendingChar);
-  bool handleCtrlXInput();
-  bool handleNormalInput(char c, std::optional<char>& pendingChar);
+  // Loop sub-handlers. The caller in loop() always redraws after the
+  // handler returns; the handlers may issue intermediate draws (e.g.
+  // a status update during a chord prompt) but do not signal that
+  // back to the caller.
+  void handlePromptInput(char c);
+  void handleEscapeInput(std::optional<char>& pendingChar);
+  void handleCtrlXInput();
+  void handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
   // Focused panel's content dimensions (rows minus modeline, total cols).
   RowIdx rowsForBuffer() const;

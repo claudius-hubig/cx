@@ -136,10 +136,17 @@ bool PanelLayout::focusPanel(int id) {
   if (id == _focusedId)
     return true;
   // Push the previously focused id to the back of the MRU history,
-  // removing any earlier occurrence first.
+  // removing any earlier occurrence first. closeFocused() prunes
+  // stale ids and panel layouts realistically have <10 panels, so the
+  // history naturally stays small; the cap below is defense-in-depth
+  // against a panel-id stream that pathologically grows it.
   _focusHistory.erase(std::remove(_focusHistory.begin(), _focusHistory.end(), _focusedId),
                       _focusHistory.end());
   _focusHistory.push_back(_focusedId);
+  static constexpr std::size_t kMaxFocusHistory = 32;
+  if (_focusHistory.size() > kMaxFocusHistory)
+    _focusHistory.erase(_focusHistory.begin(),
+                        _focusHistory.begin() + (_focusHistory.size() - kMaxFocusHistory));
   _focusedId = id;
   return true;
 }
@@ -273,6 +280,9 @@ bool PanelLayout::removeLeaf(Node& node, int id) {
     }
   }
 
-  // Recurse into children.
+  // Recurse into children. The direct-leaf cases above short-circuit
+  // before we reach this line, so the recursion only fires when both
+  // children are SplitNodes — i.e. when there's no chance the recursive
+  // call mutates `*split` out from under the second operand of `||`.
   return removeLeaf((*split)->left, id) || removeLeaf((*split)->right, id);
 }

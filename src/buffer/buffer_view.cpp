@@ -507,8 +507,9 @@ void BufferView::moveParagraphUp() {
   while (pos > 0 && _buf.isBlankLine(pos))
     --pos;
 
-  // If at top and still blank, go to start.
-  if (_buf.isBlankLine(pos)) {
+  // After the loop, pos is either 0 or pointing at a non-blank line.
+  // If we walked to the top without finding content, jump to {0, 0}.
+  if (pos == 0 && _buf.isBlankLine(0)) {
     _point = {0, 0};
     _desiredCol.reset();
     return;
@@ -550,6 +551,12 @@ void BufferView::pageUp(RowIdx screenRows, ColIdx cols, bool wrap) {
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
+  // Each step calls scrollUp/scrollDown which redundantly checks
+  // docVersion (we already clamped above), but the cost is negligible
+  // compared to the visual-row scan they perform internally. No
+  // explicit upper clamp here: scrollUp self-bounds at line 0 via its
+  // `_viewFrom.line.value > 0` guard, unlike scrollDown which advances
+  // unconditionally and is clamped by pageDown via viewFromLinesBeforeEnd.
   for (std::size_t i = 0; i < half; ++i) {
     if (wrap)
       moveUp(cols);
@@ -1152,6 +1159,12 @@ bool BufferView::currentLineWraps(ColIdx cols) const {
   if (_docVersion != _buf.docVersion())
     const_cast<BufferView*>(this)->clampToBuffer();
   std::size_t cw = contentWidth(cols);
+  // Reuse the row-bounds cache when it covers the current line at the
+  // current width: a single row means the line fits in one visual row;
+  // any more means it wraps. Falls back to a full visual-width scan
+  // when the cache holds bounds for a different line or width.
+  if (_rowBoundsCache.lineIdx == _point.line && _rowBoundsCache.cols == cw)
+    return _rowBoundsCache.rowStarts.size() > 1;
   return visualColRange(_buf.lineContent(_point.line), 0, _buf.lineContent(_point.line).size()) >
          cw;
 }
