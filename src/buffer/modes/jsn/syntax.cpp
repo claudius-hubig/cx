@@ -121,19 +121,15 @@ static bool isJsonBracketChar(char c, SyntaxToken tok) {
   return c == '[' || c == ']' || c == '{' || c == '}';
 }
 
-std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> const& lines,
-                                                   BufferPoint pos) {
+std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
+                                                   BufferPoint pos, LineTokensFn const& getTokens) {
   if (pos.line >= lines.size())
     return std::nullopt;
-  auto& line = lines[pos.line];
+  auto const& line = *lines[pos.line];
   if (pos.offset >= line.size())
     return std::nullopt;
 
-  // Tokenize the cursor line (no multi-line state needed for JSON).
-  SyntaxState unused;
-  std::vector<SyntaxToken> curTokens;
-  tokenizeJsonLine(line, unused, curTokens);
-
+  auto curTokens = getTokens(pos.line);
   char ch = line[pos.offset];
   auto curTok = (pos.offset < curTokens.size()) ? curTokens[pos.offset] : SyntaxToken::Normal;
 
@@ -145,9 +141,7 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
     return std::nullopt;
 
   if (isJsonOpenBracket(ch)) {
-    // Scan forward.
     int depth = 1;
-
     for (std::size_t o = pos.offset + 1; o < line.size(); ++o) {
       auto tok = (o < curTokens.size()) ? curTokens[o] : SyntaxToken::Normal;
       if (isJsonBracketChar(line[o], tok)) {
@@ -157,12 +151,9 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
           return BufferPoint{pos.line, o};
       }
     }
-
-    std::vector<SyntaxToken> lnToks;
     for (std::size_t l = pos.line + 1; l < lines.size(); ++l) {
-      auto& ln = lines[l];
-      SyntaxState s;
-      tokenizeJsonLine(ln, s, lnToks);
+      auto const& ln = *lines[l];
+      auto lnToks = getTokens(l);
       for (std::size_t o = 0; o < ln.size(); ++o) {
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
         if (isJsonBracketChar(ln[o], tok)) {
@@ -174,9 +165,7 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
       }
     }
   } else {
-    // Scan backward.
     int depth = 1;
-
     for (std::size_t o = pos.offset; o > 0;) {
       --o;
       auto tok = (o < curTokens.size()) ? curTokens[o] : SyntaxToken::Normal;
@@ -187,13 +176,10 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
           return BufferPoint{pos.line, o};
       }
     }
-
-    std::vector<SyntaxToken> lnToks;
     for (std::size_t l = pos.line; l > 0;) {
       --l;
-      auto& ln = lines[l];
-      SyntaxState s;
-      tokenizeJsonLine(ln, s, lnToks);
+      auto const& ln = *lines[l];
+      auto lnToks = getTokens(l);
       for (std::size_t o = ln.size(); o > 0;) {
         --o;
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
@@ -208,4 +194,22 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> cons
   }
 
   return std::nullopt;
+}
+
+std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
+                                                   BufferPoint pos) {
+  // Convenience overload that re-tokenizes each visited line from
+  // scratch. Intended for tests/ad-hoc use; production callers should
+  // thread `cachedLineTokens()` through the callback overload.
+  std::vector<std::vector<SyntaxToken>> cache(lines.size());
+  std::vector<bool> valid(lines.size(), false);
+  auto getTokens = [&](std::size_t i) -> std::span<SyntaxToken const> {
+    if (!valid[i]) {
+      SyntaxState s;
+      tokenizeJsonLine(*lines[i], s, cache[i]);
+      valid[i] = true;
+    }
+    return cache[i];
+  };
+  return findMatchingBracketJson(lines, pos, getTokens);
 }

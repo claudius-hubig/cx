@@ -17,7 +17,7 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
   invalidateSynCache(at.line);
   auto [n, enc] = encodeUtf8(cp);
 
-  auto& line = _lines[at.line];
+  auto& line = mutLine(at.line);
   if (cp == '\n') {
     std::string tail(line, at.offset);
     line.resize(at.offset);
@@ -33,9 +33,9 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
       indented.reserve(autoIndent + tail.size());
       indented.append(autoIndent, ' ');
       indented.append(tail);
-      _lines.insert(_lines.begin() + at.line + 1, std::move(indented));
+      _lines.insert(_lines.begin() + at.line + 1, makeLine(std::move(indented)));
     } else {
-      _lines.insert(_lines.begin() + at.line + 1, std::move(tail));
+      _lines.insert(_lines.begin() + at.line + 1, makeLine(std::move(tail)));
     }
     at.line++;
     at.offset = autoIndent;
@@ -50,9 +50,10 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
 }
 
 BufferPoint Buffer::deleteAt(BufferPoint at) {
-  auto& line = _lines[at.line];
-  if (at.offset < line.size()) {
+  std::size_t lineSz = lineContent(at.line).size();
+  if (at.offset < lineSz) {
     invalidateSynCache(at.line);
+    auto& line = mutLine(at.line);
     auto len = utf8SeqLen(static_cast<unsigned char>(line[at.offset]));
     auto end = std::min(at.offset + len, line.size());
     line.erase(line.begin() + at.offset, line.begin() + end);
@@ -60,9 +61,12 @@ BufferPoint Buffer::deleteAt(BufferPoint at) {
     ++_docVersion;
   } else if (at.line + 1 < _lines.size()) {
     invalidateSynCache(at.line);
-    auto& next = _lines[at.line + 1];
-    line.insert(line.end(), next.begin(), next.end());
+    // Take the next line's content out of the vector first so the
+    // mutLine call below operates on a stable index.
+    std::string nextContent = lineContent(at.line + 1);
     _lines.erase(_lines.begin() + at.line + 1);
+    auto& line = mutLine(at.line);
+    line.append(nextContent);
     _modified = true;
     ++_docVersion;
   }
@@ -70,9 +74,9 @@ BufferPoint Buffer::deleteAt(BufferPoint at) {
 }
 
 BufferPoint Buffer::deleteBefore(BufferPoint at) {
-  auto& line = _lines[at.line];
   if (at.offset > 0) {
     invalidateSynCache(at.line);
+    auto& line = mutLine(at.line);
     auto end = at.offset;
     --at.offset;
     while (at.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[at.offset])))
@@ -82,10 +86,11 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
     ++_docVersion;
   } else if (at.line > 0) {
     invalidateSynCache(at.line - 1);
-    auto& prev = _lines[at.line - 1];
-    std::size_t newOffset = prev.size();
-    prev.insert(prev.end(), line.begin(), line.end());
+    std::string lineContentCopy = lineContent(at.line);
     _lines.erase(_lines.begin() + at.line);
+    auto& prev = mutLine(at.line - 1);
+    std::size_t newOffset = prev.size();
+    prev.append(lineContentCopy);
     at.line--;
     at.offset = newOffset;
     _modified = true;
@@ -105,7 +110,8 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
       ++newlineCount;
 
   if (newlineCount == 0) {
-    _lines[at.line].insert(at.offset, text.data(), text.size());
+    auto& line = mutLine(at.line);
+    line.insert(at.offset, text.data(), text.size());
     at.offset += text.size();
     _modified = true;
     ++_docVersion;
@@ -113,11 +119,13 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
   }
 
   // Save tail past insertion point, truncate the line there.
-  std::string tail(_lines[at.line], at.offset);
-  _lines[at.line].resize(at.offset);
+  std::string tail(lineContent(at.line), at.offset);
+  mutLine(at.line).resize(at.offset);
 
   // Open a gap for new lines (single vector shift instead of K shifts).
-  _lines.insert(_lines.begin() + at.line + 1, newlineCount, std::string{});
+  // Each gap LinePtr will be replaced with a freshly allocated string
+  // below; share a single empty placeholder until then.
+  _lines.insert(_lines.begin() + at.line + 1, newlineCount, makeLine());
 
   // Fill lines from text chunks separated by '\n'.
   std::size_t lineIdx = at.line;
@@ -126,10 +134,11 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
     auto nl = text.find('\n', i);
     std::size_t chunkEnd = (nl == std::string_view::npos) ? text.size() : nl;
 
+    std::string_view chunk(text.data() + i, chunkEnd - i);
     if (lineIdx == at.line)
-      _lines[lineIdx].append(text.data() + i, chunkEnd - i);
+      mutLine(lineIdx).append(chunk);
     else
-      _lines[lineIdx].assign(text.data() + i, chunkEnd - i);
+      _lines[lineIdx] = makeLine(chunk);
 
     if (nl != std::string_view::npos) {
       ++lineIdx;
@@ -147,7 +156,7 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
     at.line = lineIdx;
   }
 
-  _lines[at.line].append(tail);
+  mutLine(at.line).append(tail);
   _modified = true;
   ++_docVersion;
   return at;
@@ -161,14 +170,16 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
     return;
 
   to.line = std::min(to.line, _lines.size() - 1);
-  to.offset = std::min(to.offset, _lines[to.line].size());
-  from.offset = std::min(from.offset, _lines[from.line].size());
+  to.offset = std::min(to.offset, lineContent(to.line).size());
+  from.offset = std::min(from.offset, lineContent(from.line).size());
 
   if (from.line == to.line) {
-    _lines[from.line].erase(from.offset, to.offset - from.offset);
+    mutLine(from.line).erase(from.offset, to.offset - from.offset);
   } else {
-    _lines[from.line].resize(from.offset);
-    _lines[from.line].append(_lines[to.line], to.offset);
+    std::string toTail(lineContent(to.line), to.offset);
+    auto& fromLine = mutLine(from.line);
+    fromLine.resize(from.offset);
+    fromLine.append(toTail);
     _lines.erase(_lines.begin() + from.line + 1, _lines.begin() + to.line + 1);
   }
 
@@ -182,7 +193,7 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
 bool Buffer::isBlankLine(std::size_t idx) const {
   if (idx >= _lines.size())
     return true;
-  for (char c : _lines[idx])
+  for (char c : *_lines[idx])
     if (!isWhitespace(c))
       return false;
   return true;
@@ -198,7 +209,7 @@ std::size_t Buffer::screenRow(ColIdx cols, BufferPoint point, ViewFrom viewFrom,
   std::size_t row = 0;
   for (std::size_t lineIdx = viewFrom.line.value; lineIdx <= point.line && lineIdx < _lines.size();
        ++lineIdx) {
-    auto& line = _lines[lineIdx];
+    auto& line = *_lines[lineIdx];
     std::size_t end = (lineIdx == point.line) ? point.offset : line.size();
     // For the viewport line, start from the sub-line wrap offset.
     std::size_t start =
@@ -235,7 +246,7 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
   // Rough size estimate to avoid repeated reallocations.
   std::size_t estimate = 0;
   for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
-    auto& line = _lines[l];
+    auto const& line = *_lines[l];
     std::size_t start = (l == from.line) ? std::min(from.offset, line.size()) : 0;
     std::size_t end = (l == to.line) ? std::min(to.offset, line.size()) : line.size();
     // +1 for the inter-line '\n'. The emission loop only writes one
@@ -246,7 +257,7 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
   std::string result;
   result.reserve(estimate);
   for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
-    auto& line = _lines[l];
+    auto const& line = *_lines[l];
     std::size_t start = (l == from.line) ? from.offset : 0;
     std::size_t end = (l == to.line) ? to.offset : line.size();
     start = std::min(start, line.size());
@@ -260,8 +271,8 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
 
 void Buffer::scanForConflicts() {
   _hasConflicts = false;
-  for (auto const& line : _lines) {
-    if (isConflictMarker(line)) {
+  for (auto const& linePtr : _lines) {
+    if (isConflictMarker(*linePtr)) {
       _hasConflicts = true;
       return;
     }
@@ -296,20 +307,21 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
     state = _synCache[_synCacheValidUpto - 1].stateAfter;
 
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
+    auto const& line = *_lines[i];
     if (_mode == BufferMode::Md)
-      tokenizeMarkdownLine(_lines[i], state, _synCache[i].tokens);
+      tokenizeMarkdownLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Jsn)
-      tokenizeJsonLine(_lines[i], state, _synCache[i].tokens);
+      tokenizeJsonLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Dif)
-      tokenizeDiffLine(_lines[i], state, _synCache[i].tokens);
+      tokenizeDiffLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Cpp)
-      tokenizeLine(_lines[i], state, _synCache[i].tokens);
+      tokenizeLine(line, state, _synCache[i].tokens);
     else
-      _synCache[i].tokens.assign(_lines[i].size(), SyntaxToken::Normal);
+      _synCache[i].tokens.assign(line.size(), SyntaxToken::Normal);
     _synCache[i].stateAfter = state;
 
-    if (_hasConflicts && isConflictMarker(_lines[i]))
-      _synCache[i].tokens.assign(_lines[i].size(), SyntaxToken::ConflictMarker);
+    if (_hasConflicts && isConflictMarker(line))
+      _synCache[i].tokens.assign(line.size(), SyntaxToken::ConflictMarker);
   }
   _synCacheValidUpto = upToLine;
 }
@@ -529,11 +541,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     if (_bracketCache.point == point && _bracketCache.docVersion == _docVersion) {
       matchBracket = _bracketCache.result;
     } else {
-      matchBracket = (_mode == BufferMode::Jsn)
-                         ? findMatchingBracketJson(_lines, point)
-                         : findMatchingBracket(_lines, point, [this](std::size_t i) {
-                             return cachedLineTokens(i);
-                           });
+      auto getTokens = [this](std::size_t i) { return cachedLineTokens(i); };
+      matchBracket = (_mode == BufferMode::Jsn) ? findMatchingBracketJson(_lines, point, getTokens)
+                                                : findMatchingBracket(_lines, point, getTokens);
       _bracketCache = {point, _docVersion, matchBracket};
     }
   }
@@ -724,7 +734,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
     for (std::size_t lineIdx = viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
          ++lineIdx) {
-      auto& line = _lines[lineIdx];
+      auto const& line = *_lines[lineIdx];
       std::size_t vcol = 0;
       bool overflows = false; // content extends past visible area
       RenderState rs;
@@ -794,7 +804,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
   for (std::size_t lineIdx = viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
        ++lineIdx) {
-    auto& line = _lines[lineIdx];
+    auto const& line = *_lines[lineIdx];
     // For the viewport line, start from viewFromOffset (sub-line scroll).
     std::size_t startByte = (lineIdx == viewFrom.line.value) ? viewFromOffset : std::size_t{0};
 

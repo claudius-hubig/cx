@@ -73,7 +73,6 @@ using LineTokensFn = std::function<std::span<SyntaxToken const>(std::size_t line
 // scan distance. It's intended for tests and ad-hoc use; production
 // hot paths should always thread `cachedLineTokens()` through the
 // callback overload instead.
-std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
-                                               BufferPoint pos, LineTokensFn const& getTokens);
-std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
-                                               BufferPoint pos);
+std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos,
+                                               LineTokensFn const& getTokens);
+std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos);

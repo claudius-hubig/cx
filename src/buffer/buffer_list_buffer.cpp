@@ -141,10 +141,11 @@ ViewHint BufferListBuffer::refresh(std::vector<std::string> names,
 
   // Build _lines from display lines (for base-class cursor navigation).
   _lines.clear();
+  _lines.reserve(_displayLines.size());
   for (auto& dl : _displayLines)
-    _lines.emplace_back(dl.begin(), dl.end());
+    _lines.push_back(makeLine(dl));
   if (_lines.empty())
-    _lines.emplace_back(); // always at least one line
+    _lines.push_back(makeLine()); // always at least one line
 
   // Place point on the line matching startName.
   std::size_t startLine = 0;

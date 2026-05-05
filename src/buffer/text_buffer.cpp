@@ -38,7 +38,8 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
     return;
   }
   if (fileSize == 0) {
-    _lines = {{}};
+    _lines.clear();
+    _lines.push_back(makeLine());
     _lineEndingStyle = LineEndingStyle::Unix;
     return;
   }
@@ -49,6 +50,10 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
 
   _lines.clear();
   _lines.reserve(bytesRead / 40 + 1);
+  // Helper to push a fresh line from a [begin, end) byte range.
+  auto pushLine = [&](char const* begin, char const* end) {
+    _lines.push_back(makeLine(std::string_view(begin, end - begin)));
+  };
   char const* p = data.data();
   // Single pass: split lines on '\n' and classify each line ending in
   // place by inspecting the preceding byte (data[nl-1]) for '\r'. A
@@ -62,8 +67,8 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
   while (p < end) {
     auto* nl = static_cast<char const*>(std::memchr(p, '\n', end - p));
     char const* lineEnd = nl ? nl : end;
-    _lines.emplace_back(p, lineEnd - p);
-    auto const& just = _lines.back();
+    pushLine(p, lineEnd);
+    auto const& just = *_lines.back();
     if (!_hasConflicts && isConflictMarker(just))
       _hasConflicts = true;
     if (nl) {
@@ -86,14 +91,14 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
     }
   }
   if (_lines.empty())
-    _lines.emplace_back();
+    _lines.push_back(makeLine());
   // Trailing-empty-line invariant (see Buffer::_lines doc in buffer.hpp:
   // "A file ending with '\n' is represented by an empty trailing entry"):
   // the save site at line ~158 mirrors this by writing a '\n' between
   // every adjacent pair of lines, so the empty trailing entry round-trips
   // back to a file that ends in '\n'.
   if (bytesRead > 0 && data[bytesRead - 1] == '\n')
-    _lines.emplace_back();
+    _lines.push_back(makeLine());
 
   int styleCount = (hasLoneLf ? 1 : 0) + (hasCrlf ? 1 : 0) + (hasLoneCr ? 1 : 0);
   if (styleCount > 1)
@@ -111,23 +116,27 @@ void TextBuffer::normalizeLineEndings() {
     return;
   if (_lineEndingStyle == LineEndingStyle::Crlf) {
     // Strip the trailing '\r' that every line carries for a pure CRLF file.
-    for (auto& line : _lines) {
-      if (!line.empty() && line.back() == '\r')
-        line.pop_back();
+    for (std::size_t i = 0; i < _lines.size(); ++i) {
+      if (!_lines[i]->empty() && _lines[i]->back() == '\r')
+        mutLine(i).pop_back();
     }
   } else {
     // Cr: the file has no '\n' at all, so every '\r' sits inside a line.
     // Re-split each line on '\r' to form new lines.
-    std::vector<std::string> newLines;
+    std::vector<LinePtr> newLines;
     newLines.reserve(_lines.size());
-    for (auto& line : _lines) {
-      newLines.emplace_back();
-      for (char c : line) {
-        if (c == '\r')
-          newLines.emplace_back();
-        else
-          newLines.back().push_back(c);
+    std::string accum;
+    for (auto const& linePtr : _lines) {
+      accum.clear();
+      for (char c : *linePtr) {
+        if (c == '\r') {
+          newLines.push_back(makeLine(std::move(accum)));
+          accum.clear();
+        } else {
+          accum.push_back(c);
+        }
       }
+      newLines.push_back(makeLine(std::move(accum)));
     }
     _lines = std::move(newLines);
   }
@@ -172,8 +181,9 @@ std::expected<void, std::string> TextBuffer::save() {
   // whose representation has an empty trailing entry (per the invariant
   // documented in buffer.hpp) round-trips to a file ending in '\n'.
   for (std::size_t i = 0; i < _lines.size(); ++i) {
-    if (!_lines[i].empty())
-      file.write(_lines[i].data(), static_cast<std::streamsize>(_lines[i].size()));
+    auto const& line = *_lines[i];
+    if (!line.empty())
+      file.write(line.data(), static_cast<std::streamsize>(line.size()));
     if (i + 1 < _lines.size())
       file.put('\n');
   }
@@ -203,12 +213,12 @@ std::expected<void, std::string> TextBuffer::revert() {
 }
 
 void TextBuffer::applySnapshot(VersionSnapshot const& s) {
-  _lines.clear();
-  _lines.reserve(s.lines.size());
-  for (auto const& lp : s.lines)
-    _lines.push_back(*lp);
+  // Adopt the snapshot's LinePtrs directly. Lines unchanged across
+  // snapshots share storage; lines changed since the snapshot was
+  // taken were already detached on edit (Buffer::mutLine).
+  _lines = s.lines;
   if (_lines.empty())
-    _lines.emplace_back();
+    _lines.push_back(makeLine());
   _modified = true;
   ++_docVersion;
   _synCacheValidUpto = 0;

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -106,13 +107,17 @@ public:
   std::size_t lineCount() const { return _lines.size(); }
 
   /// Access the raw content of a line by 0-based index.
-  std::string const& lineContent(std::size_t idx) const { return _lines[idx]; }
+  std::string const& lineContent(std::size_t idx) const { return *_lines[idx]; }
 
   /// True if line idx is empty or contains only spaces/tabs.
   bool isBlankLine(std::size_t idx) const;
 
-  /// Direct const access to the line storage.
-  std::vector<std::string> const& lines() const { return _lines; }
+  /// Direct const access to the line storage. Snapshots and the live
+  /// buffer share these LinePtrs; mutation goes through mutLine() which
+  /// detaches (allocates a fresh string) if another holder references
+  /// the pointer. So a fresh applySnapshot is O(N pointer copies)
+  /// rather than O(N string copies).
+  std::vector<LinePtr> const& lines() const { return _lines; }
 
   /// Document version counter, incremented on every edit. BufferView uses
   /// this to detect external modifications and invalidate its caches.
@@ -230,7 +235,30 @@ protected:
 
   std::string _name;
   BufferMode _mode = BufferMode::Txt;
-  std::vector<std::string> _lines{{}};
+  // Initial state: one empty line, matching the prior `vector<string>{{}}`
+  // semantics. Helpers below (mutLine, replaceLines, etc.) maintain the
+  // "always at least one line" invariant.
+  std::vector<LinePtr> _lines{std::make_shared<std::string const>()};
+
+  /// Detach line `idx` from any other holders and return a mutable
+  /// reference to the string. If the LinePtr's use_count is 1 the
+  /// string is mutated in place via const_cast (safe because we hold
+  /// the only reference to a pointer that was created via this
+  /// helper). Otherwise allocates a fresh string copy and stores it
+  /// back into `_lines[idx]`.
+  std::string& mutLine(std::size_t idx) {
+    auto& p = _lines[idx];
+    if (p.use_count() > 1)
+      p = std::make_shared<std::string const>(*p);
+    return const_cast<std::string&>(*p);
+  }
+
+  /// Construct a LinePtr from an rvalue or lvalue string.
+  static LinePtr makeLine(std::string s) {
+    return std::make_shared<std::string const>(std::move(s));
+  }
+  static LinePtr makeLine(std::string_view sv) { return std::make_shared<std::string const>(sv); }
+  static LinePtr makeLine() { return std::make_shared<std::string const>(); }
   bool _modified = false;
   bool _hasConflicts = false;
   std::size_t _docVersion = 0; // incremented on every edit

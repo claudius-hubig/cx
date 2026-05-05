@@ -552,7 +552,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_render_uses_amber_color) {
 }
 
 BOOST_AUTO_TEST_CASE(preprocessor_bracket_not_matched) {
-  std::vector<std::string> lines = {"#include <stdio.h>", "foo(<bar>);"};
+  auto lines = toLinePtrs({"#include <stdio.h>", "foo(<bar>);"});
   auto result = findMatchingBracket(lines, {0, 9});
   BOOST_CHECK(!result.has_value());
 }
@@ -589,13 +589,15 @@ BOOST_AUTO_TEST_CASE(advance_state_block_comment_inside_raw_string_ignored) {
 // Bug 1: findMatchingBracket must skip brackets in strings/comments
 // ============================================================
 
-// Build a lines vector from newline-separated text.
-static std::vector<std::string> mklines(std::string_view s) {
-  std::vector<std::string> result;
+// Build a LinePtr vector from newline-separated text. The bracket
+// matchers now take `vector<LinePtr> const&`, so tests build LinePtrs
+// directly instead of strings.
+static std::vector<LinePtr> mklines(std::string_view s) {
+  std::vector<LinePtr> result;
   std::size_t start = 0;
   for (std::size_t i = 0; i <= s.size(); ++i) {
     if (i == s.size() || s[i] == '\n') {
-      result.emplace_back(s.substr(start, i - start));
+      result.push_back(std::make_shared<std::string const>(s.substr(start, i - start)));
       start = i + 1;
     }
   }
@@ -718,7 +720,7 @@ BOOST_AUTO_TEST_CASE(findMatchingBracket_with_token_cache_consulted) {
   // Normal tokenization would match '(' at offset 8 to ')' at 10.
   // With our custom provider we mark the real ')' at 10 as Comment,
   // so it is ignored and depth drops to 0 at ')' at offset 13.
-  std::vector<SyntaxToken> toks(lines[0].size(), SyntaxToken::Normal);
+  std::vector<SyntaxToken> toks(lines[0]->size(), SyntaxToken::Normal);
   toks[1] = SyntaxToken::Paren;
   toks[3] = SyntaxToken::Paren;
   toks[8] = SyntaxToken::Paren;
@@ -746,7 +748,7 @@ BOOST_AUTO_TEST_CASE(findMatchingBracket_with_token_cache_backward) {
   //                    01234567890
   // Normal tokenization matches offset 10 to offset 0. Hiding the
   // ')' at offset 8 drops one increment, so depth hits 0 at offset 6.
-  std::vector<SyntaxToken> toks(lines[0].size(), SyntaxToken::Normal);
+  std::vector<SyntaxToken> toks(lines[0]->size(), SyntaxToken::Normal);
   for (std::size_t o : {0u, 2u, 4u, 6u, 10u})
     toks[o] = SyntaxToken::Paren;
   toks[8] = SyntaxToken::String; // hide this ')'
@@ -1054,7 +1056,7 @@ BOOST_AUTO_TEST_CASE(json_colon_comma_normal) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_match_square) {
-  std::vector<std::string> lines = {"[1, 2]"};
+  auto lines = toLinePtrs({"[1, 2]"});
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
   BOOST_CHECK_EQUAL(match->line, 0u);
@@ -1067,14 +1069,14 @@ BOOST_AUTO_TEST_CASE(json_bracket_match_square) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_match_brace) {
-  std::vector<std::string> lines = {R"({"a": 1})"};
+  auto lines = toLinePtrs({R"({"a": 1})"});
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
   BOOST_CHECK_EQUAL(match->offset, 7u);
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_inside_string_skipped) {
-  std::vector<std::string> lines = {R"({"key": "["})"};
+  auto lines = toLinePtrs({R"({"key": "["})"});
   // The [ at pos 8 is inside a string — cursor on { at 0 should match } at 11.
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
@@ -1082,7 +1084,7 @@ BOOST_AUTO_TEST_CASE(json_bracket_inside_string_skipped) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_multiline) {
-  std::vector<std::string> lines = {"{", "  \"a\": 1", "}"};
+  auto lines = toLinePtrs({"{", "  \"a\": 1", "}"});
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
   BOOST_CHECK_EQUAL(match->line, 2u);

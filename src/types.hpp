@@ -2,7 +2,14 @@
 
 #include <compare>
 #include <cstddef>
+#include <memory>
+#include <string>
 #include <variant>
+
+// Shared pointer to immutable line storage, used by Buffer and
+// VersionHistory. Lines are immutable behind the pointer; mutation
+// goes through Buffer::mutLine() which detaches when shared.
+using LinePtr = std::shared_ptr<std::string const>;
 
 struct RowIdx {
   explicit RowIdx(std::size_t value) : value(value) {}

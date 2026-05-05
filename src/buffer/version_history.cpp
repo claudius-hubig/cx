@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-void VersionHistory::capture(std::vector<std::string> const& currentLines, BufferPoint cursor,
+void VersionHistory::capture(std::vector<LinePtr> const& currentLines, BufferPoint cursor,
                              std::size_t dirtyFrom, int lineShift) {
   if (!_pendingDestroy.empty())
     _pendingDestroy.pop_front();
@@ -12,45 +12,21 @@ void VersionHistory::capture(std::vector<std::string> const& currentLines, Buffe
   snap.cursor = cursor;
 
   if (_versions.empty()) {
-    snap.lines.reserve(currentLines.size());
-    for (auto const& s : currentLines)
-      snap.lines.push_back(std::make_shared<std::string const>(s));
+    // Share LinePtrs directly; no string allocation per line.
+    snap.lines = currentLines;
     _deltaChainLen = 0;
   } else if (dirtyFrom != SIZE_MAX && lineShift == 0 && _deltaChainLen < kMaxDeltaChain) {
-    snap.patches.push_back(
-        {dirtyFrom, std::make_shared<std::string const>(currentLines[dirtyFrom])});
+    // Delta path: just record a single LinePtr for the changed line.
+    snap.patches.push_back({dirtyFrom, currentLines[dirtyFrom]});
     ++_deltaChainLen;
   } else {
-    materialize(_versions.size() - 1);
-    auto const& prev = _versions.back().lines;
-    auto prevSize = prev.size();
-
-    snap.lines.reserve(currentLines.size());
-    if (dirtyFrom == SIZE_MAX) {
-      for (std::size_t i = 0; i < currentLines.size(); ++i) {
-        if (i < prevSize && *prev[i] == currentLines[i])
-          snap.lines.push_back(prev[i]);
-        else
-          snap.lines.push_back(std::make_shared<std::string const>(currentLines[i]));
-      }
-    } else {
-      std::size_t safePrefix = std::min({dirtyFrom, currentLines.size(), prevSize});
-      for (std::size_t i = 0; i < safePrefix; ++i)
-        snap.lines.push_back(prev[i]);
-
-      std::size_t modCount = static_cast<std::size_t>(std::max(1, 1 + lineShift));
-      std::size_t afterNew = dirtyFrom + modCount;
-      for (std::size_t i = dirtyFrom; i < afterNew && i < currentLines.size(); ++i)
-        snap.lines.push_back(std::make_shared<std::string const>(currentLines[i]));
-
-      for (std::size_t i = afterNew; i < currentLines.size(); ++i) {
-        auto oldIdx = static_cast<std::size_t>(static_cast<long long>(i) - lineShift);
-        if (oldIdx < prevSize)
-          snap.lines.push_back(prev[oldIdx]);
-        else
-          snap.lines.push_back(std::make_shared<std::string const>(currentLines[i]));
-      }
-    }
+    // Full snapshot path. Share the LinePtrs from currentLines as-is —
+    // unchanged lines naturally retain pointer identity across snapshots
+    // because Buffer::mutLine only allocates a fresh string when the
+    // existing one is shared.
+    snap.lines = currentLines;
+    (void)dirtyFrom;
+    (void)lineShift;
     _deltaChainLen = 0;
   }
 
@@ -58,24 +34,16 @@ void VersionHistory::capture(std::vector<std::string> const& currentLines, Buffe
   pruneIfNeeded();
 }
 
-void VersionHistory::captureInitial(std::vector<std::string>& lines, BufferPoint cursor) {
+void VersionHistory::captureInitial(std::vector<LinePtr> const& lines, BufferPoint cursor) {
   VersionSnapshot snap;
   snap.timestamp = std::chrono::system_clock::now();
   snap.cursor = cursor;
-  // IMPORTANT: *block must never be mutated after this point —
-  // VersionSnapshot::lines aliases each string inside it via the
-  // aliasing shared_ptr constructor, and any in-place mutation of
-  // those strings would invalidate every aliasing handle.
-  auto block = std::make_shared<std::vector<std::string>>(std::move(lines));
-  snap.lines.reserve(block->size());
-  for (auto const& s : *block)
-    snap.lines.push_back(std::shared_ptr<std::string const>(block, &s));
+  // Just share the LinePtrs from the live buffer. Buffer::mutLine
+  // detaches on first write, so the snapshot's LinePtrs remain valid
+  // pointers to the original immutable string content.
+  snap.lines = lines;
   _versions.push_back(std::move(snap));
   _deltaChainLen = 0;
-  lines.clear();
-  lines.reserve(block->size());
-  for (auto const& s : *block)
-    lines.push_back(s);
 }
 
 void VersionHistory::materialize(std::size_t idx) const {

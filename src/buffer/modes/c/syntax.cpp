@@ -529,11 +529,11 @@ static bool isBracketChar(char c, SyntaxToken tok) {
   return true;
 }
 
-std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
-                                               BufferPoint pos, LineTokensFn const& getTokens) {
+std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos,
+                                               LineTokensFn const& getTokens) {
   if (pos.line >= lines.size())
     return std::nullopt;
-  auto const& line = lines[pos.line];
+  auto const& line = *lines[pos.line];
   if (pos.offset >= line.size())
     return std::nullopt;
 
@@ -563,7 +563,7 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
     }
     // Subsequent lines.
     for (std::size_t l = pos.line + 1; l < lines.size(); ++l) {
-      auto const& ln = lines[l];
+      auto const& ln = *lines[l];
       auto lnToks = getTokens(l);
       for (std::size_t o = 0; o < ln.size(); ++o) {
         auto tok = (o < lnToks.size()) ? lnToks[o] : SyntaxToken::Normal;
@@ -591,7 +591,7 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
     // Earlier lines.
     for (std::size_t l = pos.line; l > 0;) {
       --l;
-      auto const& ln = lines[l];
+      auto const& ln = *lines[l];
       auto lnToks = getTokens(l);
       for (std::size_t o = ln.size(); o > 0;) {
         --o;
@@ -609,24 +609,23 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& l
   return std::nullopt;
 }
 
-std::optional<BufferPoint> findMatchingBracket(std::vector<std::string> const& lines,
-                                               BufferPoint pos) {
+std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos) {
   // Convenience overload for callers without a syntax cache (tests,
   // ad-hoc uses). Memoizes tokens across the call so each visited line
   // is tokenized at most once, starting from the file head.
   struct LocalCache {
-    std::vector<std::string> const& lines;
+    std::vector<LinePtr> const& lines;
     std::vector<std::vector<SyntaxToken>> tokens;
     std::size_t validUpto = 0;
     SyntaxState stateAfterValid{};
 
-    explicit LocalCache(std::vector<std::string> const& l) : lines(l), tokens(l.size()) {}
+    explicit LocalCache(std::vector<LinePtr> const& l) : lines(l), tokens(l.size()) {}
 
     std::span<SyntaxToken const> at(std::size_t i) {
       if (i < validUpto)
         return tokens[i];
       while (validUpto <= i) {
-        tokenizeLine(lines[validUpto], stateAfterValid, tokens[validUpto]);
+        tokenizeLine(*lines[validUpto], stateAfterValid, tokens[validUpto]);
         ++validUpto;
       }
       return tokens[i];

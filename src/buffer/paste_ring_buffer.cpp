@@ -6,13 +6,11 @@ ViewHint PasteRingBuffer::refresh(PasteRing const& pr) {
   _lines.clear();
 
   if (pr.empty()) {
-    auto sv = std::string_view{"(empty)"};
-    _lines.emplace_back(sv.begin(), sv.end());
+    _lines.push_back(makeLine(std::string_view{"(empty)"}));
   } else {
     for (std::size_t i = 0; i < pr.size(); ++i) {
       // Header line.
-      std::string header = "--- Entry " + std::to_string(i + 1) + " ---";
-      _lines.emplace_back(header.begin(), header.end());
+      _lines.push_back(makeLine("--- Entry " + std::to_string(i + 1) + " ---"));
 
       // Entry content, split on '\n'. Use `<` rather than `<=` so an
       // entry that ends in '\n' does not produce a phantom empty
@@ -23,16 +21,16 @@ ViewHint PasteRingBuffer::refresh(PasteRing const& pr) {
       while (pos < text.size()) {
         auto nl = text.find('\n', pos);
         if (nl == std::string::npos) {
-          _lines.emplace_back(text.begin() + pos, text.end());
+          _lines.push_back(makeLine(std::string_view(text.data() + pos, text.size() - pos)));
           break;
         }
-        _lines.emplace_back(text.begin() + pos, text.begin() + nl);
+        _lines.push_back(makeLine(std::string_view(text.data() + pos, nl - pos)));
         pos = nl + 1;
       }
 
       // Blank line between entries.
       if (i + 1 < pr.size())
-        _lines.emplace_back();
+        _lines.push_back(makeLine());
     }
   }
 

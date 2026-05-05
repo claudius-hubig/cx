@@ -12,12 +12,24 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
+
+// Convert a `vector<string>` to a `vector<LinePtr>` for tests that
+// construct ad-hoc input for the bracket matchers (which now take
+// `vector<LinePtr> const&`).
+inline std::vector<LinePtr> toLinePtrs(std::vector<std::string> const& v) {
+  std::vector<LinePtr> out;
+  out.reserve(v.size());
+  for (auto const& s : v)
+    out.push_back(std::make_shared<std::string const>(s));
+  return out;
+}
 
 // Test wrapper that bundles any Buffer subclass with an owned BufferView and
 // provides forwarding methods for all view-state operations. This allows

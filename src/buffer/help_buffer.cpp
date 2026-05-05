@@ -300,7 +300,7 @@ static std::vector<VisualLine> const& cachedVisualLines(std::size_t cols) {
 
 HelpBuffer::HelpBuffer() : Buffer("*help*") {
   _lines.clear();
-  auto addLine = [&](std::string_view sv) { _lines.emplace_back(sv.begin(), sv.end()); };
+  auto addLine = [&](std::string_view sv) { _lines.push_back(makeLine(sv)); };
   addLine(kTitle);
   addLine({});
   addLine({});

@@ -237,10 +237,11 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
 
   // Populate _lines for base-class cursor navigation.
   _lines.clear();
+  _lines.reserve(_displayLines.size());
   for (auto& dl : _displayLines)
-    _lines.emplace_back(dl.begin(), dl.end());
+    _lines.push_back(makeLine(dl));
   if (_lines.empty())
-    _lines.emplace_back();
+    _lines.push_back(makeLine());
 
   // Restore cursor position.
   std::size_t newLine = 0;

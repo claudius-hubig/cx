@@ -4,8 +4,18 @@
 
 #include "buffer/version_history.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
+
+static LinePtr lp(std::string s) { return std::make_shared<std::string const>(std::move(s)); }
+static std::vector<LinePtr> lps(std::initializer_list<std::string> ss) {
+  std::vector<LinePtr> r;
+  r.reserve(ss.size());
+  for (auto& s : ss)
+    r.push_back(lp(s));
+  return r;
+}
 
 BOOST_AUTO_TEST_CASE(empty_history) {
   VersionHistory h;
@@ -15,7 +25,7 @@ BOOST_AUTO_TEST_CASE(empty_history) {
 
 BOOST_AUTO_TEST_CASE(capture_grows_history) {
   VersionHistory h;
-  std::vector<std::string> lines{"hello"};
+  auto lines = lps({"hello"});
   h.capture(lines, {0, 0});
   BOOST_CHECK_EQUAL(h.size(), 1u);
   BOOST_CHECK_EQUAL(*h.at(0).lines[0], "hello");
@@ -25,9 +35,9 @@ BOOST_AUTO_TEST_CASE(capture_grows_history) {
 
 BOOST_AUTO_TEST_CASE(capture_shares_unchanged_lines) {
   VersionHistory h;
-  std::vector<std::string> lines{"a", "b", "c", "d"};
+  auto lines = lps({"a", "b", "c", "d"});
   h.capture(lines, {0, 0});
-  lines[1] = "B";
+  lines[1] = lp("B"); // mutate just one entry
   h.capture(lines, {1, 0});
   BOOST_CHECK_EQUAL(h.size(), 2u);
   // Unchanged lines share storage.
@@ -42,9 +52,9 @@ BOOST_AUTO_TEST_CASE(capture_shares_unchanged_lines) {
 
 BOOST_AUTO_TEST_CASE(capture_handles_line_count_change) {
   VersionHistory h;
-  std::vector<std::string> lines{"a", "b"};
+  auto lines = lps({"a", "b"});
   h.capture(lines, {0, 0});
-  lines.push_back("c");
+  lines.push_back(lp("c"));
   h.capture(lines, {2, 0});
   BOOST_CHECK_EQUAL(h.size(), 2u);
   BOOST_CHECK_EQUAL(h.at(1).lines.size(), 3u);
@@ -56,7 +66,7 @@ BOOST_AUTO_TEST_CASE(capture_handles_line_count_change) {
 BOOST_AUTO_TEST_CASE(truncate_after_drops_forward_entries) {
   VersionHistory h;
   for (std::size_t i = 0; i < 20; ++i)
-    h.capture({std::to_string(i)}, {0, 0});
+    h.capture(lps({std::to_string(i)}), {0, 0});
   BOOST_CHECK_EQUAL(h.size(), 20u);
   h.truncateAfter(5);
   BOOST_CHECK_EQUAL(h.size(), 6u);
@@ -66,7 +76,7 @@ BOOST_AUTO_TEST_CASE(truncate_after_drops_forward_entries) {
 BOOST_AUTO_TEST_CASE(truncate_after_last_index_is_noop) {
   VersionHistory h;
   for (std::size_t i = 0; i < 5; ++i)
-    h.capture({std::to_string(i)}, {0, 0});
+    h.capture(lps({std::to_string(i)}), {0, 0});
   h.truncateAfter(4);
   BOOST_CHECK_EQUAL(h.size(), 5u);
 }
@@ -75,12 +85,12 @@ BOOST_AUTO_TEST_CASE(prune_triggers_when_exceeding_cap) {
   VersionHistory h;
   // Push exactly the cap — no prune.
   for (std::size_t i = 0; i < VersionHistory::kMaxVersions; ++i)
-    h.capture({std::to_string(i)}, {0, 0});
+    h.capture(lps({std::to_string(i)}), {0, 0});
   BOOST_CHECK_EQUAL(h.size(), VersionHistory::kMaxVersions);
 
   // One more triggers prune: thin the oldest kThinCount entries by
   // dropping every second one (indices 1, 3, 5, ...).
-  h.capture({std::to_string(VersionHistory::kMaxVersions)}, {0, 0});
+  h.capture(lps({std::to_string(VersionHistory::kMaxVersions)}), {0, 0});
 
   std::size_t thinned = VersionHistory::kThinCount / 2;
   std::size_t expected = VersionHistory::kMaxVersions + 1 - thinned;
@@ -112,7 +122,7 @@ BOOST_AUTO_TEST_CASE(prune_triggers_when_exceeding_cap) {
 BOOST_AUTO_TEST_CASE(prune_keeps_size_bounded_over_many_pushes) {
   VersionHistory h;
   for (std::size_t i = 0; i < 500; ++i) {
-    h.capture({std::to_string(i)}, {0, 0});
+    h.capture(lps({std::to_string(i)}), {0, 0});
     BOOST_CHECK_LE(h.size(), VersionHistory::kMaxVersions);
   }
   // Newest is still present.
@@ -121,8 +131,8 @@ BOOST_AUTO_TEST_CASE(prune_keeps_size_bounded_over_many_pushes) {
 
 BOOST_AUTO_TEST_CASE(clear_resets_history) {
   VersionHistory h;
-  h.capture({"a"}, {0, 0});
-  h.capture({"b"}, {0, 0});
+  h.capture(lps({"a"}), {0, 0});
+  h.capture(lps({"b"}), {0, 0});
   h.clear();
   BOOST_CHECK(h.empty());
 }
@@ -135,7 +145,7 @@ BOOST_AUTO_TEST_CASE(clear_resets_history) {
 // further than kMaxDeltaChain entries.
 BOOST_AUTO_TEST_CASE(prune_force_materializes_long_chains) {
   VersionHistory h;
-  std::vector<std::string> lines{"a", "b", "c", "d", "e"};
+  auto lines = lps({"a", "b", "c", "d", "e"});
   h.capture(lines, {0, 0});
 
   // Single-line edits stay on the delta path until kMaxDeltaChain forces
@@ -143,10 +153,10 @@ BOOST_AUTO_TEST_CASE(prune_force_materializes_long_chains) {
   // the full-snapshot branch) so prune meets a realistic delta/full mix.
   for (std::size_t step = 0; step < 800; ++step) {
     std::size_t idx = step % lines.size();
-    lines[idx] = "v" + std::to_string(step);
+    lines[idx] = lp("v" + std::to_string(step));
     if (step % 17 == 0) {
       // Take the multi-line branch — exercises the full-snapshot capture.
-      lines.push_back("x" + std::to_string(step));
+      lines.push_back(lp("x" + std::to_string(step)));
       h.capture(lines, {0, 0}, idx, 1);
     } else {
       h.capture(lines, {0, 0}, idx, 0);

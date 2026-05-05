@@ -14,5 +14,11 @@ void tokenizeJsonLine(std::string const& line, SyntaxState& state, std::vector<S
 // Find the matching bracket for the character at pos in a JSON buffer.
 // Only matches [] and {}. Brackets inside strings are skipped.
 // Returns nullopt if pos is not on a bracket or no match is found.
-std::optional<BufferPoint> findMatchingBracketJson(std::vector<std::string> const& lines,
+//
+// The three-argument overload uses the caller-supplied tokens source
+// (typically backed by Buffer::cachedLineTokens). The two-argument
+// overload re-tokenizes each visited line from scratch.
+std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
+                                                   BufferPoint pos, LineTokensFn const& getTokens);
+std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
                                                    BufferPoint pos);

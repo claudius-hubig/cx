@@ -157,9 +157,16 @@ per-line syntax cache. All *view state* (cursor position, viewport,
 mark, selection highlight, per-view caches) lives in `BufferView`, so
 multiple views can share the same `Buffer` for split-window editing.
 
-Text is stored as `std::vector<std::string>` (one `std::string` per line,
-without newline delimiters). An empty buffer has `{{}}` (a single empty
-line); a file ending in `\n` is represented by an empty trailing entry.
+Text is stored as `std::vector<LinePtr>` where `LinePtr` is
+`std::shared_ptr<std::string const>` (one immutable string per line,
+without newline delimiters). The `LinePtr`s are shared with
+`VersionHistory` snapshots so capturing or restoring a snapshot is
+O(N pointer copies), not O(N string copies). Mutations go through
+`Buffer::mutLine(idx)` which detaches a fresh string copy when
+the existing `LinePtr` is shared (use_count > 1) and otherwise
+mutates in place via `const_cast`. An empty buffer has a single
+empty-string `LinePtr`; a file ending in `\n` is represented by an
+empty trailing entry.
 
 Public API:
 
@@ -469,16 +476,19 @@ token vector allocation.
 
 ### Performance characteristics
 
-The text storage model (`vector<string>`, one heap allocation per line)
-is simple but has known scalability limits:
+The text storage model (`vector<LinePtr>`, one immutable
+`shared_ptr<string const>` per line) is simple but has known
+scalability limits:
 
-- **Per-line overhead**: each line is a separate `std::string` with its
-  own heap allocation (~32 bytes overhead + allocator metadata). A file
-  with millions of short lines wastes significant memory and fragments the
-  heap.
-- **Line splits/joins are O(N)**: inserting or deleting a newline calls
-  `_lines.insert()`/`_lines.erase()`, which shifts all subsequent line
-  strings. On a multi-million-line file this is noticeable.
+- **Per-line overhead**: each line is a separate `std::string` plus a
+  `shared_ptr` control block (~32 bytes overhead + allocator metadata).
+  A file with millions of short lines wastes significant memory and
+  fragments the heap. Snapshots and the live buffer share `LinePtr`s,
+  so unchanged lines are not duplicated across versions.
+- **Line splits/joins are O(N) shifts**: inserting or deleting a
+  newline calls `_lines.insert()`/`_lines.erase()`, which shifts all
+  subsequent `LinePtr`s. The shifted entries are pointer-sized so the
+  cost is low per element, but still proportional to file size.
 - **Region deletion is O(N)**: `deleteRegion()` creates a temporary merged
   line and erases a range of `_lines`, both proportional to file size.
 - **Rendering is full-redraw**: `render()` rebuilds the entire screen

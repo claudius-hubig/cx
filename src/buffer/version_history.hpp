@@ -10,7 +10,9 @@
 #include <vector>
 
 struct VersionSnapshot {
-  using LinePtr = std::shared_ptr<std::string const>;
+  // LinePtr is now declared in types.hpp; alias kept here for backwards
+  // compatibility with existing callers.
+  using LinePtr = ::LinePtr;
   mutable std::vector<LinePtr> lines;
   std::chrono::system_clock::time_point timestamp;
   BufferPoint cursor;
@@ -55,13 +57,17 @@ public:
   // back to a base snapshot at O(kMaxDeltaChain) line-pointer copies.
   static constexpr std::size_t kMaxDeltaChain = 32;
 
-  void capture(std::vector<std::string> const& currentLines, BufferPoint cursor,
+  /// Capture a snapshot from the live buffer's `vector<LinePtr>`. The
+  /// LinePtrs are reference-counted so this is O(N pointers) when the
+  /// edit was a single-line replacement (delta path) and O(N pointers)
+  /// in the worst case (full path) — never O(N strings).
+  void capture(std::vector<LinePtr> const& currentLines, BufferPoint cursor,
                std::size_t dirtyFrom = SIZE_MAX, int lineShift = 0);
 
-  /// Move `lines` into a shared block and create aliasing shared_ptrs,
-  /// avoiding N individual make_shared allocations. Rebuilds `lines`
-  /// by copying from the shared block.
-  void captureInitial(std::vector<std::string>& lines, BufferPoint cursor);
+  /// Capture the initial snapshot from a freshly loaded `vector<LinePtr>`.
+  /// Same semantics as capture() but skips the prior-snapshot
+  /// equality scan (there is no prior snapshot to compare against).
+  void captureInitial(std::vector<LinePtr> const& lines, BufferPoint cursor);
 
   std::size_t size() const { return _versions.size(); }
   bool empty() const { return _versions.empty(); }
