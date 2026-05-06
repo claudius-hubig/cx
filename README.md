@@ -27,7 +27,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
 - **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter; Ctrl-F again advances to the next match while re-prompting for a new search string. Matched text is temporarily highlighted.
-- **Find and replace** — `Esc-%` prompts for a pattern and replacement, then walks forward through matches asking `y`/`n`/`!`/`q` per hit. `!` finishes the rest without prompting.
+- **Find and replace** — `Esc-%` prompts for a pattern and replacement, then walks forward through matches asking `y`/`n`/`!`/`q` per hit. `!` finishes the rest without prompting. Matching is exact (case-sensitive, no fuzzy skipping) — unlike Find, which uses smart matching for navigation.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Word and paragraph navigation** — move by word, paragraph, or go to a specific line
 - **Chunk deletion** — delete contiguous runs of whitespace or non-whitespace in either direction

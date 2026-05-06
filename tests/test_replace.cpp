@@ -37,12 +37,11 @@ std::string allLines(Buffer const& buf) {
 
 } // namespace
 
-// ----- findNextMatchInBuffer -----
+// ----- findNextMatchInBuffer (exact substring) -----
 
 BOOST_AUTO_TEST_CASE(findNext_returns_first_match_on_start_line) {
   auto bufPtr = makeBuffer({"hello world", "second line"});
-  FindFlags f("world");
-  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "world", f);
+  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "world");
   BOOST_REQUIRE(m);
   BOOST_CHECK_EQUAL(m->first.line, 0u);
   BOOST_CHECK_EQUAL(m->first.offset, 6u);
@@ -51,8 +50,7 @@ BOOST_AUTO_TEST_CASE(findNext_returns_first_match_on_start_line) {
 
 BOOST_AUTO_TEST_CASE(findNext_skips_to_later_line) {
   auto bufPtr = makeBuffer({"alpha", "beta gamma", "delta"});
-  FindFlags f("gamma");
-  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "gamma", f);
+  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "gamma");
   BOOST_REQUIRE(m);
   BOOST_CHECK_EQUAL(m->first.line, 1u);
   BOOST_CHECK_EQUAL(m->first.offset, 5u);
@@ -60,26 +58,37 @@ BOOST_AUTO_TEST_CASE(findNext_skips_to_later_line) {
 
 BOOST_AUTO_TEST_CASE(findNext_respects_start_offset) {
   auto bufPtr = makeBuffer({"foo foo foo"});
-  FindFlags f("foo");
-  auto m = findNextMatchInBuffer(*bufPtr, {0, 4}, "foo", f);
+  auto m = findNextMatchInBuffer(*bufPtr, {0, 4}, "foo");
   BOOST_REQUIRE(m);
   BOOST_CHECK_EQUAL(m->first.offset, 4u);
 }
 
 BOOST_AUTO_TEST_CASE(findNext_no_wrap_returns_nullopt) {
   auto bufPtr = makeBuffer({"alpha", "beta"});
-  FindFlags f("alpha");
-  auto m = findNextMatchInBuffer(*bufPtr, {1, 0}, "alpha", f);
+  auto m = findNextMatchInBuffer(*bufPtr, {1, 0}, "alpha");
   BOOST_CHECK(!m);
 }
 
-BOOST_AUTO_TEST_CASE(findNext_smart_skip_digits) {
+BOOST_AUTO_TEST_CASE(findNext_does_not_skip_digits) {
+  // Replace must not honour smart-find skipping: "abc" must not match
+  // "a1b2c". Otherwise the user could ask to replace "abc" and have
+  // "a1b2c" silently rewritten.
   auto bufPtr = makeBuffer({"a1b2c"});
-  FindFlags f("abc");
-  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "abc", f);
-  BOOST_REQUIRE(m);
-  BOOST_CHECK_EQUAL(m->first.offset, 0u);
-  BOOST_CHECK_EQUAL(m->second.offset, 5u);
+  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "abc");
+  BOOST_CHECK(!m);
+}
+
+BOOST_AUTO_TEST_CASE(findNext_is_case_sensitive) {
+  // Same rationale: lowercase pattern must only hit the literal bytes.
+  auto bufPtr = makeBuffer({"Hello"});
+  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "hello");
+  BOOST_CHECK(!m);
+}
+
+BOOST_AUTO_TEST_CASE(findNext_empty_pattern_returns_nullopt) {
+  auto bufPtr = makeBuffer({"foo"});
+  auto m = findNextMatchInBuffer(*bufPtr, {0, 0}, "");
+  BOOST_CHECK(!m);
 }
 
 // ----- replaceAllForward -----
@@ -128,18 +137,18 @@ BOOST_AUTO_TEST_CASE(replaceAll_replacement_with_newline_inserts_lines) {
   BOOST_CHECK_EQUAL(allLines(*bufPtr), "foo x\ny");
 }
 
-BOOST_AUTO_TEST_CASE(replaceAll_smart_case_insensitive_lowercase_pattern) {
+BOOST_AUTO_TEST_CASE(replaceAll_is_case_sensitive) {
   auto bufPtr = makeBuffer({"Hello HELLO hello"});
   auto n = replaceAllForward(*bufPtr, {0, 0}, "hello", "X");
-  BOOST_CHECK_EQUAL(n, 3u);
-  BOOST_CHECK_EQUAL(bufPtr->lineContent(0), "X X X");
+  BOOST_CHECK_EQUAL(n, 1u);
+  BOOST_CHECK_EQUAL(bufPtr->lineContent(0), "Hello HELLO X");
 }
 
-BOOST_AUTO_TEST_CASE(replaceAll_smart_case_sensitive_when_pattern_has_caps) {
-  auto bufPtr = makeBuffer({"Hello HELLO hello"});
-  auto n = replaceAllForward(*bufPtr, {0, 0}, "Hello", "X");
-  BOOST_CHECK_EQUAL(n, 1u);
-  BOOST_CHECK_EQUAL(bufPtr->lineContent(0), "X HELLO hello");
+BOOST_AUTO_TEST_CASE(replaceAll_does_not_skip_intervening_chars) {
+  auto bufPtr = makeBuffer({"a1b1c"});
+  auto n = replaceAllForward(*bufPtr, {0, 0}, "abc", "X");
+  BOOST_CHECK_EQUAL(n, 0u);
+  BOOST_CHECK_EQUAL(bufPtr->lineContent(0), "a1b1c");
 }
 
 BOOST_AUTO_TEST_CASE(replaceAll_empty_pattern_no_op) {

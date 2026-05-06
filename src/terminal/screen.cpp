@@ -895,8 +895,7 @@ void Screen::openReplacePrompt() {
 void Screen::replacePump(std::string pattern, std::string replacement, std::size_t replaced) {
   if (!_buf || _buf->readonly())
     return;
-  FindFlags f(pattern);
-  auto m = findNextMatchInBuffer(*_buf, _view->point(), pattern, f);
+  auto m = findNextMatchInBuffer(*_buf, _view->point(), pattern);
   if (!m) {
     _view->clearHighlight();
     _highlightExpiry.reset();
