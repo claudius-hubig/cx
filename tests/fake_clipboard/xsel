@@ -1,0 +1,62 @@
+#!/bin/sh
+# Fake xsel for cx end-to-end tests.
+#
+# Behaves enough like real xsel(1) for the cases cx exercises:
+#   xsel --primary   --input    # read stdin into PRIMARY
+#   xsel --clipboard --input    # read stdin into CLIPBOARD
+#   xsel --primary   --output   # write PRIMARY to stdout
+#   xsel --clipboard --output   # write CLIPBOARD to stdout
+#
+# Storage and call log: see fake xclip for the shared layout.
+
+set -eu
+
+selection=clipboard
+mode=
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--primary)
+      selection=primary
+      shift
+      ;;
+    -b|--clipboard)
+      selection=clipboard
+      shift
+      ;;
+    -s|--secondary)
+      selection=secondary
+      shift
+      ;;
+    -i|--input)
+      mode=in
+      shift
+      ;;
+    -o|--output)
+      mode=out
+      shift
+      ;;
+    --version)
+      echo "fake-xsel 0"
+      exit 0
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+dir="${CX_FAKE_CLIPBOARD_DIR:-/tmp}"
+mkdir -p "$dir"
+
+echo "xsel $selection $mode" >> "$dir/calls.log"
+
+case "$mode" in
+  in)
+    cat > "$dir/$selection.tmp"
+    mv "$dir/$selection.tmp" "$dir/$selection"
+    ;;
+  out)
+    [ -f "$dir/$selection" ] && cat "$dir/$selection"
+    ;;
+esac

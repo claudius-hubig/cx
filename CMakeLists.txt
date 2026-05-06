@@ -286,6 +286,8 @@ add_executable(test_clipboard
     src/error_log.cpp
 )
 target_include_directories(test_clipboard PRIVATE src)
+target_compile_definitions(test_clipboard PRIVATE
+    CX_FAKE_CLIPBOARD_BIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fake_clipboard")
 target_link_libraries(test_clipboard Boost::unit_test_framework)
 add_test(NAME clipboard COMMAND test_clipboard)
 

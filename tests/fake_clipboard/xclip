@@ -1,0 +1,58 @@
+#!/bin/sh
+# Fake xclip for cx end-to-end tests.
+#
+# Behaves enough like real xclip(1) for the cases cx exercises:
+#   xclip -selection {primary,clipboard} -i   # read stdin
+#   xclip -selection {primary,clipboard} -o   # write stdout
+#
+# Storage:
+#   CX_FAKE_CLIPBOARD_DIR/<selection>      — the selection contents
+#   CX_FAKE_CLIPBOARD_DIR/calls.log        — one line per invocation
+#
+# Atomic rename on write so the test can poll for the final filename
+# without seeing a half-written file.
+
+set -eu
+
+selection=clipboard
+mode=
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -selection|--selection)
+      selection="$2"
+      shift 2
+      ;;
+    -i|-in|--input)
+      mode=in
+      shift
+      ;;
+    -o|-out|--output)
+      mode=out
+      shift
+      ;;
+    -version|--version)
+      echo "fake-xclip 0"
+      exit 0
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+dir="${CX_FAKE_CLIPBOARD_DIR:-/tmp}"
+mkdir -p "$dir"
+
+# Append a call marker so tests can verify dedup / call counts.
+echo "xclip $selection $mode" >> "$dir/calls.log"
+
+case "$mode" in
+  in)
+    cat > "$dir/$selection.tmp"
+    mv "$dir/$selection.tmp" "$dir/$selection"
+    ;;
+  out)
+    [ -f "$dir/$selection" ] && cat "$dir/$selection"
+    ;;
+esac
