@@ -87,31 +87,26 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | Home / End      | Start / end of line          |
 | Ctrl-Home/End   | Start / end of file          |
 
-### C mode
+### Bracket matching
 
-These shortcuts are active only when the buffer mode is set to `c` (via Esc-m).
+Pressing `?` while the cursor is on a bracket jumps to its match. Available
+in every mode:
+
+- **Cpp** (`.c`, `.h`, `.cpp`, `.hpp`, …): matches `()[]{}` and template
+  `<>`. Plain comparison operators `<`/`>` are not matched. Brackets in
+  strings, character literals and comments are skipped.
+- **Jsn** (`.json`): matches `[]` and `{}`. Brackets inside strings are
+  skipped.
+- **Md / Dif / Txt** (and any buffer with no specific mode): matches
+  `()[]{}` only. `<` and `>` are treated as ordinary characters.
+
+If the cursor is not on a bracket, `?` is inserted normally.
+
+### C mode
 
 | Key | Action                             |
 |-----|------------------------------------|
-| ?   | Jump to matching bracket           |
 | Tab | Format current line (clang-format) |
-
-Note: `?` jumps to the matching bracket when the cursor is on `(`, `)`, `[`, `]`,
-`{`, `}`, `<`, or `>`. If the cursor is not on a bracket, `?` is inserted normally.
-Template angle brackets `<>` are matched; comparison operators `<` and `>` are not.
-
-### JSON mode
-
-These shortcuts are active only when the buffer mode is set to `jsn` (via Esc-m).
-Auto-enabled for `.json` files.
-
-| Key | Action                        |
-|-----|-------------------------------|
-| ?   | Jump to matching bracket      |
-
-Note: `?` jumps to the matching bracket when the cursor is on `[`, `]`,
-`{`, or `}`. Brackets inside strings are ignored. If the cursor is not on a
-bracket, `?` is inserted normally.
 
 ### Directory Browser
 

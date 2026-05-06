@@ -1734,9 +1734,12 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
       return;
     }
-    // '?' on a bracket in C/JSON mode → jump to matching bracket.
-    if (c == '?' && _buf && (_buf->mode() == BufferMode::Cpp || _buf->mode() == BufferMode::Jsn) &&
-        !_buf->readonly() && _view->gotoMatchingBracket()) {
+    // '?' on a bracket → jump to matching bracket. Works in all modes:
+    // Cpp/Jsn use mode-aware matchers (skipping brackets in strings,
+    // matching template <>); Md/Dif/Txt fall back to ()[]{} matching
+    // (the underlying Cpp matcher only treats <> as brackets when
+    // tagged Angle, so plain-text comparison operators stay inert).
+    if (c == '?' && _buf && !_buf->readonly() && _view->gotoMatchingBracket()) {
       // Jump succeeded — nothing else to do.
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf)) {
       // Directory buffer keys.

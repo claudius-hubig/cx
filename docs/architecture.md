@@ -475,6 +475,12 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   `findMatchingBracketJson()` for jump-to-matching-bracket; only `[]`
   and `{}` are matched, brackets inside strings are skipped.
 
+`BufferView::gotoMatchingBracket()` dispatches to the JSON matcher in
+JSON mode and to the C/C++ matcher in every other mode. Because the
+C/C++ matcher only treats `<>` as brackets when tagged `Angle`, plain
+text and Markdown buffers (where tokens are all `Normal`) get a clean
+`()[]{}`-only fallback for free.
+
 - **Conflict markers**: Regardless of mode, lines matching `<<<<<<<`,
   `=======`, or `>>>>>>>` (7 identical characters) are overlaid with
   `ConflictMarker` tokens when `_hasConflicts` is set. The flag is

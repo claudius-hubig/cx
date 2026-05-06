@@ -301,6 +301,47 @@ BOOST_AUTO_TEST_CASE(goto_matching_no_match) {
   BOOST_CHECK(!buf.gotoMatchingBracket());
 }
 
+// Mode-agnostic fallback: parens/brackets/braces match in non-Cpp/Jsn
+// modes too (the fallback uses the cpp matcher with all-Normal tokens,
+// which only matches `<>` when tagged Angle so plain text comparison
+// operators stay inert).
+
+BOOST_AUTO_TEST_CASE(goto_matching_in_txt_mode_paren) {
+  TB<TextBuffer> buf("notes.txt");
+  // Default mode is Txt. Confirm and exercise the fallback.
+  BOOST_CHECK(buf.mode() == BufferMode::Txt);
+  insertString(buf, "abc(def)ghi");
+  buf.setPoint(0, 3); // on '('
+  BOOST_CHECK(buf.gotoMatchingBracket());
+  BOOST_CHECK_EQUAL(buf.point().offset, 7u);
+}
+
+BOOST_AUTO_TEST_CASE(goto_matching_in_txt_mode_brace) {
+  TB<TextBuffer> buf("notes.txt");
+  insertString(buf, "{ key = value }");
+  buf.setPoint(0, 0);
+  BOOST_CHECK(buf.gotoMatchingBracket());
+  BOOST_CHECK_EQUAL(buf.point().offset, 14u);
+}
+
+BOOST_AUTO_TEST_CASE(goto_matching_in_md_mode_brackets) {
+  TB<TextBuffer> buf("readme.md");
+  buf.setMode(BufferMode::Md);
+  insertString(buf, "see [link] there");
+  buf.setPoint(0, 4); // on '['
+  BOOST_CHECK(buf.gotoMatchingBracket());
+  BOOST_CHECK_EQUAL(buf.point().offset, 9u);
+}
+
+BOOST_AUTO_TEST_CASE(goto_matching_in_txt_does_not_match_lt_gt) {
+  // Plain '<' in txt should not be treated as a bracket — the cpp
+  // matcher only honours <> when tokens are tagged Angle.
+  TB<TextBuffer> buf("notes.txt");
+  insertString(buf, "if a < b then");
+  buf.setPoint(0, 5); // on '<'
+  BOOST_CHECK(!buf.gotoMatchingBracket());
+}
+
 // ============================================================
 // Item 4: Brackets have no color but match in turquoise
 // ============================================================

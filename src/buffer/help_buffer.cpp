@@ -47,12 +47,11 @@ static std::vector<std::string> const& leftColumn() {
                    Action::PasteRing, Action::Format, Action::PipeReplace, Action::ToggleComment})
       v.push_back(formatHelpLine(a));
     v.emplace_back("");
+    v.emplace_back("Bracket matching:");
+    v.push_back(formatRawLine("?", "Jump to matching bracket (all modes)"));
+    v.emplace_back("");
     v.emplace_back("C mode (Esc-m to set):");
     v.push_back(formatRawLine("Tab", "Format line"));
-    v.push_back(formatRawLine("?", "Jump to matching bracket"));
-    v.emplace_back("");
-    v.emplace_back("JSON mode (Esc-m to set):");
-    v.push_back(formatRawLine("?", "Jump to matching bracket"));
     v.emplace_back("");
     v.emplace_back("Directory browser:");
     v.push_back(formatRawLine("Enter", "Open file / enter dir"));
