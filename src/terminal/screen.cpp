@@ -540,8 +540,13 @@ void Screen::handlePromptInput(char c) {
   } else if (c == key::Tab && _prompt->onTab) {
     _prompt->display = _prompt->onTab(_prompt->input);
     _prompt->historyIdx.reset();
-  } else if (c == key::Backspace && !_prompt->input.empty()) {
+  } else if (c == key::Backspace) {
     // Remove one full UTF-8 code point (walk back over continuation bytes).
+    // When input is already empty, swallow the byte — otherwise it would
+    // fall into the printable branch below (Backspace is 0x7F, which is
+    // >= PrintableMin) and silently end up in the prompt input.
+    if (_prompt->input.empty())
+      return;
     _prompt->input.pop_back();
     while (!_prompt->input.empty() &&
            isUtf8Continuation(static_cast<unsigned char>(_prompt->input.back())))
