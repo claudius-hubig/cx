@@ -589,6 +589,60 @@ void BufferView::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   }
 }
 
+BufferPoint BufferView::pointForScreenRowCol(std::size_t screenRow, std::size_t screenCol,
+                                             ColIdx cols, bool wrap) const {
+  std::size_t cw = contentWidth(cols);
+  std::size_t lc = _buf.lineCount();
+  if (lc == 0)
+    return {0, 0};
+
+  if (!wrap) {
+    std::size_t hScroll =
+        std::holds_alternative<VisualCol>(_viewFrom.col) ? _viewFrom.hScroll() : 0;
+    std::size_t li = _viewFrom.line.value + screenRow;
+    if (li >= lc)
+      li = lc - 1;
+    auto const& line = _buf.lineContent(li);
+    std::size_t goal = hScroll + screenCol;
+    auto off = offsetForVisualCol(line, 0, line.size(), goal);
+    return {li, off};
+  }
+
+  // Wrap mode: walk visible lines forward, accumulating wrap rows, until
+  // we hit `screenRow`.
+  std::size_t startByte =
+      std::holds_alternative<ByteOffset>(_viewFrom.col) ? _viewFrom.byteOffset() : 0;
+  std::size_t row = 0;
+  std::size_t li = _viewFrom.line.value;
+  while (li < lc) {
+    auto const& line = _buf.lineContent(li);
+    std::size_t firstByte = (li == _viewFrom.line.value) ? startByte : 0;
+    auto bounds = computeRowBounds(line, cw);
+    // Drop any row-starts strictly before the viewport start.
+    std::size_t startRowIdx = 0;
+    while (startRowIdx + 1 < bounds.size() && bounds[startRowIdx + 1] <= firstByte)
+      ++startRowIdx;
+    std::size_t numRows = bounds.size() - startRowIdx;
+    if (line.empty())
+      numRows = 1;
+    if (row + numRows > screenRow) {
+      // Click lands on this physical line.
+      std::size_t subRow = screenRow - row;
+      std::size_t rowStart = bounds[startRowIdx + subRow];
+      std::size_t rowEnd = (startRowIdx + subRow + 1 < bounds.size())
+                               ? bounds[startRowIdx + subRow + 1]
+                               : line.size();
+      auto off = offsetForVisualCol(line, rowStart, rowEnd, screenCol);
+      return {li, off};
+    }
+    row += numRows;
+    ++li;
+  }
+  // Past the end: clamp to the last line, last byte.
+  std::size_t lastLi = lc - 1;
+  return {lastLi, _buf.lineContent(lastLi).size()};
+}
+
 bool BufferView::gotoMatchingBracket() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();

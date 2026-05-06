@@ -38,6 +38,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Undo / version history** — `Ctrl-u` enters a read-only history mode: `[` and `]` step through earlier/later versions, and `Ctrl-u` again commits the selected version as the new live state. History survives save and revert.
 - **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
+- **Mouse support** — left-click positions the cursor (and focuses a non-focused panel). The wheel scrolls the panel under the pointer.
 
 ## Keyboard Shortcuts
 

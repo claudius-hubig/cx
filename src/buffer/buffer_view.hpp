@@ -124,6 +124,14 @@ public:
   std::size_t screenRow(ColIdx cols, bool wrap = true) const;
   bool currentLineWraps(ColIdx cols) const;
 
+  /// Inverse of screenRow: given a 0-based screen position relative to
+  /// the viewport (`screenRow` rows down, `screenCol` columns from the
+  /// content area's left edge), return the buffer point that lives at
+  /// that visual cell. The result is clamped to a valid position. Used
+  /// by `Screen` to translate mouse clicks into cursor positions.
+  BufferPoint pointForScreenRowCol(std::size_t screenRow, std::size_t screenCol, ColIdx cols,
+                                   bool wrap) const;
+
   /// Clamp point/mark/viewport to valid buffer positions after external
   /// edits, drop the desired-column memory, and invalidate per-view
   /// caches. Automatically invoked by all public methods on a

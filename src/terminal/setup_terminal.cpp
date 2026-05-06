@@ -6,8 +6,14 @@
 #include <stdexcept>
 #include <string_view>
 
-static constexpr std::string_view kAltScreenOn = "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q";
-static constexpr std::string_view kAltScreenOff = "\x1b[?1049l";
+// 1049: alternate screen buffer; 1000: button event tracking; 1006: SGR
+// extended coordinates so col/row > 223 can be reported. We do NOT
+// enable any-event tracking (1003) — only press/release/wheel events,
+// to keep the volume of input bytes low when the user is just moving
+// the mouse without holding a button.
+static constexpr std::string_view kAltScreenOn =
+    "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q\x1b[?1000h\x1b[?1006h";
+static constexpr std::string_view kAltScreenOff = "\x1b[?1006l\x1b[?1000l\x1b[?1049l";
 
 SetupTerminal::SetupTerminal() {
   // If tcgetattr fails we have no usable termios to base raw mode on.

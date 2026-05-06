@@ -5,6 +5,7 @@
 #include "buffer/text_buffer.hpp"
 #include "byte_constants.hpp"
 #include "error_log.hpp"
+#include "mouse.hpp"
 #include "replace.hpp"
 #include "search.hpp"
 #include "utf8.hpp"
@@ -1479,6 +1480,20 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
     char seq[2];
     if (readByte(seq[0]) && seq[0] == ansi::CsiIntro) {
       if (readByte(seq[1])) {
+        // SGR mouse: ESC[<b;col;row(M|m). Detected by '<' immediately
+        // after the CSI intro (no other CSI command starts with '<').
+        if (seq[1] == '<') {
+          std::string body;
+          char ch;
+          while (readByte(ch)) {
+            body += ch;
+            if (ch == 'M' || ch == 'm')
+              break;
+          }
+          if (auto e = parseSgrMouse(body))
+            handleMouseEvent(*e);
+          return;
+        }
         switch (seq[1]) {
         case ansi::UpArrow:
           if (_buf) {
@@ -1857,6 +1872,69 @@ void Screen::resize() {
     auto& [rows, cols] = _size;
     _layout->resize(rows.value, cols.value);
   }
+}
+
+void Screen::handleMouseEvent(MouseEvent const& event) {
+  if (!_layout)
+    return;
+  // Convert 1-based screen coords to 0-based.
+  if (event.col == 0 || event.row == 0)
+    return;
+  std::size_t col = event.col - 1;
+  std::size_t row = event.row - 1;
+
+  // Find the panel containing (row, col). Use the press/wheel events
+  // only — release events (`m`) just clear button state and shouldn't
+  // re-position the cursor.
+  Panel* hit = nullptr;
+  _layout->forEachPanel([&](Panel& p) {
+    auto const& r = p.rect();
+    if (row >= r.row && row < r.row + r.rows && col >= r.col && col < r.col + r.cols)
+      hit = &p;
+  });
+  if (!hit)
+    return;
+
+  bool isWheel = event.isWheelUp() || event.isWheelDown();
+  if (!isWheel && (!event.isPress() || event.isMotion() || !event.isLeftButton()))
+    return;
+
+  // Focus the hit panel if it's not already focused. Switching focus
+  // updates the MRU stack and refreshes _buf/_view.
+  if (hit->id() != _layout->focused().id()) {
+    _layout->focusPanel(hit->id());
+    updateFocusPointers();
+  }
+
+  auto const& rect = hit->rect();
+  auto pcols = ColIdx{rect.cols};
+
+  if (isWheel) {
+    constexpr std::size_t kWheelLines = 3;
+    for (std::size_t i = 0; i < kWheelLines; ++i) {
+      if (event.isWheelUp())
+        _view->scrollUp(_wrap);
+      else
+        _view->scrollDown();
+    }
+    return;
+  }
+
+  // Click: convert to a buffer point and move the cursor there. If the
+  // click is on the modeline (last row of the panel) ignore it — that
+  // row carries no buffer content.
+  if (row + 1 >= rect.row + rect.rows)
+    return;
+  // Skip clicks on the gutter column — it carries wrap/scroll
+  // indicators, not buffer text.
+  if (col + 1 >= rect.col + rect.cols)
+    return;
+
+  std::size_t screenRow = row - rect.row;
+  std::size_t screenCol = col - rect.col;
+  auto pt = _view->pointForScreenRowCol(screenRow, screenCol, pcols, _wrap);
+  _view->setPoint(pt.line, pt.offset);
+  _pasteState.reset();
 }
 
 void Screen::gotoLine(std::size_t line) {

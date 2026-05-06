@@ -40,9 +40,10 @@ buffer.
 
 RAII wrapper around terminal configuration. On construction, saves the
 current `termios` state and puts stdin into raw mode; switches the
-terminal to the alternate screen buffer. On destruction, restores the
-saved state and returns to the normal screen. Guarantees cleanup even on
-exception.
+terminal to the alternate screen buffer; enables SGR mouse-press
+tracking (`?1000h ?1006h`). On destruction, disables mouse tracking,
+restores the saved state, and returns to the normal screen. Guarantees
+cleanup even on exception.
 
 ---
 
@@ -522,6 +523,8 @@ token vector allocation.
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
 | `src/replace.hpp`                      | Find-and-replace helpers (`findNextMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt`                  |
+| `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
+| `src/file_arg.hpp`                     | `parseFileArg` — split a `path:LINE` command-line argument into a path and an optional line number                          |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
 ---

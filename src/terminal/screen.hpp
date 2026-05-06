@@ -22,6 +22,7 @@
 
 class Buffer;
 class BufferManager;
+struct MouseEvent;
 
 // Manages terminal I/O and the main input loop.
 //
@@ -92,6 +93,10 @@ private:
   // back to the caller.
   void handlePromptInput(char c);
   void handleEscapeInput(std::optional<char>& pendingChar);
+  // Apply a parsed SGR mouse event: focus the panel under the cursor
+  // and either move the buffer point (button 0) or scroll the panel
+  // (wheel up/down). Other buttons are ignored.
+  void handleMouseEvent(MouseEvent const& event);
   void handleCtrlXInput();
   void handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();

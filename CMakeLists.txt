@@ -345,6 +345,13 @@ target_include_directories(test_file_arg PRIVATE src .)
 target_link_libraries(test_file_arg Boost::unit_test_framework)
 add_test(NAME file_arg COMMAND test_file_arg)
 
+add_executable(test_mouse
+    tests/test_mouse.cpp
+)
+target_include_directories(test_mouse PRIVATE src)
+target_link_libraries(test_mouse Boost::unit_test_framework)
+add_test(NAME mouse COMMAND test_mouse)
+
 add_executable(test_replace
     tests/test_replace.cpp
     src/buffer/buffer.cpp
