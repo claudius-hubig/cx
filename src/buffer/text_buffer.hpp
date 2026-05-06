@@ -4,6 +4,7 @@
 #include "version_history.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -103,13 +104,34 @@ public:
   /// (Mixed cannot be unambiguously translated).
   void normalizeLineEndings();
 
+  /// True if the backing file's mtime or size differs from what was
+  /// captured during the last successful load or save. Returns false
+  /// for pathless buffers, for files that no longer exist, and on any
+  /// stat error — the conservative no-warning answer for those cases
+  /// because the caller handles the next save() outright.
+  bool changedOnDisk() const;
+
 private:
   void detectMode();
   /// Read the backing file into `_lines`, populating `_lineEndingStyle`.
   void loadFromFile(std::filesystem::path const& path);
 
+  /// Capture the on-disk mtime and size of `_path` into the
+  /// `_diskMtime`/`_diskSize` slots. Called at the end of `loadFromFile`
+  /// and after a successful `save()` so subsequent `changedOnDisk()`
+  /// checks compare against a known baseline. Silently leaves the
+  /// fields untouched on stat failure: callers treat that as "no
+  /// known baseline" and skip the warning.
+  void captureDiskStamp();
+
   std::optional<std::filesystem::path> _path;
   LineEndingStyle _lineEndingStyle = LineEndingStyle::Unix;
   VersionHistory _history;
   bool _browsingHistory = false;
+  // mtime + size of the backing file at the last load or save. Used
+  // by changedOnDisk() to detect concurrent external modifications.
+  // nullopt while no baseline is known (no path, file missing, or
+  // stat failure during capture).
+  std::optional<std::filesystem::file_time_type> _diskMtime;
+  std::optional<std::uintmax_t> _diskSize;
 };

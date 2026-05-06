@@ -2109,6 +2109,21 @@ void Screen::dispatchAction(Action action) {
                 _killPending = false;
                 _exitPending = false;
               });
+        } else if (auto* tb = dynamic_cast<TextBuffer*>(_buf); tb && tb->changedOnDisk()) {
+          openConfirmPrompt(
+              "File changed on disk since load. Overwrite anyway? y/n: ",
+              [this](std::string const& answer) {
+                if (answer == "y")
+                  saveAndMaybeKill();
+                else {
+                  _killPending = false;
+                  _exitPending = false;
+                }
+              },
+              [this]() {
+                _killPending = false;
+                _exitPending = false;
+              });
         } else {
           auto res = _buf->save();
           if (res)

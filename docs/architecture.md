@@ -280,6 +280,11 @@ workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
 `.diff`, `.patch` → `Dif`; otherwise `Txt`).
 
+`TextBuffer` also tracks the on-disk mtime + size (captured on load and
+after a successful `save()`) so `changedOnDisk()` can warn when the file
+has been modified by another process. `Screen::Save` checks that flag
+before overwriting and prompts the user when it is set.
+
 `TextBuffer` owns a `VersionHistory _history` and a
 `bool _browsingHistory` flag. The history is captured on construction,
 on every successful edit (via the inherited `recordVersion()` hook),

@@ -109,6 +109,42 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
     _lineEndingStyle = LineEndingStyle::Cr;
   else
     _lineEndingStyle = LineEndingStyle::Unix;
+  captureDiskStamp();
+}
+
+void TextBuffer::captureDiskStamp() {
+  if (!_path) {
+    _diskMtime.reset();
+    _diskSize.reset();
+    return;
+  }
+  std::error_code ec;
+  auto mt = std::filesystem::last_write_time(*_path, ec);
+  if (ec) {
+    _diskMtime.reset();
+    _diskSize.reset();
+    return;
+  }
+  std::error_code ec2;
+  auto sz = std::filesystem::file_size(*_path, ec2);
+  _diskMtime = mt;
+  _diskSize = ec2 ? std::optional<std::uintmax_t>{} : std::optional<std::uintmax_t>{sz};
+}
+
+bool TextBuffer::changedOnDisk() const {
+  if (!_path || !_diskMtime)
+    return false;
+  std::error_code ec;
+  auto mt = std::filesystem::last_write_time(*_path, ec);
+  if (ec)
+    return false;
+  if (mt != *_diskMtime)
+    return true;
+  std::error_code ec2;
+  auto sz = std::filesystem::file_size(*_path, ec2);
+  if (ec2 || !_diskSize)
+    return false;
+  return sz != *_diskSize;
 }
 
 void TextBuffer::normalizeLineEndings() {
@@ -189,8 +225,12 @@ std::expected<void, std::string> TextBuffer::save() {
   }
   if (!file.good())
     return std::unexpected("write error for " + _path->string());
+  // Close and flush before stat so the stamp reflects the bytes we just
+  // wrote rather than a still-buffered zero size or stale mtime.
+  file.close();
   _modified = false;
   scanForConflicts();
+  captureDiskStamp();
   return {};
 }
 

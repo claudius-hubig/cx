@@ -5,8 +5,11 @@
 #include "buffer/text_buffer.hpp"
 #include "tests/test_helpers.hpp"
 
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 
 // --- Constructor ---
 
@@ -79,6 +82,48 @@ BOOST_AUTO_TEST_CASE(save_truncates_existing) {
   std::ifstream f(tmp.path(), std::ios::binary);
   std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   BOOST_CHECK_EQUAL(content, "X");
+}
+
+// --- changedOnDisk ---
+
+BOOST_AUTO_TEST_CASE(changedOnDisk_false_for_pathless) {
+  TB<TextBuffer> buf("scratch");
+  BOOST_CHECK(!buf.changedOnDisk());
+}
+
+BOOST_AUTO_TEST_CASE(changedOnDisk_false_immediately_after_load) {
+  TempFile tmp("hello");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(!buf.changedOnDisk());
+}
+
+BOOST_AUTO_TEST_CASE(changedOnDisk_detects_external_modification) {
+  TempFile tmp("hello");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  // Bump mtime far enough that filesystem-level resolution can't miss it.
+  auto newTime = std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2);
+  std::error_code ec;
+  std::filesystem::last_write_time(tmp.path(), newTime, ec);
+  BOOST_REQUIRE(!ec);
+  // Also change size so we don't depend purely on mtime resolution.
+  {
+    std::ofstream f(tmp.path(), std::ios::binary);
+    f << "different content";
+  }
+  BOOST_CHECK(buf.changedOnDisk());
+}
+
+BOOST_AUTO_TEST_CASE(changedOnDisk_resets_after_save) {
+  TempFile tmp("hello");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  // External change.
+  {
+    std::ofstream f(tmp.path(), std::ios::binary);
+    f << "outside";
+  }
+  // Saving rewrites the file and updates the captured stamp.
+  BOOST_CHECK(buf.save());
+  BOOST_CHECK(!buf.changedOnDisk());
 }
 
 // --- Revert ---
