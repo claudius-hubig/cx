@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 23)
 
 add_executable(cx
     src/main.cpp
+    src/clipboard.cpp
     src/error_log.cpp
     src/utf8.cpp
     src/buffer/modes/c/syntax.cpp
@@ -278,6 +279,15 @@ add_executable(test_paste_ring
 target_include_directories(test_paste_ring PRIVATE src)
 target_link_libraries(test_paste_ring Boost::unit_test_framework)
 add_test(NAME paste_ring COMMAND test_paste_ring)
+
+add_executable(test_clipboard
+    tests/test_clipboard.cpp
+    src/clipboard.cpp
+    src/error_log.cpp
+)
+target_include_directories(test_clipboard PRIVATE src)
+target_link_libraries(test_clipboard Boost::unit_test_framework)
+add_test(NAME clipboard COMMAND test_clipboard)
 
 add_executable(test_version_history
     tests/test_version_history.cpp

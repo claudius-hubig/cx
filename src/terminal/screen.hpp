@@ -3,6 +3,7 @@
 #include "buffer/buffer_sink.hpp"
 #include "buffer/buffer_view.hpp"
 #include "buffer/dir_buffer.hpp"
+#include "clipboard.hpp"
 #include "panel_layout.hpp"
 #include "paste_ring.hpp"
 #include "prompt.hpp"
@@ -159,6 +160,14 @@ private:
   bool _exitPending = false; // exit after all modified buffers are handled
 
   PasteRing _pasteRing;
+  Clipboard _clipboard;
+
+  // After every keystroke, mirror the active mark region (if any)
+  // into the X11 PRIMARY selection so middle-click paste picks it up.
+  // Internal dedup means cursor moves that don't change the selected
+  // text cost zero forks.
+  void syncPrimarySelection();
+
   struct PasteState {
     BufferPoint start;
     BufferPoint end;

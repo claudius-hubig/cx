@@ -478,8 +478,21 @@ void Screen::loop() {
         break;
     }
 
+    syncPrimarySelection();
     draw();
   }
+}
+
+void Screen::syncPrimarySelection() {
+  if (!_buf || !_view)
+    return;
+  auto mark = _view->mark();
+  if (!mark)
+    return; // No active selection — leave PRIMARY as-is (X11 convention).
+  auto point = _view->point();
+  if (*mark == point)
+    return; // Empty region.
+  _clipboard.setPrimary(_view->extractRegion(*mark, point));
 }
 
 void Screen::handlePromptInput(char c) {
@@ -2016,6 +2029,7 @@ void Screen::dispatchAction(Action action) {
   case Action::Cut:
     if (_buf && _view->mark()) {
       auto text = _view->extractRegion(_view->mark().value(), _view->point());
+      _clipboard.setClipboard(text);
       _pasteRing.push(std::move(text));
       _view->deleteRegion(_view->mark().value(), _view->point());
       setStatus("Region cut");
@@ -2027,6 +2041,7 @@ void Screen::dispatchAction(Action action) {
   case Action::Copy:
     if (_buf && _view->mark()) {
       auto text = _view->extractRegion(_view->mark().value(), _view->point());
+      _clipboard.setClipboard(text);
       _pasteRing.push(std::move(text));
       _view->clearMark();
       setStatus("Region copied");
@@ -2036,12 +2051,22 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::Paste:
-    if (_buf && !_buf->readonly() && !_pasteRing.empty()) {
-      auto start = _view->point();
-      auto end = _view->insertText(_pasteRing.at(0));
-      _pasteState = PasteState{start, end, 0};
-      setStatus("Region pasted");
-      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+    if (_buf && !_buf->readonly()) {
+      // Prefer X11 CLIPBOARD when it differs from the top of the
+      // internal ring — that way external Ctrl-C from other apps
+      // becomes pasteable. The fetched text is also pushed onto the
+      // ring so PasteCycle and the paste-ring buffer view see it.
+      auto external = _clipboard.getClipboard();
+      bool useExternal = external && (_pasteRing.empty() || *external != _pasteRing.at(0));
+      if (useExternal)
+        _pasteRing.push(*external);
+      if (!_pasteRing.empty()) {
+        auto start = _view->point();
+        auto end = _view->insertText(_pasteRing.at(0));
+        _pasteState = PasteState{start, end, 0};
+        setStatus("Region pasted");
+        _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      }
     }
     break;
   case Action::PasteCycle:

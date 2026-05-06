@@ -106,7 +106,10 @@ Key responsibilities:
 
 `Screen` holds display state that belongs to the view rather than to any
 buffer: wrap mode, whitespace visibility, the active prompt, find state,
-the paste ring, and the timed status message.
+the paste ring, the X11 `Clipboard` adapter, and the timed status
+message. After every keystroke, `loop()` calls `syncPrimarySelection()`
+to mirror the active mark region into the X11 PRIMARY selection (no-op
+when there is no mark or no graphical session).
 
 Prompts are represented by the `Prompt` struct (`src/prompt.hpp`), which
 carries a label, callbacks for autocomplete/result/abort/tab/special keys,
@@ -328,6 +331,36 @@ cycling.
 
 ---
 
+### `Clipboard` (`src/clipboard.hpp/.cpp`)
+
+Best-effort X11 clipboard integration. Detects `DISPLAY` and the
+presence of `xclip` (preferred) or `xsel` on `$PATH` lazily on first
+use; if neither is available, all methods become silent no-ops so the
+editor still works on a tty without a graphical session. Project rules
+forbid linking `libX11`, so all interaction is via these external
+helpers.
+
+`Screen` calls `setPrimary()` after every keystroke (in `loop()`,
+through `syncPrimarySelection()`) so the active mark region tracks the
+X11 PRIMARY selection — the buffer that mouse-drag selections populate
+and middle-click pastes. Internal dedup against the last published
+text means cursor moves that don't change the selected text cost zero
+forks. `Screen` also calls `setClipboard()` on cut and copy so the
+text becomes available to other apps via the standard Ctrl-C/Ctrl-V
+clipboard, and `getClipboard()` on paste so external copies flow into
+the editor (and onto the paste ring).
+
+Writes use a double-fork detach: the parent forks an intermediate
+child, which forks again and exits, leaving the grandchild xclip/xsel
+to be reaped by init. This keeps the input loop responsive (~1 ms per
+write) regardless of xclip startup latency. Reads are synchronous
+because the caller (Paste) needs the result immediately.
+
+Errors are logged to `~/.cx-errors` via `error_log` and never surfaced
+to the user.
+
+---
+
 ### `PasteRingBuffer` (`src/buffer/paste_ring_buffer.hpp/.cpp`)
 
 Readonly buffer that displays the paste ring contents. Similar pattern to
@@ -468,6 +501,7 @@ token vector allocation.
 | `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
+| `src/clipboard.hpp/.cpp`               | X11 PRIMARY/CLIPBOARD integration via `xclip`/`xsel` subprocesses; lazy detection, async writes, sync reads                   |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |

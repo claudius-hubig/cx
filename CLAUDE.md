@@ -81,6 +81,7 @@ src/
   shortcut.hpp/.cpp                Action enum, Shortcut struct, binding table
   prompt.hpp                       Prompt struct, PromptDisplay, PromptHistory
   paste_ring.hpp                   Fixed-capacity ring buffer for cut/copy
+  clipboard.hpp/.cpp               X11 PRIMARY/CLIPBOARD integration via xclip/xsel
   error_log.hpp/.cpp               Diagnostic logging to cx_error.log
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
   terminal/
@@ -124,5 +125,6 @@ tests/
   test_panel_layout.cpp            PanelLayout split/close/focus tests
   test_paste_ring.cpp              PasteRing capacity/ordering tests
   test_paste_ring_buffer.cpp       PasteRingBuffer display tests
+  test_clipboard.cpp               Clipboard PATH probe and detection tests
   test_search.cpp                  Smart-find matching logic tests
 ```
