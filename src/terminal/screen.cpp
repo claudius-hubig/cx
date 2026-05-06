@@ -1911,12 +1911,25 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
 
   if (isWheel) {
     constexpr std::size_t kWheelLines = 3;
+    auto pcontentRows = hit->contentRows();
     for (std::size_t i = 0; i < kWheelLines; ++i) {
       if (event.isWheelUp())
         _view->scrollUp(_wrap);
       else
         _view->scrollDown();
     }
+    // Drag the cursor along so it never falls outside the new viewport.
+    // Otherwise the next keypress's ensureVisible() would snap the view
+    // back to the (off-screen) cursor and undo the user's scroll. Use
+    // pointForScreenRowCol to derive the first and last visible buffer
+    // points; any column 0 keeps the new cursor at the line head.
+    auto first = _view->pointForScreenRowCol(0, 0, pcols, _wrap);
+    auto last = _view->pointForScreenRowCol(pcontentRows.value - 1, 0, pcols, _wrap);
+    auto pt = _view->point();
+    if (pt < first)
+      _view->setPoint(first.line, first.offset);
+    else if (last < pt)
+      _view->setPoint(last.line, last.offset);
     return;
   }
 
