@@ -93,6 +93,10 @@ private:
   // back to the caller.
   void handlePromptInput(char c);
   void handleEscapeInput(std::optional<char>& pendingChar);
+  // Bare Esc-Esc behaviour: dismiss a readonly overlay if one is
+  // active; otherwise clear the mark on the focused view. Shared by
+  // both the fast (sequence-of-bytes) and slow (paused-Esc) paths.
+  void handleBareEscEsc();
   // Apply a parsed SGR mouse event: focus the panel under the cursor
   // and either move the buffer point (button 0) or scroll the panel
   // (wheel up/down). Other buttons are ignored.

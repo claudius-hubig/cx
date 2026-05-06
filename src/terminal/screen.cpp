@@ -134,6 +134,59 @@ static bool readByte(char& out) {
   }
 }
 
+// After consuming an Esc byte that we suspect was actually the prefix
+// of a following escape sequence (e.g. the user typed Esc then Down,
+// which arrives as `\x1b\x1b[B`), drain the rest of that sequence and
+// return a short human-readable label for status display. Returns
+// nullopt when no further bytes arrive within the disambiguation
+// window — the caller treats that as a genuine bare Esc-Esc.
+static std::optional<std::string> drainEscapeTail() {
+  struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+  if (poll(&pfd, 1, kEscDisambiguationMs) <= 0)
+    return std::nullopt;
+  char first;
+  if (!readByte(first))
+    return std::nullopt;
+  if (first != '[' && first != 'O') {
+    // Lone byte after Esc (Alt-key style) — Esc-<char>.
+    return std::string(1, first);
+  }
+  std::string body;
+  body += first;
+  char b;
+  while (readByte(b)) {
+    body += b;
+    // CSI / SS3 final byte is in the range 0x40..0x7E.
+    if (b >= 0x40 && b <= 0x7E)
+      break;
+    // Sanity bound — terminal escape sequences are short. Bail out
+    // rather than block forever on a malformed stream.
+    if (body.size() > 32)
+      break;
+  }
+  if (body == "[A")
+    return std::string("Up");
+  if (body == "[B")
+    return std::string("Down");
+  if (body == "[C")
+    return std::string("Right");
+  if (body == "[D")
+    return std::string("Left");
+  if (body == "[H")
+    return std::string("Home");
+  if (body == "[F")
+    return std::string("End");
+  if (body == "[5~")
+    return std::string("PgUp");
+  if (body == "[6~")
+    return std::string("PgDn");
+  if (body == "[3~")
+    return std::string("Delete");
+  if (body == "[2~")
+    return std::string("Insert");
+  return body;
+}
+
 Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
   // TIOCGWINSZ is the standard POSIX ioctl for querying the terminal
   // dimensions in rows and columns.
@@ -1616,6 +1669,16 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         }
         }
       }
+    } else if (seq[0] == key::Escape) {
+      // Esc-Esc arrived as a contiguous byte pair. The second Esc may
+      // itself be the start of a real escape sequence the user pressed
+      // after Esc (e.g. Esc then Down arrow). Try to drain that tail
+      // and report it as unrecognised; fall back to the standard
+      // Esc-Esc handler when nothing follows.
+      if (auto name = drainEscapeTail())
+        setStatus("Esc-" + *name + " not recognised.");
+      else
+        handleBareEscEsc();
     } else if (!handleEscChord(seq[0]) && seq[0] != ansi::CsiIntro) {
       // Not a CSI sequence or known chord — insert the byte verbatim
       // (e.g. Alt+key sends ESC followed by the key).
@@ -1650,18 +1713,14 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
 
     if (gotNext && !handleEscChord(next)) {
       if (next == key::Escape) {
-        // Esc-Esc: dismiss readonly overlay if one is active; otherwise
-        // clear the mark on the current view. The overlay path takes
-        // precedence because the underlying buffer's mark is preserved
-        // across the overlay (dismiss first, then a second Esc-Esc
-        // clears the mark).
-        if (_buf && _buf->readonly() && prevBuf()) {
-          setBuffer(*prevBuf());
-          prevBuf() = nullptr;
-        } else if (_view && _view->mark()) {
-          _view->clearMark();
-          setStatus("Mark cleared");
-        }
+        // Same as the fast path above: the trailing Esc may actually
+        // be the prefix of an arrow/PgUp/etc. sequence the user pressed
+        // after a deliberately-paused Esc. Drain any tail before
+        // assuming a genuine Esc-Esc.
+        if (auto name = drainEscapeTail())
+          setStatus("Esc-" + *name + " not recognised.");
+        else
+          handleBareEscEsc();
       } else {
         setStatus(formatShortcut(shortcutFromEscChar(next)) + " not recognised.");
       }
@@ -1969,6 +2028,19 @@ void Screen::insertText(std::string_view text) {
 void Screen::setStatus(std::string msg) {
   _statusMsg = std::move(msg);
   _statusExpiry = std::chrono::steady_clock::now() + kStatusMessageTtl;
+}
+
+void Screen::handleBareEscEsc() {
+  // Overlay dismissal takes precedence over mark clearing: the mark
+  // belongs to the underlying buffer and is preserved across an
+  // overlay, so a second Esc-Esc after dismissal still clears it.
+  if (_buf && _buf->readonly() && prevBuf()) {
+    setBuffer(*prevBuf());
+    prevBuf() = nullptr;
+  } else if (_view && _view->mark()) {
+    _view->clearMark();
+    setStatus("Mark cleared");
+  }
 }
 
 bool Screen::handleEscChord(char ch) {

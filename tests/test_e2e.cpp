@@ -200,6 +200,30 @@ BOOST_AUTO_TEST_CASE(e2e_type_and_display) {
   session.waitExit();
 }
 
+BOOST_AUTO_TEST_CASE(e2e_esc_then_arrow_does_not_insert_csi_bytes) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Esc + Down arrow. Previously the trailing "[B" leaked through to
+  // the buffer as printable text; expect the status line to report
+  // "Esc-Down not recognised" and nothing to be inserted.
+  session.send("\x1b\x1b[B");
+  auto output = session.readUntil("not recognised");
+  auto stripped = stripAnsi(output);
+  BOOST_CHECK(stripped.find("Esc-Down not recognised") != std::string::npos);
+  BOOST_CHECK(stripped.find("[B") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
 BOOST_AUTO_TEST_CASE(e2e_stdin_pipe_seeds_scratch_buffer) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
