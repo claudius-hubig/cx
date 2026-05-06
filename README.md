@@ -19,6 +19,8 @@ Open one or more files for editing, or directories for browsing. With no argumen
 
 A trailing `:LINE` on a path argument (e.g. `cx src/foo.cpp:42`) opens the file at the given 1-based line. Only the final argument's line number is honoured.
 
+If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffer.
+
 ## Features
 
 - **UTF-8 support** — full Unicode text editing and display, including CJK wide characters

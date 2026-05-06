@@ -200,6 +200,92 @@ BOOST_AUTO_TEST_CASE(e2e_type_and_display) {
   session.waitExit();
 }
 
+BOOST_AUTO_TEST_CASE(e2e_stdin_pipe_seeds_scratch_buffer) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Spawn cx with stdin connected to a pipe (not a TTY) and stdout/stderr
+  // connected to a PTY. cx must drain the pipe, then re-open /dev/tty so
+  // the input loop still works. Verify the piped content shows up.
+  int pipeFd[2];
+  BOOST_REQUIRE(pipe(pipeFd) == 0);
+
+  int masterFd = -1, slaveFd = -1;
+  struct winsize ws{};
+  ws.ws_row = 24;
+  ws.ws_col = 80;
+  BOOST_REQUIRE(openpty(&masterFd, &slaveFd, nullptr, nullptr, &ws) == 0);
+
+  pid_t pid = fork();
+  BOOST_REQUIRE(pid >= 0);
+  if (pid == 0) {
+    // Child: stdin from the pipe; stdout/stderr to the PTY slave; the PTY
+    // slave is the controlling tty after setsid().
+    setsid();
+    ioctl(slaveFd, TIOCSCTTY, 0);
+    dup2(pipeFd[0], STDIN_FILENO);
+    dup2(slaveFd, STDOUT_FILENO);
+    dup2(slaveFd, STDERR_FILENO);
+    close(pipeFd[0]);
+    close(pipeFd[1]);
+    close(slaveFd);
+    close(masterFd);
+    char* argv[] = {const_cast<char*>(bin.c_str()), nullptr};
+    execv(bin.c_str(), argv);
+    _exit(127);
+  }
+  close(pipeFd[0]);
+  close(slaveFd);
+
+  // Send the piped content and EOF.
+  std::string payload = "line one\nline two\nline three\n";
+  ::write(pipeFd[1], payload.data(), payload.size());
+  close(pipeFd[1]);
+
+  // Read PTY output until we see the seeded text.
+  std::string result;
+  char buf[4096];
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{3000};
+  while (std::chrono::steady_clock::now() < deadline) {
+    struct pollfd pfd{};
+    pfd.fd = masterFd;
+    pfd.events = POLLIN;
+    int ret = poll(&pfd, 1, 200);
+    if (ret <= 0)
+      continue;
+    if (pfd.revents & POLLIN) {
+      ssize_t n = ::read(masterFd, buf, sizeof(buf));
+      if (n <= 0)
+        break;
+      result.append(buf, n);
+      if (result.find("line three") != std::string::npos)
+        break;
+    }
+  }
+  auto stripped = stripAnsi(result);
+  BOOST_CHECK(stripped.find("line one") != std::string::npos);
+  BOOST_CHECK(stripped.find("line three") != std::string::npos);
+
+  // Send Esc-c to exit; child still has /dev/tty as input, so this works.
+  ::write(masterFd,
+          "\x1b"
+          "c"
+          "n",
+          3);
+  int status = 0;
+  for (int i = 0; i < 200; ++i) {
+    if (waitpid(pid, &status, WNOHANG) == pid)
+      break;
+    usleep(10000);
+  }
+  if (waitpid(pid, &status, WNOHANG) != pid)
+    kill(pid, SIGTERM);
+  close(masterFd);
+}
+
 BOOST_AUTO_TEST_CASE(e2e_open_file) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

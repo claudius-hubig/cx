@@ -29,7 +29,10 @@ Entry point. Constructs `SetupTerminal`, `Screen`, and `BufferManager` in
 the correct order, opens any files given on the command line, then calls
 `Screen::loop()` to run the editor. Each path argument is parsed via
 `parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
-`:LINE` suffix (e.g. `cx src/foo.cpp:42`).
+`:LINE` suffix (e.g. `cx src/foo.cpp:42`). If stdin is a pipe, `main`
+drains it before raw-mode setup, dups `/dev/tty` over fd 0 so terminal
+init still works, and seeds the captured bytes into a `*stdin*` scratch
+buffer.
 
 ---
 

@@ -1817,6 +1817,11 @@ void Screen::gotoLine(std::size_t line) {
     _view->gotoLine(line, rowsForBuffer());
 }
 
+void Screen::insertText(std::string_view text) {
+  if (_view && !_buf->readonly())
+    _view->insertText(text);
+}
+
 void Screen::setStatus(std::string msg) {
   _statusMsg = std::move(msg);
   _statusExpiry = std::chrono::steady_clock::now() + kStatusMessageTtl;

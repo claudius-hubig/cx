@@ -4,12 +4,60 @@
 #include "terminal/screen.hpp"
 #include "terminal/setup_terminal.hpp"
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <optional>
+#include <string>
+
+// Drain all bytes from fd 0 into a string. Used when stdin is a pipe
+// so the data can be seeded into a scratch buffer before raw-mode
+// terminal setup takes over fd 0.
+static std::string drainStdin() {
+  std::string out;
+  char buf[4096];
+  for (;;) {
+    ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+    if (n > 0)
+      out.append(buf, static_cast<std::size_t>(n));
+    else if (n == 0)
+      break;
+    else if (errno == EINTR)
+      continue;
+    else
+      break;
+  }
+  return out;
+}
 
 int main(int argc, char* argv[]) {
+  // If stdin is a pipe (no terminal attached), drain it before raw mode
+  // takes over. Then dup /dev/tty over fd 0 so SetupTerminal's tcgetattr
+  // and the input loop see a real terminal. If /dev/tty cannot be
+  // opened, exit cleanly with a message — there is no way to run the
+  // editor without a controlling terminal.
+  std::string pipedStdin;
+  bool stdinPiped = !isatty(STDIN_FILENO);
+  if (stdinPiped) {
+    pipedStdin = drainStdin();
+    int tty = open("/dev/tty", O_RDWR);
+    if (tty < 0) {
+      std::fprintf(stderr, "cx: cannot open /dev/tty: %s\n", std::strerror(errno));
+      return 1;
+    }
+    if (dup2(tty, STDIN_FILENO) < 0) {
+      std::fprintf(stderr, "cx: dup2 /dev/tty failed: %s\n", std::strerror(errno));
+      return 1;
+    }
+    close(tty);
+  }
+
   try {
     SetupTerminal terminal;
     Screen screen;
@@ -34,6 +82,13 @@ int main(int argc, char* argv[]) {
       if (jumpTo)
         screen.gotoLine(*jumpTo);
       screen.setStatus("Opened " + std::to_string(argc - 1) + (argc - 1 == 1 ? " file" : " files"));
+      screen.draw();
+    } else if (stdinPiped && !pipedStdin.empty()) {
+      Buffer& buf = bufferManager.create("*stdin*");
+      screen.setBuffer(buf);
+      screen.insertText(pipedStdin);
+      screen.gotoLine(1);
+      screen.setStatus("Read " + std::to_string(pipedStdin.size()) + " byte(s) from stdin");
       screen.draw();
     }
 

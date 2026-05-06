@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -50,6 +51,10 @@ public:
   // Move the focused view to the given 1-based line (clamped to the
   // buffer's last line). Used by main() to honour `cx path:LINE`.
   void gotoLine(std::size_t line);
+
+  // Insert `text` into the focused view at the cursor. Used by main()
+  // to seed the *stdin* scratch buffer when stdin is piped.
+  void insertText(std::string_view text);
 
 private:
   // Centralised action handler: executes the effect of the given Action.
