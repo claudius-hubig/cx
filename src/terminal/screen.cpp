@@ -5,6 +5,7 @@
 #include "buffer/text_buffer.hpp"
 #include "byte_constants.hpp"
 #include "error_log.hpp"
+#include "replace.hpp"
 #include "search.hpp"
 #include "utf8.hpp"
 #include <poll.h>
@@ -866,6 +867,107 @@ void Screen::openFindPrompt(bool backward) {
       },
   };
   runAutocomplete();
+}
+
+void Screen::openReplacePrompt() {
+  if (!_buf || _buf->readonly()) {
+    setStatus("Buffer is read-only");
+    return;
+  }
+  _prompt = Prompt{
+      .label = "Replace: ",
+      .onResult =
+          [this](std::string const& pattern) {
+            if (pattern.empty() || !_buf)
+              return;
+            _prompt = Prompt{
+                .label = "Replace '" + pattern + "' with: ",
+                .onResult =
+                    [this, pattern](std::string const& replacement) {
+                      replacePump(pattern, replacement, 0);
+                    },
+            };
+          },
+  };
+}
+
+void Screen::replacePump(std::string pattern, std::string replacement, std::size_t replaced) {
+  if (!_buf || _buf->readonly())
+    return;
+  FindFlags f(pattern);
+  auto m = findNextMatchInBuffer(*_buf, _view->point(), pattern, f);
+  if (!m) {
+    _view->clearHighlight();
+    _highlightExpiry.reset();
+    setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+    return;
+  }
+  _view->setPoint(m->first.line, m->first.offset);
+  _view->setHighlight(m->first, m->second);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+  _highlightExpiry = std::chrono::steady_clock::now() + kHighlightTtl;
+  openReplaceConfirmPrompt(std::move(pattern), std::move(replacement), replaced, m->first,
+                           m->second);
+}
+
+void Screen::openReplaceConfirmPrompt(std::string pattern, std::string replacement,
+                                      std::size_t replaced, BufferPoint matchStart,
+                                      BufferPoint matchEnd) {
+  _prompt = Prompt{
+      .label = "Replace this? (y=yes n=skip !=all q=quit): ",
+      .showInput = false,
+      .autocomplete = [](std::string const& input) -> Prompt::AutocompleteResult {
+        if (input.empty())
+          return PromptDisplay{"", 0};
+        char c = input.back();
+        if (c >= 'A' && c <= 'Z')
+          c = static_cast<char>(c + 32);
+        if (c == 'y' || c == 'n' || c == '!' || c == 'q')
+          return std::string{c};
+        return PromptDisplay{"", 0};
+      },
+      .onResult =
+          [this, pattern, replacement, replaced, matchStart, matchEnd](std::string const& answer) {
+            if (!_buf || _buf->readonly())
+              return;
+            char c = answer.empty() ? 'q' : answer[0];
+            if (c == 'q') {
+              _view->clearHighlight();
+              _highlightExpiry.reset();
+              setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+              return;
+            }
+            std::size_t newReplaced = replaced;
+            if (c == 'y' || c == '!') {
+              _view->deleteRegion(matchStart, matchEnd);
+              auto after = _view->insertText(replacement);
+              _view->setPoint(after.line, after.offset);
+              ++newReplaced;
+            } else {
+              // 'n': advance past the match without modifying.
+              _view->setPoint(matchEnd.line, matchEnd.offset);
+            }
+            if (c == '!') {
+              auto extra = replaceAllForward(*_buf, _view->point(), pattern, replacement);
+              newReplaced += extra;
+              // setPoint via clampToBuffer: replaceAllForward mutated
+              // the buffer behind _view's back, so its docVersion is stale.
+              _view->clampToBuffer();
+              _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+              _view->clearHighlight();
+              _highlightExpiry.reset();
+              setStatus("Replaced " + std::to_string(newReplaced) + " occurrence(s)");
+              return;
+            }
+            replacePump(pattern, replacement, newReplaced);
+          },
+      .onAbort =
+          [this, replaced]() {
+            _view->clearHighlight();
+            _highlightExpiry.reset();
+            setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+          },
+  };
 }
 
 void Screen::openSetModePrompt() {
@@ -2099,6 +2201,10 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::FindBackward:
     openFindPrompt(true);
+    break;
+  case Action::Replace:
+    if (!requireNotInHistoryMode())
+      openReplacePrompt();
     break;
   case Action::VersionHistory:
     if (_buf && _view) {

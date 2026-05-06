@@ -62,7 +62,7 @@ Key API:
 Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`,
 `SwitchBuffer`, `ToggleMark`, `Cut`, `Copy`, `Paste`, `PasteCycle`,
 `DeleteChunkBefore`, `Revert`, `VersionHistory`, `Find`,
-`FindBackward`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
+`FindBackward`, `Replace`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
 `ToggleWrap`, `Format`, `SetMode`, `DirBrowser`, `PipeReplace`,
 `SplitVertical`, `SplitHorizontal`, `ClosePanel`,
 `FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`.
@@ -504,6 +504,7 @@ token vector allocation.
 | `src/clipboard.hpp/.cpp`               | X11 PRIMARY/CLIPBOARD integration via `xclip`/`xsel` subprocesses; lazy detection, async writes, sync reads                   |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
+| `src/replace.hpp`                      | Find-and-replace helpers (`findNextMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt`                  |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
 ---

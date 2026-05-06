@@ -23,6 +23,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 - **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
 - **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter; Ctrl-F again advances to the next match while re-prompting for a new search string. Matched text is temporarily highlighted.
+- **Find and replace** — `Esc-%` prompts for a pattern and replacement, then walks forward through matches asking `y`/`n`/`!`/`q` per hit. `!` finishes the rest without prompting.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Word and paragraph navigation** — move by word, paragraph, or go to a specific line
 - **Chunk deletion** — delete contiguous runs of whitespace or non-whitespace in either direction
@@ -70,6 +71,7 @@ Open one or more files for editing, or directories for browsing. With no argumen
 |-----------------|------------------------------|
 | Ctrl-f          | Find forward                 |
 | Ctrl-r          | Find backward                |
+| Esc-%           | Find and replace             |
 | Arrows          | Move cursor                  |
 | Ctrl-Left/Right | Move by word                 |
 | Ctrl-Up/Down    | Move by paragraph            |

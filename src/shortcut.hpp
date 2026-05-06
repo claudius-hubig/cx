@@ -22,6 +22,7 @@ enum class Action {
   VersionHistory,
   Find,
   FindBackward,
+  Replace,
   BufferList,
   PasteRing,
   ToggleWhitespace,

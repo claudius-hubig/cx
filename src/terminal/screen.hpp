@@ -107,6 +107,17 @@ private:
   void openSaveAsPrompt();
   void openSwitchBufferPrompt();
   void openFindPrompt(bool backward);
+  // Two-step replace flow: prompt for pattern, then replacement, then
+  // iterate forward from the cursor with a y/n/!/q confirmation per match.
+  void openReplacePrompt();
+  // Find the next match for `pattern` starting at the current cursor; on
+  // hit, highlight it and open the y/n/!/q confirm prompt. On miss, set a
+  // status with the running count.
+  void replacePump(std::string pattern, std::string replacement, std::size_t replaced);
+  // Confirm prompt for a single replace decision. Stores the matched range
+  // so 'y'/'n' know whether to advance past or replace the highlighted hit.
+  void openReplaceConfirmPrompt(std::string pattern, std::string replacement, std::size_t replaced,
+                                BufferPoint matchStart, BufferPoint matchEnd);
   void openSetModePrompt();
   void openConfirmPrompt(std::string question, std::function<void(std::string const&)> onResult,
                          std::function<void()> onAbort);
