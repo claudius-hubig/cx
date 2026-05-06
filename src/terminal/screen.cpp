@@ -62,10 +62,13 @@ buildCompletionDisplay(std::string const& input,
                        bool idxSelected) {
   if (idxSelected || completions.empty())
     return {"", 0};
+  // Escape after stripping the typed prefix: `match.starts_with(input)`
+  // is computed on the raw byte string the user actually typed, while
+  // `hint` is what we paint to the terminal — so that gets escaped.
   auto hintFor = [&](std::string const& match) -> std::string {
     if (match.starts_with(input))
-      return match.substr(input.size());
-    return match;
+      return escapeNonPrintable(match.substr(input.size()));
+    return escapeNonPrintable(match);
   };
   auto hint = hintFor(completions[0].first);
   if (completions.size() == 1) {
@@ -83,7 +86,7 @@ buildCompletionDisplay(std::string const& input,
       }
       auto h = hintFor(completions[i].first);
       if (h.empty())
-        h = completions[i].first;
+        h = escapeNonPrintable(completions[i].first);
       rendered += h;
       vw += visualWidth(h);
     }
@@ -290,7 +293,8 @@ void Screen::drawModeline(Panel& panel, bool focused) {
   }
 
   // Right-align: buffer name + mode + modification indicator.
-  std::string filename = _bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name();
+  std::string filename =
+      escapeNonPrintable(_bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name());
   std::string suffix;
   if (!pbuf.readonly())
     suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
@@ -936,7 +940,7 @@ void Screen::saveAndMaybeKill() {
     return;
   auto res = _buf->save();
   if (res) {
-    setStatus("Saved to " + _buf->name());
+    setStatus("Saved to " + escapeNonPrintable(_buf->name()));
     if (_killPending && _bufMgr) {
       _killPending = false;
       auto name = _buf->name();
@@ -1765,7 +1769,8 @@ bool Screen::tryExit() {
       if (!buf->hasPath())
         question = "Exiting. Save temporary buffer? y/n/Esc: ";
       else
-        question = "Exiting. Save " + _bufMgr->displayName(buf->name()) + "? y/n/Esc: ";
+        question = "Exiting. Save " + escapeNonPrintable(_bufMgr->displayName(buf->name())) +
+                   "? y/n/Esc: ";
       openConfirmKillPrompt(std::move(question));
       return false;
     }
@@ -1975,7 +1980,8 @@ void Screen::dispatchAction(Action action) {
       if (_buf->hasPath()) {
         if (!std::filesystem::exists(_buf->name())) {
           openConfirmPrompt(
-              "File " + _buf->name() + " doesn't exist. Really save there? y/n: ",
+              "File " + escapeNonPrintable(_buf->name()) +
+                  " doesn't exist. Really save there? y/n: ",
               [this](std::string const& answer) {
                 if (answer == "y")
                   saveAndMaybeKill();
@@ -1991,7 +1997,7 @@ void Screen::dispatchAction(Action action) {
         } else {
           auto res = _buf->save();
           if (res)
-            setStatus("Saved to " + _buf->name());
+            setStatus("Saved to " + escapeNonPrintable(_buf->name()));
           else
             setStatus(res.error());
         }
@@ -2093,7 +2099,7 @@ void Screen::dispatchAction(Action action) {
         setStatus("Can't revert from file in temporary buffers.");
       } else {
         openConfirmPrompt(
-            "Really revert buffer from file " + _buf->name() + "? y/n: ",
+            "Really revert buffer from file " + escapeNonPrintable(_buf->name()) + "? y/n: ",
             [this](std::string const& answer) {
               if (answer == "y") {
                 if (_buf) {
@@ -2103,7 +2109,7 @@ void Screen::dispatchAction(Action action) {
                     // so the cursor and selection land in a sensible place.
                     _view->setPoint(0, 0);
                     _view->clearMark();
-                    setStatus("Reverted from " + _buf->name());
+                    setStatus("Reverted from " + escapeNonPrintable(_buf->name()));
                   } else {
                     setStatus(res.error());
                   }

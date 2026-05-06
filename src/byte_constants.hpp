@@ -64,6 +64,10 @@ constexpr std::string_view Dim = "\x1b[2m";
 constexpr std::string_view DimOff = "\x1b[22m";
 constexpr std::string_view ReverseVideo = "\x1b[7m";
 constexpr std::string_view DefaultFg = "\x1b[39m";
+// Foreground used by Buffer::render for escaped control bytes / broken
+// UTF-8 in text content. Lifted into the namespace so non-renderer
+// surfaces (escapeNonPrintable, prompts) can match the styling.
+constexpr std::string_view CtrlColor = "\x1b[38;2;204;120;50m";
 constexpr std::string_view EraseLine = "\x1b[K";
 constexpr std::string_view ShowCursor = "\x1b[?25h";
 constexpr std::string_view CsiPrefix = "\x1b["; // start of CUP / parameterised sequences

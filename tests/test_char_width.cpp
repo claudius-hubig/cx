@@ -303,18 +303,18 @@ BOOST_AUTO_TEST_CASE(charInfoAt_cjk) {
 }
 
 BOOST_AUTO_TEST_CASE(charInfoAt_invalid_byte) {
-  // Stray continuation byte — width 2, len 1
+  // Stray continuation byte — rendered as "\xHH", width 4, len 1
   char data[] = "\x80";
   auto info = charInfoAt(data, 1);
-  BOOST_CHECK_EQUAL(info.width, 2u);
+  BOOST_CHECK_EQUAL(info.width, 4u);
   BOOST_CHECK_EQUAL(info.len, 1u);
 }
 
 BOOST_AUTO_TEST_CASE(charInfoAt_overlong) {
-  // C0 80 — overlong, first byte treated as invalid
+  // C0 80 — overlong, first byte treated as invalid ("\xc0", width 4)
   char data[] = "\xC0\x80";
   auto info = charInfoAt(data, 2);
-  BOOST_CHECK_EQUAL(info.width, 2u);
+  BOOST_CHECK_EQUAL(info.width, 4u);
   BOOST_CHECK_EQUAL(info.len, 1u);
 }
 
@@ -356,4 +356,72 @@ BOOST_AUTO_TEST_CASE(truncateFromFront_cjk) {
   BOOST_CHECK(visualWidth(r) <= 5u);
   // Leading ellipsis.
   BOOST_CHECK_EQUAL(r.substr(0, 3), "\xe2\x80\xa6");
+}
+
+// --- escapeNonPrintable ---
+//
+// Output wraps each escaped byte (or contiguous run of escaped bytes) in
+// ansi::CtrlColor / ansi::Reset so it matches the buffer text view's
+// styling for control bytes and broken UTF-8. Tests spell those out via
+// constants so the expected strings stay readable.
+
+namespace {
+constexpr std::string_view kStyleOn = "\x1b[38;2;204;120;50m";
+constexpr std::string_view kStyleOff = "\x1b[39m"; // DefaultFg, not full Reset
+std::string styled(std::string_view escaped) {
+  return std::string(kStyleOn) + std::string(escaped) + std::string(kStyleOff);
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_passthrough) {
+  BOOST_CHECK_EQUAL(escapeNonPrintable(""), "");
+  BOOST_CHECK_EQUAL(escapeNonPrintable("hello.txt"), "hello.txt");
+  BOOST_CHECK_EQUAL(escapeNonPrintable("/path/to/file"), "/path/to/file");
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_del_and_backspace) {
+  BOOST_CHECK_EQUAL(escapeNonPrintable("\x7f."), styled("\\x7f") + ".");
+  // Split string literal so `f` does not get pulled into the \x escape.
+  BOOST_CHECK_EQUAL(escapeNonPrintable("\x08"
+                                       "foo"),
+                    styled("\\x08") + "foo");
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_low_controls) {
+  BOOST_CHECK_EQUAL(escapeNonPrintable(std::string("a\0b", 3)), "a" + styled("\\x00") + "b");
+  BOOST_CHECK_EQUAL(escapeNonPrintable("\nfoo\r"), styled("\\x0a") + "foo" + styled("\\x0d"));
+  // TAB is escaped: it would shift columns and corrupt alignment.
+  BOOST_CHECK_EQUAL(escapeNonPrintable("a\tb"), "a" + styled("\\x09") + "b");
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_runs_coalesce) {
+  // Adjacent escaped bytes share one CtrlColor / Reset pair instead of
+  // emitting CSI per byte.
+  BOOST_CHECK_EQUAL(escapeNonPrintable(std::string("\x01\x02", 2)), styled("\\x01\\x02"));
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_valid_utf8_passes_through) {
+  // 中 = E4 B8 AD. Valid 3-byte sequence, should not be escaped.
+  std::string cjk = "\xe4\xb8\xad";
+  BOOST_CHECK_EQUAL(escapeNonPrintable(cjk), cjk);
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_invalid_high_bytes) {
+  // 0xFF is never a valid UTF-8 lead byte.
+  BOOST_CHECK_EQUAL(escapeNonPrintable("\xff"), styled("\\xff"));
+  // Lone continuation byte 0x80 is also invalid.
+  BOOST_CHECK_EQUAL(escapeNonPrintable("a\x80z"), "a" + styled("\\x80") + "z");
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_truncated_multibyte) {
+  // 0xE4 introduces a 3-byte sequence but is followed by ASCII —
+  // decodeUtf8 should reject it; the lead byte gets escaped.
+  BOOST_CHECK_EQUAL(escapeNonPrintable("\xe4z"), styled("\\xe4") + "z");
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_visualWidth_unaffected_by_styling) {
+  // Inline CSI sequences are zero-width to visualWidth, so callers can
+  // measure the result for layout without subtracting the styling.
+  BOOST_CHECK_EQUAL(visualWidth(escapeNonPrintable("\x7f.")), 5u); // "\x7f" (4) + "." (1)
+  BOOST_CHECK_EQUAL(visualWidth(escapeNonPrintable("hello")), 5u);
 }

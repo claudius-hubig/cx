@@ -465,7 +465,7 @@ token vector allocation.
 |----------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `contentWidth()`, `BufferPoint`, `ByteOffset`, `VisualCol`, `ViewFrom`                                   |
 | `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
-| `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
+| `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |

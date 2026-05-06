@@ -1,5 +1,6 @@
 #include "buffer_list_buffer.hpp"
 #include "byte_constants.hpp"
+#include "utf8.hpp"
 
 #include <map>
 #include <string>
@@ -57,7 +58,12 @@ bool insertDirBuffer(DirNode& root, std::string const& fullPath) {
   return true;
 }
 
-// Render a directory node's contents into lines/names.
+// Render a directory node's contents into lines/names. `prefix` is the
+// already-escaped path fragment (display form); raw names entering the
+// display path get run through escapeNonPrintable so control bytes
+// stand out instead of being silently swallowed by the terminal. The
+// `names` vector keeps the raw, unescaped buffer/path so selection
+// dispatch resolves to the actual buffer.
 void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent, bool showHeader,
                 std::vector<std::string>& lines, std::vector<std::string>& names) {
   bool hasContent = !node.files.empty() || !node.subdirs.empty();
@@ -70,13 +76,13 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
   // DirBuffer marker (it needs its own selectable header line).
   if (!hasDirBuffer && node.files.empty() && node.subdirs.size() == 1) {
     auto& [name, child] = *node.subdirs.begin();
-    renderNode(child, prefix + name + "/", indent, true, lines, names);
+    renderNode(child, prefix + escapeNonPrintable(name) + "/", indent, true, lines, names);
     return;
   }
 
   // Single file leaf with no subdirs and no DirBuffer.
   if (!hasDirBuffer && node.files.size() == 1 && node.subdirs.empty()) {
-    lines.push_back(std::string(indent, ' ') + prefix + node.files[0].first);
+    lines.push_back(std::string(indent, ' ') + prefix + escapeNonPrintable(node.files[0].first));
     names.push_back(node.files[0].second);
     return;
   }
@@ -96,11 +102,12 @@ void renderNode(DirNode const& node, std::string const& prefix, std::size_t inde
   while (fi != node.files.end() || di != node.subdirs.end()) {
     bool useFile = fi != node.files.end() && (di == node.subdirs.end() || fi->first < di->first);
     if (useFile) {
-      lines.push_back(std::string(indent, ' ') + childPrefix + fi->first);
+      lines.push_back(std::string(indent, ' ') + childPrefix + escapeNonPrintable(fi->first));
       names.push_back(fi->second);
       ++fi;
     } else {
-      renderNode(di->second, childPrefix + di->first + "/", indent, true, lines, names);
+      renderNode(di->second, childPrefix + escapeNonPrintable(di->first) + "/", indent, true, lines,
+                 names);
       ++di;
     }
   }
@@ -127,7 +134,7 @@ ViewHint BufferListBuffer::refresh(std::vector<std::string> names,
     if (!name.empty() && name[0] == '/') {
       insertPath(root, name);
     } else {
-      _displayLines.push_back(name);
+      _displayLines.push_back(escapeNonPrintable(name));
       _lineToName.push_back(name);
     }
   }

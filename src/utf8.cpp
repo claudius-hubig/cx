@@ -1,5 +1,7 @@
 #include "utf8.hpp"
 
+#include "byte_constants.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <unistd.h>
@@ -12,6 +14,68 @@ std::size_t visualWidth(std::string_view s) {
     i += ci.len;
   }
   return w;
+}
+
+std::string escapeNonPrintable(std::string_view s) {
+  std::string out;
+  out.reserve(s.size());
+  static constexpr char kHex[] = "0123456789abcdef";
+  // Wrap each escaped byte in CtrlColor / DefaultFg so it stands out
+  // the same way broken bytes do in the buffer text view. Adjacent
+  // escaped bytes get coalesced into one styled run to avoid emitting
+  // a CSI pair per byte. The closer is DefaultFg (not Reset) so that
+  // surrounding state — most importantly ReverseVideo on the modeline
+  // / prompt line — survives the styled span; only the foreground
+  // colour returns to default. visualWidth() and the buffer renderer
+  // both treat CSI sequences as zero-width pass-throughs, so this
+  // works for direct-to-terminal callers (modeline, prompts) and
+  // for renderer-fed strings (buffer list, dir buffer) alike.
+  bool styled = false;
+  auto openStyle = [&] {
+    if (!styled) {
+      out.append(ansi::CtrlColor.data(), ansi::CtrlColor.size());
+      styled = true;
+    }
+  };
+  auto closeStyle = [&] {
+    if (styled) {
+      out.append(ansi::DefaultFg.data(), ansi::DefaultFg.size());
+      styled = false;
+    }
+  };
+  auto appendHex = [&](unsigned char u) {
+    openStyle();
+    out += "\\x";
+    out += kHex[u >> 4];
+    out += kHex[u & 0xf];
+  };
+  std::size_t i = 0;
+  while (i < s.size()) {
+    auto u = static_cast<unsigned char>(s[i]);
+    if (u < 0x20 || u == 0x7f) {
+      appendHex(u);
+      ++i;
+    } else if (u >= 0x80) {
+      // decodeUtf8 returns len == 1 for any byte that does not start a
+      // valid UTF-8 sequence — render those as hex too so broken bytes
+      // do not paint as garbage glyphs.
+      auto [_, len] = decodeUtf8(s.data() + i, s.size() - i);
+      if (len == 1) {
+        appendHex(u);
+        ++i;
+      } else {
+        closeStyle();
+        out.append(s.data() + i, len);
+        i += len;
+      }
+    } else {
+      closeStyle();
+      out += s[i];
+      ++i;
+    }
+  }
+  closeStyle();
+  return out;
 }
 
 std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth) {

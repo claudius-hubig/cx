@@ -337,7 +337,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   bool focused = params.focused;
   std::size_t rowOffset = params.rowOffset;
   std::size_t colOffset = params.colOffset;
-  static constexpr auto kCtrlColor = "\x1b[38;2;204;120;50m";
+  static constexpr auto kCtrlColor = ansi::CtrlColor;
   static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
   static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";
   static constexpr auto kTabWsStyle = "\x1b[48;2;60;60;60m";
@@ -462,9 +462,12 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         out += *data;
       }
     } else if (info.len == 1) {
-      // Invalid or lone continuation byte: display as hex.
+      // Invalid or lone continuation byte: render as "\xHH" so a broken
+      // byte is visually distinct from the surrounding text rather than
+      // looking like a stray pair of hex digits.
       out += kCtrlColor;
       auto nibble = [](unsigned char n) -> char { return n < 10 ? ('0' + n) : ('a' + n - 10); };
+      out += "\\x";
       out += nibble(u >> 4);
       out += nibble(u & 0xf);
       out += ansi::Reset;

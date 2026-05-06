@@ -1,5 +1,6 @@
 #include "dir_buffer.hpp"
 #include "byte_constants.hpp"
+#include "utf8.hpp"
 
 #include <algorithm>
 #include <ctime>
@@ -104,7 +105,7 @@ DirBuffer::DeleteResult DirBuffer::executeDelete() {
     if (ec) {
       if (!errors.empty())
         errors += "; ";
-      errors += _entries[idx].name + ": " + ec.message();
+      errors += escapeNonPrintable(_entries[idx].name) + ": " + ec.message();
     } else {
       ++count;
     }
@@ -212,7 +213,12 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
     // 4 (prefix) + permissions(~10) + 2 + owner + 2 + group + 2 + size + 2
     // + mtime(~19) + 2 + name + optional '/'. Reserve a sane minimum so
     // the per-segment += never needs to grow the small-string allocation.
-    line.reserve(80 + e.name.size());
+    // Escape control bytes so filenames with TAB/newline/DEL/etc. can't
+    // silently corrupt column alignment or vanish from the listing. The
+    // raw `e.name` is kept for selection / cursor restore — only the
+    // display string is escaped.
+    auto displayName = escapeNonPrintable(e.name);
+    line.reserve(80 + displayName.size());
     // 4-space prefix (overwritten with "DEL " in render for marked items).
     line += "    ";
     line += e.permissions;
@@ -229,7 +235,7 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
     line += "  ";
     line += e.mtime;
     line += "  ";
-    line += e.name;
+    line += displayName;
     if (e.isDir && e.name != "." && e.name != "..")
       line += '/';
     _displayLines.push_back(std::move(line));

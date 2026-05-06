@@ -179,7 +179,8 @@ struct CharInfo {
 /// (tab/control -> width 2, printable -> 1). For ANSI CSI escape sequences
 /// (ESC[ ... letter), returns width 0 and consumes the full sequence.
 /// For valid multi-byte UTF-8, decodes and returns codepointWidth. Invalid
-/// bytes (>= 0x80 with len == 1 from decodeUtf8) get width 2 for hex display.
+/// bytes (>= 0x80 with len == 1 from decodeUtf8) get width 4 for "\xHH"
+/// display.
 inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   // ANSI CSI escape: ESC [ <params> <letter>
@@ -196,13 +197,24 @@ inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
     return {charWidth(static_cast<char>(u)), 1};
   auto [cp, len] = decodeUtf8(data, avail);
   if (len == 1)
-    return {2, 1}; // invalid byte — displayed as 2-digit hex
+    return {4, 1}; // invalid byte — displayed as "\xHH"
   return {codepointWidth(cp), len};
 }
 
 /// Visual (display column) width of a string, handling multi-byte UTF-8
 /// and ANSI escape sequences (which contribute 0 width). Defined in utf8.cpp.
 std::size_t visualWidth(std::string_view s);
+
+/// Return `s` with any non-printable byte replaced by a visible "\xHH"
+/// escape so it cannot be silently swallowed by the terminal. Bytes
+/// rendered as escapes are: ASCII control characters (< 0x20, including
+/// TAB and newline), DEL (0x7F), and any high byte (>= 0x80) that does
+/// not start a valid UTF-8 sequence. Printable ASCII and valid
+/// multi-byte UTF-8 pass through unchanged. Intended for filenames and
+/// other short user-visible strings whose contents come from outside
+/// the editor; not for buffer text content, which the buffer renderer
+/// styles separately. Defined in utf8.cpp.
+std::string escapeNonPrintable(std::string_view s);
 
 /// Truncate `s` from the front so its visual width is at most `maxWidth`,
 /// prepending a horizontal ellipsis ("…", U+2026, visual width 1) when any
