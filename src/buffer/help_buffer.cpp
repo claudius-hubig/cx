@@ -46,6 +46,7 @@ static std::vector<std::string> const& leftColumn() {
     for (auto a : {Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle,
                    Action::PasteRing, Action::Format, Action::PipeReplace, Action::ToggleComment})
       v.push_back(formatHelpLine(a));
+    v.push_back(formatRawLine("Esc-Esc", "Clear mark"));
     v.emplace_back("");
     v.emplace_back("Bracket matching:");
     v.push_back(formatRawLine("?", "Jump to matching bracket (all modes)"));

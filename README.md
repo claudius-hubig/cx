@@ -61,6 +61,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | Key        | Action                       |
 |------------|------------------------------|
 | Ctrl-Space | Set / clear mark             |
+| Esc-Esc    | Clear mark                   |
 | Ctrl-w     | Cut region                   |
 | Esc-w      | Copy region                  |
 | Ctrl-y     | Paste                        |

@@ -1650,10 +1650,17 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
 
     if (gotNext && !handleEscChord(next)) {
       if (next == key::Escape) {
-        // Esc-Esc: dismiss readonly overlay if active.
+        // Esc-Esc: dismiss readonly overlay if one is active; otherwise
+        // clear the mark on the current view. The overlay path takes
+        // precedence because the underlying buffer's mark is preserved
+        // across the overlay (dismiss first, then a second Esc-Esc
+        // clears the mark).
         if (_buf && _buf->readonly() && prevBuf()) {
           setBuffer(*prevBuf());
           prevBuf() = nullptr;
+        } else if (_view && _view->mark()) {
+          _view->clearMark();
+          setStatus("Mark cleared");
         }
       } else {
         setStatus(formatShortcut(shortcutFromEscChar(next)) + " not recognised.");
