@@ -2308,6 +2308,22 @@ void Screen::dispatchAction(Action action) {
     _wrap = !_wrap;
     setStatus(_wrap ? "Wrap on" : "Wrap off");
     break;
+  case Action::ToggleComment:
+    if (requireNotInHistoryMode())
+      break;
+    if (_buf && !_buf->readonly()) {
+      // Mode-defined line-comment prefix. Markdown / JSON / Diff lack a
+      // line-comment form so we surface a status hint instead of
+      // silently picking the wrong syntax.
+      if (_buf->mode() == BufferMode::Cpp) {
+        _view->toggleComment("// ");
+        _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+        _pasteState.reset();
+      } else {
+        setStatus("No line-comment syntax for this mode");
+      }
+    }
+    break;
   case Action::Format:
     if (_buf) {
       std::optional<std::pair<std::size_t, std::size_t>> range;

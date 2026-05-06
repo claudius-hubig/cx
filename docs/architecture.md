@@ -68,7 +68,7 @@ Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`,
 `SwitchBuffer`, `ToggleMark`, `Cut`, `Copy`, `Paste`, `PasteCycle`,
 `DeleteChunkBefore`, `Revert`, `VersionHistory`, `Find`,
 `FindBackward`, `Replace`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
-`ToggleWrap`, `Format`, `SetMode`, `DirBrowser`, `PipeReplace`,
+`ToggleWrap`, `Format`, `ToggleComment`, `SetMode`, `DirBrowser`, `PipeReplace`,
 `SplitVertical`, `SplitHorizontal`, `ClosePanel`,
 `FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`.
 

@@ -89,6 +89,16 @@ public:
   void deleteChunkAtPoint();
   void deleteChunkBeforePoint();
   void deleteLine();
+
+  // Toggle a line-comment prefix on the lines covered by the active
+  // mark/point region (or the current line if no mark is set). If every
+  // non-blank line in the range already begins with `prefix` (after its
+  // leading whitespace), the prefix is removed; otherwise `prefix` is
+  // prepended at column 0 to every non-blank line. The prefix is
+  // mode-defined by the caller (e.g. "// " for C/C++). Blank lines are
+  // preserved either way so adding then removing comments round-trips.
+  void toggleComment(std::string_view prefix);
+
   void adjustCursorToIndent();
 
   // Region operations.

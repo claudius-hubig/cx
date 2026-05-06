@@ -28,6 +28,7 @@ enum class Action {
   ToggleWhitespace,
   ToggleWrap,
   Format,
+  ToggleComment,
   SetMode,
   DirBrowser,
   PipeReplace,

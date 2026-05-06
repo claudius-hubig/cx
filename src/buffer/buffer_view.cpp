@@ -883,6 +883,80 @@ void BufferView::deleteLine() {
   deleteRegion(from, to);
 }
 
+void BufferView::toggleComment(std::string_view prefix) {
+  if (_buf.readonly() || prefix.empty())
+    return;
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+
+  // Determine line range from the mark/point region. The region is half-
+  // open in column terms but we operate on whole lines: if the user
+  // selected (5,0)..(7,0), we comment only lines 5..6 (the trailing line
+  // is just where the cursor sits, not part of the selection).
+  std::size_t fromLine = _point.line;
+  std::size_t toLine = _point.line;
+  if (_mark) {
+    auto a = std::min(*_mark, _point);
+    auto b = std::max(*_mark, _point);
+    fromLine = a.line;
+    toLine = b.line;
+    if (toLine > fromLine && b.offset == 0)
+      --toLine;
+  }
+  toLine = std::min(toLine, _buf.lineCount() - 1);
+
+  auto leadingWs = [](std::string const& l) -> std::size_t {
+    std::size_t i = 0;
+    while (i < l.size() && (l[i] == ' ' || l[i] == '\t'))
+      ++i;
+    return i;
+  };
+
+  // Check whether every non-blank line in the range already starts with
+  // `prefix` (after leading whitespace). If yes, this is an "uncomment"
+  // operation; otherwise it's a "comment" operation.
+  bool allCommented = true;
+  bool anyNonBlank = false;
+  for (std::size_t li = fromLine; li <= toLine; ++li) {
+    auto const& line = _buf.lineContent(li);
+    auto ws = leadingWs(line);
+    if (ws == line.size())
+      continue; // blank line, ignore
+    anyNonBlank = true;
+    if (line.compare(ws, prefix.size(), prefix) != 0) {
+      allCommented = false;
+      break;
+    }
+  }
+  if (!anyNonBlank)
+    return;
+
+  for (std::size_t li = fromLine; li <= toLine; ++li) {
+    auto const& line = _buf.lineContent(li);
+    auto ws = leadingWs(line);
+    if (ws == line.size())
+      continue;
+    if (allCommented) {
+      // Remove the prefix at the first non-whitespace position.
+      _buf.deleteRegion({li, ws}, {li, ws + prefix.size()});
+    } else {
+      // Insert at the first non-whitespace position so the indent is
+      // preserved and the prefix sits flush with the code.
+      _buf.insertText(prefix, {li, ws});
+    }
+  }
+  // Operating on whole lines may have moved the column-relative cursor;
+  // pick it up by clamping. Mark stays valid relative to the new content.
+  _docVersion = _buf.docVersion();
+  if (_point.line >= _buf.lineCount())
+    _point.line = _buf.lineCount() - 1;
+  if (_point.offset > _buf.lineContent(_point.line).size())
+    _point.offset = _buf.lineContent(_point.line).size();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
+  _buf.recordVersion(_point, fromLine, 0);
+}
+
 void BufferView::adjustCursorToIndent() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();

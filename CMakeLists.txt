@@ -161,6 +161,22 @@ target_include_directories(test_movement PRIVATE src .)
 target_link_libraries(test_movement Boost::unit_test_framework)
 add_test(NAME movement COMMAND test_movement)
 
+add_executable(test_comment_toggle
+    tests/test_comment_toggle.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
+)
+target_include_directories(test_comment_toggle PRIVATE src .)
+target_link_libraries(test_comment_toggle Boost::unit_test_framework)
+add_test(NAME comment_toggle COMMAND test_comment_toggle)
+
 add_executable(test_chunk_delete
     tests/test_chunk_delete.cpp
     src/buffer/buffer.cpp
