@@ -118,6 +118,8 @@ These shortcuts are active when viewing a directory listing.
 | h     | Toggle hidden files (dotfiles)  |
 | d     | Mark / unmark for deletion      |
 | x     | Delete marked items             |
+| r     | Rename selected entry           |
+| m     | Make subdirectory               |
 
 ### Display
 

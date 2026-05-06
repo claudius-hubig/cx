@@ -1750,6 +1750,50 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         db->toggleDeleteMark(_view->point());
         if (_view->point().line + 1 < _buf->lineCount())
           _view->movePhysicalDown();
+      } else if (c == 'r') {
+        auto pt = _view->point();
+        if (pt.line >= db->entries().size()) {
+          setStatus("No entry selected");
+        } else {
+          auto const& entry = db->entries()[pt.line];
+          if (entry.name == "." || entry.name == "..") {
+            setStatus("Cannot rename . or ..");
+          } else {
+            std::string saved = entry.name;
+            _prompt = Prompt{
+                .label = "Rename to: ",
+                .input = saved,
+                .onResult =
+                    [this, pt](std::string const& newName) {
+                      auto* db2 = dynamic_cast<DirBuffer*>(_buf);
+                      if (!db2)
+                        return;
+                      auto result = db2->renameEntry(pt, newName);
+                      _view->setPoint(result.hint.point.line, result.hint.point.offset);
+                      if (result.ok)
+                        setStatus("Renamed");
+                      else
+                        setStatus("Rename failed: " + result.error);
+                    },
+            };
+          }
+        }
+      } else if (c == 'm') {
+        _prompt = Prompt{
+            .label = "New directory: ",
+            .onResult =
+                [this](std::string const& newName) {
+                  auto* db2 = dynamic_cast<DirBuffer*>(_buf);
+                  if (!db2)
+                    return;
+                  auto result = db2->makeSubdir(newName);
+                  _view->setPoint(result.hint.point.line, result.hint.point.offset);
+                  if (result.ok)
+                    setStatus("Created " + newName);
+                  else
+                    setStatus("mkdir failed: " + result.error);
+                },
+        };
       } else if (c == 'x') {
         auto marked = db->markedPaths();
         if (marked.empty()) {

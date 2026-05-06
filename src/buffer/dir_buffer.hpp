@@ -52,6 +52,25 @@ public:
   };
   DeleteResult executeDelete();
 
+  /// Result of a rename or mkdir operation: a status hint or error
+  /// message plus a ViewHint for the cursor after listing refresh.
+  struct ChangeResult {
+    bool ok;
+    std::string error; // populated when ok == false
+    ViewHint hint;
+  };
+
+  /// Rename the entry at `p` to `newName` (relative to the current
+  /// directory). Refuses on `.` / `..`, on empty/separator-bearing
+  /// names, and when the target already exists. Refreshes the listing
+  /// on success and tries to leave the cursor on the renamed entry.
+  ChangeResult renameEntry(BufferPoint p, std::string const& newName);
+
+  /// Create a new subdirectory `newName` inside the current directory.
+  /// Refuses on empty/separator-bearing names. Refreshes the listing
+  /// and returns a hint that lands the cursor on the new entry.
+  ChangeResult makeSubdir(std::string const& newName);
+
   /// The directory currently being listed.
   std::filesystem::path const& directory() const { return _dir; }
 

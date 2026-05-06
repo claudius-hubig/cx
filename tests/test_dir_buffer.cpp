@@ -318,3 +318,97 @@ BOOST_AUTO_TEST_CASE(navigate_clears_marks) {
   buf.navigate(tmp.path / "sub");
   BOOST_CHECK(buf.markedPaths().empty());
 }
+
+// --- rename + mkdir ---
+
+BOOST_AUTO_TEST_CASE(rename_renames_file_on_disk) {
+  TmpDir tmp;
+  tmp.createFile("old.txt", "data");
+  TB<DirBuffer> buf(tmp.path);
+  // Find the entry for old.txt.
+  std::size_t idx = 0;
+  for (std::size_t i = 2; i < buf.entries().size(); ++i) {
+    if (buf.entries()[i].name == "old.txt") {
+      idx = i;
+      break;
+    }
+  }
+  BOOST_REQUIRE_GT(idx, 0u);
+  auto r = buf.renameEntry({idx, 0}, "new.txt");
+  BOOST_CHECK(r.ok);
+  BOOST_CHECK(fs::exists(tmp.path / "new.txt"));
+  BOOST_CHECK(!fs::exists(tmp.path / "old.txt"));
+  // Listing reflects the new name and cursor is on it.
+  bool found = false;
+  for (auto const& e : buf.entries())
+    if (e.name == "new.txt") {
+      found = true;
+      break;
+    }
+  BOOST_CHECK(found);
+}
+
+BOOST_AUTO_TEST_CASE(rename_refuses_dot) {
+  TmpDir tmp;
+  TB<DirBuffer> buf(tmp.path);
+  auto r = buf.renameEntry({0, 0}, "x");
+  BOOST_CHECK(!r.ok);
+}
+
+BOOST_AUTO_TEST_CASE(rename_rejects_collision) {
+  TmpDir tmp;
+  tmp.createFile("a.txt");
+  tmp.createFile("b.txt");
+  TB<DirBuffer> buf(tmp.path);
+  std::size_t idx = 0;
+  for (std::size_t i = 2; i < buf.entries().size(); ++i)
+    if (buf.entries()[i].name == "a.txt")
+      idx = i;
+  BOOST_REQUIRE_GT(idx, 0u);
+  auto r = buf.renameEntry({idx, 0}, "b.txt");
+  BOOST_CHECK(!r.ok);
+  BOOST_CHECK(fs::exists(tmp.path / "a.txt"));
+}
+
+BOOST_AUTO_TEST_CASE(rename_rejects_slash_in_name) {
+  TmpDir tmp;
+  tmp.createFile("a.txt");
+  TB<DirBuffer> buf(tmp.path);
+  std::size_t idx = 0;
+  for (std::size_t i = 2; i < buf.entries().size(); ++i)
+    if (buf.entries()[i].name == "a.txt")
+      idx = i;
+  BOOST_REQUIRE_GT(idx, 0u);
+  auto r = buf.renameEntry({idx, 0}, "sub/a.txt");
+  BOOST_CHECK(!r.ok);
+}
+
+BOOST_AUTO_TEST_CASE(mkdir_creates_subdir) {
+  TmpDir tmp;
+  TB<DirBuffer> buf(tmp.path);
+  auto r = buf.makeSubdir("newdir");
+  BOOST_CHECK(r.ok);
+  BOOST_CHECK(fs::is_directory(tmp.path / "newdir"));
+  bool found = false;
+  for (auto const& e : buf.entries())
+    if (e.name == "newdir") {
+      found = true;
+      BOOST_CHECK(e.isDir);
+    }
+  BOOST_CHECK(found);
+}
+
+BOOST_AUTO_TEST_CASE(mkdir_rejects_existing) {
+  TmpDir tmp;
+  tmp.createDir("existing");
+  TB<DirBuffer> buf(tmp.path);
+  auto r = buf.makeSubdir("existing");
+  BOOST_CHECK(!r.ok);
+}
+
+BOOST_AUTO_TEST_CASE(mkdir_rejects_slash_in_name) {
+  TmpDir tmp;
+  TB<DirBuffer> buf(tmp.path);
+  auto r = buf.makeSubdir("a/b");
+  BOOST_CHECK(!r.ok);
+}

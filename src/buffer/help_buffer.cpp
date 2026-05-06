@@ -58,6 +58,8 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("h", "Toggle hidden files"));
     v.push_back(formatRawLine("d", "Mark / unmark for deletion"));
     v.push_back(formatRawLine("x", "Delete marked items"));
+    v.push_back(formatRawLine("r", "Rename selected entry"));
+    v.push_back(formatRawLine("m", "Make subdirectory"));
     v.emplace_back("");
     // History-mode keys are dispatched inline in handleNormalInput rather
     // than through the central shortcut table, so they are listed here

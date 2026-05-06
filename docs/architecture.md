@@ -326,6 +326,7 @@ owner, group, size, and modification time. Supports:
 - Navigation into subdirectories and parent (`.` and `..` entries)
 - Toggling hidden (dotfile) visibility
 - Marking entries for deletion and executing bulk delete
+- Renaming the selected entry (`r`) and creating subdirectories (`m`)
 
 Each entry is represented as a `DirBuffer::Entry` struct with metadata
 gathered from the filesystem. `refresh()` rebuilds the listing from disk.

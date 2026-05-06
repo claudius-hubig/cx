@@ -115,6 +115,41 @@ DirBuffer::DeleteResult DirBuffer::executeDelete() {
   return {count, errors, hint};
 }
 
+DirBuffer::ChangeResult DirBuffer::renameEntry(BufferPoint p, std::string const& newName) {
+  if (p.line >= _entries.size())
+    return {false, "no entry selected", refresh()};
+  auto const& entry = _entries[p.line];
+  if (entry.name == "." || entry.name == "..")
+    return {false, "cannot rename . or ..", refresh(entry.name)};
+  if (newName.empty() || newName == "." || newName == "..")
+    return {false, "invalid name", refresh(entry.name)};
+  if (newName.find('/') != std::string::npos)
+    return {false, "name may not contain '/'", refresh(entry.name)};
+  auto target = _dir / newName;
+  std::error_code ec;
+  if (std::filesystem::exists(target, ec))
+    return {false, "target already exists", refresh(entry.name)};
+  std::filesystem::rename(entry.path, target, ec);
+  if (ec)
+    return {false, ec.message(), refresh(entry.name)};
+  // Refresh and place cursor on the renamed entry.
+  return {true, {}, refresh(newName)};
+}
+
+DirBuffer::ChangeResult DirBuffer::makeSubdir(std::string const& newName) {
+  if (newName.empty() || newName == "." || newName == "..")
+    return {false, "invalid name", refresh()};
+  if (newName.find('/') != std::string::npos)
+    return {false, "name may not contain '/'", refresh()};
+  auto target = _dir / newName;
+  std::error_code ec;
+  if (std::filesystem::exists(target, ec))
+    return {false, "target already exists", refresh()};
+  if (!std::filesystem::create_directory(target, ec) || ec)
+    return {false, ec ? ec.message() : "create_directory failed", refresh()};
+  return {true, {}, refresh(newName)};
+}
+
 std::filesystem::path DirBuffer::selectedPath(BufferPoint p) const {
   if (p.line < _entries.size())
     return _entries[p.line].path;
