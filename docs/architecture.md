@@ -27,7 +27,9 @@ main()
 
 Entry point. Constructs `SetupTerminal`, `Screen`, and `BufferManager` in
 the correct order, opens any files given on the command line, then calls
-`Screen::loop()` to run the editor.
+`Screen::loop()` to run the editor. Each path argument is parsed via
+`parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
+`:LINE` suffix (e.g. `cx src/foo.cpp:42`).
 
 ---
 

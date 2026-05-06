@@ -322,6 +322,13 @@ target_include_directories(test_search PRIVATE src)
 target_link_libraries(test_search Boost::unit_test_framework)
 add_test(NAME search COMMAND test_search)
 
+add_executable(test_file_arg
+    tests/test_file_arg.cpp
+)
+target_include_directories(test_file_arg PRIVATE src .)
+target_link_libraries(test_file_arg Boost::unit_test_framework)
+add_test(NAME file_arg COMMAND test_file_arg)
+
 add_executable(test_replace
     tests/test_replace.cpp
     src/buffer/buffer.cpp

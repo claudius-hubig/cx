@@ -47,6 +47,10 @@ public:
   // Display a timed status message on the status line.
   void setStatus(std::string msg);
 
+  // Move the focused view to the given 1-based line (clamped to the
+  // buffer's last line). Used by main() to honour `cx path:LINE`.
+  void gotoLine(std::size_t line);
+
 private:
   // Centralised action handler: executes the effect of the given Action.
   void dispatchAction(Action action);
