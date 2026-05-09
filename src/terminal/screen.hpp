@@ -137,6 +137,10 @@ private:
   void openReplaceConfirmPrompt(std::string pattern, std::string replacement, std::size_t replaced,
                                 BufferPoint matchStart, BufferPoint matchEnd);
   void openSetModePrompt();
+  // Esc-x: prompt for an action by description, run it, then surface
+  // the action's primary shortcut as a status hint so the user can
+  // learn the binding without having to remember it.
+  void openExecuteCommandPrompt();
   void openConfirmPrompt(std::string question, std::function<void(std::string const&)> onResult,
                          std::function<void()> onAbort);
   // Confirm-kill prompt shared by KillBuffer and tryExit.

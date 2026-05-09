@@ -37,9 +37,9 @@ static std::vector<std::string> const& leftColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
     v.emplace_back("Files & Buffers:");
-    for (auto a :
-         {Action::Help, Action::Exit, Action::SwitchBuffer, Action::BufferList, Action::DirBrowser,
-          Action::Save, Action::KillBuffer, Action::Revert, Action::VersionHistory})
+    for (auto a : {Action::Help, Action::Exit, Action::SwitchBuffer, Action::BufferList,
+                   Action::DirBrowser, Action::Save, Action::KillBuffer, Action::Revert,
+                   Action::VersionHistory, Action::ExecuteCommand})
       v.push_back(formatHelpLine(a));
     v.emplace_back("");
     v.emplace_back("Regions & Edit:");

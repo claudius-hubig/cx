@@ -1051,6 +1051,127 @@ void Screen::openSetModePrompt() {
   };
 }
 
+void Screen::openExecuteCommandPrompt() {
+  // Snapshot the command list once per prompt; the binding table is
+  // constexpr so it never changes during a session, but rebuilding the
+  // sorted vector at construction time keeps the autocomplete callback
+  // simple.
+  struct State {
+    std::vector<std::pair<std::string_view, Action>> commands;
+    // Filtered candidates after substring match against the user's
+    // input. Indices into `commands`. Lowercase comparison.
+    std::vector<std::size_t> matches;
+    std::optional<std::size_t> selected;
+  };
+  auto state = std::make_shared<State>();
+  state->commands = allCommands();
+
+  auto lower = [](std::string s) {
+    for (auto& c : s)
+      if (c >= 'A' && c <= 'Z')
+        c = static_cast<char>(c + 32);
+    return s;
+  };
+
+  auto rebuildMatches = [state, lower](std::string const& input) {
+    state->matches.clear();
+    state->selected.reset();
+    if (input.empty()) {
+      // Empty input: list everything in declaration order, but cap the
+      // initial display at a sensible amount via the hint logic below.
+      for (std::size_t i = 0; i < state->commands.size(); ++i)
+        state->matches.push_back(i);
+      return;
+    }
+    std::string needle = lower(input);
+    for (std::size_t i = 0; i < state->commands.size(); ++i) {
+      auto desc = lower(std::string(state->commands[i].first));
+      if (desc.find(needle) != std::string::npos)
+        state->matches.push_back(i);
+    }
+  };
+
+  auto displayFor = [state](std::string const& input) -> PromptDisplay {
+    if (state->matches.empty()) {
+      if (input.empty())
+        return {"", 0};
+      auto txt = std::string(" (no match)");
+      return {std::string(ansi::Dim) + txt + std::string(ansi::DimOff),
+              static_cast<std::size_t>(txt.size())};
+    }
+    if (state->selected) {
+      // While cycling with Tab, mute the inline hint — the input field
+      // already shows the chosen command.
+      return {"", 0};
+    }
+    auto top = state->commands[state->matches[0]].first;
+    std::string hint;
+    if (top.starts_with(input))
+      hint = std::string(top.substr(input.size()));
+    else
+      hint = std::string(top);
+    if (state->matches.size() > 1)
+      hint += " (" + std::to_string(state->matches.size()) + " matches)";
+    return {std::string(ansi::Dim) + hint + std::string(ansi::DimOff), visualWidth(hint)};
+  };
+
+  rebuildMatches("");
+
+  _prompt = Prompt{
+      .label = "Command: ",
+      .autocomplete = [state, rebuildMatches,
+                       displayFor](std::string const& input) -> Prompt::AutocompleteResult {
+        rebuildMatches(input);
+        return displayFor(input);
+      },
+      .onResult =
+          [this, state](std::string const& value) {
+            // Resolve to an action: prefer the cycled selection, else
+            // a single remaining match, else look up the literal value.
+            std::optional<Action> resolved;
+            if (state->selected && *state->selected < state->matches.size())
+              resolved = state->commands[state->matches[*state->selected]].second;
+            else if (state->matches.size() == 1)
+              resolved = state->commands[state->matches[0]].second;
+            else {
+              for (auto& [desc, a] : state->commands)
+                if (desc == value) {
+                  resolved = a;
+                  break;
+                }
+            }
+            if (!resolved) {
+              setStatus("No command matches: " + value);
+              return;
+            }
+            // Run the action, then (if it has one) surface the
+            // shortcut so the user can learn the binding.
+            auto a = *resolved;
+            auto desc = descriptionForAction(a);
+            dispatchAction(a);
+            auto shortcut = formatShortcut(shortcutForAction(a));
+            // If the dispatched action set its own status, don't
+            // overwrite it — append the binding hint instead.
+            std::string hint = std::string(desc) + " (" + shortcut + ")";
+            if (!_statusMsg.empty() && _statusMsg != hint)
+              setStatus(_statusMsg + "  [" + shortcut + "]");
+            else
+              setStatus(hint);
+          },
+      .onTab = [state, displayFor](std::string& input) -> PromptDisplay {
+        if (state->matches.empty())
+          return {"", 0};
+        if (!state->selected)
+          state->selected = 0;
+        else
+          state->selected = (*state->selected + 1) % state->matches.size();
+        input = state->commands[state->matches[*state->selected]].first;
+        return displayFor(input);
+      },
+  };
+  runAutocomplete();
+}
+
 void Screen::openConfirmPrompt(std::string question,
                                std::function<void(std::string const&)> onResult,
                                std::function<void()> onAbort) {
@@ -2534,6 +2655,9 @@ void Screen::dispatchAction(Action action) {
       setStatus(_view->highlightCurrentLine() ? "Current-line highlight on"
                                               : "Current-line highlight off");
     }
+    break;
+  case Action::ExecuteCommand:
+    openExecuteCommandPrompt();
     break;
   case Action::ToggleComment:
     if (requireNotInHistoryMode())

@@ -4,6 +4,9 @@
 
 #include "shortcut.hpp"
 
+#include <algorithm>
+#include <vector>
+
 // --- handleShortcut: forward lookup ---
 
 BOOST_AUTO_TEST_CASE(ctrl_s_maps_to_save) {
@@ -121,8 +124,8 @@ BOOST_AUTO_TEST_CASE(unrecognised_shortcut_returns_nullopt) {
 }
 
 BOOST_AUTO_TEST_CASE(unrecognised_esc_returns_nullopt) {
-  // Esc-x is not bound.
-  auto action = handleShortcut({.esc = true, .key = 'x'});
+  // Esc-z is not bound.
+  auto action = handleShortcut({.esc = true, .key = 'z'});
   BOOST_CHECK(!action.has_value());
 }
 
@@ -405,4 +408,31 @@ BOOST_AUTO_TEST_CASE(reverse_lookup_recenter) {
   auto s = shortcutForAction(Action::Recenter);
   BOOST_CHECK(s.ctrl);
   BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('l'));
+}
+
+BOOST_AUTO_TEST_CASE(esc_x_maps_to_execute_command) {
+  auto action = handleShortcut({.esc = true, .key = 'x'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::ExecuteCommand);
+}
+
+BOOST_AUTO_TEST_CASE(allCommands_excludes_self_and_dedupes) {
+  auto cmds = allCommands();
+  BOOST_REQUIRE(!cmds.empty());
+
+  // Sorted alphabetically.
+  for (std::size_t i = 1; i < cmds.size(); ++i)
+    BOOST_CHECK(cmds[i - 1].first <= cmds[i].first);
+
+  // ExecuteCommand itself is excluded so the prompt cannot recurse.
+  for (auto& [desc, a] : cmds)
+    BOOST_CHECK(a != Action::ExecuteCommand);
+
+  // Each Action appears at most once even when bound twice in the table
+  // (e.g. DeleteChunkBefore is bound to Ctrl-Bksp and Esc-Bksp).
+  std::vector<Action> actions;
+  for (auto& [desc, a] : cmds)
+    actions.push_back(a);
+  std::sort(actions.begin(), actions.end());
+  BOOST_CHECK(std::adjacent_find(actions.begin(), actions.end()) == actions.end());
 }

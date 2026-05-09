@@ -3,6 +3,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 enum class Action {
   Help,
@@ -46,6 +48,7 @@ enum class Action {
   PrevBlock,
   Recenter,
   ToggleCurrentLine,
+  ExecuteCommand,
 };
 
 struct Shortcut {
@@ -67,6 +70,11 @@ std::string formatShortcut(Shortcut s);
 
 // Description string for an action (e.g. "Save file").
 std::string_view descriptionForAction(Action a);
+
+// All unique (description, Action) pairs, sorted alphabetically by
+// description. Used by Esc-x execute-by-name to populate completions.
+// `ExecuteCommand` itself is excluded so the prompt cannot recurse.
+std::vector<std::pair<std::string_view, Action>> allCommands();
 
 // Convert raw control char (0x00-0x1F) to a Shortcut.
 inline Shortcut shortcutFromCtrlChar(char c) {

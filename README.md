@@ -64,6 +64,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | C-x k   | Kill buffer                                     |
 | Esc-r   | Revert buffer from file                         |
 | Ctrl-u  | Undo / version history                          |
+| Esc-x   | Execute command by name (substring completion)  |
 | q       | Dismiss read-only overlay (help / list / ring)  |
 | Esc-Esc | Dismiss overlay; otherwise clear mark           |
 

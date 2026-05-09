@@ -1,5 +1,7 @@
 #include "shortcut.hpp"
+#include <algorithm>
 #include <array>
+#include <unordered_set>
 
 struct Binding {
   Shortcut shortcut;
@@ -9,7 +11,7 @@ struct Binding {
 
 // The single source of truth for all keybindings. Help display and input
 // dispatch both read from this table. Order matches the help screen layout.
-static constexpr auto kBindings = std::array<Binding, 42>{{
+static constexpr auto kBindings = std::array<Binding, 43>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},
     {{.ctrl = true, .key = 'o'}, Action::SwitchBuffer, "Switch to buffer/open file"},
@@ -52,6 +54,7 @@ static constexpr auto kBindings = std::array<Binding, 42>{{
     {{.ctrl = true, .key = 'b'}, Action::PrevBlock, "Prev block (hunk/conflict)"},
     {{.ctrl = true, .key = 'l'}, Action::Recenter, "Recenter cursor (mid/top/bot)"},
     {{.esc = true, .key = '_'}, Action::ToggleCurrentLine, "Highlight current line"},
+    {{.esc = true, .key = 'x'}, Action::ExecuteCommand, "Execute command by name"},
 }};
 
 std::optional<Action> handleShortcut(Shortcut s) {
@@ -73,6 +76,20 @@ std::string_view descriptionForAction(Action a) {
     if (b.action == a)
       return b.description;
   return {};
+}
+
+std::vector<std::pair<std::string_view, Action>> allCommands() {
+  std::vector<std::pair<std::string_view, Action>> out;
+  std::unordered_set<int> seen;
+  for (auto& b : kBindings) {
+    if (b.action == Action::ExecuteCommand)
+      continue;
+    if (!seen.insert(static_cast<int>(b.action)).second)
+      continue; // skip duplicates (e.g. DeleteChunkBefore has two bindings)
+    out.emplace_back(b.description, b.action);
+  }
+  std::sort(out.begin(), out.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+  return out;
 }
 
 std::string formatShortcut(Shortcut s) {
