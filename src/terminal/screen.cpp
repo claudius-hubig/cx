@@ -2659,6 +2659,13 @@ void Screen::dispatchAction(Action action) {
   case Action::ExecuteCommand:
     openExecuteCommandPrompt();
     break;
+  case Action::Reflow:
+    if (!requireNotInHistoryMode() && _buf && !_buf->readonly()) {
+      _view->reflowParagraph(80);
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+      _pasteState.reset();
+    }
+    break;
   case Action::ToggleComment:
     if (requireNotInHistoryMode())
       break;

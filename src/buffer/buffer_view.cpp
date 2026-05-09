@@ -1087,6 +1087,221 @@ void BufferView::toggleComment(std::string_view prefix) {
   _buf.recordVersion(_point, fromLine, 0);
 }
 
+void BufferView::reflowParagraph(std::size_t targetWidth) {
+  if (_buf.readonly() || targetWidth == 0)
+    return;
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+
+  // Determine line range. With an active mark, use the lines spanned by
+  // the region (whole lines, matching toggleComment's convention). Else
+  // grow outward from the cursor to the surrounding non-blank block.
+  std::size_t fromLine, toLine;
+  if (_mark) {
+    auto a = std::min(*_mark, _point);
+    auto b = std::max(*_mark, _point);
+    fromLine = a.line;
+    toLine = b.line;
+    if (toLine > fromLine && b.offset == 0)
+      --toLine;
+  } else {
+    if (_buf.isBlankLine(_point.line))
+      return;
+    fromLine = _point.line;
+    while (fromLine > 0 && !_buf.isBlankLine(fromLine - 1))
+      --fromLine;
+    toLine = _point.line;
+    while (toLine + 1 < _buf.lineCount() && !_buf.isBlankLine(toLine + 1))
+      ++toLine;
+  }
+  if (fromLine > toLine)
+    return;
+
+  // Collect non-blank lines in the range. Blank lines inside an
+  // explicit selection are preserved as paragraph breaks: we reflow
+  // each contiguous non-blank run independently and re-emit blanks
+  // between them. For the no-mark case there are no internal blanks
+  // by construction.
+  struct Block {
+    std::size_t firstLine;
+    std::vector<std::string> lines;
+  };
+  std::vector<Block> blocks;
+  std::size_t i = fromLine;
+  while (i <= toLine) {
+    while (i <= toLine && _buf.isBlankLine(i))
+      ++i;
+    if (i > toLine)
+      break;
+    Block b{i, {}};
+    while (i <= toLine && !_buf.isBlankLine(i)) {
+      b.lines.emplace_back(_buf.lineContent(i));
+      ++i;
+    }
+    blocks.push_back(std::move(b));
+  }
+  if (blocks.empty())
+    return;
+
+  auto leadingWs = [](std::string const& s) -> std::size_t {
+    std::size_t k = 0;
+    while (k < s.size() && (s[k] == ' ' || s[k] == '\t'))
+      ++k;
+    return k;
+  };
+
+  // Detect the longest leading whitespace common to every line in a
+  // block. Used as the per-line prefix for that block's reflow output.
+  auto commonLeadingWs = [&](Block const& b) -> std::string {
+    auto& first = b.lines.front();
+    std::size_t maxLen = leadingWs(first);
+    std::string candidate = first.substr(0, maxLen);
+    for (std::size_t j = 1; j < b.lines.size(); ++j) {
+      auto& l = b.lines[j];
+      std::size_t k = 0;
+      while (k < candidate.size() && k < l.size() && l[k] == candidate[k])
+        ++k;
+      candidate.resize(k);
+      if (candidate.empty())
+        break;
+    }
+    return candidate;
+  };
+
+  // Detect a list bullet at offset `off` of `line`. Returns the bullet
+  // length (text + trailing whitespace) on match, 0 otherwise.
+  auto bulletLen = [](std::string const& line, std::size_t off) -> std::size_t {
+    if (off >= line.size())
+      return 0;
+    char c = line[off];
+    if (c == '-' || c == '*' || c == '+') {
+      if (off + 1 < line.size() && (line[off + 1] == ' ' || line[off + 1] == '\t')) {
+        std::size_t k = off + 2;
+        while (k < line.size() && (line[k] == ' ' || line[k] == '\t'))
+          ++k;
+        return k - off;
+      }
+      return 0;
+    }
+    if (c >= '0' && c <= '9') {
+      std::size_t k = off;
+      while (k < line.size() && line[k] >= '0' && line[k] <= '9')
+        ++k;
+      if (k < line.size() && (line[k] == '.' || line[k] == ')')) {
+        ++k;
+        if (k < line.size() && (line[k] == ' ' || line[k] == '\t')) {
+          while (k < line.size() && (line[k] == ' ' || line[k] == '\t'))
+            ++k;
+          return k - off;
+        }
+      }
+    }
+    return 0;
+  };
+
+  // Reflow one block into a vector of output lines. Caller stitches
+  // them together with '\n' and the inter-block blank rows.
+  auto reflowBlock = [&](Block const& b) -> std::vector<std::string> {
+    std::string commonPrefix = commonLeadingWs(b);
+    std::string firstPrefix = commonPrefix;
+    std::string contPrefix = commonPrefix;
+    auto const& first = b.lines.front();
+    std::size_t bl = bulletLen(first, commonPrefix.size());
+    std::string firstWordsStart = first.substr(commonPrefix.size());
+    if (bl > 0) {
+      // Preserve the bullet as the literal start of the first output
+      // line; subsequent lines get the same width filled with spaces so
+      // wrapped text aligns under the bullet's first non-bullet column.
+      firstPrefix = commonPrefix + first.substr(commonPrefix.size(), bl);
+      contPrefix = commonPrefix + std::string(bl, ' ');
+      firstWordsStart = first.substr(commonPrefix.size() + bl);
+    }
+
+    // Tokenise into words. Whitespace runs (ASCII) are separators; UTF-8
+    // continuation bytes are part of the preceding word.
+    std::vector<std::string> words;
+    auto pushWord = [&](std::string_view src) {
+      std::size_t k = 0;
+      while (k < src.size()) {
+        while (k < src.size() && (src[k] == ' ' || src[k] == '\t'))
+          ++k;
+        if (k == src.size())
+          break;
+        std::size_t start = k;
+        while (k < src.size() && src[k] != ' ' && src[k] != '\t')
+          ++k;
+        words.emplace_back(src.substr(start, k - start));
+      }
+    };
+    pushWord(firstWordsStart);
+    for (std::size_t j = 1; j < b.lines.size(); ++j) {
+      auto const& l = b.lines[j];
+      // Strip the line's own leading whitespace, not commonPrefix —
+      // commonPrefix may be shorter than this line's actual indent.
+      pushWord(std::string_view(l).substr(leadingWs(l)));
+    }
+    if (words.empty())
+      return {firstPrefix};
+
+    std::vector<std::string> out;
+    auto width = [](std::string_view s) { return visualWidth(s); };
+
+    bool firstLine = true;
+    std::string current = firstPrefix;
+    std::size_t curWidth = width(current);
+    std::size_t budget = targetWidth;
+    for (auto& w : words) {
+      std::size_t ww = width(w);
+      bool isFirstWordOnLine =
+          (firstLine && current == firstPrefix) || (!firstLine && current == contPrefix);
+      std::size_t addedWidth = isFirstWordOnLine ? ww : 1 + ww;
+      if (!isFirstWordOnLine && curWidth + addedWidth > budget) {
+        out.push_back(std::move(current));
+        firstLine = false;
+        current = contPrefix;
+        curWidth = width(current);
+        addedWidth = ww;
+        isFirstWordOnLine = true;
+      }
+      if (!isFirstWordOnLine)
+        current += ' ';
+      current += w;
+      curWidth += addedWidth;
+    }
+    if (!current.empty())
+      out.push_back(std::move(current));
+    return out;
+  };
+
+  // Build the replacement text for [fromLine, toLine] inclusive.
+  std::string replacement;
+  for (std::size_t bi = 0; bi < blocks.size(); ++bi) {
+    if (bi > 0)
+      replacement += '\n'; // blank line between blocks
+    auto outLines = reflowBlock(blocks[bi]);
+    for (std::size_t k = 0; k < outLines.size(); ++k) {
+      if (k > 0)
+        replacement += '\n';
+      replacement += outLines[k];
+    }
+  }
+
+  // Apply the rewrite as a single edit so undo restores in one step.
+  BufferPoint regionStart{fromLine, 0};
+  BufferPoint regionEnd{toLine, _buf.lineContent(toLine).size()};
+  auto lineCountBefore = _buf.lineCount();
+  _buf.deleteRegion(regionStart, regionEnd);
+  auto after = _buf.insertText(replacement, regionStart);
+  _docVersion = _buf.docVersion();
+  _point = after;
+  _mark.reset();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
+  _desiredCol.reset();
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, fromLine, shift);
+}
+
 void BufferView::adjustCursorToIndent() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();

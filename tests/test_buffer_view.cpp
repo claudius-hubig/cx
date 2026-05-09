@@ -766,6 +766,71 @@ BOOST_AUTO_TEST_CASE(recenter_no_wrap_middle_top_bottom) {
   BOOST_CHECK_EQUAL(view.viewFrom().line, 11u);
 }
 
+BOOST_AUTO_TEST_CASE(reflow_collapses_short_paragraph) {
+  TempFile f("This is\na short\nparagraph.\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(80);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "This is a short paragraph.");
+  // Trailing empty line preserved (file ended with '\n').
+  BOOST_CHECK_EQUAL(buf.lineCount(), 2u);
+}
+
+BOOST_AUTO_TEST_CASE(reflow_wraps_long_run) {
+  TempFile f("alpha beta gamma delta epsilon zeta eta theta iota kappa\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(20); // narrow target forces wrapping
+  // Each output line should fit within 20 columns.
+  for (std::size_t i = 0; i < buf.lineCount(); ++i) {
+    auto const& l = buf.lineContent(i);
+    if (!l.empty())
+      BOOST_CHECK_LE(l.size(), 20u);
+  }
+  // Joining the output back must give us the original word stream.
+  std::string joined;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i) {
+    if (buf.lineContent(i).empty())
+      continue;
+    if (!joined.empty())
+      joined += ' ';
+    joined += buf.lineContent(i);
+  }
+  BOOST_CHECK_EQUAL(joined, "alpha beta gamma delta epsilon zeta eta theta iota kappa");
+}
+
+BOOST_AUTO_TEST_CASE(reflow_preserves_common_indent) {
+  TempFile f("  one two\n  three four\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 2);
+  view.reflowParagraph(80);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "  one two three four");
+}
+
+BOOST_AUTO_TEST_CASE(reflow_preserves_bullet_with_continuation) {
+  TempFile f("- first item\n  with continuation\n  more text\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(80);
+  // Bullet stays on first line, continuation indents under "first":
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "- first item with continuation more text");
+}
+
+BOOST_AUTO_TEST_CASE(reflow_blank_line_is_noop) {
+  TempFile f("alpha\n\nbeta\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(1, 0); // on the blank line
+  view.reflowParagraph(80);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "beta");
+}
+
 BOOST_AUTO_TEST_CASE(highlight_current_line_emits_background) {
   TempFile f("aaa\nbbb\nccc\n");
   TextBuffer buf(f.path().string(), f.path());

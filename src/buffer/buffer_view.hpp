@@ -131,6 +131,17 @@ public:
   // preserved either way so adding then removing comments round-trips.
   void toggleComment(std::string_view prefix);
 
+  /// Reflow the paragraph containing the cursor (or the lines under the
+  /// active region) to fit within `targetWidth` visual columns. The
+  /// common leading-whitespace prefix of the input lines is preserved
+  /// on every output line; a recognised list bullet on the first input
+  /// line (`- `, `* `, `+ `, `1. `, `1) `) is preserved on the first
+  /// output line, and continuation lines are indented under the bullet
+  /// so list structure round-trips. Words are split on whitespace; UTF-8
+  /// wide-character widths are counted via the renderer's `visualWidth`
+  /// rules. No-op on a blank cursor line with no active region.
+  void reflowParagraph(std::size_t targetWidth);
+
   void adjustCursorToIndent();
 
   // Region operations.

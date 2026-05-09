@@ -49,6 +49,7 @@ enum class Action {
   Recenter,
   ToggleCurrentLine,
   ExecuteCommand,
+  Reflow,
 };
 
 struct Shortcut {

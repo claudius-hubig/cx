@@ -82,6 +82,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | Esc-f      | Format buffer/region (C/C++) |
 | Ctrl-p     | Pipe region through command  |
 | Esc-;      | Toggle line comment (C/C++)  |
+| Esc-q      | Reflow paragraph (80 cols)   |
 | Tab        | Format line (C/C++)          |
 
 ### Search & Movement
