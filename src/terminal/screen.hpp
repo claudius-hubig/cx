@@ -141,6 +141,22 @@ private:
   // the action's primary shortcut as a status hint so the user can
   // learn the binding without having to remember it.
   void openExecuteCommandPrompt();
+  // Esc-X: regex find. Prompts for an ECMAScript pattern (per
+  // std::regex), highlights the next match, leaves _lastRegex set so
+  // a subsequent Esc-X with empty input re-uses it.
+  void openRegexFindPrompt();
+  // Esc-Y: regex find-and-replace. Two-step prompt (pattern, then
+  // replacement template with $0..$9 / $& back-references), then walks
+  // forward through matches with the same y/n/!/q decisions as plain
+  // Replace. The pump and confirm helpers mirror the plain-Replace
+  // flow.
+  void openRegexReplacePrompt();
+  void regexReplacePump(std::string pattern, std::string replacement, std::size_t replaced);
+  void openRegexReplaceConfirmPrompt(std::string pattern, std::string replacement,
+                                     std::size_t replaced, BufferPoint matchStart,
+                                     BufferPoint matchEnd);
+  // Forward regex search using _lastRegex; mirrors findNext().
+  void regexFindNext();
   void openConfirmPrompt(std::string question, std::function<void(std::string const&)> onResult,
                          std::function<void()> onAbort);
   // Confirm-kill prompt shared by KillBuffer and tryExit.
@@ -216,6 +232,10 @@ private:
   void blockPrev();
   void onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd, bool wrapped);
   std::string _lastSearch;
+  // Last regex pattern (raw source; recompiled on each search). Kept
+  // separate from _lastSearch so Ctrl-f and Esc-X don't clobber each
+  // other's history.
+  std::string _lastRegex;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
 
   // Recenter (Ctrl-l) cycling state. Each consecutive press advances

@@ -6,6 +6,7 @@
 #include "byte_constants.hpp"
 #include "error_log.hpp"
 #include "mouse.hpp"
+#include "regex_search.hpp"
 #include "replace.hpp"
 #include "search.hpp"
 #include "utf8.hpp"
@@ -1009,6 +1010,190 @@ void Screen::openReplaceConfirmPrompt(std::string pattern, std::string replaceme
               return;
             }
             replacePump(pattern, replacement, newReplaced);
+          },
+      .onAbort =
+          [this, replaced]() {
+            _view->clearHighlight();
+            _highlightExpiry.reset();
+            setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+          },
+  };
+}
+
+void Screen::regexFindNext() {
+  if (!_buf || _lastRegex.empty())
+    return;
+  std::string err;
+  auto re = compileRegex(_lastRegex, err);
+  if (!re) {
+    setStatus("Bad regex: " + err);
+    return;
+  }
+  std::size_t lineCount = _buf->lineCount();
+  std::size_t startLine = _view->point().line;
+  std::size_t startOff = _view->point().offset;
+  bool wrapped = false;
+  for (std::size_t count = 0; count < lineCount; ++count) {
+    std::size_t li = (startLine + count) % lineCount;
+    if (count > 0 && li <= startLine)
+      wrapped = true;
+    std::size_t from = (count == 0) ? startOff : 0;
+    if (auto m = findFirstRegex(_buf->lineContent(li), from, *re)) {
+      onFindMatch(li, m->first, m->second, wrapped);
+      return;
+    }
+  }
+  // Wrap-around tail: check the start of the original line.
+  if (auto m = findFirstRegex(_buf->lineContent(startLine), 0, *re)) {
+    if (m->first < startOff) {
+      onFindMatch(startLine, m->first, m->second, true);
+      return;
+    }
+  }
+  _view->clearHighlight();
+  _highlightExpiry.reset();
+  setStatus("Not found");
+}
+
+void Screen::openRegexFindPrompt() {
+  if (!_lastRegex.empty() && _buf)
+    regexFindNext();
+  _prompt = Prompt{
+      .label = "Regex find: ",
+      .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
+        if (input.empty() && !_lastRegex.empty())
+          return PromptDisplay{std::string(ansi::Dim) + _lastRegex + std::string(ansi::DimOff),
+                               visualWidth(_lastRegex)};
+        return PromptDisplay{"", 0};
+      },
+      .onResult =
+          [this](std::string const& value) {
+            if (!_buf)
+              return;
+            _lastRegex = value;
+            regexFindNext();
+          },
+  };
+  runAutocomplete();
+}
+
+void Screen::openRegexReplacePrompt() {
+  if (!_buf || _buf->readonly()) {
+    setStatus("Buffer is read-only");
+    return;
+  }
+  _prompt = Prompt{
+      .label = "Regex pattern: ",
+      .onResult =
+          [this](std::string const& pattern) {
+            if (pattern.empty() || !_buf)
+              return;
+            // Validate the pattern up front so the user sees the parse
+            // error immediately rather than after typing the
+            // replacement template.
+            std::string err;
+            if (!compileRegex(pattern, err)) {
+              setStatus("Bad regex: " + err);
+              return;
+            }
+            _lastRegex = pattern;
+            _prompt = Prompt{
+                .label = "Replace /" + pattern + "/ with: ",
+                .onResult =
+                    [this, pattern](std::string const& replacement) {
+                      regexReplacePump(pattern, replacement, 0);
+                    },
+            };
+          },
+  };
+}
+
+void Screen::regexReplacePump(std::string pattern, std::string replacement, std::size_t replaced) {
+  if (!_buf || _buf->readonly())
+    return;
+  std::string err;
+  auto re = compileRegex(pattern, err);
+  if (!re) {
+    setStatus("Bad regex: " + err);
+    return;
+  }
+  auto m = findNextRegexInBuffer(*_buf, _view->point(), *re);
+  if (!m) {
+    _view->clearHighlight();
+    _highlightExpiry.reset();
+    setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+    return;
+  }
+  _view->setPoint(m->first.line, m->first.offset);
+  _view->setHighlight(m->first, m->second);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
+  _highlightExpiry = std::chrono::steady_clock::now() + kHighlightTtl;
+  openRegexReplaceConfirmPrompt(std::move(pattern), std::move(replacement), replaced, m->first,
+                                m->second);
+}
+
+void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string replacement,
+                                           std::size_t replaced, BufferPoint matchStart,
+                                           BufferPoint matchEnd) {
+  _prompt = Prompt{
+      .label = "Replace this? (y=yes n=skip !=all q=quit): ",
+      .showInput = false,
+      .autocomplete = [](std::string const& input) -> Prompt::AutocompleteResult {
+        if (input.empty())
+          return PromptDisplay{"", 0};
+        char c = input.back();
+        if (c >= 'A' && c <= 'Z')
+          c = static_cast<char>(c + 32);
+        if (c == 'y' || c == 'n' || c == '!' || c == 'q')
+          return std::string{c};
+        return PromptDisplay{"", 0};
+      },
+      .onResult =
+          [this, pattern, replacement, replaced, matchStart, matchEnd](std::string const& answer) {
+            if (!_buf || _buf->readonly())
+              return;
+            char c = answer.empty() ? 'q' : answer[0];
+            if (c == 'q') {
+              _view->clearHighlight();
+              _highlightExpiry.reset();
+              setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+              return;
+            }
+            std::size_t newReplaced = replaced;
+            if (c == 'y' || c == '!') {
+              std::string err;
+              auto re = compileRegex(pattern, err);
+              if (!re) {
+                setStatus("Bad regex: " + err);
+                return;
+              }
+              auto& line = _buf->lineContent(matchStart.line);
+              std::string rendered =
+                  substituteCaptures(line, matchStart.offset, matchEnd.offset, *re, replacement);
+              _view->deleteRegion(matchStart, matchEnd);
+              auto after = _view->insertText(rendered);
+              _view->setPoint(after.line, after.offset);
+              ++newReplaced;
+            } else {
+              _view->setPoint(matchEnd.line, matchEnd.offset);
+            }
+            if (c == '!') {
+              std::string err;
+              auto re = compileRegex(pattern, err);
+              if (!re) {
+                setStatus("Bad regex: " + err);
+                return;
+              }
+              auto extra = replaceAllRegexForward(*_buf, _view->point(), *re, replacement);
+              newReplaced += extra;
+              _view->clampToBuffer();
+              _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
+              _view->clearHighlight();
+              _highlightExpiry.reset();
+              setStatus("Replaced " + std::to_string(newReplaced) + " occurrence(s)");
+              return;
+            }
+            regexReplacePump(pattern, replacement, newReplaced);
           },
       .onAbort =
           [this, replaced]() {
@@ -2386,7 +2571,8 @@ void Screen::blockPrev() {
 }
 
 void Screen::dispatchAction(Action action) {
-  if (action != Action::Find && action != Action::FindBackward && _buf) {
+  if (action != Action::Find && action != Action::FindBackward && action != Action::RegexFind &&
+      action != Action::RegexReplace && _buf) {
     _view->clearHighlight();
     _highlightExpiry.reset();
   }
@@ -2665,6 +2851,13 @@ void Screen::dispatchAction(Action action) {
       _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       _pasteState.reset();
     }
+    break;
+  case Action::RegexFind:
+    openRegexFindPrompt();
+    break;
+  case Action::RegexReplace:
+    if (!requireNotInHistoryMode())
+      openRegexReplacePrompt();
     break;
   case Action::ToggleComment:
     if (requireNotInHistoryMode())

@@ -374,6 +374,22 @@ target_include_directories(test_replace PRIVATE src .)
 target_link_libraries(test_replace Boost::unit_test_framework)
 add_test(NAME replace COMMAND test_replace)
 
+add_executable(test_regex_search
+    tests/test_regex_search.cpp
+    src/buffer/buffer.cpp
+    src/buffer/buffer_view.cpp
+    src/utf8.cpp
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+    src/buffer/text_buffer.cpp
+    src/buffer/version_history.cpp
+)
+target_include_directories(test_regex_search PRIVATE src .)
+target_link_libraries(test_regex_search Boost::unit_test_framework)
+add_test(NAME regex_search COMMAND test_regex_search)
+
 add_executable(bench_history
     tests/bench_history.cpp
     src/buffer/buffer.cpp

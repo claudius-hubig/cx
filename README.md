@@ -92,6 +92,8 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | Ctrl-f          | Find forward                                               |
 | Ctrl-r          | Find backward                                              |
 | Esc-%           | Find and replace                                           |
+| Esc-X           | Regex find forward (ECMAScript / `std::regex` syntax)      |
+| Esc-Y           | Regex find and replace (`$0..$9`/`$&` back-references)     |
 | Arrows          | Move cursor                                                |
 | Ctrl-Left/Right | Move by word                                               |
 | Ctrl-Up/Down    | Move by paragraph                                          |

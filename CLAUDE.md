@@ -87,6 +87,7 @@ src/
   mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)
   replace.hpp                      Find-and-replace helpers (findNextMatchInBuffer, replaceAllForward)
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
+  regex_search.hpp                 Regex search/replace helpers (std::regex; per-line)
   terminal/
     setup_terminal.hpp/.cpp        RAII raw mode + alternate screen
     screen.hpp/.cpp                Terminal I/O, input loop, action dispatch, drawing

@@ -50,6 +50,8 @@ enum class Action {
   ToggleCurrentLine,
   ExecuteCommand,
   Reflow,
+  RegexFind,
+  RegexReplace,
 };
 
 struct Shortcut {
