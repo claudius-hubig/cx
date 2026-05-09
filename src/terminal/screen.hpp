@@ -213,4 +213,10 @@ private:
   void onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd, bool wrapped);
   std::string _lastSearch;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
+
+  // Recenter (Ctrl-l) cycling state. Each consecutive press advances
+  // through the slots; any other action resets it so the next Ctrl-l
+  // starts at the middle slot again.
+  enum class RecenterSlot { Middle, Top, Bottom };
+  std::optional<RecenterSlot> _lastRecenter;
 };

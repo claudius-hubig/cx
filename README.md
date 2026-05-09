@@ -96,6 +96,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | Ctrl-g          | Go to line (accepts a number, or `last` for end of buffer) |
 | Ctrl-n          | Next block (`@@` hunk in diff buffers / conflict marker)   |
 | Ctrl-b          | Prev block (same)                                          |
+| Ctrl-l          | Recenter cursor (cycles middle / top / bottom of screen)   |
 | PgUp / PgDn     | Page up / down (half screen)                               |
 | Home / End      | Start / end of line                                        |
 | Ctrl-Home/End   | Start / end of file                                        |

@@ -394,3 +394,15 @@ BOOST_AUTO_TEST_CASE(format_ctrl_n) {
 BOOST_AUTO_TEST_CASE(format_ctrl_b) {
   BOOST_CHECK_EQUAL(formatShortcut({.ctrl = true, .key = 'b'}), "Ctrl-b");
 }
+
+BOOST_AUTO_TEST_CASE(ctrl_l_maps_to_recenter) {
+  auto action = handleShortcut({.ctrl = true, .key = 'l'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::Recenter);
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_recenter) {
+  auto s = shortcutForAction(Action::Recenter);
+  BOOST_CHECK(s.ctrl);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('l'));
+}

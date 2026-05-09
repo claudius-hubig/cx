@@ -741,3 +741,42 @@ BOOST_AUTO_TEST_CASE(enterHistoryMode_clears_mark) {
   view.enterHistoryMode();
   BOOST_CHECK(!view.mark().has_value());
 }
+
+BOOST_AUTO_TEST_CASE(recenter_no_wrap_middle_top_bottom) {
+  // 30 lines, no wrap: a 10-row screen should be able to put the cursor
+  // anywhere in [0, 9] by adjusting viewFrom.
+  std::string body;
+  for (int i = 0; i < 30; ++i)
+    body += "line " + std::to_string(i) + "\n";
+  TempFile f(body);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(20, 0);
+
+  // Middle of a 10-row screen: position 5 → viewFrom = 15.
+  view.recenter(RowIdx{10}, 5, ColIdx{40}, false);
+  BOOST_CHECK_EQUAL(view.viewFrom().line, 15u);
+
+  // Top: position 0 → viewFrom = 20.
+  view.recenter(RowIdx{10}, 0, ColIdx{40}, false);
+  BOOST_CHECK_EQUAL(view.viewFrom().line, 20u);
+
+  // Bottom: position 9 → viewFrom = 11.
+  view.recenter(RowIdx{10}, 9, ColIdx{40}, false);
+  BOOST_CHECK_EQUAL(view.viewFrom().line, 11u);
+}
+
+BOOST_AUTO_TEST_CASE(recenter_clamps_at_buffer_start) {
+  std::string body;
+  for (int i = 0; i < 5; ++i)
+    body += "line " + std::to_string(i) + "\n";
+  TempFile f(body);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(2, 0);
+
+  // Asking for the cursor to land on row 8 with only line 2 selected
+  // would need viewFrom = -6; clamp to 0.
+  view.recenter(RowIdx{10}, 8, ColIdx{40}, false);
+  BOOST_CHECK_EQUAL(view.viewFrom().line, 0u);
+}

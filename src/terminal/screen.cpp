@@ -2269,6 +2269,10 @@ void Screen::dispatchAction(Action action) {
     _view->clearHighlight();
     _highlightExpiry.reset();
   }
+  // Reset the recenter cycle on any action other than Recenter itself,
+  // so the next Ctrl-l starts at the middle slot again.
+  if (action != Action::Recenter)
+    _lastRecenter.reset();
   auto pcols = colsForBuffer();
   switch (action) {
   case Action::Help:
@@ -2627,6 +2631,21 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::PrevBlock:
     blockPrev();
+    break;
+  case Action::Recenter:
+    if (_buf && _view) {
+      // Cycle: middle (1st press) → top → bottom → middle → ...
+      RecenterSlot slot = !_lastRecenter                           ? RecenterSlot::Middle
+                          : *_lastRecenter == RecenterSlot::Middle ? RecenterSlot::Top
+                          : *_lastRecenter == RecenterSlot::Top    ? RecenterSlot::Bottom
+                                                                   : RecenterSlot::Middle;
+      auto rows = rowsForBuffer();
+      std::size_t pos = slot == RecenterSlot::Middle ? rows.value / 2
+                        : slot == RecenterSlot::Top  ? 0
+                                                     : (rows.value > 0 ? rows.value - 1 : 0);
+      _view->recenter(rows, pos, pcols, _view->wrap());
+      _lastRecenter = slot;
+    }
     break;
   }
 }

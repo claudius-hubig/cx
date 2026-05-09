@@ -100,6 +100,13 @@ public:
   void scrollUp(bool wrap = false);
   void scrollViewNearEnd(RowIdx screenRows);
 
+  /// Scroll so the cursor sits at a chosen vertical position on the
+  /// screen. `screenRows` is the panel's content height; `position` is
+  /// the 0-indexed target row within that height (clamped). Wrap-aware:
+  /// in wrap mode, walks visual rows; in no-wrap mode, physical lines.
+  /// Used by the centre-cursor (Ctrl-l) action.
+  void recenter(RowIdx screenRows, std::size_t position, ColIdx cols, bool wrap);
+
   // --- Editing ---
   void insert(uint32_t cp);
   void deleteAtPoint();

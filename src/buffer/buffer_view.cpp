@@ -725,6 +725,68 @@ void BufferView::scrollUp(bool wrap) {
   }
 }
 
+void BufferView::recenter(RowIdx screenRows, std::size_t position, ColIdx cols, bool wrap) {
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+  if (screenRows.value == 0)
+    return;
+  if (position >= screenRows.value)
+    position = screenRows.value - 1;
+
+  // Walk `position` visual rows back from the cursor's physical line to
+  // find the new viewport start. In no-wrap mode each physical line is
+  // exactly one visual row; in wrap mode we count wrapped subrows.
+  if (!wrap) {
+    std::size_t startLine = (_point.line >= position) ? _point.line - position : 0;
+    _viewFrom.line = RowIdx{startLine};
+    if (std::holds_alternative<ByteOffset>(_viewFrom.col))
+      _viewFrom.col = ByteOffset{0};
+    return;
+  }
+
+  std::size_t cw = contentWidth(cols);
+  std::size_t remaining = position;
+  std::size_t li = _point.line;
+  std::size_t startByte = 0;
+
+  // Visual rows on the cursor's own line *before* the cursor.
+  auto bounds = computeRowBounds(_buf.lineContent(li), cw);
+  std::size_t cursorSubRow = 0;
+  for (std::size_t i = 1; i < bounds.size(); ++i) {
+    if (bounds[i] > _point.offset)
+      break;
+    cursorSubRow = i;
+  }
+  if (cursorSubRow >= remaining) {
+    startByte = bounds[cursorSubRow - remaining];
+    _viewFrom.line = RowIdx{li};
+    _viewFrom.col = ByteOffset{startByte};
+    return;
+  }
+  remaining -= cursorSubRow;
+
+  // Walk earlier physical lines, subtracting their wrapped row counts.
+  while (li > 0 && remaining > 0) {
+    --li;
+    auto const& line = _buf.lineContent(li);
+    auto b = computeRowBounds(line, cw);
+    std::size_t numRows = line.empty() ? 1 : b.size();
+    // Cost of crossing the line break itself.
+    if (remaining == 0)
+      break;
+    --remaining;
+    if (numRows > remaining) {
+      startByte = b[numRows - 1 - remaining];
+      _viewFrom.line = RowIdx{li};
+      _viewFrom.col = ByteOffset{startByte};
+      return;
+    }
+    remaining -= numRows - 1;
+  }
+  _viewFrom.line = RowIdx{0};
+  _viewFrom.col = ByteOffset{0};
+}
+
 void BufferView::scrollViewNearEnd(RowIdx screenRows) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();

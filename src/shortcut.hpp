@@ -44,6 +44,7 @@ enum class Action {
   FocusMRUPanel,
   NextBlock,
   PrevBlock,
+  Recenter,
 };
 
 struct Shortcut {

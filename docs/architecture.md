@@ -71,7 +71,8 @@ Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`, `DeleteLine`,
 `FindBackward`, `Replace`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
 `ToggleWrap`, `Format`, `ToggleComment`, `SetMode`, `DirBrowser`, `PipeReplace`,
 `SplitVertical`, `SplitHorizontal`, `ClosePanel`,
-`FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`.
+`FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`,
+`Recenter`.
 
 Some bindings have two shortcuts: `DeleteChunkBefore` is reachable via
 both `Ctrl-Bksp` (which arrives as `Ctrl-h`) and `Esc-Bksp`. The table
