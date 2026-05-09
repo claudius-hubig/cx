@@ -30,6 +30,12 @@ add_executable(cx
 
 target_include_directories(cx PRIVATE src)
 
+# Statically link the C++ and GCC runtimes into cx so the binary is portable
+# across systems with different libstdc++ versions. glibc itself is left
+# dynamic on purpose: a fully -static binary on Linux breaks NSS-based
+# lookups (getpwuid, DNS, etc.) and is generally discouraged.
+target_link_options(cx PRIVATE -static-libstdc++ -static-libgcc)
+
 # --- Tests ---
 enable_testing()
 find_package(Boost REQUIRED COMPONENTS unit_test_framework)
