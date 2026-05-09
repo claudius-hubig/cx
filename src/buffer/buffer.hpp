@@ -225,6 +225,7 @@ public:
     std::optional<BufferPoint> mark;
     std::optional<std::size_t> desiredCol;
     bool wrapMode = false;
+    bool showWhitespace = false;
   };
   void setSavedView(SavedViewState s) { _savedView = s; }
   std::optional<SavedViewState> savedView() const { return _savedView; }

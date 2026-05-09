@@ -11,10 +11,11 @@
 #include <tuple>
 #include <vector>
 
-/// Display settings passed to BufferView::render().
+/// Display settings passed to BufferView::render(). `showWhitespace`
+/// and `wrap` are per-view state on `BufferView` itself; this struct
+/// only carries the inputs that come from the surrounding panel /
+/// screen (focus, panel rect offsets).
 struct BufferRenderArgs {
-  bool showWhitespace = false;
-  bool wrap = true;
   bool focused = true;
   std::size_t rowOffset = 0;
   std::size_t colOffset = 0;
@@ -59,9 +60,26 @@ public:
   void clearHighlight() { _highlight.reset(); }
   std::optional<Highlight> const& highlight() const { return _highlight; }
 
+  /// Per-view soft-wrap mode. False = no wrap (horizontal scroll); true
+  /// = wrap visual lines. Toggling clears the horizontal/sub-line scroll
+  /// state because the variant alternative changes.
+  bool wrap() const { return _wrap; }
+  void setWrap(bool w);
+  void toggleWrap() { setWrap(!_wrap); }
+
+  /// Per-view whitespace-marker visibility (spaces · , tabs ▶, control
+  /// bytes). Pure render flag — does not affect editing or storage.
+  bool showWhitespace() const { return _showWhitespace; }
+  void setShowWhitespace(bool s) { _showWhitespace = s; }
+  void toggleShowWhitespace() { _showWhitespace = !_showWhitespace; }
+
   std::tuple<std::size_t, std::size_t> lineCol() const;
 
   // --- Movement ---
+  // Methods that are wrap-mode-sensitive read the per-view `wrap()`
+  // state. `wrap` parameters on the lower-level helpers (pageUp, scrollUp,
+  // pointForScreenRowCol, ensureVisible, screenRow) remain because some
+  // call sites need to ask "what would happen at a given wrap setting".
   void moveLeft();
   void moveRight();
   void moveUp(ColIdx cols);
@@ -184,7 +202,14 @@ private:
   BufferPoint _point;
   std::optional<BufferPoint> _mark;
   ViewFrom _viewFrom;
+  // Soft-wrap mode for this view (source of truth). `_wrapMode` mirrors
+  // it for ensureVisible's "did wrap mode change?" detection — kept
+  // separate so future call sites that pass an explicit wrap value into
+  // ensureVisible (e.g. a temporary preview render) still get the
+  // change-detection behaviour.
+  bool _wrap = false;
   bool _wrapMode = false;
+  bool _showWhitespace = false;
   std::optional<ColIdx> _desiredCol;
   std::optional<Highlight> _highlight;
 

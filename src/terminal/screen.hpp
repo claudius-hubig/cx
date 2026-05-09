@@ -183,8 +183,9 @@ private:
 
   std::string _statusMsg;
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
-  bool _showWhitespace = false;
-  bool _wrap = false;
+  // Wrap mode and whitespace visibility live per-view on BufferView
+  // (see _view->wrap() / _view->showWhitespace()), so different panels
+  // can have different settings.
   bool _killPending = false; // kill buffer after SaveAs completes
   bool _exitPending = false; // exit after all modified buffers are handled
 

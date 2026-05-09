@@ -148,8 +148,10 @@ BOOST_AUTO_TEST_CASE(render_matches_buffer) {
   TempFile f("hello\nworld\n");
   TextBuffer buf(f.path().string(), f.path());
 
-  // Render via BufferView at (0,2).
+  // Render via BufferView at (0,2). Match the Buffer's default wrap=true
+  // explicitly so the two paths produce byte-identical output.
   BufferView view(buf);
+  view.setWrap(true);
   view.setPoint(0, 2);
   std::string viewOut;
   auto [vr, vc] = view.render(viewOut, RowIdx{5}, ColIdx{20});

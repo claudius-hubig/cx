@@ -459,13 +459,9 @@ void Screen::draw() {
       if (multiPanel && !focused)
         view.clampToBuffer();
 
-      view.ensureVisible(pr, pc, _wrap);
-      auto [cr, cc] = view.render(_renderBuf, pr, pc,
-                                  {.showWhitespace = _showWhitespace,
-                                   .wrap = _wrap,
-                                   .focused = focused,
-                                   .rowOffset = rect.row,
-                                   .colOffset = rect.col});
+      view.ensureVisible(pr, pc, view.wrap());
+      auto [cr, cc] = view.render(
+          _renderBuf, pr, pc, {.focused = focused, .rowOffset = rect.row, .colOffset = rect.col});
 
       if (focused) {
         cur_row = RowIdx{rect.row + cr.value};
@@ -957,7 +953,7 @@ void Screen::replacePump(std::string pattern, std::string replacement, std::size
   }
   _view->setPoint(m->first.line, m->first.offset);
   _view->setHighlight(m->first, m->second);
-  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
   _highlightExpiry = std::chrono::steady_clock::now() + kHighlightTtl;
   openReplaceConfirmPrompt(std::move(pattern), std::move(replacement), replaced, m->first,
                            m->second);
@@ -1006,7 +1002,7 @@ void Screen::openReplaceConfirmPrompt(std::string pattern, std::string replaceme
               // setPoint via clampToBuffer: replaceAllForward mutated
               // the buffer behind _view's back, so its docVersion is stale.
               _view->clampToBuffer();
-              _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+              _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
               _view->clearHighlight();
               _highlightExpiry.reset();
               setStatus("Replaced " + std::to_string(newReplaced) + " occurrence(s)");
@@ -1478,7 +1474,7 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
   auto line = std::min(savedLine, _buf->lineCount() - 1);
   auto offset = std::min(savedOffset, _buf->lineContent(line).size());
   _view->setPoint(line, offset);
-  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
   setStatus("Formatted");
 }
 
@@ -1521,7 +1517,7 @@ void Screen::executePipeReplace(std::string command) {
     _view->insertText("STDERR:\n" + res->stderrData);
   }
 
-  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
 }
 
 void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
@@ -1549,25 +1545,25 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         switch (seq[1]) {
         case ansi::UpArrow:
           if (_buf) {
-            if (_wrap)
+            if (_view->wrap())
               _view->moveUp(pcols);
             else
               _view->movePhysicalUp();
             if (_view->point() < _view->viewFrom())
-              _view->scrollUp(_wrap);
+              _view->scrollUp(_view->wrap());
           }
           break;
         case ansi::DownArrow:
           if (_buf) {
             auto prev = _view->point();
-            if (_wrap)
+            if (_view->wrap())
               _view->moveDown(pcols);
             else
               _view->movePhysicalDown();
             if (_view->point() == prev)
               _view->scrollViewNearEnd(rowsForBuffer());
             else
-              _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+              _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
           }
           break;
         case ansi::RightArrow:
@@ -1599,13 +1595,13 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                 _view->moveWordLeft();
                 break;
               case ansi::UpArrow:
-                if (_wrap && _view->currentLineWraps(pcols))
+                if (_view->wrap() && _view->currentLineWraps(pcols))
                   _view->movePhysicalUp();
                 else
                   _view->moveParagraphUp();
                 break;
               case ansi::DownArrow:
-                if (_wrap && _view->currentLineWraps(pcols))
+                if (_view->wrap() && _view->currentLineWraps(pcols))
                   _view->movePhysicalDown();
                 else
                   _view->moveParagraphDown();
@@ -1618,7 +1614,7 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                                 _buf->lineContent(_buf->lineCount() - 1).size());
                 break;
               }
-              _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+              _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
             }
           }
           break;
@@ -1649,13 +1645,13 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         case ansi::PageUp: {
           char tilde;
           if (readByte(tilde) && tilde == ansi::Terminator && _buf)
-            _view->pageUp(rowsForBuffer(), pcols, _wrap);
+            _view->pageUp(rowsForBuffer(), pcols, _view->wrap());
           break;
         }
         case ansi::PageDown: {
           char tilde;
           if (readByte(tilde) && tilde == ansi::Terminator && _buf)
-            _view->pageDown(rowsForBuffer(), pcols, _wrap);
+            _view->pageDown(rowsForBuffer(), pcols, _view->wrap());
           break;
         }
         default: {
@@ -1760,7 +1756,7 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       }
     } else if (_buf) {
       _view->insert('\n');
-      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       _pasteState.reset();
     }
   } else if (c == key::Backspace) {
@@ -1788,7 +1784,7 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       } else {
         _view->insert('\t');
       }
-      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       _pasteState.reset();
     }
   } else if (c == key::CtrlX) {
@@ -1811,7 +1807,7 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       else if (c == ']')
         _view->stepHistory(+1);
       if (_buf)
-        _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+        _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       return;
     }
     // '?' on a bracket → jump to matching bracket. Works in all modes:
@@ -1979,7 +1975,7 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
     auto pcontentRows = hit->contentRows();
     for (std::size_t i = 0; i < kWheelLines; ++i) {
       if (event.isWheelUp())
-        _view->scrollUp(_wrap);
+        _view->scrollUp(_view->wrap());
       else
         _view->scrollDown();
     }
@@ -1988,8 +1984,8 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
     // back to the (off-screen) cursor and undo the user's scroll. Use
     // pointForScreenRowCol to derive the first and last visible buffer
     // points; any column 0 keeps the new cursor at the line head.
-    auto first = _view->pointForScreenRowCol(0, 0, pcols, _wrap);
-    auto last = _view->pointForScreenRowCol(pcontentRows.value - 1, 0, pcols, _wrap);
+    auto first = _view->pointForScreenRowCol(0, 0, pcols, _view->wrap());
+    auto last = _view->pointForScreenRowCol(pcontentRows.value - 1, 0, pcols, _view->wrap());
     auto pt = _view->point();
     if (pt < first)
       _view->setPoint(first.line, first.offset);
@@ -2010,7 +2006,7 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
 
   std::size_t screenRow = row - rect.row;
   std::size_t screenCol = col - rect.col;
-  auto pt = _view->pointForScreenRowCol(screenRow, screenCol, pcols, _wrap);
+  auto pt = _view->pointForScreenRowCol(screenRow, screenCol, pcols, _view->wrap());
   _view->setPoint(pt.line, pt.offset);
   _pasteState.reset();
 }
@@ -2122,7 +2118,7 @@ bool Screen::tryExit() {
 void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd,
                          bool wrapped) {
   _view->setPoint(line, matchEnd);
-  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
   _view->setHighlight({line, matchStart}, {line, matchEnd});
   _highlightExpiry = std::chrono::steady_clock::now() + kHighlightTtl;
   _pasteState.reset();
@@ -2235,7 +2231,7 @@ void Screen::blockNext() {
     std::size_t li = (startLine + count) % lineCount;
     if (isBlockTarget(_buf->lineContent(li), isDiff, hasConflicts)) {
       _view->setPoint(li, 0);
-      _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+      _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
       if (li <= startLine)
         setStatus("Block (wrapped)");
       return;
@@ -2259,7 +2255,7 @@ void Screen::blockPrev() {
     std::size_t li = (startLine + lineCount - count) % lineCount;
     if (isBlockTarget(_buf->lineContent(li), isDiff, hasConflicts)) {
       _view->setPoint(li, 0);
-      _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _wrap);
+      _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
       if (li >= startLine)
         setStatus("Block (wrapped)");
       return;
@@ -2408,7 +2404,7 @@ void Screen::dispatchAction(Action action) {
         auto end = _view->insertText(_pasteRing.at(0));
         _pasteState = PasteState{start, end, 0};
         setStatus("Region pasted");
-        _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+        _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       }
     }
     break;
@@ -2421,7 +2417,7 @@ void Screen::dispatchAction(Action action) {
       _pasteState = PasteState{start, end, nextIdx};
       setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
                 std::to_string(_pasteRing.size()));
-      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
     } else {
       setStatus("Can't cycle paste if last command was not a paste");
     }
@@ -2433,7 +2429,7 @@ void Screen::dispatchAction(Action action) {
   case Action::DeleteLine:
     if (_buf) {
       _view->deleteLine();
-      _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       _pasteState.reset();
     }
     break;
@@ -2457,7 +2453,7 @@ void Screen::dispatchAction(Action action) {
           setStatus("No history");
         } else {
           _view->enterHistoryMode();
-          _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+          _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
         }
       }
       _pasteState.reset();
@@ -2517,12 +2513,16 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::ToggleWhitespace:
-    _showWhitespace = !_showWhitespace;
-    setStatus(_showWhitespace ? "Whitespace on" : "Whitespace off");
+    if (_view) {
+      _view->toggleShowWhitespace();
+      setStatus(_view->showWhitespace() ? "Whitespace on" : "Whitespace off");
+    }
     break;
   case Action::ToggleWrap:
-    _wrap = !_wrap;
-    setStatus(_wrap ? "Wrap on" : "Wrap off");
+    if (_view) {
+      _view->toggleWrap();
+      setStatus(_view->wrap() ? "Wrap on" : "Wrap off");
+    }
     break;
   case Action::ToggleComment:
     if (requireNotInHistoryMode())
@@ -2533,7 +2533,7 @@ void Screen::dispatchAction(Action action) {
       // silently picking the wrong syntax.
       if (_buf->mode() == BufferMode::Cpp) {
         _view->toggleComment("// ");
-        _view->ensureVisible(rowsForBuffer(), pcols, _wrap);
+        _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
         _pasteState.reset();
       } else {
         setStatus("No line-comment syntax for this mode");

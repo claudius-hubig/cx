@@ -120,10 +120,11 @@ Key responsibilities:
   child or `n` to dismiss. SIGWINCH is handled during the poll loop so
   the terminal redraws correctly while a command is running.
 
-`Screen` holds display state that belongs to the view rather than to any
-buffer: wrap mode, whitespace visibility, the active prompt, find state,
-the paste ring, the X11 `Clipboard` adapter, and the timed status
-message. After every keystroke, `loop()` calls `syncPrimarySelection()`
+`Screen` holds session-wide state that does not belong to any one
+buffer: the active prompt, find state, the paste ring, the X11
+`Clipboard` adapter, and the timed status message. Per-view display
+toggles (soft-wrap, whitespace markers) live on `BufferView` so that
+different panels can be configured independently. After every keystroke, `loop()` calls `syncPrimarySelection()`
 to mirror the active mark region into the X11 PRIMARY selection (no-op
 when there is no mark or no graphical session).
 

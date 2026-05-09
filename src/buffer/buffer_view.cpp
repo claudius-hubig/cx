@@ -19,7 +19,9 @@ BufferView BufferView::fromSavedState(Buffer& buf) {
     v._mark = saved->mark;
     if (saved->desiredCol)
       v._desiredCol = ColIdx{*saved->desiredCol};
+    v._wrap = saved->wrapMode;
     v._wrapMode = saved->wrapMode;
+    v._showWhitespace = saved->showWhitespace;
     buf.clearSavedView();
   }
   v._docVersion = buf.docVersion();
@@ -72,7 +74,19 @@ void BufferView::saveViewState() {
                      .viewFrom = _viewFrom,
                      .mark = _mark,
                      .desiredCol = dc,
-                     .wrapMode = _wrapMode});
+                     .wrapMode = _wrap,
+                     .showWhitespace = _showWhitespace});
+}
+
+void BufferView::setWrap(bool w) {
+  if (w == _wrap)
+    return;
+  _wrap = w;
+  // Reset the horizontal/sub-line scroll state because the variant
+  // alternative changes when wrap mode flips. ensureVisible() also
+  // does this on its next call, but updating eagerly avoids a stale
+  // viewport between toggle and the next render.
+  _viewFrom.resetCol(w);
 }
 
 // --- Private helpers ---
@@ -1268,8 +1282,8 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
   params.viewFrom = _viewFrom;
   params.mark = _mark;
   params.highlight = _highlight;
-  params.showWhitespace = args.showWhitespace;
-  params.wrap = args.wrap;
+  params.showWhitespace = _showWhitespace;
+  params.wrap = _wrap;
   params.focused = args.focused;
   params.rowOffset = args.rowOffset;
   params.colOffset = args.colOffset;
