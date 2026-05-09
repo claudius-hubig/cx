@@ -65,13 +65,18 @@ Key API:
 - `shortcutFromCtrlChar(char)` / `shortcutFromEscChar(char)` — convert
   raw terminal bytes to `Shortcut` values.
 
-Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`,
+Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`, `DeleteLine`,
 `SwitchBuffer`, `ToggleMark`, `Cut`, `Copy`, `Paste`, `PasteCycle`,
 `DeleteChunkBefore`, `Revert`, `VersionHistory`, `Find`,
 `FindBackward`, `Replace`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
 `ToggleWrap`, `Format`, `ToggleComment`, `SetMode`, `DirBrowser`, `PipeReplace`,
 `SplitVertical`, `SplitHorizontal`, `ClosePanel`,
 `FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`.
+
+Some bindings have two shortcuts: `DeleteChunkBefore` is reachable via
+both `Ctrl-Bksp` (which arrives as `Ctrl-h`) and `Esc-Bksp`. The table
+contains the bare-Ctrl path first; help and reverse-lookup callers see
+that one.
 
 ---
 
@@ -94,9 +99,14 @@ Key responsibilities:
   - `handleNormalInput` — printable characters and control keys in normal
     editing mode
 - **Action dispatch**: `dispatchAction(Action)` is the centralised switch
-  that executes the effect of any `Action`. Both the Ctrl-key path and
-  Esc-chord path resolve to an `Action` via `handleShortcut()`, then call
-  `dispatchAction()`. Unrecognised shortcuts produce a status message.
+  that executes the effect of any `Action`. Three input paths feed it,
+  all through `handleShortcut()`: the bare Ctrl-key path
+  (`shortcutFromCtrlChar`), the Esc-chord path (`shortcutFromEscChar`),
+  and the two-key C-x prefix path (`shortcutFromCxChar`, driven by
+  `handleCtrlXInput()`). Unrecognised shortcuts produce a status message.
+  Many actions guard at entry through `requireNotInHistoryMode()`, which
+  posts a status message and returns `true` when a view is currently
+  browsing history so the caller can `break` out without effect.
 - **Find**: `findNext()` and `findPrev()` implement forward and backward
   search with smart matching (case-insensitive when the pattern is
   lowercase; digits and special characters in the buffer are skipped
@@ -116,6 +126,27 @@ the paste ring, the X11 `Clipboard` adapter, and the timed status
 message. After every keystroke, `loop()` calls `syncPrimarySelection()`
 to mirror the active mark region into the X11 PRIMARY selection (no-op
 when there is no mark or no graphical session).
+
+**Read-only overlays**: `Help`, `BufferList` and `PasteRing` switch the
+focused panel to a read-only buffer while stashing the previous buffer
+in `Panel::prevBuf`. `Esc-Esc`, `q`, or pressing the same overlay key a
+second time pops the stash and restores the prior buffer (and, with it,
+the saved cursor / mark / viewport). `handleBareEscEsc()` services the
+overlay-dismissal half of `Esc-Esc`; clearing the mark only happens when
+no overlay is up. `updateFocusPointers()` re-binds `_buf` / `_view` to
+the focused panel after layout changes — split, close, focus, kill, or
+overlay restoration.
+
+**Helpers used across action handlers**: `bufferWorkDir()` returns the
+parent directory of the focused buffer's file (or the process working
+directory for pathless buffers) and is the working directory for every
+external command launched via `runPipeCommand()`.
+
+When opening a file with non-Unix line endings, `checkLineEndings()`
+inspects the `LineEndingStyle` set during `TextBuffer::loadFromFile()`
+and either prompts the user to translate (CRLF / lone CR) or surfaces
+a "mixed line endings" status message. The flag is acknowledged on
+read, so the same buffer is only flagged once per load.
 
 Prompts are represented by the `Prompt` struct (`src/prompt.hpp`), which
 carries a label, callbacks for autocomplete/result/abort/tab/special keys,
@@ -223,9 +254,20 @@ without any per-method special-casing.
 
 Caching:
 - `_synCache` — per-line syntax tokenisation cache, invalidated on edits.
+  Exposed to other subsystems via `cachedLineTokens(line)` so e.g.
+  bracket-match scans reuse the same tokens that the renderer already
+  computed.
 - `_bracketCache` — last `findMatchingBracket()` result, keyed by point
   and `docVersion`. Lets repeated render passes reuse a previously
   computed match without rescanning.
+
+Conflict detection:
+- `scanForConflicts()` walks the line vector setting `_hasConflicts` if
+  any line is a 7-character conflict marker (`<<<<<<<`, `=======`,
+  `>>>>>>>`). Triggered by load, revert, and save in `TextBuffer`. When
+  set, the syntax-cache pass overlays each conflict-marker line with a
+  `ConflictMarker` token regardless of mode, so even a `Txt` buffer
+  highlights merge regions with distinct backgrounds.
 
 ### `BufferView` (`src/buffer/buffer_view.hpp/.cpp`)
 
@@ -290,6 +332,15 @@ workflow. `detectMode()` sets the `BufferMode` based on file extension
 after a successful `save()`) so `changedOnDisk()` can warn when the file
 has been modified by another process. `Screen::Save` checks that flag
 before overwriting and prompts the user when it is set.
+
+Line-ending style is captured during `loadFromFile()` into a
+`LineEndingStyle` enum (`Unix`, `Crlf`, `Cr`, `Mixed`). `\r` bytes are
+left intact in the line strings so they remain editable; `Screen` reads
+the flag via `lineEndingStyle()`, prompts the user to normalize on
+non-Unix files, and calls `normalizeLineEndings()` on consent
+(`acknowledgeLineEndingStyle()` clears the flag so the same load isn't
+flagged twice). `Mixed` files are surfaced as a status warning rather
+than prompted — they cannot be unambiguously translated.
 
 `TextBuffer` owns a `VersionHistory _history` and a
 `bool _browsingHistory` flag. The history is captured on construction,
@@ -413,10 +464,15 @@ individual `make_shared` allocations), `at(idx)`, `truncateAfter(idx)`
 ### `Panel` (`src/terminal/panel.hpp/.cpp`)
 
 A panel is one pane of the terminal. It owns a `BufferView`, an integer
-id, and a `PanelRect` describing its absolute position and size. Panels
-provide `setBuffer()` to switch to a different buffer (optionally
-restoring saved view state) and `saveViewState()` to persist cursor
-position before the view is destroyed.
+id, a `PanelRect` describing its absolute position and size, and a
+`Buffer* prevBuf` slot used by the read-only overlay flow (see
+`Screen` above). Panels provide `setBuffer()` to switch to a different
+buffer (optionally restoring saved view state via
+`BufferView::fromSavedState()`), and `saveViewState()` to persist
+cursor / mark / viewport / wrap state before the view is destroyed.
+`saveViewState()` is called whenever a panel is about to drop its
+`BufferView` — buffer switch or panel close — not just at last-view
+destruction.
 
 ---
 
@@ -431,7 +487,9 @@ Key operations:
 - `splitFocused(dir, buf)` — replace the focused leaf with a split
   node; the original panel stays left/top and a new panel is created
   right/bottom. Returns `nullptr` if the split would make panels
-  smaller than the minimum dimensions (10 cols, 3 rows).
+  smaller than the minimum dimensions (10 cols, 3 rows). Panels are
+  numbered from 1 upward; `FocusPanel1`..`FocusPanel6` correspond to
+  the first six panels in tree order, which is the practical maximum.
 - `closeFocused()` — remove the focused leaf and promote its sibling.
   Restores focus to the most recently used panel via an MRU history,
   falling back to the first panel in tree order.

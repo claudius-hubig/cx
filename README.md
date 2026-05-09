@@ -24,37 +24,48 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 ## Features
 
 - **UTF-8 support** — full Unicode text editing and display, including CJK wide characters
-- **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion
+- **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion. The Ctrl-o switch prompt defaults to the previous buffer; typing `*name*` creates (or finds) a scratch buffer of that name.
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
-- **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter; Ctrl-F again advances to the next match while re-prompting for a new search string. Matched text is temporarily highlighted.
+- **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter (highlight visible for ~3 s); Ctrl-F again advances to the next match while re-prompting for a new search string. Inside the prompt Ctrl-F / Ctrl-R also advance the previous search forward/backward without leaving the prompt. An empty prompt re-uses the last pattern (shown as a dim hint).
 - **Find and replace** — `Esc-%` prompts for a pattern and replacement, then walks forward through matches asking `y`/`n`/`!`/`q` per hit. `!` finishes the rest without prompting. Matching is exact (case-sensitive, no fuzzy skipping) — unlike Find, which uses smart matching for navigation.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
-- **Word and paragraph navigation** — move by word, paragraph, or go to a specific line
+- **System clipboard integration (X11)** — Cut and Copy publish the region to the X11 CLIPBOARD selection (via `xclip` or `xsel` if installed); Paste reads the CLIPBOARD when it differs from the top of the internal ring, so external Ctrl-C from other apps becomes pasteable. The active mark region is also mirrored to the PRIMARY selection after every keystroke for middle-click pasting. All X11 integration is silently a no-op when no graphical session is available.
+- **Word and paragraph navigation** — move by word, paragraph, or go to a specific line (the prompt also accepts `last` to jump to end of buffer)
+- **Block navigation** — `Ctrl-N` / `Ctrl-B` jump between blocks: hunk headers (`@@ ... @@`) in diff buffers, and conflict regions (`<<<<<<<`/`=======`/`>>>>>>>`) in any buffer that contains them.
+- **Conflict-marker highlighting** — git merge conflict regions are detected on load/revert/save and rendered with distinct backgrounds for the "ours", divider, and "theirs" sections, regardless of the buffer's syntax mode.
 - **Chunk deletion** — delete contiguous runs of whitespace or non-whitespace in either direction
 - **Line wrapping** — toggle soft line wrap on/off
 - **Whitespace display** — toggle visible whitespace markers (spaces, tabs, newlines)
-- **Save / Save As** — write to the backing file or choose a new path
+- **Save / Save As** — write to the backing file or choose a new path. Saving prompts for confirmation if the file no longer exists on disk, or if its mtime/size has changed since load (external-modification guard).
 - **Revert** — reload a buffer's contents from disk with confirmation
-- **Undo / version history** — `Ctrl-u` enters a read-only history mode: `[` and `]` step through earlier/later versions, and `Ctrl-u` again commits the selected version as the new live state. History survives save and revert.
-- **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries
+- **Auto-indent** — pressing Enter in C/C++ or JSON modes preserves the leading-spaces indent of the previous line.
+- **Line-ending detection** — files loaded with CRLF or lone-CR endings prompt to translate to `\n`; mixed-ending files surface a warning. Acknowledged once per load.
+- **Undo / version history** — `Ctrl-u` enters a read-only history mode: `[` and `]` step through earlier/later versions, `Enter` commits the selected version as the new live state, `Esc-Esc` cancels and returns to the latest. (Pressing `Ctrl-u` again is equivalent to `Enter`.) History survives save and revert.
+- **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries; rename entries; create subdirectories
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
 - **Mouse support** — left-click positions the cursor (and focuses a non-focused panel). The wheel scrolls the panel under the pointer.
+- **Long-running command kill prompt** — external commands launched via Esc-f, Tab-format, or Ctrl-p that take longer than 10 s show a "Kill? y/n" prompt so a hung formatter or pipe never freezes the editor.
+- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]`), and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
+- **Terminal title** — set to `cx@<cwd>` on startup so cx tabs are easy to identify.
+- **Error log** — uncaught exceptions, clipboard failures and the like are appended to `~/.cx-errors` for post-mortem inspection (never surfaced as UI noise).
 
 ## Keyboard Shortcuts
 
 ### Files & Buffers
 
-| Key    | Action                       |
-|--------|------------------------------|
-| Esc-?  | Show help                    |
-| Esc-c  | Exit                         |
-| Ctrl-o | Switch to buffer / open file |
-| Esc-b  | Buffer list                  |
-| Esc-d  | Directory browser            |
-| Ctrl-s | Save file                    |
-| C-x k  | Kill buffer                  |
-| Esc-r  | Revert buffer from file      |
-| Ctrl-u | Undo / version history       |
+| Key     | Action                                          |
+|---------|-------------------------------------------------|
+| Esc-?   | Show help (press again to dismiss)              |
+| Esc-c   | Exit (prompts to save modified buffers)         |
+| Ctrl-o  | Switch to buffer / open file (defaults to MRU)  |
+| Esc-b   | Buffer list                                     |
+| Esc-d   | Directory browser                               |
+| Ctrl-s  | Save file                                       |
+| C-x k   | Kill buffer                                     |
+| Esc-r   | Revert buffer from file                         |
+| Ctrl-u  | Undo / version history                          |
+| q       | Dismiss read-only overlay (help / list / ring)  |
+| Esc-Esc | Dismiss overlay; otherwise clear mark           |
 
 ### Regions & Edit
 
@@ -74,20 +85,20 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 
 ### Search & Movement
 
-| Key             | Action                       |
-|-----------------|------------------------------|
-| Ctrl-f          | Find forward                 |
-| Ctrl-r          | Find backward                |
-| Esc-%           | Find and replace             |
-| Arrows          | Move cursor                  |
-| Ctrl-Left/Right | Move by word                 |
-| Ctrl-Up/Down    | Move by paragraph            |
-| Ctrl-g          | Go to line                   |
-| Ctrl-n          | Next block (hunk/conflict)   |
-| Ctrl-b          | Prev block (hunk/conflict)   |
-| PgUp / PgDn     | Page up / down (half screen) |
-| Home / End      | Start / end of line          |
-| Ctrl-Home/End   | Start / end of file          |
+| Key             | Action                                                     |
+|-----------------|------------------------------------------------------------|
+| Ctrl-f          | Find forward                                               |
+| Ctrl-r          | Find backward                                              |
+| Esc-%           | Find and replace                                           |
+| Arrows          | Move cursor                                                |
+| Ctrl-Left/Right | Move by word                                               |
+| Ctrl-Up/Down    | Move by paragraph                                          |
+| Ctrl-g          | Go to line (accepts a number, or `last` for end of buffer) |
+| Ctrl-n          | Next block (`@@` hunk in diff buffers / conflict marker)   |
+| Ctrl-b          | Prev block (same)                                          |
+| PgUp / PgDn     | Page up / down (half screen)                               |
+| Home / End      | Start / end of line                                        |
+| Ctrl-Home/End   | Start / end of file                                        |
 
 ### Bracket matching
 
@@ -125,11 +136,11 @@ These shortcuts are active when viewing a directory listing.
 
 ### Display
 
-| Key   | Action              |
-|-------|---------------------|
-| Esc-s | Toggle whitespace   |
-| Esc-l | Toggle line wrap    |
-| Esc-m | Set buffer mode     |
+| Key   | Action                                                                              |
+|-------|-------------------------------------------------------------------------------------|
+| Esc-s | Toggle whitespace                                                                   |
+| Esc-l | Toggle line wrap                                                                    |
+| Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`) |
 
 ### Panels
 
@@ -147,6 +158,35 @@ These shortcuts are active when viewing a directory listing.
 |-----------|----------------------------|
 | Bksp      | Delete before cursor       |
 | Ctrl-Bksp | Delete chunk before cursor |
+| Esc-Bksp  | Delete chunk before cursor |
 | Delete    | Delete at cursor           |
 | Ctrl-Del  | Delete chunk at cursor     |
 | Ctrl-k    | Delete current line        |
+
+### History mode
+
+Active after pressing `Ctrl-u` on a buffer with edit history.
+
+| Key     | Action                                |
+|---------|---------------------------------------|
+| `[`     | Step to older version                 |
+| `]`     | Step to newer version                 |
+| Enter   | Commit selected version               |
+| Ctrl-u  | Commit selected version               |
+| Esc-Esc | Cancel and return to latest           |
+
+### Prompts
+
+When a prompt is active (Find, Save As, Switch Buffer, Go to line, …):
+
+| Key         | Action                                                         |
+|-------------|----------------------------------------------------------------|
+| Enter       | Accept input                                                   |
+| Esc         | Cancel prompt                                                  |
+| Up / Down   | Navigate per-prompt input history                              |
+| Tab         | Cycle completion candidates (Save As, Switch Buffer)           |
+| Right arrow | Accept current completion (and descend into directory if any)  |
+| Bksp        | Remove one character (full UTF-8 codepoint)                    |
+| `y/n/!/q`   | Replace prompt: yes / skip / all-rest / quit                   |
+| Ctrl-f      | Find prompt: advance forward without leaving the prompt        |
+| Ctrl-r      | Find prompt: advance backward without leaving the prompt       |

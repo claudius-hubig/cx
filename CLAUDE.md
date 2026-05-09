@@ -82,7 +82,10 @@ src/
   prompt.hpp                       Prompt struct, PromptDisplay, PromptHistory
   paste_ring.hpp                   Fixed-capacity ring buffer for cut/copy
   clipboard.hpp/.cpp               X11 PRIMARY/CLIPBOARD integration via xclip/xsel
-  error_log.hpp/.cpp               Diagnostic logging to cx_error.log
+  error_log.hpp/.cpp               Diagnostic logging to ~/.cx-errors
+  file_arg.hpp                     parseFileArg — split `path:LINE` command-line argument
+  mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)
+  replace.hpp                      Find-and-replace helpers (findNextMatchInBuffer, replaceAllForward)
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
   terminal/
     setup_terminal.hpp/.cpp        RAII raw mode + alternate screen
@@ -99,6 +102,7 @@ src/
     paste_ring_buffer.hpp/.cpp     Readonly paste ring display
     dir_buffer.hpp/.cpp            Readonly directory browser with navigation and delete
     buffer_manager.hpp/.cpp        Buffer lifecycle, MRU, completions
+    version_history.hpp/.cpp       Append-only snapshot history with delta compression
     modes/
       c/syntax.hpp/.cpp            C/C++ tokenizer, bracket matching
       dif/syntax.hpp/.cpp          Diff/patch tokenizer (add, remove, meta, hunk)

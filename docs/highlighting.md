@@ -18,6 +18,11 @@
 | Bold           | `**...**` bold text                                | Markdown    |
 | Link           | `[text](url)` links                                | Markdown    |
 | Number         | Numeric literals                                   | JSON        |
+| DiffAdd        | Whole `+` line                                     | Diff        |
+| DiffRemove     | Whole `-` line                                     | Diff        |
+| DiffMeta       | `+++` / `---` file headers                         | Diff        |
+| DiffHunk       | `@@ ... @@` hunk headers                           | Diff        |
+| ConflictMarker | `<<<<<<<`, `=======`, `>>>>>>>` (any 7-char run)   | All         |
 
 ## Colors (24-bit RGB)
 
@@ -35,6 +40,25 @@
 | Bracket match | (60, 170, 170)  | Turquoise       | `\x1b[38;2;60;170;170m`    |
 
 Paren, Bracket, Brace, and Angle tokens use the default foreground color.
+
+Diff and conflict tokens are background colours (the foreground stays
+the default text colour) so the underlying syntax of the changed line
+remains readable:
+
+| Token             | RGB             | Color Name        | ANSI Escape                |
+|-------------------|-----------------|-------------------|----------------------------|
+| DiffAdd (bg)      | (30, 60, 30)    | Dark green        | `\x1b[48;2;30;60;30m`      |
+| DiffRemove (bg)   | (70, 30, 30)    | Dark red          | `\x1b[48;2;70;30;30m`      |
+| DiffMeta          | —               | Reverse video     | `\x1b[7m`                  |
+| DiffHunk (fg)     | (120, 160, 220) | Light blue        | `\x1b[38;2;120;160;220m`   |
+| Conflict ours     | (40, 50, 80)    | Dark blue (bg)    | `\x1b[48;2;40;50;80m`      |
+| Conflict divider  | (70, 60, 30)    | Dark amber (bg)   | `\x1b[48;2;70;60;30m`      |
+| Conflict theirs   | (50, 70, 40)    | Dark olive (bg)   | `\x1b[48;2;50;70;40m`      |
+
+When a bracket-match foreground transition happens on a line that
+already carries a diff/conflict background, the renderer restores the
+previous foreground (not the global default) on the way out so the
+line's background stays consistent across the match.
 
 ## Available Colors
 
@@ -55,3 +79,41 @@ The `SyntaxState` struct carries state between lines:
 - **inBlockComment** — inside `/* ... */`
 - **inPreprocessor** — prior line was a `#`-directive ending with `\`
 - **rawDelim** — inside `R"delim(...)delim"`, holds the delimiter string
+
+Only C/C++ tokenisation actually maintains state. Markdown, JSON and
+Diff tokenizers accept the `SyntaxState` parameter for interface
+consistency only; they read and write nothing through it.
+
+A cheaper companion `advanceBlockCommentState()` is provided for
+callers that need to fast-forward the state across many lines without
+producing token vectors (e.g. `findMatchingBracket()` skipping to a
+distant match). It skips identifier/keyword classification, bracket
+tagging and the per-byte token allocation, leaving only the multi-line
+block-comment / raw-string-literal tracking.
+
+## Token / mode coverage matrix
+
+A given mode emits only a subset of the token set. Tokens not produced
+by a mode are reported as `Normal`.
+
+| Token          | Cpp | Md | Jsn | Dif | Txt |
+|----------------|-----|----|-----|-----|-----|
+| Normal         |  ✓  | ✓  |  ✓  |  ✓  |  ✓  |
+| Keyword        |  ✓  | —  |  ✓  |  —  |  —  |
+| Comment        |  ✓  | —  |  —  |  —  |  —  |
+| String         |  ✓  | —  |  ✓  |  —  |  —  |
+| Operator       |  ✓  | —  |  —  |  —  |  —  |
+| Preprocessor   |  ✓  | —  |  —  |  —  |  —  |
+| Paren          |  ✓  | —  |  —  |  —  |  —  |
+| Bracket        |  ✓  | —  |  ✓  |  —  |  —  |
+| Brace          |  ✓  | —  |  ✓  |  —  |  —  |
+| Angle          |  ✓  | —  |  —  |  —  |  —  |
+| Heading        |  —  | ✓  |  —  |  —  |  —  |
+| Bold           |  —  | ✓  |  —  |  —  |  —  |
+| Link           |  —  | ✓  |  —  |  —  |  —  |
+| Number         |  —  | —  |  ✓  |  —  |  —  |
+| DiffAdd        |  —  | —  |  —  |  ✓  |  —  |
+| DiffRemove     |  —  | —  |  —  |  ✓  |  —  |
+| DiffMeta       |  —  | —  |  —  |  ✓  |  —  |
+| DiffHunk       |  —  | —  |  —  |  ✓  |  —  |
+| ConflictMarker |  ✓  | ✓  |  ✓  |  ✓  |  ✓  |, holds the delimiter string
