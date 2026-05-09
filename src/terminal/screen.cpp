@@ -2528,6 +2528,13 @@ void Screen::dispatchAction(Action action) {
       setStatus(_view->wrap() ? "Wrap on" : "Wrap off");
     }
     break;
+  case Action::ToggleCurrentLine:
+    if (_view) {
+      _view->toggleHighlightCurrentLine();
+      setStatus(_view->highlightCurrentLine() ? "Current-line highlight on"
+                                              : "Current-line highlight off");
+    }
+    break;
   case Action::ToggleComment:
     if (requireNotInHistoryMode())
       break;

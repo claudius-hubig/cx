@@ -73,6 +73,13 @@ public:
   void setShowWhitespace(bool s) { _showWhitespace = s; }
   void toggleShowWhitespace() { _showWhitespace = !_showWhitespace; }
 
+  /// Per-view current-line highlight: when on, the cursor's physical
+  /// line is rendered with a subtle background tint (lines that already
+  /// carry a diff or conflict background keep that background instead).
+  bool highlightCurrentLine() const { return _highlightCurrentLine; }
+  void setHighlightCurrentLine(bool h) { _highlightCurrentLine = h; }
+  void toggleHighlightCurrentLine() { _highlightCurrentLine = !_highlightCurrentLine; }
+
   std::tuple<std::size_t, std::size_t> lineCol() const;
 
   // --- Movement ---
@@ -217,6 +224,7 @@ private:
   bool _wrap = false;
   bool _wrapMode = false;
   bool _showWhitespace = false;
+  bool _highlightCurrentLine = false;
   std::optional<ColIdx> _desiredCol;
   std::optional<Highlight> _highlight;
 

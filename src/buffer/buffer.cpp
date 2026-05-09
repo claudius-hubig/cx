@@ -362,6 +362,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kConflictOursBg = "\x1b[48;2;40;50;80m";
   static constexpr auto kConflictDivBg = "\x1b[48;2;70;60;30m";
   static constexpr auto kConflictTheirsBg = "\x1b[48;2;50;70;40m";
+  // Subtle current-line tint: dark blue-grey, distinct from the
+  // whitespace-marker greys (45/60/70) so an enabled cursor-line
+  // highlight is visually separate from any visible-whitespace styling.
+  static constexpr auto kCurrentLineBg = "\x1b[48;2;38;38;48m";
   static constexpr auto kBgReset = "\x1b[49m";
 
   // Per-line background for diff/conflict lines.
@@ -697,6 +701,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
   // Resolve per-line syntax tokens + background colour and emit the
   // background (if any). Shared between the wrap and no-wrap branches.
+  // The current-line tint (params.highlightCurrentLine) only applies
+  // when no diff/conflict background already claims the line — those
+  // cues are more important than the cursor cue.
   auto setupLine = [&](std::size_t lineIdx, std::string const& line) {
     if (syntaxActive) {
       lineTokens = _synCache[lineIdx].tokens;
@@ -704,6 +711,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     } else {
       curLineBg = nullptr;
     }
+    if (!curLineBg && params.highlightCurrentLine && lineIdx == point.line)
+      curLineBg = kCurrentLineBg;
     if (curLineBg)
       out += curLineBg;
   };

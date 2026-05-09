@@ -45,6 +45,7 @@ enum class Action {
   NextBlock,
   PrevBlock,
   Recenter,
+  ToggleCurrentLine,
 };
 
 struct Shortcut {

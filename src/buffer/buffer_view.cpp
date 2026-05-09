@@ -1346,6 +1346,7 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
   params.highlight = _highlight;
   params.showWhitespace = _showWhitespace;
   params.wrap = _wrap;
+  params.highlightCurrentLine = _highlightCurrentLine;
   params.focused = args.focused;
   params.rowOffset = args.rowOffset;
   params.colOffset = args.colOffset;

@@ -44,6 +44,11 @@ struct RenderParams {
   bool showWhitespace = false;
   bool wrap = true;
   bool focused = true;
+  // When true, the entire physical line containing `point` is rendered
+  // with a subtle background tint. Diff / conflict backgrounds take
+  // precedence on lines that have one (the visual diff cue is more
+  // important than the cursor cue).
+  bool highlightCurrentLine = false;
   std::size_t rowOffset = 0;
   std::size_t colOffset = 0;
 };

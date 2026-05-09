@@ -766,6 +766,27 @@ BOOST_AUTO_TEST_CASE(recenter_no_wrap_middle_top_bottom) {
   BOOST_CHECK_EQUAL(view.viewFrom().line, 11u);
 }
 
+BOOST_AUTO_TEST_CASE(highlight_current_line_emits_background) {
+  TempFile f("aaa\nbbb\nccc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(1, 0); // cursor on line "bbb"
+
+  // With current-line highlight off, the rendered output should not
+  // contain the dark blue-grey background sequence.
+  view.setHighlightCurrentLine(false);
+  std::string off;
+  view.render(off, RowIdx{4}, ColIdx{20});
+  BOOST_CHECK(off.find("\x1b[48;2;38;38;48m") == std::string::npos);
+
+  // With it on, the same render should contain that background at
+  // least once (the cursor line).
+  view.setHighlightCurrentLine(true);
+  std::string on;
+  view.render(on, RowIdx{4}, ColIdx{20});
+  BOOST_CHECK(on.find("\x1b[48;2;38;38;48m") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(recenter_clamps_at_buffer_start) {
   std::string body;
   for (int i = 0; i < 5; ++i)

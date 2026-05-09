@@ -54,6 +54,11 @@ remains readable:
 | Conflict ours     | (40, 50, 80)    | Dark blue (bg)    | `\x1b[48;2;40;50;80m`      |
 | Conflict divider  | (70, 60, 30)    | Dark amber (bg)   | `\x1b[48;2;70;60;30m`      |
 | Conflict theirs   | (50, 70, 40)    | Dark olive (bg)   | `\x1b[48;2;50;70;40m`      |
+| Current line      | (38, 38, 48)    | Dim blue-grey (bg)| `\x1b[48;2;38;38;48m`      |
+
+The current-line tint is opt-in (per-view, toggled by `Esc-_`) and only
+applies to lines that don't already carry a diff or conflict
+background.
 
 When a bracket-match foreground transition happens on a line that
 already carries a diff/conflict background, the renderer restores the
