@@ -1,6 +1,6 @@
 # cx
 
-A simple terminal text editor. Esc-? for help text. No configuration.
+AI-slopped, simple, terminal text editor. Esc-? for help text. No configuration.
 
 ## Building
 
