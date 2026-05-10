@@ -1305,16 +1305,47 @@ void BufferView::reflowParagraph(std::size_t targetWidth) {
     return out;
   };
 
+  // Inside a paragraph (a "block"), split on lines that start with a
+  // bullet so each list item reflows independently. Without this a
+  // four-line list would be merged into one long flow because the
+  // outer reflow detects the bullet only on the very first input
+  // line. Continuation lines under a bullet (no bullet of their own)
+  // stay attached to that bullet's sub-block.
+  auto splitListItems = [&](Block const& b) -> std::vector<Block> {
+    std::vector<Block> subs;
+    Block current{b.firstLine, {}};
+    for (std::size_t j = 0; j < b.lines.size(); ++j) {
+      auto const& l = b.lines[j];
+      auto ws = leadingWs(l);
+      bool isBullet = bulletLen(l, ws) > 0;
+      if (isBullet && !current.lines.empty()) {
+        subs.push_back(std::move(current));
+        current = Block{b.firstLine + j, {}};
+      }
+      current.lines.push_back(l);
+    }
+    if (!current.lines.empty())
+      subs.push_back(std::move(current));
+    return subs;
+  };
+
   // Build the replacement text for [fromLine, toLine] inclusive.
+  // Blank lines separate paragraph-level blocks; list items inside a
+  // block are emitted back-to-back with no blank between them.
   std::string replacement;
   for (std::size_t bi = 0; bi < blocks.size(); ++bi) {
     if (bi > 0)
-      replacement += '\n'; // blank line between blocks
-    auto outLines = reflowBlock(blocks[bi]);
-    for (std::size_t k = 0; k < outLines.size(); ++k) {
-      if (k > 0)
+      replacement += '\n';
+    auto subs = splitListItems(blocks[bi]);
+    for (std::size_t si = 0; si < subs.size(); ++si) {
+      if (si > 0)
         replacement += '\n';
-      replacement += outLines[k];
+      auto outLines = reflowBlock(subs[si]);
+      for (std::size_t k = 0; k < outLines.size(); ++k) {
+        if (k > 0)
+          replacement += '\n';
+        replacement += outLines[k];
+      }
     }
   }
 

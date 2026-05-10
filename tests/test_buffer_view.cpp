@@ -820,6 +820,63 @@ BOOST_AUTO_TEST_CASE(reflow_preserves_bullet_with_continuation) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), "- first item with continuation more text");
 }
 
+BOOST_AUTO_TEST_CASE(reflow_keeps_list_items_separate) {
+  // Three short list items: at width 80 they each stay on their own
+  // line and are NOT merged into one flow.
+  TempFile f("- alpha beta\n- gamma delta\n- epsilon zeta\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(80);
+  BOOST_REQUIRE_GE(buf.lineCount(), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "- alpha beta");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "- gamma delta");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "- epsilon zeta");
+}
+
+BOOST_AUTO_TEST_CASE(reflow_wraps_each_list_item_under_bullet) {
+  // Narrow width: each item wraps, but continuation aligns under the
+  // bullet's text column (not the bullet itself).
+  TempFile f("- alpha beta gamma delta\n- epsilon zeta eta theta\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(12);
+
+  // Expect e.g.:
+  //   - alpha
+  //     beta gamma
+  //     delta
+  //   - epsilon
+  //     zeta eta
+  //     theta
+  // Verify the second-item bullet appears on its own line (i.e. the
+  // first item didn't swallow it as a word).
+  bool foundSecondBullet = false;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i) {
+    auto const& l = buf.lineContent(i);
+    if (l.starts_with("- epsilon")) {
+      foundSecondBullet = true;
+      break;
+    }
+  }
+  BOOST_CHECK(foundSecondBullet);
+}
+
+BOOST_AUTO_TEST_CASE(reflow_handles_intro_followed_by_list) {
+  // Mixed paragraph: a non-list intro line followed by list items.
+  // Both halves reflow but the intro stays separate from the bullets.
+  TempFile f("intro line text\n- first item\n- second item\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(80);
+  BOOST_REQUIRE_GE(buf.lineCount(), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "intro line text");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "- first item");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "- second item");
+}
+
 BOOST_AUTO_TEST_CASE(reflow_blank_line_is_noop) {
   TempFile f("alpha\n\nbeta\n");
   TextBuffer buf(f.path().string(), f.path());
