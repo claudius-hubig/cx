@@ -12,8 +12,9 @@ BOOST_AUTO_TEST_CASE(wordRight_from_start) {
   insertString(buf, "hello world");
   buf.moveHome();
   buf.moveWordRight();
-  // Should land on 'o' (last char of "hello"), offset 4.
-  BOOST_CHECK(buf.point() == (BufferPoint{0, 4}));
+  // Lands one past the last char of "hello" (offset 5, on the space)
+  // so typing immediately extends the word.
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 5}));
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_mid_word) {
@@ -22,17 +23,10 @@ BOOST_AUTO_TEST_CASE(wordRight_mid_word) {
   buf.moveHome();
   buf.moveRight(); // 'h' -> 'e'
   buf.moveWordRight();
-  // Steps forward one, skips to end of next word: should land on 'd' of "world".
-  // Actually: steps forward one from 'e' to 'l', then skips to end of "hello" = 'o'.
-  // Let's check what actually happens.
-  auto p = buf.point();
-  // After step: offset 2 ('l'). Skip seps: none. Advance to end of word: 'o' at offset 4.
-  BOOST_CHECK_EQUAL(p.line, 0u);
-  // The algorithm: step forward 1 cp from offset 1 -> offset 2.
-  // At offset 2, 'l' is non-sep. Skip seps: none (already non-sep).
-  // Advance to end of word (until next is sep or EOL): l(2)->l(3)->o(4), next is ' '(sep) -> stop
-  // at 4.
-  BOOST_CHECK_EQUAL(p.offset, 4u);
+  // Step forward 1 cp from offset 1 -> offset 2 ('l').
+  // 'l' is non-sep so the skip-seps loop is a no-op.
+  // Advance past the word: l(2) → l(3) → o(4) → space(5), stop at 5.
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 5}));
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_skips_spaces) {
@@ -40,12 +34,12 @@ BOOST_AUTO_TEST_CASE(wordRight_skips_spaces) {
   insertString(buf, "hello   world");
   buf.moveHome();
   buf.moveWordRight();
-  // Lands on last char of "hello" = 'o'.
-  BOOST_CHECK(buf.point() == (BufferPoint{0, 4}));
+  // Lands one past "hello" = on the first space at offset 5.
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 5}));
   buf.moveWordRight();
-  // Steps forward from 'o' (4) to ' ' (5). Skips spaces 5,6,7.
-  // Arrives at 'w'(8). Advances to end of "world" = 'd' at 12.
-  BOOST_CHECK(buf.point() == (BufferPoint{0, 12}));
+  // Steps forward to offset 6 (space). Skips spaces 6,7. Arrives at
+  // 'w'(8). Advances past "world" to offset 13 (end of line).
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 13}));
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_crosses_lines) {
@@ -53,12 +47,12 @@ BOOST_AUTO_TEST_CASE(wordRight_crosses_lines) {
   insertString(buf, "abc\ndef");
   buf.gotoLine(1, RowIdx{10}); // go to line 0
   buf.moveWordRight();
-  // End of "abc" -> offset 2.
-  BOOST_CHECK(buf.point() == (BufferPoint{0, 2}));
+  // Past "abc" on line 0 = offset 3 (end of line).
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 3}));
   buf.moveWordRight();
-  // Steps forward from 'c'(2) to end-of-line(3). Crosses to next line.
-  // Skips seps (none — 'd' is non-sep). Advances to end of "def" = 'f' at offset 2.
-  BOOST_CHECK(buf.point() == (BufferPoint{1, 2}));
+  // From {0,3}: no step (offset == size); cross to line 1 offset 0.
+  // Skip seps: 'd' is non-sep. Advance past "def" = offset 3.
+  BOOST_CHECK(buf.point() == (BufferPoint{1, 3}));
 }
 
 BOOST_AUTO_TEST_CASE(wordRight_at_end) {
@@ -68,6 +62,17 @@ BOOST_AUTO_TEST_CASE(wordRight_at_end) {
   auto before = buf.point();
   buf.moveWordRight();
   BOOST_CHECK(buf.point() == before); // no-op
+}
+
+BOOST_AUTO_TEST_CASE(wordRight_then_typing_extends_word) {
+  // Regression: pressing Ctrl-Right and typing 'e' should produce
+  // "abcde", not "abced". Verifies the cursor lands past the word.
+  TB<TextBuffer> buf("test");
+  insertString(buf, "abcd");
+  buf.moveHome();
+  buf.moveWordRight();
+  buf.insert('e');
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "abcde");
 }
 
 // --- moveWordLeft ---

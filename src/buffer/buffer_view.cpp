@@ -420,16 +420,14 @@ void BufferView::moveWordRight() {
     }
   }
 
-  // Advance to the last char of this word.
+  // Advance past the last char of this word so typing immediately
+  // extends the word. moveWordLeft already lands on the first char of
+  // its target word, so this is the symmetric convention.
   {
     auto const& cur = _buf.lineContent(_point.line);
-    while (_point.offset < cur.size()) {
+    while (_point.offset < cur.size() && !isSep(cur[_point.offset])) {
       auto len = utf8SeqLen(static_cast<unsigned char>(cur[_point.offset]));
-      auto next = std::min(_point.offset + len, cur.size());
-      // If next position is end of line or a separator, stop here.
-      if (next >= cur.size() || isSep(cur[next]))
-        break;
-      _point.offset = next;
+      _point.offset = std::min(_point.offset + len, cur.size());
     }
   }
   _desiredCol.reset();
