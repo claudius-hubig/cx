@@ -95,8 +95,8 @@ static std::vector<std::string> const& rightColumn() {
     v.push_back(formatRawLine("Ctrl-Home/End", "Start/end of file"));
     v.emplace_back("");
     v.emplace_back("Display:");
-    for (auto a :
-         {Action::ToggleWhitespace, Action::ToggleWrap, Action::ToggleCurrentLine, Action::SetMode})
+    for (auto a : {Action::ToggleWhitespace, Action::ToggleWrap, Action::ToggleCurrentLine,
+                   Action::ToggleLineNumbers, Action::SetMode})
       v.push_back(formatHelpLine(a));
     v.emplace_back("");
     v.emplace_back("Deletion:");

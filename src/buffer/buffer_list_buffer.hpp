@@ -17,6 +17,7 @@ public:
                    std::string const& startName = {});
 
   bool readonly() const override { return true; }
+  bool supportsLineNumberGutter() const override { return false; }
 
   /// Render the buffer list with reverse-video highlighting on the
   /// selected line.

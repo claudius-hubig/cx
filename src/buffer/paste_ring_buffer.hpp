@@ -10,6 +10,7 @@ public:
   PasteRingBuffer();
 
   bool readonly() const override { return true; }
+  bool supportsLineNumberGutter() const override { return false; }
 
   /// Rebuild _lines from paste ring contents. Returns a ViewHint
   /// positioning the cursor at the top.

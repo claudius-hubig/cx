@@ -49,6 +49,14 @@ struct RenderParams {
   // precedence on lines that have one (the visual diff cue is more
   // important than the cursor cue).
   bool highlightCurrentLine = false;
+  // Width (in screen columns) of the left gutter to reserve at
+  // colOffset for line numbers. When > 0, the renderer emits the
+  // 1-based physical-line number (right-aligned, dim, with a trailing
+  // space) at the start of each visual row that starts a new physical
+  // line. Continuation rows in wrap mode get a blank gutter. Content
+  // emission shifts right by this width; the right-side gutter is
+  // unaffected.
+  std::size_t leftGutter = 0;
   std::size_t rowOffset = 0;
   std::size_t colOffset = 0;
 };
@@ -74,6 +82,14 @@ public:
   /// Pure virtual — true for readonly buffers (HelpBuffer, BufferListBuffer).
   /// BufferView's editing methods are no-ops when this returns true.
   virtual bool readonly() const = 0;
+
+  /// Whether `leftGutter` in `RenderParams` is honoured by this
+  /// buffer's `render()`. The base `Buffer::render` does honour it;
+  /// subclasses (HelpBuffer / DirBuffer / BufferListBuffer /
+  /// PasteRingBuffer) that completely override render with bespoke
+  /// layouts return false so a per-view line-number toggle silently
+  /// no-ops on those overlays.
+  virtual bool supportsLineNumberGutter() const { return true; }
 
   /// True after any edit since last save (or creation). TextBuffer clears
   /// this flag on successful save().
@@ -231,6 +247,8 @@ public:
     std::optional<std::size_t> desiredCol;
     bool wrapMode = false;
     bool showWhitespace = false;
+    bool showLineNumbers = false;
+    bool highlightCurrentLine = false;
   };
   void setSavedView(SavedViewState s) { _savedView = s; }
   std::optional<SavedViewState> savedView() const { return _savedView; }

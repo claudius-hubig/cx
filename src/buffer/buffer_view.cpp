@@ -22,6 +22,8 @@ BufferView BufferView::fromSavedState(Buffer& buf) {
     v._wrap = saved->wrapMode;
     v._wrapMode = saved->wrapMode;
     v._showWhitespace = saved->showWhitespace;
+    v._showLineNumbers = saved->showLineNumbers;
+    v._highlightCurrentLine = saved->highlightCurrentLine;
     buf.clearSavedView();
   }
   v._docVersion = buf.docVersion();
@@ -75,7 +77,22 @@ void BufferView::saveViewState() {
                      .mark = _mark,
                      .desiredCol = dc,
                      .wrapMode = _wrap,
-                     .showWhitespace = _showWhitespace});
+                     .showWhitespace = _showWhitespace,
+                     .showLineNumbers = _showLineNumbers,
+                     .highlightCurrentLine = _highlightCurrentLine});
+}
+
+std::size_t BufferView::lineNumberGutterWidth() const {
+  if (!_showLineNumbers || !_buf.supportsLineNumberGutter())
+    return 0;
+  // 1-based line numbers, plus a single trailing space separator.
+  std::size_t lc = _buf.lineCount();
+  std::size_t digits = 1;
+  while (lc >= 10) {
+    lc /= 10;
+    ++digits;
+  }
+  return digits + 1;
 }
 
 void BufferView::setWrap(bool w) {
@@ -90,6 +107,12 @@ void BufferView::setWrap(bool w) {
 }
 
 // --- Private helpers ---
+
+std::size_t BufferView::contentCols(ColIdx cols) const {
+  std::size_t cw = contentWidth(cols);
+  std::size_t lng = lineNumberGutterWidth();
+  return cw > lng ? cw - lng : 1;
+}
 
 std::size_t BufferView::pointVisualCol() const {
   if (_pointColCache.line == _point.line && _pointColCache.offset == _point.offset)
@@ -215,8 +238,9 @@ void BufferView::moveUp(ColIdx cols) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
-  // Content width excludes the gutter column.
-  std::size_t cw = contentWidth(cols);
+  // Content width excludes both gutters (right wrap-indicator + left
+  // line-number).
+  std::size_t cw = contentCols(cols);
   auto& bounds = ensureRowBounds(_point.line, cw);
   auto vr = findVisualRowCached(bounds, _point.offset, line.size());
 
@@ -255,8 +279,8 @@ void BufferView::moveDown(ColIdx cols) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
-  // Content width excludes the gutter column.
-  std::size_t cw = contentWidth(cols);
+  // Content width excludes both gutters.
+  std::size_t cw = contentCols(cols);
   auto& bounds = ensureRowBounds(_point.line, cw);
   auto vr = findVisualRowCached(bounds, _point.offset, line.size());
 
@@ -605,10 +629,18 @@ void BufferView::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
 
 BufferPoint BufferView::pointForScreenRowCol(std::size_t screenRow, std::size_t screenCol,
                                              ColIdx cols, bool wrap) const {
-  std::size_t cw = contentWidth(cols);
+  std::size_t cw = contentCols(cols);
   std::size_t lc = _buf.lineCount();
   if (lc == 0)
     return {0, 0};
+  // Translate screen column to content column by stripping the
+  // line-number gutter. Clicks inside the gutter map to column 0 of
+  // the row's physical line.
+  std::size_t lng = lineNumberGutterWidth();
+  if (screenCol < lng)
+    screenCol = 0;
+  else
+    screenCol -= lng;
 
   if (!wrap) {
     std::size_t hScroll =
@@ -744,7 +776,7 @@ void BufferView::recenter(RowIdx screenRows, std::size_t position, ColIdx cols, 
     return;
   }
 
-  std::size_t cw = contentWidth(cols);
+  std::size_t cw = contentCols(cols);
   std::size_t remaining = position;
   std::size_t li = _point.line;
   std::size_t startByte = 0;
@@ -1450,8 +1482,8 @@ void BufferView::ensureVisible(RowIdx rows, ColIdx cols, bool wrap) {
   else if (!wrap && !std::holds_alternative<VisualCol>(_viewFrom.col))
     _viewFrom.col = VisualCol{0};
 
-  // Content width excludes the gutter column.
-  std::size_t cw = contentWidth(cols);
+  // Content width excludes both gutters.
+  std::size_t cw = contentCols(cols);
 
   if (!wrap) {
     auto& hs = _viewFrom.hScroll();
@@ -1562,6 +1594,7 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
   params.showWhitespace = _showWhitespace;
   params.wrap = _wrap;
   params.highlightCurrentLine = _highlightCurrentLine;
+  params.leftGutter = lineNumberGutterWidth();
   params.focused = args.focused;
   params.rowOffset = args.rowOffset;
   params.colOffset = args.colOffset;
@@ -1569,15 +1602,22 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
 }
 
 std::size_t BufferView::screenRow(ColIdx cols, bool wrap) const {
+  // If the line-number gutter is on, the wrap math inside Buffer::screenRow
+  // needs to know about the narrower content area. Pass a reduced cols so
+  // its `contentWidth(cols)` matches our own contentCols(cols).
+  std::size_t lng = lineNumberGutterWidth();
+  ColIdx adjustedCols{cols.value > lng ? cols.value - lng : cols.value};
+  // Fall through to the buffer's screenRow with the (possibly) reduced
+  // cols so its contentWidth() matches our content area.
   if (_docVersion != _buf.docVersion())
     const_cast<BufferView*>(this)->clampToBuffer();
-  return _buf.screenRow(cols, _point, _viewFrom, wrap);
+  return _buf.screenRow(adjustedCols, _point, _viewFrom, wrap);
 }
 
 bool BufferView::currentLineWraps(ColIdx cols) const {
   if (_docVersion != _buf.docVersion())
     const_cast<BufferView*>(this)->clampToBuffer();
-  std::size_t cw = contentWidth(cols);
+  std::size_t cw = contentCols(cols);
   // Reuse the row-bounds cache when it covers the current line at the
   // current width: a single row means the line fits in one visual row;
   // any more means it wraps. Falls back to a full visual-width scan

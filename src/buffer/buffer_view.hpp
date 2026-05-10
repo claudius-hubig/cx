@@ -80,6 +80,16 @@ public:
   void setHighlightCurrentLine(bool h) { _highlightCurrentLine = h; }
   void toggleHighlightCurrentLine() { _highlightCurrentLine = !_highlightCurrentLine; }
 
+  /// Per-view line-number gutter. When on, render() reserves columns
+  /// at the left of the panel for right-aligned 1-based line numbers.
+  /// The width is derived from the buffer's current line count and a
+  /// trailing single-space separator.
+  bool showLineNumbers() const { return _showLineNumbers; }
+  void setShowLineNumbers(bool s) { _showLineNumbers = s; }
+  void toggleShowLineNumbers() { _showLineNumbers = !_showLineNumbers; }
+  /// Width of the left gutter in screen columns (0 when off).
+  std::size_t lineNumberGutterWidth() const;
+
   std::tuple<std::size_t, std::size_t> lineCol() const;
 
   // --- Movement ---
@@ -208,6 +218,11 @@ private:
     std::vector<std::size_t> rowStarts;
   };
 
+  /// Effective width of the content area inside a panel of `cols`
+  /// total columns: subtracts the right gutter (always 1) and the left
+  /// line-number gutter (0 unless `showLineNumbers()` is on).
+  std::size_t contentCols(ColIdx cols) const;
+
   /// Visual column of the point from byte 0, cached.
   std::size_t pointVisualCol() const;
 
@@ -236,6 +251,7 @@ private:
   bool _wrapMode = false;
   bool _showWhitespace = false;
   bool _highlightCurrentLine = false;
+  bool _showLineNumbers = false;
   std::optional<ColIdx> _desiredCol;
   std::optional<Highlight> _highlight;
 

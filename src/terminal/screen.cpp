@@ -2842,6 +2842,12 @@ void Screen::dispatchAction(Action action) {
                                               : "Current-line highlight off");
     }
     break;
+  case Action::ToggleLineNumbers:
+    if (_view) {
+      _view->toggleShowLineNumbers();
+      setStatus(_view->showLineNumbers() ? "Line numbers on" : "Line numbers off");
+    }
+    break;
   case Action::ExecuteCommand:
     openExecuteCommandPrompt();
     break;

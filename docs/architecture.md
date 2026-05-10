@@ -230,6 +230,13 @@ Public API:
 - **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`)
   determines syntax highlighting, auto-indent, and formatting behaviour.
   Changed via `setMode()`, which invalidates the per-line syntax cache.
+- **Line-number gutter**: `RenderParams::leftGutter` (in screen columns)
+  reserves space at the left of the panel for right-aligned 1-based
+  physical-line numbers. `Buffer::render` honours it; subclassed
+  buffers (Help / Dir / BufferList / PasteRing) opt out via
+  `supportsLineNumberGutter()` so a per-view toggle silently no-ops on
+  overlays. Per-view state (`BufferView::showLineNumbers`,
+  `lineNumberGutterWidth`) is the source of truth for the toggle.
 - **Document version**: `docVersion()` is incremented on every edit so
   `BufferView` can detect external modifications made by another view
   sharing the buffer and invoke `clampToBuffer()` to re-validate its

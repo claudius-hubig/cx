@@ -337,6 +337,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   bool focused = params.focused;
   std::size_t rowOffset = params.rowOffset;
   std::size_t colOffset = params.colOffset;
+  std::size_t leftGutter = params.leftGutter;
+  // Content occupies the panel between the left gutter (line numbers)
+  // and the right gutter (wrap/scroll indicator). When the panel is too
+  // narrow to fit both gutters plus content, fall back to no left
+  // gutter so the buffer remains usable.
+  if (leftGutter + 2 > cols.value)
+    leftGutter = 0;
+  std::size_t contentColOffset = colOffset + leftGutter;
   static constexpr auto kCtrlColor = ansi::CtrlColor;
   static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
   static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";
@@ -398,7 +406,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     }
   };
 
-  auto emitRowStart = [&](std::size_t r) { ansi::appendCursorTo(out, rowOffset + r, colOffset); };
+  // Row start moves the cursor to the first column of the content
+  // area (i.e. past the left gutter). Callers emit the left gutter
+  // separately via emitLeftGutter() so its ANSI styling never bleeds
+  // into the content emission state.
+  auto emitRowStart = [&](std::size_t r) {
+    ansi::appendCursorTo(out, rowOffset + r, contentColOffset);
+  };
 
   // Per-character rendering state: tracks which ANSI highlight modes are
   // currently active so we can emit transitions only when they change.
@@ -483,16 +497,48 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     }
   };
 
-  // Content width excludes the gutter column.
+  // Content width excludes both gutters.
   std::size_t cw = contentWidth(cols);
+  if (cw > leftGutter)
+    cw -= leftGutter;
+  else
+    cw = 1;
 
-  // Emit the gutter character at column cols.value for a given row.
-  // `highlight` marks the visual row containing the cursor.
+  // Emit the right-side gutter character at column cols.value for a
+  // given row. `highlight` marks the visual row containing the cursor.
   auto emitGutter = [&](std::size_t r, bool isCursorRow, char const* indicator) {
     ansi::appendCursorTo(out, rowOffset + r, colOffset + cols.value - 1);
     out += (isCursorRow && focused) ? ansi::Reset : ansi::ReverseVideo;
     out += indicator;
     out += ansi::Reset;
+  };
+
+  // Emit the left-side gutter (line numbers / blanks) at column
+  // colOffset for the given row. `displayLine` is the 1-based physical
+  // line number to show; pass 0 for blank rows (trailing fill or
+  // wrapped continuation rows). Both branches reset SGR after the
+  // emission so the content emitter can rely on a clean ANSI state.
+  auto emitLeftGutter = [&](std::size_t r, std::size_t displayLine) {
+    if (leftGutter == 0)
+      return;
+    ansi::appendCursorTo(out, rowOffset + r, colOffset);
+    out += ansi::Dim;
+    if (displayLine == 0) {
+      out.append(leftGutter, ' ');
+    } else {
+      auto numStr = std::to_string(displayLine);
+      // Right-align inside (leftGutter - 1) cols, then a trailing space.
+      if (numStr.size() + 1 < leftGutter)
+        out.append(leftGutter - 1 - numStr.size(), ' ');
+      // If the number itself is wider than the gutter (shouldn't happen
+      // — gutter width is computed from lineCount — but guard anyway),
+      // truncate so we don't spill into the content area.
+      if (numStr.size() + 1 > leftGutter)
+        numStr.resize(leftGutter - 1);
+      out += numStr;
+      out += ' ';
+    }
+    out += ansi::DimOff;
   };
 
   // Region highlighting: compute normalized start/end from mark and point.
@@ -730,8 +776,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
   // Fill rows [startRow, rows.value) with empty content + gutter. Both
   // wrap and no-wrap modes use this as the trailing-blank-row teardown.
+  // The left gutter (if any) gets a blank entry on every trailing row
+  // so the dim numbers don't leak into the empty space below the file.
   auto fillTrailingRows = [&](std::size_t startRow) {
     for (std::size_t r = startRow; r < rows.value; ++r) {
+      emitLeftGutter(r, 0);
       if (r > startRow)
         emitRowStart(r);
       out += ansi::EraseLine;
@@ -742,6 +791,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   if (!wrap) {
     // No-wrap: each physical line is one screen row, horizontally scrolled.
     std::size_t row = 0;
+    emitLeftGutter(0, viewFrom.line.value + 1);
     emitRowStart(0);
 
     for (std::size_t lineIdx = viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
@@ -758,7 +808,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
         if (lineIdx == point.line && i == point.offset && !pointFound) {
           cur_row = row;
-          cur_col = vcol >= hScroll ? vcol - hScroll : 0;
+          cur_col = leftGutter + (vcol >= hScroll ? vcol - hScroll : 0);
           pointFound = true;
         }
 
@@ -782,7 +832,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
       if (lineIdx == point.line && point.offset >= line.size() && !pointFound) {
         cur_row = row;
-        cur_col = vcol >= hScroll ? vcol - hScroll : 0;
+        cur_col = leftGutter + (vcol >= hScroll ? vcol - hScroll : 0);
         pointFound = true;
       }
 
@@ -796,13 +846,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
                  overflows ? "\xe2\x86\xa0" : " "); // ↠ or space
 
       ++row;
-      if (row < rows.value)
+      if (row < rows.value) {
+        emitLeftGutter(row, lineIdx + 2 <= _lines.size() ? lineIdx + 2 : 0);
         emitRowStart(row);
+      }
     }
 
     if (!pointFound) {
       cur_row = row;
-      cur_col = 0;
+      cur_col = leftGutter;
     }
 
     fillTrailingRows(row);
@@ -812,6 +864,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
   // Wrap mode.
   std::size_t row = 0, col = 0;
+  // The viewport may begin partway into a wrapped line — show the line
+  // number on the very first emitted row only when we're at the top of
+  // the physical line; otherwise emit blanks so the number isn't
+  // misleadingly attached to a continuation row.
+  emitLeftGutter(0, viewFromOffset == 0 ? viewFrom.line.value + 1 : 0);
   emitRowStart(0);
 
   for (std::size_t lineIdx = viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
@@ -855,6 +912,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         pendingWrap = false;
         if (row >= rows.value)
           break;
+        // Continuation row: blank gutter so the line number stays
+        // anchored to the row that begins the physical line.
+        emitLeftGutter(row, 0);
         emitRowStart(row);
         if (curLineBg)
           out += curLineBg;
@@ -862,7 +922,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
       if (lineIdx == point.line && i == point.offset && !pointFound) {
         cur_row = row;
-        cur_col = col;
+        cur_col = leftGutter + col;
         pointFound = true;
       }
 
@@ -882,10 +942,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     if (lineIdx == point.line && point.offset >= line.size() && !pointFound) {
       if (pendingWrap) {
         cur_row = row + 1;
-        cur_col = 0;
+        cur_col = leftGutter;
       } else {
         cur_row = row;
-        cur_col = col;
+        cur_col = leftGutter + col;
       }
       pointFound = true;
     }
@@ -904,8 +964,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       if (lineIdx + 1 < _lines.size()) {
         ++row;
         col = 0;
-        if (row < rows.value)
+        if (row < rows.value) {
+          emitLeftGutter(row, lineIdx + 2);
           emitRowStart(row);
+        }
       }
     }
   }
@@ -913,7 +975,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // If point is past all rendered content, use where the scan ended.
   if (!pointFound) {
     cur_row = row;
-    cur_col = col;
+    cur_col = leftGutter + col;
   }
 
   fillTrailingRows(row);

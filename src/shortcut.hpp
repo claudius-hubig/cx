@@ -52,6 +52,7 @@ enum class Action {
   Reflow,
   RegexFind,
   RegexReplace,
+  ToggleLineNumbers,
 };
 
 struct Shortcut {

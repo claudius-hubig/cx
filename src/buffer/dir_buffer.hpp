@@ -16,6 +16,7 @@ public:
   explicit DirBuffer(std::filesystem::path dir);
 
   bool readonly() const override { return true; }
+  bool supportsLineNumberGutter() const override { return false; }
 
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
                                     RenderParams const& params) const override;

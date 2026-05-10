@@ -12,6 +12,7 @@ public:
   HelpBuffer();
 
   bool readonly() const override { return true; }
+  bool supportsLineNumberGutter() const override { return false; }
 
   /// Screen row of the cursor, accounting for side-by-side layout
   /// when terminal width allows it.

@@ -146,6 +146,7 @@ These shortcuts are active when viewing a directory listing.
 | Esc-s | Toggle whitespace                                                                   |
 | Esc-l | Toggle line wrap                                                                    |
 | Esc-_ | Toggle highlight on the cursor's line                                               |
+| Esc-# | Toggle line-number gutter                                                           |
 | Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`) |
 
 ### Panels

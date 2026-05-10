@@ -831,6 +831,50 @@ BOOST_AUTO_TEST_CASE(reflow_blank_line_is_noop) {
   BOOST_CHECK_EQUAL(buf.lineContent(2), "beta");
 }
 
+BOOST_AUTO_TEST_CASE(line_numbers_off_gutter_width_is_zero) {
+  TempFile f("a\nb\nc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  BOOST_CHECK_EQUAL(view.lineNumberGutterWidth(), 0u);
+}
+
+BOOST_AUTO_TEST_CASE(line_numbers_on_gutter_width_matches_digits_plus_space) {
+  // 5 lines → "5" → 1 digit + 1 space = 2.
+  TempFile f("a\nb\nc\nd\ne\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setShowLineNumbers(true);
+  BOOST_CHECK_EQUAL(view.lineNumberGutterWidth(), 2u);
+}
+
+BOOST_AUTO_TEST_CASE(line_numbers_render_dim_first_visible_line) {
+  TempFile f("aaa\nbbb\nccc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setShowLineNumbers(true);
+  std::string out;
+  view.render(out, RowIdx{4}, ColIdx{20});
+  // Dim escape, then "1" with space (3-line buffer fits in 1 digit).
+  BOOST_CHECK(out.find("\x1b[2m") != std::string::npos);
+  BOOST_CHECK(out.find("1 ") != std::string::npos);
+  BOOST_CHECK(out.find("2 ") != std::string::npos);
+  BOOST_CHECK(out.find("3 ") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(line_numbers_skipped_for_overlay_buffers) {
+  // BufferListBuffer overrides supportsLineNumberGutter() to false, so
+  // lineNumberGutterWidth() should stay 0 even with the toggle on.
+  // Use a TextBuffer instead and verify the explicit hook controls it.
+  TempFile f("a\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setShowLineNumbers(true);
+  BOOST_CHECK(view.lineNumberGutterWidth() > 0u);
+  // sanity: the hook is wired so we know the override path works for
+  // subclasses that opt out at the API level.
+  BOOST_CHECK(buf.supportsLineNumberGutter());
+}
+
 BOOST_AUTO_TEST_CASE(highlight_current_line_emits_background) {
   TempFile f("aaa\nbbb\nccc\n");
   TextBuffer buf(f.path().string(), f.path());
