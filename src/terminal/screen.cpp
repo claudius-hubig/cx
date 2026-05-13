@@ -141,7 +141,21 @@ static bool readByte(char& out) {
 // return a short human-readable label for status display. Returns
 // nullopt when no further bytes arrive within the disambiguation
 // window — the caller treats that as a genuine bare Esc-Esc.
+//
+// The returned label is fed into setStatus(...) and so must not contain
+// raw control bytes: a pasted `\x1b\x1b[\x1b]X` sequence would otherwise
+// produce body "[\x1b]X" which, written verbatim through the modeline,
+// puts the terminal into OSC parse mode. Filter intermediate bytes that
+// could break terminal-emulator state.
 static std::optional<std::string> drainEscapeTail() {
+  auto safeForStatus = [](unsigned char b) {
+    // Allow 0x20..0x7E (printable ASCII) and 0xA0..0xFF (UTF-8 lead /
+    // continuation bytes, harmless to the terminal as text). Reject C0
+    // controls (incl. BEL 0x07 and ESC 0x1B), DEL, and C1 controls
+    // (incl. ST 0x9C) which can otherwise terminate or rewrite
+    // surrounding terminal-control sequences.
+    return (b >= 0x20 && b != 0x7F && b < 0x80) || b >= 0xA0;
+  };
   struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
   if (poll(&pfd, 1, kEscDisambiguationMs) <= 0)
     return std::nullopt;
@@ -149,15 +163,19 @@ static std::optional<std::string> drainEscapeTail() {
   if (!readByte(first))
     return std::nullopt;
   if (first != '[' && first != 'O') {
-    // Lone byte after Esc (Alt-key style) — Esc-<char>.
-    return std::string(1, first);
+    // Lone byte after Esc (Alt-key style) — Esc-<char>. Substitute '?'
+    // if the byte itself would corrupt the status line (e.g. a third
+    // Esc, which would make setStatus("Esc-\x1b not recognised.")
+    // start another CSI/OSC sequence in the modeline).
+    return std::string(1, safeForStatus(static_cast<unsigned char>(first)) ? first : '?');
   }
   std::string body;
   body += first;
   char b;
   while (readByte(b)) {
-    body += b;
-    // CSI / SS3 final byte is in the range 0x40..0x7E.
+    body += safeForStatus(static_cast<unsigned char>(b)) ? b : '?';
+    // CSI / SS3 final byte is in the range 0x40..0x7E. Test the
+    // un-substituted byte so a real terminator still ends the loop.
     if (b >= 0x40 && b <= 0x7E)
       break;
     // Sanity bound — terminal escape sequences are short. Bail out
