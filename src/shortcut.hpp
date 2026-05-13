@@ -53,6 +53,7 @@ enum class Action {
   RegexFind,
   RegexReplace,
   ToggleLineNumbers,
+  ToggleMouseTracking,
 };
 
 struct Shortcut {

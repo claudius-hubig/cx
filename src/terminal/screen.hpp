@@ -208,6 +208,10 @@ private:
   // can have different settings.
   bool _killPending = false; // kill buffer after SaveAs completes
   bool _exitPending = false; // exit after all modified buffers are handled
+  // SetupTerminal enables ?1000h / ?1006h on construction; mirror that
+  // default here so the runtime toggle starts in agreement with the
+  // actual terminal state.
+  bool _mouseEnabled = true;
 
   PasteRing _pasteRing;
   Clipboard _clipboard;

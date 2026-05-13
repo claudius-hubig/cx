@@ -43,7 +43,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Undo / version history** — `Ctrl-u` enters a read-only history mode: `[` and `]` step through earlier/later versions, `Enter` commits the selected version as the new live state, `Esc-Esc` cancels and returns to the latest. (Pressing `Ctrl-u` again is equivalent to `Enter`.) History survives save and revert.
 - **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries; rename entries; create subdirectories
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
-- **Mouse support** — left-click positions the cursor (and focuses a non-focused panel). The wheel scrolls the panel under the pointer.
+- **Mouse support** — left-click positions the cursor (and focuses a non-focused panel). The wheel scrolls the panel under the pointer. While mouse tracking is on, right-click and middle-click do **not** trigger the terminal's context menu or X PRIMARY paste — hold `Shift` while clicking to bypass tracking, or toggle tracking off with `C-x m`.
 - **Long-running command kill prompt** — external commands launched via Esc-f, Tab-format, or Ctrl-p that take longer than 10 s show a "Kill? y/n" prompt so a hung formatter or pipe never freezes the editor.
 - **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]`), and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
 - **Terminal title** — set to `cx@<cwd>` on startup so cx tabs are easy to identify.
@@ -158,6 +158,7 @@ These shortcuts are active when viewing a directory listing.
 | C-x .    | Close panel            |
 | C-x o    | Other panel (MRU)      |
 | C-x 1..6 | Focus panel 1..6       |
+| C-x m    | Toggle mouse tracking  |
 
 ### Deletion
 

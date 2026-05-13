@@ -2848,6 +2848,20 @@ void Screen::dispatchAction(Action action) {
       setStatus(_view->showLineNumbers() ? "Line numbers on" : "Line numbers off");
     }
     break;
+  case Action::ToggleMouseTracking: {
+    // Toggle the terminal's mouse-reporting modes (SGR + button-event).
+    // When off, right-click and middle-click pass through to the terminal
+    // again (e.g. context menu, X PRIMARY paste). Wheel scrolling and
+    // left-click cursor positioning depend on tracking being on, so the
+    // user can flip back when they need them.
+    _mouseEnabled = !_mouseEnabled;
+    std::string_view seq = _mouseEnabled ? std::string_view("\x1b[?1000h\x1b[?1006h")
+                                         : std::string_view("\x1b[?1006l\x1b[?1000l");
+    writeAll(STDOUT_FILENO, seq.data(), seq.size());
+    setStatus(_mouseEnabled ? "Mouse tracking on"
+                            : "Mouse tracking off (Shift+click also bypasses)");
+    break;
+  }
   case Action::ExecuteCommand:
     openExecuteCommandPrompt();
     break;

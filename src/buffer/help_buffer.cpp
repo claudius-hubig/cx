@@ -111,6 +111,10 @@ static std::vector<std::string> const& rightColumn() {
                    Action::FocusMRUPanel})
       v.push_back(formatHelpLine(a));
     v.push_back(formatRawLine("C-x 1..6", "Focus panel 1..6"));
+    v.emplace_back("");
+    v.emplace_back("Mouse:");
+    v.push_back(formatHelpLine(Action::ToggleMouseTracking));
+    v.push_back(formatRawLine("Shift+click", "Bypass tracking, use terminal default"));
     return v;
   }();
   return lines;

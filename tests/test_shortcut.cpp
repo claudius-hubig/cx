@@ -410,6 +410,12 @@ BOOST_AUTO_TEST_CASE(reverse_lookup_recenter) {
   BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('l'));
 }
 
+BOOST_AUTO_TEST_CASE(cx_m_maps_to_toggle_mouse_tracking) {
+  auto action = handleShortcut({.cx = true, .key = 'm'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::ToggleMouseTracking);
+}
+
 BOOST_AUTO_TEST_CASE(esc_x_maps_to_execute_command) {
   auto action = handleShortcut({.esc = true, .key = 'x'});
   BOOST_REQUIRE(action.has_value());
