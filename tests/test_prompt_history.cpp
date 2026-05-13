@@ -95,3 +95,83 @@ BOOST_AUTO_TEST_CASE(separate_labels_are_independent) {
   BOOST_CHECK_EQUAL((*findVec)[0], "search_term");
   BOOST_CHECK_EQUAL((*gotoVec)[0], "42");
 }
+
+// --- buildDimHint ---
+//
+// Used by the Find / Regex Find prompts to echo the previous search as
+// a dim-styled hint when the user re-opens the prompt with empty input.
+// The hint text comes from a string previously typed into a prompt, so
+// it must be escaped before being painted into the modeline; otherwise
+// a control byte that ever slipped past the input filter (or that
+// future code paths might admit) would be written verbatim to the
+// terminal.
+
+BOOST_AUTO_TEST_CASE(buildDimHint_empty_returns_blank) {
+  auto d = buildDimHint("");
+  BOOST_CHECK_EQUAL(d.rendered, "");
+  BOOST_CHECK_EQUAL(d.visualWidth, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(buildDimHint_plain_text_wrapped_in_dim) {
+  auto d = buildDimHint("hello");
+  BOOST_CHECK_EQUAL(d.rendered, std::string(ansi::Dim) + "hello" + std::string(ansi::DimOff));
+  BOOST_CHECK_EQUAL(d.visualWidth, 5u);
+}
+
+BOOST_AUTO_TEST_CASE(buildDimHint_escapes_raw_esc) {
+  // The regression: a raw ESC in the hint must not reach the terminal
+  // intact. escapeNonPrintable replaces it with a \x1b literal wrapped
+  // in CtrlColor styling.
+  auto d = buildDimHint(std::string("a\x1b[31mb", 7));
+  // The rendered string must NOT contain a raw ESC followed by '['
+  // (which is the lead-in of a CSI sequence the terminal would
+  // interpret).
+  bool foundRawCsi = false;
+  for (std::size_t i = 0; i + 1 < d.rendered.size(); ++i) {
+    auto u = static_cast<unsigned char>(d.rendered[i]);
+    // SGR/Dim/DimOff sequences emitted by the framing or by
+    // escapeNonPrintable are allowed (terminated by 'm'); only a raw
+    // ESC followed by '[' that is then followed by user-controlled
+    // bytes is dangerous. Conservative check: no ESC followed by '['
+    // followed by a non-control byte other than the SGR digits/`m`.
+    if (u == 0x1b && d.rendered[i + 1] == '[') {
+      // This is some ANSI sequence. Walk forward to its terminator.
+      // We require that what we see between ESC[ and the terminator is
+      // only digits, ';' and a 0x40..0x7E terminator — i.e. that it's
+      // a well-formed SGR sequence the editor itself emitted.
+      std::size_t j = i + 2;
+      while (j < d.rendered.size() &&
+             ((d.rendered[j] >= '0' && d.rendered[j] <= '9') || d.rendered[j] == ';'))
+        ++j;
+      if (j >= d.rendered.size() || static_cast<unsigned char>(d.rendered[j]) < 0x40 ||
+          static_cast<unsigned char>(d.rendered[j]) > 0x7E) {
+        foundRawCsi = true;
+        break;
+      }
+      i = j; // skip past this safe SGR sequence
+    }
+  }
+  BOOST_CHECK(!foundRawCsi);
+  // The escaped form should contain the literal characters \x1b
+  // (backslash, x, 1, b) rendered for the user to see.
+  BOOST_CHECK(d.rendered.find("\\x1b") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(buildDimHint_escapes_bel) {
+  // BEL (0x07) is the OSC terminator. Treat the same way.
+  auto d = buildDimHint(std::string("\x07", 1));
+  // No raw BEL in the output.
+  BOOST_CHECK(d.rendered.find('\x07') == std::string::npos);
+  BOOST_CHECK(d.rendered.find("\\x07") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(buildDimHint_visualWidth_matches_escaped) {
+  // For an all-printable hint the width is just the string length;
+  // for a hint with escaped bytes the width reflects the displayed
+  // "\xHH" expansion (4 cols per escaped byte).
+  auto d1 = buildDimHint("abc");
+  BOOST_CHECK_EQUAL(d1.visualWidth, 3u);
+  auto d2 = buildDimHint(std::string("\x01", 1));
+  // "\x01" displays as 4 visible columns.
+  BOOST_CHECK_EQUAL(d2.visualWidth, 4u);
+}

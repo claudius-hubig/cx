@@ -1,5 +1,8 @@
 #pragma once
 
+#include "byte_constants.hpp"
+#include "utf8.hpp"
+
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -13,6 +16,19 @@ struct PromptDisplay {
   std::string rendered;    // ANSI-formatted hint (may contain escape sequences)
   std::size_t visualWidth; // display columns of `rendered` (excluding escapes)
 };
+
+// Build a dim-styled hint echoing `hint` (typically the user's previous
+// Find/Regex search) for redisplay in the autocomplete area of a prompt.
+// `hint` is escaped via escapeNonPrintable so a stray control byte
+// (e.g. an ESC that slipped past a prior input filter) cannot be
+// written verbatim into the modeline.
+inline PromptDisplay buildDimHint(std::string const& hint) {
+  if (hint.empty())
+    return {"", 0};
+  auto escaped = escapeNonPrintable(hint);
+  auto vw = visualWidth(escaped);
+  return {std::string(ansi::Dim) + escaped + std::string(ansi::DimOff), vw};
+}
 
 // A prompt shown on the status line. Constructed by the various openXxxPrompt()
 // helpers; driven generically by handlePromptInput().

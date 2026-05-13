@@ -919,9 +919,8 @@ void Screen::openFindPrompt(bool backward) {
   _prompt = Prompt{
       .label = "Find: ",
       .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
-        if (input.empty() && !_lastSearch.empty())
-          return PromptDisplay{std::string(ansi::Dim) + _lastSearch + std::string(ansi::DimOff),
-                               visualWidth(_lastSearch)};
+        if (input.empty())
+          return buildDimHint(_lastSearch);
         return PromptDisplay{"", 0};
       },
       .onResult =
@@ -1097,9 +1096,8 @@ void Screen::openRegexFindPrompt() {
   _prompt = Prompt{
       .label = "Regex find: ",
       .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
-        if (input.empty() && !_lastRegex.empty())
-          return PromptDisplay{std::string(ansi::Dim) + _lastRegex + std::string(ansi::DimOff),
-                               visualWidth(_lastRegex)};
+        if (input.empty())
+          return buildDimHint(_lastRegex);
         return PromptDisplay{"", 0};
       },
       .onResult =

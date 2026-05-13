@@ -227,6 +227,7 @@ add_test(NAME shortcut COMMAND test_shortcut)
 
 add_executable(test_prompt_history
     tests/test_prompt_history.cpp
+    src/utf8.cpp
 )
 target_include_directories(test_prompt_history PRIVATE src)
 target_link_libraries(test_prompt_history Boost::unit_test_framework)
