@@ -1523,13 +1523,13 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
 
   int pipeIn[2], pipeOut[2], pipeErr[2];
   if (pipe(pipeIn) != 0) {
-    setStatus(std::string("pipe: ") + std::strerror(errno));
+    setStatus("pipe: " + escapeNonPrintable(std::strerror(errno)));
     return std::nullopt;
   }
   if (pipe(pipeOut) != 0) {
     close(pipeIn[0]);
     close(pipeIn[1]);
-    setStatus(std::string("pipe: ") + std::strerror(errno));
+    setStatus("pipe: " + escapeNonPrintable(std::strerror(errno)));
     return std::nullopt;
   }
   if (pipe(pipeErr) != 0) {
@@ -1537,7 +1537,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
     close(pipeIn[1]);
     close(pipeOut[0]);
     close(pipeOut[1]);
-    setStatus(std::string("pipe: ") + std::strerror(errno));
+    setStatus("pipe: " + escapeNonPrintable(std::strerror(errno)));
     return std::nullopt;
   }
 
@@ -1549,7 +1549,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
     close(pipeOut[1]);
     close(pipeErr[0]);
     close(pipeErr[1]);
-    setStatus(std::string("fork: ") + std::strerror(errno));
+    setStatus("fork: " + escapeNonPrintable(std::strerror(errno)));
     return std::nullopt;
   }
 
