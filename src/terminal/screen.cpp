@@ -213,8 +213,23 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
   // mode. Ignoring lets `write` return EPIPE so we can recover.
   signal(SIGPIPE, SIG_IGN);
 
-  // Set the terminal title.
-  auto cwd = std::filesystem::current_path().string();
+  // Set the terminal title. The CWD can contain any byte the filesystem
+  // allows (anything except '/' and NUL), so an attacker who controls a
+  // directory name could otherwise embed BEL or ESC bytes that close
+  // this OSC 0 sequence early and chain additional OSC commands
+  // (set-title, OSC 52 clipboard, OSC 4 palette, …). Replace C0 controls
+  // (incl. BEL 0x07 and ESC 0x1B), DEL, and C1 controls (incl. ST 0x9C)
+  // with '?'. escapeNonPrintable is not usable here because it injects
+  // ANSI SGR sequences whose ESC bytes would themselves break OSC.
+  auto rawCwd = std::filesystem::current_path().string();
+  std::string cwd;
+  cwd.reserve(rawCwd.size());
+  for (unsigned char b : rawCwd) {
+    if (b < 0x20 || b == 0x7F || (b >= 0x80 && b < 0xA0))
+      cwd += '?';
+    else
+      cwd += static_cast<char>(b);
+  }
   std::string title = "\x1b]0;cx@" + cwd + "\x07";
   writeAll(STDOUT_FILENO, title.data(), title.size());
 
@@ -1764,7 +1779,11 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
   if (res->exitCode != 0) {
     auto& err = res->stderrData;
     auto nl = err.find('\n');
-    setStatus(nl != std::string::npos ? err.substr(0, nl) : err);
+    // Escape: the child's stderr is attacker-controlled (malicious
+    // clang-format on PATH, or a normal one echoing parts of file
+    // content) and would otherwise inject terminal escape sequences
+    // through the modeline.
+    setStatus(escapeNonPrintable(nl != std::string::npos ? err.substr(0, nl) : err));
     return;
   }
   if (res->stdoutData == allText) {
@@ -1817,7 +1836,9 @@ void Screen::executePipeReplace(std::string command) {
       for (char c : res->stderrData)
         if (c != '\n' && c != '\r')
           trimmed += c;
-      setStatus("Command returned error output: " + trimmed);
+      // Escape: the child's stderr is attacker-controlled and could
+      // otherwise inject terminal escape sequences through the modeline.
+      setStatus("Command returned error output: " + escapeNonPrintable(trimmed));
     }
   } else if (!res->stderrData.empty()) {
     _view->insertText("STDERR:\n" + res->stderrData);
