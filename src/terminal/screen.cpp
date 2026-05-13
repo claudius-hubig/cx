@@ -756,8 +756,11 @@ void Screen::openSaveAsPrompt() {
             if (std::filesystem::exists(resolved)) {
               // Defer rename until the user confirms the overwrite.
               auto savedName = _buf->name();
+              // Escape the path: tab-completion may have produced a
+              // filename containing control bytes, which would otherwise
+              // be rendered verbatim in the prompt label.
               openConfirmPrompt(
-                  "Overwrite " + resolved + "? y/n: ",
+                  "Overwrite " + escapeNonPrintable(resolved) + "? y/n: ",
                   [this, savedName, resolved](std::string const& answer) {
                     if (answer == "y") {
                       if (_buf && _bufMgr) {
@@ -1059,7 +1062,7 @@ void Screen::regexFindNext() {
   std::string err;
   auto re = compileRegex(_lastRegex, err);
   if (!re) {
-    setStatus("Bad regex: " + err);
+    setStatus("Bad regex: " + escapeNonPrintable(err));
     return;
   }
   std::size_t lineCount = _buf->lineCount();
@@ -1126,7 +1129,7 @@ void Screen::openRegexReplacePrompt() {
             // replacement template.
             std::string err;
             if (!compileRegex(pattern, err)) {
-              setStatus("Bad regex: " + err);
+              setStatus("Bad regex: " + escapeNonPrintable(err));
               return;
             }
             _lastRegex = pattern;
@@ -1147,7 +1150,7 @@ void Screen::regexReplacePump(std::string pattern, std::string replacement, std:
   std::string err;
   auto re = compileRegex(pattern, err);
   if (!re) {
-    setStatus("Bad regex: " + err);
+    setStatus("Bad regex: " + escapeNonPrintable(err));
     return;
   }
   auto m = findNextRegexInBuffer(*_buf, _view->point(), *re);
@@ -1197,7 +1200,7 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
               std::string err;
               auto re = compileRegex(pattern, err);
               if (!re) {
-                setStatus("Bad regex: " + err);
+                setStatus("Bad regex: " + escapeNonPrintable(err));
                 return;
               }
               auto& line = _buf->lineContent(matchStart.line);
@@ -1214,7 +1217,7 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
               std::string err;
               auto re = compileRegex(pattern, err);
               if (!re) {
-                setStatus("Bad regex: " + err);
+                setStatus("Bad regex: " + escapeNonPrintable(err));
                 return;
               }
               auto extra = replaceAllRegexForward(*_buf, _view->point(), *re, replacement);
@@ -1263,7 +1266,8 @@ void Screen::openSetModePrompt() {
                 _buf->setMode(BufferMode::Dif);
               setStatus("Mode: dif");
             } else {
-              setStatus("Unknown mode: " + value + " (use 'txt', 'c', 'md', 'jsn', or 'dif')");
+              setStatus("Unknown mode: " + escapeNonPrintable(value) +
+                        " (use 'txt', 'c', 'md', 'jsn', or 'dif')");
             }
           },
   };
@@ -1359,7 +1363,7 @@ void Screen::openExecuteCommandPrompt() {
                 }
             }
             if (!resolved) {
-              setStatus("No command matches: " + value);
+              setStatus("No command matches: " + escapeNonPrintable(value));
               return;
             }
             // Run the action, then (if it has one) surface the
@@ -1452,7 +1456,7 @@ void Screen::saveAndMaybeKill() {
       killBufferAndSwitchPanels(name);
     }
   } else {
-    setStatus(res.error());
+    setStatus(escapeNonPrintable(res.error()));
     _killPending = false;
   }
 }
@@ -1467,7 +1471,7 @@ void Screen::openConfirmKillPrompt(std::string question) {
             if (_buf->hasPath()) {
               auto res = _buf->save();
               if (!res) {
-                setStatus(res.error());
+                setStatus(escapeNonPrintable(res.error()));
               } else {
                 auto name = _buf->name();
                 if (prevBuf() == _buf)
@@ -2063,7 +2067,10 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         else
           handleBareEscEsc();
       } else {
-        setStatus(formatShortcut(shortcutFromEscChar(next)) + " not recognised.");
+        // Escape: `next` is an arbitrary input byte, which formatShortcut
+        // would otherwise splat as a raw control char into the modeline.
+        setStatus(escapeNonPrintable(formatShortcut(shortcutFromEscChar(next))) +
+                  " not recognised.");
       }
     }
     // Clear the "Esc-..." prompt, but only if the chord handler didn't
@@ -2194,7 +2201,7 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
                       if (result.ok)
                         setStatus("Renamed");
                       else
-                        setStatus("Rename failed: " + result.error);
+                        setStatus("Rename failed: " + escapeNonPrintable(result.error));
                     },
             };
           }
@@ -2210,9 +2217,9 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
                   auto result = db2->makeSubdir(newName);
                   _view->setPoint(result.hint.point.line, result.hint.point.offset);
                   if (result.ok)
-                    setStatus("Created " + newName);
+                    setStatus("Created " + escapeNonPrintable(newName));
                   else
-                    setStatus("mkdir failed: " + result.error);
+                    setStatus("mkdir failed: " + escapeNonPrintable(result.error));
                 },
         };
       } else if (c == 'x') {
@@ -2422,7 +2429,9 @@ void Screen::handleCtrlXInput() {
     if (auto action = handleShortcut(s)) {
       dispatchAction(*action);
     } else {
-      setStatus(formatShortcut(s) + " not recognised.");
+      // Escape: `next` is an arbitrary input byte; formatShortcut would
+      // otherwise splat it as a raw control char into the modeline.
+      setStatus(escapeNonPrintable(formatShortcut(s)) + " not recognised.");
     }
   }
 
@@ -2701,7 +2710,7 @@ void Screen::dispatchAction(Action action) {
           if (res)
             setStatus("Saved to " + escapeNonPrintable(_buf->name()));
           else
-            setStatus(res.error());
+            setStatus(escapeNonPrintable(res.error()));
         }
       } else {
         openSaveAsPrompt();
@@ -2829,7 +2838,7 @@ void Screen::dispatchAction(Action action) {
                     _view->clearMark();
                     setStatus("Reverted from " + escapeNonPrintable(_buf->name()));
                   } else {
-                    setStatus(res.error());
+                    setStatus(escapeNonPrintable(res.error()));
                   }
                 }
               }
