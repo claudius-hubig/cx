@@ -1878,13 +1878,7 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         // SGR mouse: ESC[<b;col;row(M|m). Detected by '<' immediately
         // after the CSI intro (no other CSI command starts with '<').
         if (seq[1] == '<') {
-          std::string body;
-          char ch;
-          while (readByte(ch)) {
-            body += ch;
-            if (ch == 'M' || ch == 'm')
-              break;
-          }
+          auto body = collectSgrMouseBody([](char& out) { return readByte(out); });
           if (auto e = parseSgrMouse(body))
             handleMouseEvent(*e);
           return;

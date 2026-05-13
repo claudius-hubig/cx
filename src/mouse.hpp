@@ -38,6 +38,35 @@ struct MouseEvent {
   bool isLeftButton() const { return !isWheel() && (button & kButtonMask) == 0; }
 };
 
+// Upper bound on the SGR mouse body the input loop is willing to
+// accumulate before giving up on finding a terminator. A real payload
+// — three decimal integers plus separators plus the M/m terminator —
+// is well under 32 bytes; 64 leaves slack for over-helpful terminals
+// without letting a hostile or broken stream grow the buffer
+// unboundedly.
+constexpr std::size_t kMaxMouseBody = 64;
+
+// Pull bytes from `readByte` until either an SGR terminator ('M' or
+// 'm') is seen or the body reaches kMaxMouseBody. Returns the collected
+// bytes including the terminator (when present); caller passes the
+// result to `parseSgrMouse`. `readByte` returns true and sets its
+// out-parameter on success, false on EOF/error. Templated so callers
+// driving real stdin and callers driving a synthetic queue (tests)
+// share the same collection logic.
+template <typename ReadByte> std::string collectSgrMouseBody(ReadByte readByte) {
+  std::string body;
+  body.reserve(kMaxMouseBody);
+  char ch;
+  while (readByte(ch)) {
+    body += ch;
+    if (ch == 'M' || ch == 'm')
+      break;
+    if (body.size() >= kMaxMouseBody)
+      break;
+  }
+  return body;
+}
+
 // Parse the SGR mouse payload that follows `ESC[<`. `tail` should end
 // with the terminating `M` or `m`; any extra bytes after the
 // terminator are ignored. Returns nullopt on malformed input.

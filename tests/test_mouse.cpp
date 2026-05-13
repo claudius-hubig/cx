@@ -57,3 +57,70 @@ BOOST_AUTO_TEST_CASE(missing_field_fails) { BOOST_CHECK(!parseSgrMouse("0;5M"));
 BOOST_AUTO_TEST_CASE(empty_fails) { BOOST_CHECK(!parseSgrMouse("")); }
 
 BOOST_AUTO_TEST_CASE(trailing_semicolon_fails) { BOOST_CHECK(!parseSgrMouse("0;5;5;M")); }
+
+// --- collectSgrMouseBody ---
+//
+// The collector pulls bytes from an arbitrary source until it sees the
+// SGR terminator. It must cap the buffer at kMaxMouseBody so a hostile
+// stream that never emits a terminator can't grow the input
+// indefinitely.
+
+namespace {
+struct ByteQueue {
+  std::string data;
+  std::size_t pos = 0;
+  bool operator()(char& out) {
+    if (pos >= data.size())
+      return false;
+    out = data[pos++];
+    return true;
+  }
+};
+} // namespace
+
+BOOST_AUTO_TEST_CASE(collect_stops_at_uppercase_terminator) {
+  ByteQueue q{"0;10;5Mtail"};
+  auto body = collectSgrMouseBody(std::ref(q));
+  BOOST_CHECK_EQUAL(body, "0;10;5M");
+  // The trailing "tail" stays in the queue for the next consumer.
+  BOOST_CHECK_EQUAL(q.pos, 7u);
+}
+
+BOOST_AUTO_TEST_CASE(collect_stops_at_lowercase_terminator) {
+  ByteQueue q{"3;1;1m"};
+  auto body = collectSgrMouseBody(std::ref(q));
+  BOOST_CHECK_EQUAL(body, "3;1;1m");
+}
+
+BOOST_AUTO_TEST_CASE(collect_stops_at_eof_without_terminator) {
+  ByteQueue q{"0;10;5"};
+  auto body = collectSgrMouseBody(std::ref(q));
+  BOOST_CHECK_EQUAL(body, "0;10;5");
+  BOOST_CHECK(!parseSgrMouse(body));
+}
+
+BOOST_AUTO_TEST_CASE(collect_caps_at_kMaxMouseBody) {
+  // A stream of digits with no terminator must not be allowed to grow
+  // the body without bound. Provide many more than kMaxMouseBody bytes
+  // and verify the collector stops at the cap.
+  std::string source(4096, '5');
+  ByteQueue q{source};
+  auto body = collectSgrMouseBody(std::ref(q));
+  BOOST_CHECK_EQUAL(body.size(), kMaxMouseBody);
+  // Body has no terminator — the parser must reject it cleanly.
+  BOOST_CHECK(!parseSgrMouse(body));
+}
+
+BOOST_AUTO_TEST_CASE(collect_caps_even_when_terminator_after_limit) {
+  // Terminator exists but past the cap: collector cuts off before
+  // reaching it, the parser sees no terminator, no mouse event is
+  // generated, and the rest of the stream is left for downstream
+  // consumers (so we don't get stuck draining indefinitely).
+  std::string source(kMaxMouseBody + 10, '5');
+  source.back() = 'M';
+  ByteQueue q{source};
+  auto body = collectSgrMouseBody(std::ref(q));
+  BOOST_CHECK_EQUAL(body.size(), kMaxMouseBody);
+  BOOST_CHECK(body.back() != 'M');
+  BOOST_CHECK(!parseSgrMouse(body));
+}
