@@ -48,6 +48,25 @@ std::string formatMtime(struct timespec const& ts) {
 
 } // namespace
 
+namespace dir_buffer_detail {
+// Owner and group names come from getpwuid / getgrgid, which on a
+// non-trivial deployment (LDAP, NIS, SSSD) can include bytes a local
+// user did not author. Replace C0 controls (incl. ESC, BEL), DEL, and
+// the 8-bit C1 range with '?' so the dir listing — which writes its
+// display lines straight to the terminal, not through the buffer
+// renderer that styles control bytes — can't be hijacked by a hostile
+// account name. Length-preserving substitution keeps the existing
+// `size()`-based column alignment working without further changes.
+std::string sanitizeNssField(std::string s) {
+  for (auto& c : s) {
+    auto b = static_cast<unsigned char>(c);
+    if (b < 0x20 || b == 0x7F || (b >= 0x80 && b < 0xA0))
+      c = '?';
+  }
+  return s;
+}
+} // namespace dir_buffer_detail
+
 DirBuffer::DirBuffer(std::filesystem::path dir)
     : Buffer(std::filesystem::weakly_canonical(std::filesystem::absolute(dir)).string()),
       _dir(std::filesystem::weakly_canonical(std::filesystem::absolute(std::move(dir)))) {
@@ -179,11 +198,11 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
       e.permissions = formatPermissions(st.st_mode, isDir, isSymlink);
       e.size = isDir ? 0 : static_cast<std::uintmax_t>(st.st_size);
       if (auto* pw = getpwuid(st.st_uid))
-        e.owner = pw->pw_name;
+        e.owner = dir_buffer_detail::sanitizeNssField(pw->pw_name);
       else
         e.owner = std::to_string(st.st_uid);
       if (auto* gr = getgrgid(st.st_gid))
-        e.group = gr->gr_name;
+        e.group = dir_buffer_detail::sanitizeNssField(gr->gr_name);
       else
         e.group = std::to_string(st.st_gid);
       e.mtime = formatMtime(st.st_mtim);

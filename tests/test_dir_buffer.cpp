@@ -412,3 +412,59 @@ BOOST_AUTO_TEST_CASE(mkdir_rejects_slash_in_name) {
   auto r = buf.makeSubdir("a/b");
   BOOST_CHECK(!r.ok);
 }
+
+// --- sanitizeNssField ---
+//
+// Owner / group strings come from NSS lookups (getpwuid, getgrgid),
+// which on LDAP/NIS-backed systems can deliver bytes a user did not
+// author. The dir listing renders directly to the terminal without
+// going through Buffer::render's escape path, so any control byte
+// inside the owner / group columns would be written verbatim.
+
+BOOST_AUTO_TEST_CASE(sanitizeNssField_passes_ascii_through) {
+  using dir_buffer_detail::sanitizeNssField;
+  BOOST_CHECK_EQUAL(sanitizeNssField(""), "");
+  BOOST_CHECK_EQUAL(sanitizeNssField("root"), "root");
+  BOOST_CHECK_EQUAL(sanitizeNssField("user_42"), "user_42");
+  // Printable specials that turn up in real usernames.
+  BOOST_CHECK_EQUAL(sanitizeNssField("svc-deploy$"), "svc-deploy$");
+}
+
+BOOST_AUTO_TEST_CASE(sanitizeNssField_replaces_esc) {
+  using dir_buffer_detail::sanitizeNssField;
+  // ESC ('\x1b') would open a CSI sequence if written raw.
+  BOOST_CHECK_EQUAL(sanitizeNssField(std::string("a\x1b[31m", 6)), "a?[31m");
+  // BEL ('\x07') is the OSC terminator.
+  BOOST_CHECK_EQUAL(sanitizeNssField(std::string("u\x07v", 3)), "u?v");
+}
+
+BOOST_AUTO_TEST_CASE(sanitizeNssField_replaces_low_controls_and_del) {
+  using dir_buffer_detail::sanitizeNssField;
+  BOOST_CHECK_EQUAL(sanitizeNssField(std::string("\x00\x09\x1f\x7f", 4)), "????");
+}
+
+BOOST_AUTO_TEST_CASE(sanitizeNssField_replaces_c1_range) {
+  using dir_buffer_detail::sanitizeNssField;
+  // 8-bit C1 controls (0x80..0x9F) can act as one-byte CSI / OSC
+  // introducers on terminals running in 8-bit mode. Replace them.
+  BOOST_CHECK_EQUAL(sanitizeNssField(std::string("\x80\x9f", 2)), "??");
+}
+
+BOOST_AUTO_TEST_CASE(sanitizeNssField_preserves_utf8_above_c1) {
+  using dir_buffer_detail::sanitizeNssField;
+  // Bytes >= 0xA0 are passed through. Real-world UTF-8 lead/continuation
+  // bytes fall in 0xC2..0xFD / 0xA0..0xBF respectively. The function is
+  // length-preserving on these.
+  std::string in = "user\xC2\xA0name"; // U+00A0 NO-BREAK SPACE
+  BOOST_CHECK_EQUAL(sanitizeNssField(in), in);
+}
+
+BOOST_AUTO_TEST_CASE(sanitizeNssField_preserves_byte_length) {
+  using dir_buffer_detail::sanitizeNssField;
+  // Critical for the dir listing's column alignment math, which uses
+  // size() (not visualWidth) when padding owner/group columns.
+  std::string in(std::string("\x01\x02\x1b a\x7f", 6));
+  auto out = sanitizeNssField(in);
+  BOOST_CHECK_EQUAL(out.size(), in.size());
+  BOOST_CHECK_EQUAL(out, "??? a?");
+}

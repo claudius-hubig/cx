@@ -107,3 +107,12 @@ private:
   std::vector<std::string> _displayLines;
   std::set<std::size_t> _markedForDelete;
 };
+
+namespace dir_buffer_detail {
+/// Length-preserving sanitizer for NSS-sourced fields (owner / group
+/// from getpwuid / getgrgid). Replaces C0 controls, DEL, and 8-bit C1
+/// controls with '?' so they can't drive a terminal escape when the
+/// listing is written direct-to-terminal. Exposed for tests; not
+/// intended for general use (caller-context-specific).
+std::string sanitizeNssField(std::string s);
+} // namespace dir_buffer_detail
