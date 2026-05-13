@@ -425,3 +425,120 @@ BOOST_AUTO_TEST_CASE(escapeNonPrintable_visualWidth_unaffected_by_styling) {
   BOOST_CHECK_EQUAL(visualWidth(escapeNonPrintable("\x7f.")), 5u); // "\x7f" (4) + "." (1)
   BOOST_CHECK_EQUAL(visualWidth(escapeNonPrintable("hello")), 5u);
 }
+
+// --- appendUtf8Tail ---
+//
+// The interesting cases are around byte validation: a non-continuation
+// byte (anything outside 0x80..0xBF) signals a malformed sequence and
+// must drop the partial sequence rather than letting the offending
+// byte (e.g. a raw ESC, BEL) flow through to a place that writes its
+// input verbatim to the terminal.
+
+namespace {
+// A reader callback backed by a byte queue, for driving appendUtf8Tail
+// from tests without touching stdin.
+struct ByteQueue {
+  std::string data;
+  std::size_t pos = 0;
+  bool operator()(char& out) {
+    if (pos >= data.size())
+      return false;
+    out = data[pos++];
+    return true;
+  }
+};
+} // namespace
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_complete_2byte) {
+  // 'é' = U+00E9 = 0xC3 0xA9. Lead already in dest; tail provides 0xA9.
+  std::string dest = "\xC3";
+  ByteQueue src{"\xA9"};
+  appendUtf8Tail(0xC3, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "\xC3\xA9");
+  BOOST_CHECK_EQUAL(src.pos, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_complete_3byte) {
+  // '中' = 0xE4 0xB8 0xAD.
+  std::string dest = "\xE4";
+  ByteQueue src{"\xB8\xAD"};
+  appendUtf8Tail(0xE4, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "\xE4\xB8\xAD");
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_complete_4byte) {
+  // Emoji: U+1F600 = 0xF0 0x9F 0x98 0x80.
+  std::string dest = "\xF0";
+  ByteQueue src{"\x9F\x98\x80"};
+  appendUtf8Tail(0xF0, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "\xF0\x9F\x98\x80");
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_eof_keeps_partial) {
+  // EOF mid-sequence: keep what we have (the lead the caller appended).
+  std::string dest = "prefix\xE4";
+  ByteQueue src{""};
+  appendUtf8Tail(0xE4, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "prefix\xE4");
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_eof_after_one_continuation) {
+  // 3-byte sequence, only one continuation byte available.
+  std::string dest = "\xE4";
+  ByteQueue src{"\xB8"};
+  appendUtf8Tail(0xE4, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "\xE4\xB8");
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_rejects_esc_after_lead) {
+  // The regression case: 0xC2 followed by 0x1B. Old behaviour appended
+  // 0x1B (a raw escape) into dest; new behaviour drops the lead and the
+  // offending byte.
+  std::string dest = "prefix\xC2";
+  ByteQueue src{"\x1B[31m"};
+  appendUtf8Tail(0xC2, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "prefix");
+  // Only the offending byte was consumed — the rest of the source
+  // remains available for the outer reader.
+  BOOST_CHECK_EQUAL(src.pos, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_rejects_bel_after_lead) {
+  // BEL (0x07) terminates OSC sequences. The same path must not
+  // smuggle one in.
+  std::string dest = "\xC2";
+  ByteQueue src{"\x07"};
+  appendUtf8Tail(0xC2, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "");
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_rejects_ascii_in_continuation_slot) {
+  // 4-byte lead with a printable ASCII byte where the first continuation
+  // would go. Drop the lead — the ASCII byte is not a continuation byte
+  // even though it's safe to print.
+  std::string dest = "\xF0";
+  ByteQueue src{"abc"};
+  appendUtf8Tail(0xF0, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "");
+  BOOST_CHECK_EQUAL(src.pos, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_rejects_in_second_continuation) {
+  // 4-byte lead. Two valid continuation bytes, then an ESC where the
+  // third would go. Drop everything we accepted (lead + 2 bytes) and
+  // the offending byte.
+  std::string dest = "x\xF0";
+  ByteQueue src{"\x9F\x98\x1B"};
+  appendUtf8Tail(0xF0, dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "x");
+  BOOST_CHECK_EQUAL(src.pos, 3u);
+}
+
+BOOST_AUTO_TEST_CASE(appendUtf8Tail_ascii_lead_is_noop) {
+  // Lead < 0x80 means a 1-byte sequence — no tail to read at all.
+  std::string dest = "A";
+  ByteQueue src{"BCDE"};
+  appendUtf8Tail('A', dest, std::ref(src));
+  BOOST_CHECK_EQUAL(dest, "A");
+  BOOST_CHECK_EQUAL(src.pos, 0u);
+}

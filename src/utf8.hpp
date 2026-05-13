@@ -255,10 +255,41 @@ VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts, std
 /// of a visual row. Defined in utf8.cpp.
 std::vector<std::size_t> computeRowBounds(std::string const& line, std::size_t cols);
 
-/// Read the remaining bytes of a UTF-8 sequence from stdin, given the lead
-/// byte. Appends continuation bytes to `dest`. On a read error or EOF
-/// mid-sequence the tail is silently truncated — the caller gets only
-/// the bytes that did arrive. Defined in utf8.cpp.
+/// Append the tail of a UTF-8 sequence to `dest`, given the lead byte
+/// that the caller has already appended to `dest`. Bytes are pulled
+/// one at a time via the `readByte` callback (must return true and set
+/// its `char&` out-parameter on success, false on EOF/error).
+///
+/// On EOF mid-sequence the partial tail is kept (callers may render
+/// the partial sequence as a broken lead). When a non-continuation
+/// byte arrives mid-sequence the entire malformed sequence — both the
+/// lead the caller pre-appended and any continuation bytes consumed so
+/// far — is removed from `dest`, and the offending byte is discarded.
+/// This is what keeps a paste like `\xC2\x1B[31m` from leaking a raw
+/// ESC into a string that will be written verbatim to the terminal:
+/// the tail reader cannot become a back door around the caller's
+/// "printable bytes only" filter.
+template <typename ReadByte>
+void appendUtf8Tail(unsigned char lead, std::string& dest, ReadByte readByte) {
+  std::size_t expectedTail = utf8SeqLen(lead) - 1;
+  for (std::size_t j = 0; j < expectedTail; ++j) {
+    char next;
+    if (!readByte(next))
+      return;
+    if ((static_cast<unsigned char>(next) & 0xC0) != 0x80) {
+      // Drop the partial sequence (lead + j continuation bytes already
+      // accepted) and the offending byte. The caller's prior `dest +=
+      // lead` left dest.size() at >= 1 + j by construction.
+      dest.resize(dest.size() - (1 + j));
+      return;
+    }
+    dest += next;
+  }
+}
+
+/// Convenience wrapper: read continuation bytes for `lead` from stdin
+/// and append them to `dest`. Same contract as `appendUtf8Tail` —
+/// malformed sequences are dropped rather than passed through.
 void readUtf8Tail(unsigned char lead, std::string& dest);
 
 /// Read a complete UTF-8 codepoint from stdin given the lead byte.

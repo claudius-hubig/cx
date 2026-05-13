@@ -101,12 +101,7 @@ std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth) {
 }
 
 void readUtf8Tail(unsigned char lead, std::string& dest) {
-  for (std::size_t j = 1; j < utf8SeqLen(lead); ++j) {
-    char next;
-    if (read(STDIN_FILENO, &next, 1) != 1)
-      break;
-    dest += next;
-  }
+  appendUtf8Tail(lead, dest, [](char& out) { return read(STDIN_FILENO, &out, 1) == 1; });
 }
 
 std::size_t visualColRange(std::string const& line, std::size_t from, std::size_t to) {
