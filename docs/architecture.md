@@ -40,8 +40,10 @@ buffer.
 
 RAII wrapper around terminal configuration. On construction, saves the
 current `termios` state and puts stdin into raw mode; switches the
-terminal to the alternate screen buffer; enables SGR mouse-press
-tracking (`?1000h ?1006h`). On destruction, disables mouse tracking,
+terminal to the alternate screen buffer; enables SGR mouse tracking
+(`?1000h` press/release, `?1002h` motion-while-held for drag-select,
+`?1006h` extended coordinates; `?1003h` any-motion is deliberately not
+enabled). On destruction, disables mouse tracking,
 restores the saved state, and returns to the normal screen. Guarantees
 cleanup even on exception.
 
@@ -95,10 +97,16 @@ Key responsibilities:
   dispatches to sub-handlers:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
     text entry, history navigation, autocomplete, and confirmation
-  - `handleEscapeInput` — CSI escape sequences (arrows, page keys) and
-    Esc-prefix chords
+  - `handleEscapeInput` — CSI escape sequences (arrows, page keys),
+    Esc-prefix chords, and SGR mouse payloads routed to `handleMouseEvent`
   - `handleNormalInput` — printable characters and control keys in normal
     editing mode
+  - `handleMouseEvent` / `extendDragSelection` — left-press positions the
+    cursor and arms a drag (a plain click keeps any existing mark);
+    left-motion lazily sets the mark to the drag anchor and extends the
+    `mark`→point region, autoscrolling at the top/bottom content row;
+    left-release ends the drag; middle-press pastes the X11 PRIMARY
+    selection at the cursor; the wheel scrolls the panel under the pointer
 - **Action dispatch**: `dispatchAction(Action)` is the centralised switch
   that executes the effect of any `Action`. Three input paths feed it,
   all through `handleShortcut()`: the bare Ctrl-key path
@@ -419,8 +427,10 @@ and middle-click pastes. Internal dedup against the last published
 text means cursor moves that don't change the selected text cost zero
 forks. `Screen` also calls `setClipboard()` on cut and copy so the
 text becomes available to other apps via the standard Ctrl-C/Ctrl-V
-clipboard, and `getClipboard()` on paste so external copies flow into
-the editor (and onto the paste ring).
+clipboard, `getClipboard()` on paste so external copies flow into the
+editor (and onto the paste ring), and `getPrimary()` on middle-click so
+the PRIMARY selection pastes back in at the cursor. `getClipboard()`
+and `getPrimary()` share a private `getSelection()` helper.
 
 Writes use a double-fork detach: the parent forks an intermediate
 child, which forks again and exits, leaving the grandchild xclip/xsel

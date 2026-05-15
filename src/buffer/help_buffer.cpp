@@ -113,6 +113,10 @@ static std::vector<std::string> const& rightColumn() {
     v.push_back(formatRawLine("C-x 1..6", "Focus panel 1..6"));
     v.emplace_back("");
     v.emplace_back("Mouse:");
+    v.push_back(formatRawLine("Click", "Position cursor / focus panel"));
+    v.push_back(formatRawLine("Drag", "Select region (mark to point)"));
+    v.push_back(formatRawLine("Middle-click", "Paste X11 PRIMARY selection"));
+    v.push_back(formatRawLine("Wheel", "Scroll panel under pointer"));
     v.push_back(formatHelpLine(Action::ToggleMouseTracking));
     v.push_back(formatRawLine("Shift+click", "Bypass tracking, use terminal default"));
     return v;
