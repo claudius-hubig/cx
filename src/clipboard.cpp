@@ -113,15 +113,19 @@ void Clipboard::setClipboard(std::string_view text) {
   publishAsync(text, "clipboard");
 }
 
-std::optional<std::string> Clipboard::getClipboard() {
+std::optional<std::string> Clipboard::getSelection(char const* selection) {
   ensureDetected();
   if (_backend == Backend::None)
     return std::nullopt;
-  auto out = readSync("clipboard");
+  auto out = readSync(selection);
   if (!out || out->empty())
     return std::nullopt;
   return out;
 }
+
+std::optional<std::string> Clipboard::getClipboard() { return getSelection("clipboard"); }
+
+std::optional<std::string> Clipboard::getPrimary() { return getSelection("primary"); }
 
 // Spawn the chosen backend with `text` on stdin and detach it via a
 // double-fork so the parent never blocks on xclip/xsel startup or on

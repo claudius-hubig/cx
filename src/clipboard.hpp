@@ -41,6 +41,11 @@ public:
   // empty.
   std::optional<std::string> getClipboard();
 
+  // Synchronously read the X11 PRIMARY selection (the mouse-drag /
+  // middle-click buffer). Same nullopt contract as getClipboard. Used
+  // by the in-app middle-click paste.
+  std::optional<std::string> getPrimary();
+
   // Mostly for tests: true iff a backend was detected on first use.
   bool active();
 
@@ -56,6 +61,11 @@ private:
 
   // Spawn `argv` and read its stdout to EOF synchronously.
   std::optional<std::string> readSync(char const* selection);
+
+  // Shared body of getClipboard / getPrimary: detect a backend, read
+  // `selection` synchronously, and map an absent backend or empty
+  // result to nullopt. `selection` is "clipboard" or "primary".
+  std::optional<std::string> getSelection(char const* selection);
 
   Backend _backend = Backend::Unknown;
   std::string _lastPrimary; // dedup key for setPrimary

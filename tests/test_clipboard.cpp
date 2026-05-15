@@ -272,6 +272,31 @@ BOOST_AUTO_TEST_CASE(e2e_get_clipboard_returns_nullopt_when_empty) {
   BOOST_CHECK(!c.getClipboard().has_value());
 }
 
+BOOST_AUTO_TEST_CASE(e2e_get_primary_reads_via_xclip) {
+  FakeClipboardEnv env(true, false);
+  // Pre-populate the PRIMARY selection (what a middle-click would paste).
+  std::ofstream(env.storage.path / "primary") << "mouse selection";
+  Clipboard c;
+  BOOST_REQUIRE(c.active());
+
+  auto out = c.getPrimary();
+  BOOST_REQUIRE(out.has_value());
+  BOOST_CHECK_EQUAL(*out, "mouse selection");
+}
+
+BOOST_AUTO_TEST_CASE(e2e_get_primary_returns_nullopt_when_empty) {
+  FakeClipboardEnv env(true, false);
+  Clipboard c;
+  BOOST_CHECK(!c.getPrimary().has_value());
+}
+
+BOOST_AUTO_TEST_CASE(get_primary_nullopt_when_inactive) {
+  ::unsetenv("DISPLAY");
+  Clipboard c;
+  BOOST_CHECK(!c.active());
+  BOOST_CHECK(!c.getPrimary().has_value());
+}
+
 BOOST_AUTO_TEST_CASE(e2e_set_primary_dedups_consecutive_identical) {
   FakeClipboardEnv env(true, false);
   Clipboard c;
