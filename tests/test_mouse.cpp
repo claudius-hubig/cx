@@ -66,6 +66,24 @@ BOOST_AUTO_TEST_CASE(wheel_is_neither_left_nor_middle) {
   BOOST_CHECK(!e->isMiddleButton());
 }
 
+BOOST_AUTO_TEST_CASE(left_drag_motion_is_left_and_motion_not_release) {
+  // Left held + motion = button 0 | motion bit (32), 'M' terminator.
+  auto e = parseSgrMouse("32;4;9M");
+  BOOST_REQUIRE(e);
+  BOOST_CHECK(e->isLeftButton());
+  BOOST_CHECK(e->isMotion());
+  BOOST_CHECK(!e->isRelease());
+}
+
+BOOST_AUTO_TEST_CASE(left_release_is_left_and_release_not_motion) {
+  // Left release = button 0, 'm' terminator.
+  auto e = parseSgrMouse("0;4;9m");
+  BOOST_REQUIRE(e);
+  BOOST_CHECK(e->isLeftButton());
+  BOOST_CHECK(e->isRelease());
+  BOOST_CHECK(!e->isMotion());
+}
+
 BOOST_AUTO_TEST_CASE(extra_bytes_after_terminator_ignored) {
   auto e = parseSgrMouse("0;1;1Mtrailing");
   BOOST_REQUIRE(e);

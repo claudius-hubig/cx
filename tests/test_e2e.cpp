@@ -224,6 +224,43 @@ BOOST_AUTO_TEST_CASE(e2e_esc_then_arrow_does_not_insert_csi_bytes) {
   session.waitExit();
 }
 
+BOOST_AUTO_TEST_CASE(e2e_mouse_drag_selects_region_and_cut_removes_it) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Put a unique token on the only line. A leading space means a
+  // press at terminal column 1 anchors at or before the token, so a
+  // drag to the far right selects the whole token regardless of the
+  // line-number gutter width.
+  session.send(" ZZZUNIQUEZZZ");
+  session.readUntil("ZZZUNIQUEZZZ");
+
+  // Left-press at (row 1, col 1), drag (left held = button 32) to the
+  // far right of the line, then release. mark→point now spans the line.
+  session.send("\x1b[<0;1;1M");
+  session.readOutput(std::chrono::milliseconds{80});
+  session.send("\x1b[<32;79;1M");
+  session.readOutput(std::chrono::milliseconds{80});
+  session.send("\x1b[<0;79;1m");
+  session.readOutput(std::chrono::milliseconds{80});
+
+  // Ctrl-W cuts the dragged region; the token must be gone.
+  session.send("\x17");
+  auto stripped = stripAnsi(session.readOutput(std::chrono::milliseconds{300}));
+  BOOST_CHECK(stripped.find("ZZZUNIQUEZZZ") == std::string::npos);
+
+  session.send("\x1b"
+               "c"
+               "n");
+  session.waitExit();
+}
+
 BOOST_AUTO_TEST_CASE(e2e_stdin_pipe_seeds_scratch_buffer) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

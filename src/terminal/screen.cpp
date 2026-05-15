@@ -2288,9 +2288,31 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
   std::size_t col = event.col - 1;
   std::size_t row = event.row - 1;
 
-  // Find the panel containing (row, col). Use the press/wheel events
-  // only — release events (`m`) just clear button state and shouldn't
-  // re-position the cursor.
+  bool isWheel = event.isWheelUp() || event.isWheelDown();
+
+  // Drag continuation. Left-motion and the terminating left-release
+  // belong to a drag already in progress; act on the focused panel
+  // (where the drag began) without re-targeting by coordinates, so
+  // dragging onto the modeline / gutter / a sibling panel keeps
+  // extending the selection instead of jumping.
+  if (!isWheel && event.isLeftButton() && event.isRelease()) {
+    _dragAnchor.reset();
+    return;
+  }
+  if (!isWheel && event.isLeftButton() && event.isMotion()) {
+    if (_dragAnchor && _view)
+      extendDragSelection(row, col);
+    return;
+  }
+
+  // Past here only fresh presses (and wheel) are actionable: a stray
+  // release or a motion without the left button held carries no intent.
+  if (!isWheel && (!event.isPress() || event.isMotion()))
+    return;
+  if (!isWheel && !event.isLeftButton() && !event.isMiddleButton())
+    return;
+
+  // Find the panel containing (row, col).
   Panel* hit = nullptr;
   _layout->forEachPanel([&](Panel& p) {
     auto const& r = p.rect();
@@ -2298,15 +2320,6 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
       hit = &p;
   });
   if (!hit)
-    return;
-
-  bool isWheel = event.isWheelUp() || event.isWheelDown();
-  // Only fresh presses (and wheel) are actionable here. Motion and
-  // release carry no cursor intent on their own; drag handling lives
-  // in the left-button machinery added separately.
-  if (!isWheel && (!event.isPress() || event.isMotion()))
-    return;
-  if (!isWheel && !event.isLeftButton() && !event.isMiddleButton())
     return;
 
   // Focus the hit panel if it's not already focused. Switching focus
@@ -2365,13 +2378,18 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
     return;
   }
 
-  // Click: convert to a buffer point and move the cursor there. If the
-  // click is on the modeline (last row of the panel) ignore it — that
-  // row carries no buffer content.
+  // Left press: convert to a buffer point and move the cursor there,
+  // then arm a drag anchored at that point. A plain click deliberately
+  // leaves any existing mark intact (a keyboard-set mark survives a
+  // click elsewhere); only a subsequent drag installs a new mark. Any
+  // half-finished previous drag is dropped first.
+  _dragAnchor.reset();
+  // Ignore presses on the modeline (last row) — it carries no buffer
+  // content.
   if (row + 1 >= rect.row + rect.rows)
     return;
-  // Skip clicks on the gutter column — it carries wrap/scroll
-  // indicators, not buffer text.
+  // Skip the gutter column — it carries wrap/scroll indicators, not
+  // buffer text.
   if (col + 1 >= rect.col + rect.cols)
     return;
 
@@ -2379,6 +2397,49 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
   std::size_t screenCol = col - rect.col;
   auto pt = _view->pointForScreenRowCol(screenRow, screenCol, pcols, _view->wrap());
   _view->setPoint(pt.line, pt.offset);
+  _dragAnchor = _view->point();
+  _pasteState.reset();
+}
+
+void Screen::extendDragSelection(std::size_t row, std::size_t col) {
+  Panel& p = _layout->focused();
+  auto const& rect = p.rect();
+  auto pcols = ColIdx{rect.cols};
+  auto contentRows = p.contentRows();
+  if (contentRows.value == 0)
+    return;
+
+  // Vertical: clamp the pointer into the content band. At or above the
+  // top content row scroll up; at or below the bottom one scroll down —
+  // so a drag can run past the viewport. The terminal can't report a
+  // row above 0, so scrolling at the edge row is the only way to reach
+  // off-screen content; the cost is that selecting exactly the edge
+  // line scrolls one extra line, which is the conventional trade-off.
+  std::size_t screenRow;
+  if (row <= rect.row) {
+    screenRow = 0;
+    _view->scrollUp(_view->wrap());
+  } else if (row >= rect.row + contentRows.value - 1) {
+    screenRow = contentRows.value - 1;
+    _view->scrollDown();
+  } else {
+    screenRow = row - rect.row;
+  }
+
+  // Horizontal: clamp into the content columns. The final column is the
+  // gutter (wrap/scroll indicators), so content is [0, cols-2].
+  std::size_t maxCol = rect.cols >= 2 ? rect.cols - 2 : 0;
+  std::size_t screenCol = col <= rect.col ? 0 : col - rect.col;
+  if (screenCol > maxCol)
+    screenCol = maxCol;
+
+  auto pt = _view->pointForScreenRowCol(screenRow, screenCol, pcols, _view->wrap());
+  // The drag overrides any prior (e.g. keyboard-set) mark: the live
+  // region is exactly anchor→point. setMark is idempotent so repeating
+  // it every motion event is free.
+  _view->setMark(*_dragAnchor);
+  _view->setPoint(pt.line, pt.offset);
+  _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
   _pasteState.reset();
 }
 
@@ -2916,14 +2977,15 @@ void Screen::dispatchAction(Action action) {
     }
     break;
   case Action::ToggleMouseTracking: {
-    // Toggle the terminal's mouse-reporting modes (SGR + button-event).
-    // When off, right-click and middle-click pass through to the terminal
-    // again (e.g. context menu, X PRIMARY paste). Wheel scrolling and
-    // left-click cursor positioning depend on tracking being on, so the
-    // user can flip back when they need them.
+    // Toggle the terminal's mouse-reporting modes (press/release +
+    // motion + SGR). When off, the terminal regains its native
+    // right-click context menu and selection behaviour. In-app
+    // left-click/drag, middle-click paste and wheel scrolling all
+    // depend on tracking being on, so the user can flip back when
+    // they want the terminal's own handling instead.
     _mouseEnabled = !_mouseEnabled;
-    std::string_view seq = _mouseEnabled ? std::string_view("\x1b[?1000h\x1b[?1006h")
-                                         : std::string_view("\x1b[?1006l\x1b[?1000l");
+    std::string_view seq = _mouseEnabled ? std::string_view("\x1b[?1000h\x1b[?1002h\x1b[?1006h")
+                                         : std::string_view("\x1b[?1006l\x1b[?1002l\x1b[?1000l");
     writeAll(STDOUT_FILENO, seq.data(), seq.size());
     setStatus(_mouseEnabled ? "Mouse tracking on"
                             : "Mouse tracking off (Shift+click also bypasses)");

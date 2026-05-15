@@ -97,10 +97,18 @@ private:
   // active; otherwise clear the mark on the focused view. Shared by
   // both the fast (sequence-of-bytes) and slow (paused-Esc) paths.
   void handleBareEscEsc();
-  // Apply a parsed SGR mouse event: focus the panel under the cursor
-  // and either move the buffer point (button 0) or scroll the panel
-  // (wheel up/down). Other buttons are ignored.
+  // Apply a parsed SGR mouse event: focus the panel under the cursor,
+  // then left-press moves the point (and arms a drag), left-drag
+  // extends a mark→point selection, middle-press pastes the X11
+  // PRIMARY selection, and wheel up/down scrolls the panel.
   void handleMouseEvent(MouseEvent const& event);
+  // Continuation of an in-progress left-drag: clamp (row,col) into the
+  // focused panel's content, autoscroll when the pointer is at/above
+  // the top or at/below the bottom content row, set the mark to the
+  // drag anchor (overriding any prior mark), and move the point so the
+  // mark→point region tracks the drag. The input loop's
+  // syncPrimarySelection() then mirrors it to X11 PRIMARY.
+  void extendDragSelection(std::size_t row, std::size_t col);
   void handleCtrlXInput();
   void handleNormalInput(char c, std::optional<char>& pendingChar);
   void resize();
@@ -212,6 +220,11 @@ private:
   // default here so the runtime toggle starts in agreement with the
   // actual terminal state.
   bool _mouseEnabled = true;
+
+  // Buffer point where the left button went down, set on left-press and
+  // cleared on release. While set, left-motion events extend a
+  // selection anchored here. nullopt means no drag is in progress.
+  std::optional<BufferPoint> _dragAnchor;
 
   PasteRing _pasteRing;
   Clipboard _clipboard;

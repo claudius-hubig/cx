@@ -6,14 +6,15 @@
 #include <stdexcept>
 #include <string_view>
 
-// 1049: alternate screen buffer; 1000: button event tracking; 1006: SGR
-// extended coordinates so col/row > 223 can be reported. We do NOT
-// enable any-event tracking (1003) — only press/release/wheel events,
-// to keep the volume of input bytes low when the user is just moving
-// the mouse without holding a button.
+// 1049: alternate screen buffer; 1000: button press/release tracking;
+// 1002: button-event tracking (motion reports *only while a button is
+// held*) so left-drag selection works; 1006: SGR extended coordinates
+// so col/row > 223 can be reported. We deliberately stop at 1002 and do
+// NOT enable any-event tracking (1003): idle pointer moves with no
+// button down generate no input, keeping the byte volume low.
 static constexpr std::string_view kAltScreenOn =
-    "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q\x1b[?1000h\x1b[?1006h";
-static constexpr std::string_view kAltScreenOff = "\x1b[?1006l\x1b[?1000l\x1b[?1049l";
+    "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+static constexpr std::string_view kAltScreenOff = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l";
 
 SetupTerminal::SetupTerminal() {
   // If tcgetattr fails we have no usable termios to base raw mode on.
