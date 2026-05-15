@@ -36,6 +36,7 @@ struct MouseEvent {
   bool isWheelDown() const { return isWheel() && (button & kButtonMask) == 1; }
   bool isMotion() const { return (button & kMotionBit) != 0; }
   bool isLeftButton() const { return !isWheel() && (button & kButtonMask) == 0; }
+  bool isMiddleButton() const { return !isWheel() && (button & kButtonMask) == 1; }
 };
 
 // Upper bound on the SGR mouse body the input loop is willing to

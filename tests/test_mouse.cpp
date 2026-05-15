@@ -42,6 +42,30 @@ BOOST_AUTO_TEST_CASE(motion_event_recognised) {
   BOOST_CHECK(e->isLeftButton()); // low two bits zero
 }
 
+BOOST_AUTO_TEST_CASE(middle_button_decodes) {
+  // Button index 1 = middle.
+  auto e = parseSgrMouse("1;7;2M");
+  BOOST_REQUIRE(e);
+  BOOST_CHECK(e->isMiddleButton());
+  BOOST_CHECK(!e->isLeftButton());
+  BOOST_CHECK(!e->isWheel());
+  BOOST_CHECK(e->isPress());
+}
+
+BOOST_AUTO_TEST_CASE(left_button_is_not_middle) {
+  auto e = parseSgrMouse("0;1;1M");
+  BOOST_REQUIRE(e);
+  BOOST_CHECK(e->isLeftButton());
+  BOOST_CHECK(!e->isMiddleButton());
+}
+
+BOOST_AUTO_TEST_CASE(wheel_is_neither_left_nor_middle) {
+  auto e = parseSgrMouse("64;3;3M");
+  BOOST_REQUIRE(e);
+  BOOST_CHECK(!e->isLeftButton());
+  BOOST_CHECK(!e->isMiddleButton());
+}
+
 BOOST_AUTO_TEST_CASE(extra_bytes_after_terminator_ignored) {
   auto e = parseSgrMouse("0;1;1Mtrailing");
   BOOST_REQUIRE(e);

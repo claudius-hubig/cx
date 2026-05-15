@@ -2301,7 +2301,12 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
     return;
 
   bool isWheel = event.isWheelUp() || event.isWheelDown();
-  if (!isWheel && (!event.isPress() || event.isMotion() || !event.isLeftButton()))
+  // Only fresh presses (and wheel) are actionable here. Motion and
+  // release carry no cursor intent on their own; drag handling lives
+  // in the left-button machinery added separately.
+  if (!isWheel && (!event.isPress() || event.isMotion()))
+    return;
+  if (!isWheel && !event.isLeftButton() && !event.isMiddleButton())
     return;
 
   // Focus the hit panel if it's not already focused. Switching focus
@@ -2335,6 +2340,28 @@ void Screen::handleMouseEvent(MouseEvent const& event) {
       _view->setPoint(first.line, first.offset);
     else if (last < pt)
       _view->setPoint(last.line, last.offset);
+    return;
+  }
+
+  if (event.isMiddleButton()) {
+    // X11 middle-click paste, served in-app: our SGR mouse grab stops
+    // the terminal performing its native PRIMARY paste, so we do it
+    // ourselves. Per design the selection lands at the current cursor,
+    // not the click position. Mirror Action::Paste's ring handling so
+    // PasteCycle and the paste-ring buffer see it.
+    if (_buf && !_buf->readonly()) {
+      if (auto sel = _clipboard.getPrimary()) {
+        if (_pasteRing.empty() || *sel != _pasteRing.at(0))
+          _pasteRing.push(*sel);
+        auto start = _view->point();
+        auto end = _view->insertText(_pasteRing.at(0));
+        _pasteState = PasteState{start, end, 0};
+        setStatus("Pasted selection");
+        _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+      } else {
+        setStatus("Selection empty");
+      }
+    }
     return;
   }
 
