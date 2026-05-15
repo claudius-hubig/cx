@@ -9,12 +9,18 @@
 #include <vector>
 
 /// Return true if b is a UTF-8 continuation byte: (b & 0xC0) == 0x80.
-/// Pure predicate — works on any unsigned char value.
+/// Pure predicate — works on any unsigned char value. This is the single
+/// place that knows the continuation-byte bit pattern.
 inline constexpr bool isUtf8Continuation(unsigned char b) { return (b & 0xC0) == 0x80; }
+
+/// The low six payload bits a UTF-8 continuation byte carries — also the
+/// per-byte group emitted when encoding.
+inline constexpr unsigned char kUtf8ContValueMask = 0x3F;
 
 /// Number of bytes in a UTF-8 sequence starting with the given lead byte.
 /// Returns 1 for ASCII (<0x80), 2-4 for valid multi-byte lead bytes, and
-/// 1 for invalid/continuation bytes (no error signaling).
+/// 1 for invalid/continuation bytes (no error signaling). This is the
+/// single place that classifies a lead byte by its high bits.
 inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
   if (lead < 0x80)
     return 1;
@@ -27,6 +33,22 @@ inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
   return 1; // invalid or continuation — treat as single byte
 }
 
+/// Smallest code point that legitimately needs an N-byte sequence,
+/// indexed by sequence length (entries 0/1 unused — ASCII has no
+/// minimum). Shared by the decoder (overlong rejection) and the encoder
+/// (length selection) so these boundaries live in exactly one place.
+inline constexpr std::array<uint32_t, 5> kUtf8MinForLen{0, 0, 0x80, 0x800, 0x10000};
+
+/// UTF-16 surrogate range and the largest Unicode scalar value. Neither
+/// is well-formed in UTF-8; both decode and encode reject them.
+inline constexpr uint32_t kSurrogateMin = 0xD800;
+inline constexpr uint32_t kSurrogateMax = 0xDFFF;
+inline constexpr uint32_t kMaxCodepoint = 0x10FFFF;
+
+inline constexpr bool isSurrogate(uint32_t cp) {
+  return cp >= kSurrogateMin && cp <= kSurrogateMax;
+}
+
 /// Decode a UTF-8 code point starting at data[0].
 /// Precondition: avail > 0 (at least one byte available).
 /// Returns {codepoint, byte_length}. For malformed, truncated, overlong,
@@ -34,44 +56,26 @@ inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
 /// raw byte value is returned with length 1.
 inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
-  if (u < 0x80)
+  std::size_t len = utf8SeqLen(u);
+  if (len == 1)
+    return {u, 1}; // ASCII, or an invalid/continuation lead — raw byte
+  if (avail < len)
+    return {u, 1}; // truncated
+  // The lead byte's payload occupies its low (7 - len) bits, i.e. the
+  // 0x1F/0x0F/0x07 masks for len 2/3/4 — exactly 0x7F >> len.
+  uint32_t cp = u & static_cast<unsigned char>(0x7F >> len);
+  for (std::size_t k = 1; k < len; ++k) {
+    auto b = static_cast<unsigned char>(data[k]);
+    if (!isUtf8Continuation(b))
+      return {u, 1};
+    cp = (cp << 6) | (b & kUtf8ContValueMask);
+  }
+  // Reject overlong, surrogate, and out-of-range encodings. The
+  // surrogate/range tests only bite for the lengths that can actually
+  // reach those code points, so one shared check covers every length.
+  if (cp < kUtf8MinForLen[len] || isSurrogate(cp) || cp > kMaxCodepoint)
     return {u, 1};
-  auto isCont = [](unsigned char b) { return (b & 0xC0) == 0x80; };
-  if ((u & 0xE0) == 0xC0 && avail >= 2) {
-    auto b1 = static_cast<unsigned char>(data[1]);
-    if (!isCont(b1))
-      return {u, 1};
-    uint32_t cp = ((u & 0x1F) << 6) | (b1 & 0x3F);
-    if (cp < 0x80)
-      return {u, 1}; // overlong
-    return {cp, 2};
-  }
-  if ((u & 0xF0) == 0xE0 && avail >= 3) {
-    auto b1 = static_cast<unsigned char>(data[1]);
-    auto b2 = static_cast<unsigned char>(data[2]);
-    if (!isCont(b1) || !isCont(b2))
-      return {u, 1};
-    uint32_t cp = ((u & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
-    if (cp < 0x800)
-      return {u, 1}; // overlong
-    if (cp >= 0xD800 && cp <= 0xDFFF)
-      return {u, 1}; // surrogate
-    return {cp, 3};
-  }
-  if ((u & 0xF8) == 0xF0 && avail >= 4) {
-    auto b1 = static_cast<unsigned char>(data[1]);
-    auto b2 = static_cast<unsigned char>(data[2]);
-    auto b3 = static_cast<unsigned char>(data[3]);
-    if (!isCont(b1) || !isCont(b2) || !isCont(b3))
-      return {u, 1};
-    uint32_t cp = ((u & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
-    if (cp < 0x10000)
-      return {u, 1}; // overlong
-    if (cp > 0x10FFFF)
-      return {u, 1}; // out of range
-    return {cp, 4};
-  }
-  return {u, 1}; // invalid/truncated, treat as raw byte
+  return {cp, len};
 }
 
 /// Encode a Unicode code point as UTF-8.
@@ -80,43 +84,24 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, s
 /// codepoints above U+10FFFF are rejected and encoded as the
 /// replacement character (U+FFFD).
 inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8(uint32_t cp) {
+  // Surrogates and out-of-range values are not valid scalar values:
+  // normalise to U+FFFD up front so the single encode path below emits
+  // the replacement character, rather than spelling its bytes twice.
+  if (isSurrogate(cp) || cp > kMaxCodepoint)
+    cp = 0xFFFD;
   std::array<unsigned char, 4> buf{};
-  if (cp < 0x80) {
+  if (cp < kUtf8MinForLen[2]) {
     buf[0] = static_cast<unsigned char>(cp);
     return {1, buf};
   }
-  if (cp < 0x800) {
-    buf[0] = static_cast<unsigned char>(0xC0 | (cp >> 6));
-    buf[1] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
-    return {2, buf};
-  }
-  if (cp < 0x10000) {
-    // Reject UTF-16 surrogate halves — they are not valid Unicode
-    // scalar values and produce ill-formed UTF-8. Inline the U+FFFD
-    // encoding rather than recursing.
-    if (cp >= 0xD800 && cp <= 0xDFFF) {
-      buf[0] = 0xEF;
-      buf[1] = 0xBF;
-      buf[2] = 0xBD;
-      return {3, buf};
-    }
-    buf[0] = static_cast<unsigned char>(0xE0 | (cp >> 12));
-    buf[1] = static_cast<unsigned char>(0x80 | ((cp >> 6) & 0x3F));
-    buf[2] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
-    return {3, buf};
-  }
-  if (cp <= 0x10FFFF) {
-    buf[0] = static_cast<unsigned char>(0xF0 | (cp >> 18));
-    buf[1] = static_cast<unsigned char>(0x80 | ((cp >> 12) & 0x3F));
-    buf[2] = static_cast<unsigned char>(0x80 | ((cp >> 6) & 0x3F));
-    buf[3] = static_cast<unsigned char>(0x80 | (cp & 0x3F));
-    return {4, buf};
-  }
-  // Out of range — encode U+FFFD (replacement character) inline.
-  buf[0] = 0xEF;
-  buf[1] = 0xBF;
-  buf[2] = 0xBD;
-  return {3, buf};
+  std::size_t len = cp < kUtf8MinForLen[3] ? 2 : cp < kUtf8MinForLen[4] ? 3 : 4;
+  // Lead byte high bits: 0xC0/0xE0/0xF0 for len 2/3/4. Each continuation
+  // byte then carries one six-bit group, most significant first.
+  static constexpr unsigned char kLeadPrefix[5] = {0, 0, 0xC0, 0xE0, 0xF0};
+  buf[0] = static_cast<unsigned char>(kLeadPrefix[len] | (cp >> (6 * (len - 1))));
+  for (std::size_t k = 1; k < len; ++k)
+    buf[k] = static_cast<unsigned char>(0x80 | ((cp >> (6 * (len - 1 - k))) & kUtf8ContValueMask));
+  return {len, buf};
 }
 
 /// True if c is a horizontal whitespace character (space or tab).
@@ -276,7 +261,7 @@ void appendUtf8Tail(unsigned char lead, std::string& dest, ReadByte readByte) {
     char next;
     if (!readByte(next))
       return;
-    if ((static_cast<unsigned char>(next) & 0xC0) != 0x80) {
+    if (!isUtf8Continuation(static_cast<unsigned char>(next))) {
       // Drop the partial sequence (lead + j continuation bytes already
       // accepted) and the offending byte. The caller's prior `dest +=
       // lead` left dest.size() at >= 1 + j by construction.

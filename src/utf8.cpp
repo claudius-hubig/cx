@@ -212,8 +212,8 @@ std::vector<std::size_t> computeRowBounds(std::string const& line, std::size_t c
 }
 
 uint32_t readUtf8Codepoint(unsigned char lead) {
-  if (lead < 0x80)
-    return lead;
+  // ASCII / invalid leads fall straight through: utf8SeqLen returns 1,
+  // no continuation bytes are read, and decodeUtf8 yields {lead, 1}.
   char seq[4];
   seq[0] = static_cast<char>(lead);
   std::size_t expected = utf8SeqLen(lead);
