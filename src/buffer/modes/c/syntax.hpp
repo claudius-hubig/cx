@@ -45,7 +45,16 @@ enum class SyntaxToken : uint8_t {
 /// cached per line). A buffer has exactly one mode, so the C/C++
 /// fields above and the per-mode multi-line fields below are never
 /// active simultaneously: a shell buffer only ever sets `heredocTag`,
-/// a Python buffer only `pyTriple`, a YAML buffer only `yamlBlockCol`.
+/// a Python buffer only `pyTriple`, a YAML buffer only `yamlBlockCol`,
+/// a Markdown buffer only `mdLink`.
+///
+/// `MdLink` tracks a `[text](url)` link that spans lines: `Label`
+/// while the `[...` label is still open (no `]` yet), `Url` while the
+/// `](...` destination is still open (no `)` yet). An unterminated
+/// link stays Link-coloured to end of file, matching the optimistic
+/// behaviour of the raw-string / heredoc / triple-string states.
+enum class MdLink : uint8_t { None, Label, Url };
+
 struct SyntaxState {
   bool inBlockComment = false;
   bool inPreprocessor = false; // next line continues a #directive (prior line ended with '\')
@@ -73,6 +82,11 @@ struct SyntaxState {
   // are literal block content (String) until indentation returns to
   // <= this column. -1 = not in a block scalar.
   int yamlBlockCol = -1;
+
+  // --- Markdown (md) ---
+  // None = no link spanning the line boundary; Label = inside `[...`
+  // awaiting `]`; Url = inside `](...` awaiting `)`.
+  MdLink mdLink = MdLink::None;
 };
 
 // Tokenize a single line, writing per-byte SyntaxToken values into `out`.

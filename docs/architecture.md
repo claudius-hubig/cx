@@ -546,8 +546,12 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   `findMatchingBracket()` for jump-to-matching-bracket support.
 
 - **Markdown mode** (`modes/md/syntax.hpp/.cpp`): Tokenizes headings
-  (`# ...`), bold (`**...**`), and links (`[text](url)`). No multi-line
-  state needed.
+  (`# ...`), bold (`**...**`, single-line), and links (`[text](url)`).
+  Links may span lines: `state.mdLink` (`MdLink::Label`/`Url`) carries
+  an open `[...` label or `](...` destination across the boundary and
+  is Link-coloured until it closes (optimistically to end of file if
+  it never does). Headings are suppressed while a link continuation is
+  open. Bold is single-line only.
 
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file

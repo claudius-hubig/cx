@@ -1,25 +1,81 @@
 #include "syntax.hpp"
 
-void tokenizeMarkdownLine(std::string const& line, SyntaxState& /*state*/,
+void tokenizeMarkdownLine(std::string const& line, SyntaxState& state,
                           std::vector<SyntaxToken>& tokens) {
   tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t sz = line.size();
+  std::size_t i = 0;
 
-  // Heading: line starts with one or more '#' followed by a space (or end of line).
-  if (!line.empty() && line[0] == '#') {
-    std::size_t i = 0;
-    while (i < sz && line[i] == '#')
-      ++i;
-    if (i == sz || line[i] == ' ') {
+  // Continuation of a link that began on an earlier line. A link
+  // spanning the boundary cannot also be a heading, so this is
+  // resolved before the heading check.
+  if (state.mdLink == MdLink::Label) {
+    std::size_t scan = 0;
+    while (scan < sz && line[scan] != ']')
+      ++scan;
+    if (scan == sz) {
+      // Still no ']': the whole line is link-label text.
       for (std::size_t j = 0; j < sz; ++j)
-        tokens[j] = SyntaxToken::Heading;
+        tokens[j] = SyntaxToken::Link;
       return;
+    }
+    if (scan + 1 < sz && line[scan + 1] == '(') {
+      // `](` — the destination begins here.
+      std::size_t urlScan = scan + 2;
+      while (urlScan < sz && line[urlScan] != ')')
+        ++urlScan;
+      if (urlScan < sz) {
+        ++urlScan; // include ')'
+        for (std::size_t j = 0; j < urlScan; ++j)
+          tokens[j] = SyntaxToken::Link;
+        state.mdLink = MdLink::None;
+        i = urlScan; // resume normal scan after the link
+      } else {
+        for (std::size_t j = 0; j < sz; ++j)
+          tokens[j] = SyntaxToken::Link;
+        state.mdLink = MdLink::Url;
+        return;
+      }
+    } else {
+      // `]` not followed by `(`: the construct ends at `]`.
+      std::size_t end = scan + 1; // include ']'
+      for (std::size_t j = 0; j < end; ++j)
+        tokens[j] = SyntaxToken::Link;
+      state.mdLink = MdLink::None;
+      i = end;
+    }
+  } else if (state.mdLink == MdLink::Url) {
+    std::size_t scan = 0;
+    while (scan < sz && line[scan] != ')')
+      ++scan;
+    if (scan == sz) {
+      for (std::size_t j = 0; j < sz; ++j)
+        tokens[j] = SyntaxToken::Link;
+      return;
+    }
+    ++scan; // include ')'
+    for (std::size_t j = 0; j < scan; ++j)
+      tokens[j] = SyntaxToken::Link;
+    state.mdLink = MdLink::None;
+    i = scan;
+  } else {
+    // No carry-over: a leading run of '#' may be a heading.
+    if (!line.empty() && line[0] == '#') {
+      std::size_t h = 0;
+      while (h < sz && line[h] == '#')
+        ++h;
+      if (h == sz || line[h] == ' ') {
+        for (std::size_t j = 0; j < sz; ++j)
+          tokens[j] = SyntaxToken::Heading;
+        return;
+      }
     }
   }
 
-  // Scan for inline bold (**...**) and links ([text](url)).
-  for (std::size_t i = 0; i < sz;) {
-    // Bold: **...**
+  // Inline scan for bold (**...**) and links ([text](url)), starting
+  // at i (0, or just past a link that closed mid-line).
+  for (; i < sz;) {
+    // Bold: **...** (single-line only).
     if (i + 1 < sz && line[i] == '*' && line[i + 1] == '*') {
       std::size_t start = i;
       bool closed = false;
@@ -36,34 +92,48 @@ void tokenizeMarkdownLine(std::string const& line, SyntaxState& /*state*/,
         ++scan;
       }
       if (!closed) {
-        // Unclosed: leave the `**` as Normal and continue scanning past it
-        // so any subsequent links/markup on the same line still highlight.
+        // Unclosed: leave the `**` as Normal and continue scanning past
+        // it so any subsequent links/markup still highlight.
         i = start + 2;
       }
       continue;
     }
 
-    // Link: [text](url). Disallow nested '[' inside the label so a
-    // mismatched outer `[` does not greedily consume a real link further
-    // along the line; on a no-match, resume just past the failed `[`.
+    // Link: [text](url). The label and/or destination may run off the
+    // end of the line; carry the open part into SyntaxState so it
+    // resumes on the next line. Disallow nested '[' inside the label
+    // so a mismatched outer '[' does not greedily consume a real link
+    // further along the line.
     if (line[i] == '[') {
       std::size_t start = i;
       std::size_t scan = i + 1;
       while (scan < sz && line[scan] != ']' && line[scan] != '[')
         ++scan;
-      if (scan < sz && line[scan] == ']' && scan + 1 < sz && line[scan + 1] == '(') {
-        scan += 2;
-        while (scan < sz && line[scan] != ')')
-          ++scan;
-        if (scan < sz) {
-          ++scan;
-          for (std::size_t j = start; j < scan; ++j)
+      if (scan == sz) {
+        // Label runs off the end of the line — continues next line.
+        for (std::size_t j = start; j < sz; ++j)
+          tokens[j] = SyntaxToken::Link;
+        state.mdLink = MdLink::Label;
+        return;
+      }
+      if (line[scan] == ']' && scan + 1 < sz && line[scan + 1] == '(') {
+        std::size_t urlScan = scan + 2;
+        while (urlScan < sz && line[urlScan] != ')')
+          ++urlScan;
+        if (urlScan < sz) {
+          ++urlScan; // include ')'
+          for (std::size_t j = start; j < urlScan; ++j)
             tokens[j] = SyntaxToken::Link;
-          i = scan;
+          i = urlScan;
           continue;
         }
+        // `](` present but `)` missing — destination continues.
+        for (std::size_t j = start; j < sz; ++j)
+          tokens[j] = SyntaxToken::Link;
+        state.mdLink = MdLink::Url;
+        return;
       }
-      // Not a valid link.
+      // `]` not followed by `(`, or a nested `[`: not a link here.
       i = start + 1;
       continue;
     }

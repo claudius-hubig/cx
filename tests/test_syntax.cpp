@@ -946,6 +946,80 @@ BOOST_AUTO_TEST_CASE(md_unclosed_bold_does_not_eat_trailing_link) {
   BOOST_CHECK(allTokens(toks, 13, 24, SyntaxToken::Link));
 }
 
+BOOST_AUTO_TEST_CASE(md_link_label_spans_two_lines) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("see [an external");
+  tokenizeMarkdownLine(l1, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Normal));
+  BOOST_CHECK(allTokens(toks, 4, l1.size(), SyntaxToken::Link)); // [an external
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+
+  auto l2 = mkline("site](http://example.org) end");
+  tokenizeMarkdownLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 25, SyntaxToken::Link)); // site](...)
+  BOOST_CHECK(allTokens(toks, 25, l2.size(), SyntaxToken::Normal));
+  BOOST_CHECK(st.mdLink == MdLink::None);
+}
+
+BOOST_AUTO_TEST_CASE(md_link_url_spans_two_lines) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("[text](http://");
+  tokenizeMarkdownLine(l1, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l1.size(), SyntaxToken::Link));
+  BOOST_CHECK(st.mdLink == MdLink::Url);
+
+  auto l2 = mkline("example.com) rest");
+  tokenizeMarkdownLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 12, SyntaxToken::Link)); // example.com)
+  BOOST_CHECK(allTokens(toks, 12, l2.size(), SyntaxToken::Normal));
+  BOOST_CHECK(st.mdLink == MdLink::None);
+}
+
+BOOST_AUTO_TEST_CASE(md_link_label_spans_three_lines) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("[abc");
+  tokenizeMarkdownLine(l1, st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+  auto l2 = mkline("def");
+  tokenizeMarkdownLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::Link));
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+  auto l3 = mkline("ghi](url) z");
+  tokenizeMarkdownLine(l3, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 9, SyntaxToken::Link));
+  BOOST_CHECK(allTokens(toks, 9, l3.size(), SyntaxToken::Normal));
+  BOOST_CHECK(st.mdLink == MdLink::None);
+}
+
+BOOST_AUTO_TEST_CASE(md_unterminated_link_colors_to_eof) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("[never closed");
+  tokenizeMarkdownLine(l1, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l1.size(), SyntaxToken::Link));
+  auto l2 = mkline("still going");
+  tokenizeMarkdownLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::Link));
+  BOOST_CHECK(st.mdLink == MdLink::Label); // stays open optimistically
+}
+
+BOOST_AUTO_TEST_CASE(md_heading_suppressed_during_link_continuation) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("[link text");
+  tokenizeMarkdownLine(l1, st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+  // A '#' here is link-label text, not a heading.
+  auto l2 = mkline("# not a heading](url)");
+  tokenizeMarkdownLine(l2, st, toks);
+  BOOST_CHECK(toks[0] == SyntaxToken::Link);
+  BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::Link));
+  BOOST_CHECK(st.mdLink == MdLink::None);
+}
+
 BOOST_AUTO_TEST_CASE(md_mode_detection) {
   TempFile tmp("# Hello\n", ".md");
   TB<TextBuffer> buf(tmp.path().string(), tmp.path());
