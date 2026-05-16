@@ -351,6 +351,24 @@ BOOST_AUTO_TEST_CASE(yaml_extension_sets_yml_mode) {
   BOOST_CHECK(buf.mode() == BufferMode::Yml);
 }
 
+BOOST_AUTO_TEST_CASE(py_extension_sets_py_mode) {
+  TempFile tmp("x = 1\n", ".py");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Py);
+}
+
+BOOST_AUTO_TEST_CASE(pyi_extension_sets_py_mode) {
+  TempFile tmp("def f() -> int: ...\n", ".pyi");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Py);
+}
+
+BOOST_AUTO_TEST_CASE(shebang_python_sets_py_mode_without_extension) {
+  TempFile tmp("#!/usr/bin/env python3\nprint(1)\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Py);
+}
+
 // --- Line ending detection ---
 
 BOOST_AUTO_TEST_CASE(line_endings_unix_default_for_scratch_buffer) {

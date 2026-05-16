@@ -5,6 +5,7 @@
 #include "buffer/modes/c/syntax.hpp"
 #include "buffer/modes/dif/syntax.hpp"
 #include "buffer/modes/jsn/syntax.hpp"
+#include "buffer/modes/py/syntax.hpp"
 #include "buffer/modes/sh/syntax.hpp"
 #include "buffer/modes/yml/syntax.hpp"
 #include "buffer/text_buffer.hpp"
@@ -1581,4 +1582,87 @@ BOOST_AUTO_TEST_CASE(yml_colon_without_space_is_not_key) {
   // No "<key>: " so nothing is a Keyword; URL stays a plain scalar.
   BOOST_CHECK(toks[0] == SyntaxToken::Normal);
   BOOST_CHECK(toks[4] == SyntaxToken::Normal); // the ':' in http:
+}
+
+// ============================================================
+// Python (py) mode
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(py_comment_and_number) {
+  auto line = mkline("x = 1  # note");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizePythonLine(line, st, toks);
+  BOOST_CHECK(toks[4] == SyntaxToken::Number); // 1
+  BOOST_CHECK(allTokens(toks, 7, line.size(), SyntaxToken::Comment));
+}
+
+BOOST_AUTO_TEST_CASE(py_keyword_def_and_punctuation) {
+  auto line = mkline("def foo():");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizePythonLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Keyword)); // def
+  BOOST_CHECK(toks[7] == SyntaxToken::Paren);               // (
+  BOOST_CHECK(toks[9] == SyntaxToken::Operator);            // :
+}
+
+BOOST_AUTO_TEST_CASE(py_fstring_keeps_braces_in_string) {
+  auto line = mkline(R"(f"a{x}b")");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizePythonLine(line, st, toks);
+  // Prefix, quotes and the {x} interior are all one String span.
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::String));
+}
+
+BOOST_AUTO_TEST_CASE(py_number_hex_and_imaginary) {
+  auto line = mkline("0xFF + 3j");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizePythonLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number)); // 0xFF
+  BOOST_CHECK(allTokens(toks, 7, 9, SyntaxToken::Number)); // 3j
+}
+
+BOOST_AUTO_TEST_CASE(py_decorator_only_at_line_start) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto dec = mkline("@app.route");
+  tokenizePythonLine(dec, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, dec.size(), SyntaxToken::Preprocessor));
+  auto mid = mkline("x @ y"); // '@' not first token -> not a decorator
+  tokenizePythonLine(mid, st, toks);
+  BOOST_CHECK(toks[2] == SyntaxToken::Normal);
+}
+
+BOOST_AUTO_TEST_CASE(py_triple_quoted_spans_lines_with_fake_close_inside) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+
+  auto l1 = mkline(R"(s = """start)");
+  tokenizePythonLine(l1, st, toks);
+  BOOST_CHECK(allTokens(toks, 4, l1.size(), SyntaxToken::String));
+  BOOST_CHECK(st.pyTriple == '"'); // open across lines
+
+  auto l2 = mkline(R"(has "fake" but not a close)");
+  tokenizePythonLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::String));
+  BOOST_CHECK(st.pyTriple == '"'); // single quotes don't close it
+
+  auto l3 = mkline(R"(end""" + x)");
+  tokenizePythonLine(l3, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::String)); // end + closing """
+  BOOST_CHECK(st.pyTriple == 0);                           // closed
+  BOOST_CHECK(toks[9] == SyntaxToken::Normal);             // code after string
+}
+
+BOOST_AUTO_TEST_CASE(py_prefix_letter_word_is_not_a_string) {
+  auto line = mkline("understand = 1");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizePythonLine(line, st, toks);
+  // 'u' is a string prefix letter, but "understand" is an identifier.
+  BOOST_CHECK(toks[0] == SyntaxToken::Normal);
+  BOOST_CHECK(toks[13] == SyntaxToken::Number); // the 1
 }

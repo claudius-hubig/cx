@@ -111,6 +111,7 @@ src/
       jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
       sh/syntax.hpp/.cpp           Shell tokenizer (comments, strings, heredocs, $VAR, keywords)
       yml/syntax.hpp/.cpp          YAML tokenizer (keys, strings, constants, block scalars)
+      py/syntax.hpp/.cpp           Python tokenizer (strings, triple-quotes, keywords, decorators)
 tests/
   test_helpers.hpp                 Shared test utilities
   test_buffer.cpp                  Buffer base class tests

@@ -4,6 +4,7 @@
 #include "modes/dif/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
 #include "modes/md/syntax.hpp"
+#include "modes/py/syntax.hpp"
 #include "modes/sh/syntax.hpp"
 #include "modes/yml/syntax.hpp"
 #include "utf8.hpp"
@@ -25,7 +26,7 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
     line.resize(at.offset);
 
     std::size_t autoIndent = 0;
-    if (_mode == BufferMode::Cpp || _mode == BufferMode::Jsn) {
+    if (_mode == BufferMode::Cpp || _mode == BufferMode::Jsn || _mode == BufferMode::Py) {
       while (autoIndent < line.size() && line[autoIndent] == ' ')
         ++autoIndent;
     }
@@ -322,6 +323,8 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
       tokenizeShellLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Yml)
       tokenizeYamlLine(line, state, _synCache[i].tokens);
+    else if (_mode == BufferMode::Py)
+      tokenizePythonLine(line, state, _synCache[i].tokens);
     else
       _synCache[i].tokens.assign(line.size(), SyntaxToken::Normal);
     _synCache[i].stateAfter = state;

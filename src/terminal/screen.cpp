@@ -392,6 +392,7 @@ void Screen::drawModeline(Panel& panel, bool focused) {
               : pbuf.mode() == BufferMode::Dif ? " [dif]"
               : pbuf.mode() == BufferMode::Sh  ? " [sh]"
               : pbuf.mode() == BufferMode::Yml ? " [yml]"
+              : pbuf.mode() == BufferMode::Py  ? " [py]"
                                                : " [txt]";
   suffix += pbuf.modified() ? " +" : "  ";
   auto suffix_vwidth = visualWidth(suffix);
@@ -1242,7 +1243,7 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
 
 void Screen::openSetModePrompt() {
   _prompt = Prompt{
-      .label = "Mode [txt/c/md/jsn/dif/sh/yml]: ",
+      .label = "Mode [txt/c/md/jsn/dif/sh/yml/py]: ",
       .onResult =
           [this](std::string const& value) {
             if (value == "c" || value == "cpp" || value == "c++") {
@@ -1273,9 +1274,13 @@ void Screen::openSetModePrompt() {
               if (_buf)
                 _buf->setMode(BufferMode::Yml);
               setStatus("Mode: yml");
+            } else if (value == "py" || value == "python") {
+              if (_buf)
+                _buf->setMode(BufferMode::Py);
+              setStatus("Mode: py");
             } else {
               setStatus("Unknown mode: " + escapeNonPrintable(value) +
-                        " (use 'txt', 'c', 'md', 'jsn', 'dif', 'sh', or 'yml')");
+                        " (use 'txt', 'c', 'md', 'jsn', 'dif', 'sh', 'yml', or 'py')");
             }
           },
   };

@@ -236,8 +236,8 @@ Public API:
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.
 - **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`,
-  `Yml`) determines syntax highlighting, auto-indent, and formatting
-  behaviour.
+  `Yml`, `Py`) determines syntax highlighting, auto-indent, and
+  formatting behaviour.
   Changed via `setMode()`, which invalidates the per-line syntax cache.
 - **Line-number gutter**: `RenderParams::leftGutter` (in screen columns)
   reserves space at the left of the panel for right-aligned 1-based
@@ -345,11 +345,11 @@ and clear the mark. Exposes `setPath()` for the save-as rename
 workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
 `.diff`, `.patch` → `Dif`; `.sh`, `.bash`, `.zsh`, `.ksh` → `Sh`;
-`.yml`, `.yaml` → `Yml`; otherwise `Txt`). When the extension is
-unknown, a leading `#!` line
-is sniffed for a shell interpreter (`bash`/`zsh`/`ksh`/`dash`/`sh`)
-as a fallback; only line 0 is inspected, so `detectMode()` now runs
-after `loadFromFile()` in the file constructor.
+`.yml`, `.yaml` → `Yml`; `.py`, `.pyi`, `.pyw` → `Py`; otherwise
+`Txt`). When the extension is unknown, a leading `#!` line is sniffed
+for an interpreter (`bash`/`zsh`/`ksh`/`dash`/`sh` → `Sh`, `python`
+→ `Py`) as a fallback; only line 0 is inspected, so `detectMode()`
+now runs after `loadFromFile()` in the file constructor.
 
 `TextBuffer` also tracks the on-disk mtime + size (captured on load and
 after a successful `save()`) so `changedOnDisk()` can warn when the file
@@ -581,10 +581,23 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   holds the introducing line's indent; deeper-indented or blank lines
   are one `String` span until a non-blank line dedents back to it.
 
+- **Python mode** (`modes/py/syntax.hpp/.cpp`): Tokenizes `#`
+  comments, strings with optional `r`/`b`/`f`/`u` prefixes
+  (single/double and triple-quoted), the keyword set
+  (`def`/`class`/`for`/`lambda`/`None`/`True`/… ), numbers
+  (`0x`/`0o`/`0b`, `_` groups, fraction/exponent, imaginary `j`),
+  `@decorator` lines (`Preprocessor`), brackets, and `:` (`Operator`).
+  Maintains multi-line state for triple-quoted strings:
+  `state.pyTriple` holds the open quote char and `state.pyTripleRaw`
+  suppresses escape handling for `r'''...'''`; f-string `{...}`
+  interiors stay inside the `String` span (no recursion). Python is
+  also added to the leading-indent-preserving set in
+  `Buffer::insertAt` (alongside Cpp/Jsn).
+
 `BufferView::gotoMatchingBracket()` dispatches to the JSON matcher in
 JSON mode and to the C/C++ matcher in every other mode. Because the
 C/C++ matcher only treats `<>` as brackets when tagged `Angle`, plain
-text, Markdown, shell and YAML buffers (where `<>` are
+text, Markdown, shell, YAML and Python buffers (where `<>` are
 `Operator`/`Normal`, never `Angle`) get a clean `()[]{}`-only
 fallback for free.
 

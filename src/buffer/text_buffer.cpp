@@ -201,6 +201,8 @@ void TextBuffer::detectMode() {
     _mode = BufferMode::Sh;
   else if (ext == ".yml" || ext == ".yaml")
     _mode = BufferMode::Yml;
+  else if (ext == ".py" || ext == ".pyi" || ext == ".pyw")
+    _mode = BufferMode::Py;
   else
     _mode = BufferMode::Txt;
 
@@ -212,6 +214,8 @@ void TextBuffer::detectMode() {
       auto has = [&](std::string_view needle) { return first.find(needle) != std::string::npos; };
       if (has("bash") || has("zsh") || has("ksh") || has("dash") || has("/sh") || has(" sh"))
         _mode = BufferMode::Sh;
+      else if (has("python"))
+        _mode = BufferMode::Py;
     }
   }
 }
