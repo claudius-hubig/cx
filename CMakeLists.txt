@@ -3,15 +3,22 @@ project(cx)
 
 set(CMAKE_CXX_STANDARD 23)
 
+# Per-mode syntax tokenizers. Listed once here and referenced as
+# ${SYNTAX_SOURCES} by every target that links the buffer layer, so
+# adding a new mode is a one-line change instead of editing ~20 blocks.
+set(SYNTAX_SOURCES
+    src/buffer/modes/c/syntax.cpp
+    src/buffer/modes/dif/syntax.cpp
+    src/buffer/modes/md/syntax.cpp
+    src/buffer/modes/jsn/syntax.cpp
+)
+
 add_executable(cx
     src/main.cpp
     src/clipboard.cpp
     src/error_log.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/shortcut.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
@@ -53,10 +60,7 @@ add_executable(test_buffer
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
@@ -71,10 +75,7 @@ add_executable(test_text_buffer
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -87,10 +88,7 @@ add_executable(test_help_buffer
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/help_buffer.cpp
     src/shortcut.cpp
 )
@@ -103,10 +101,7 @@ add_executable(test_buffer_list_buffer
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/buffer_list_buffer.cpp
 )
 target_include_directories(test_buffer_list_buffer PRIVATE src)
@@ -118,10 +113,7 @@ add_executable(test_buffer_manager
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
@@ -140,10 +132,7 @@ add_executable(test_render
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -156,10 +145,7 @@ add_executable(test_movement
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -172,10 +158,7 @@ add_executable(test_comment_toggle
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -188,10 +171,7 @@ add_executable(test_chunk_delete
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/buffer/help_buffer.cpp
@@ -206,10 +186,7 @@ add_executable(test_scroll
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -238,10 +215,7 @@ add_executable(test_syntax
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -254,10 +228,7 @@ add_executable(test_dir_buffer
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/dir_buffer.cpp
 )
 target_include_directories(test_dir_buffer PRIVATE src .)
@@ -269,10 +240,7 @@ add_executable(test_e2e
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -285,10 +253,7 @@ add_executable(test_buffer_view
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -327,10 +292,7 @@ add_executable(test_paste_ring_buffer
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/paste_ring_buffer.cpp
 )
 target_include_directories(test_paste_ring_buffer PRIVATE src)
@@ -364,10 +326,7 @@ add_executable(test_replace
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -380,10 +339,7 @@ add_executable(test_regex_search
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
 )
@@ -398,10 +354,7 @@ add_executable(bench_history
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
 )
 target_include_directories(bench_history PRIVATE src .)
 target_compile_options(bench_history PRIVATE -O2)
@@ -414,10 +367,7 @@ add_executable(bench_editing
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
 )
 target_include_directories(bench_editing PRIVATE src .)
 target_compile_options(bench_editing PRIVATE -O2)
@@ -429,10 +379,7 @@ add_executable(bench_open
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
 )
 target_include_directories(bench_open PRIVATE src .)
 target_compile_options(bench_open PRIVATE -O2)
@@ -442,10 +389,7 @@ add_executable(test_panel_layout
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/utf8.cpp
-    src/buffer/modes/c/syntax.cpp
-    src/buffer/modes/dif/syntax.cpp
-    src/buffer/modes/md/syntax.cpp
-    src/buffer/modes/jsn/syntax.cpp
+    ${SYNTAX_SOURCES}
     src/buffer/text_buffer.cpp
     src/buffer/version_history.cpp
     src/terminal/panel.cpp
