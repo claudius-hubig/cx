@@ -1,0 +1,17 @@
+{
+  "name": "sample",
+  "version": 2,
+  "enabled": true,
+  "disabled": false,
+  "nothing": null,
+  "ratio": 3.14,
+  "negative": -17,
+  "exponent": 6.022e23,
+  "nested": {
+    "list": [1, 2, 3, "four", null],
+    "escaped": "a \"quoted\" value with \\ and \/",
+    "unicode": "snowman ☃"
+  },
+  "emptyObject": {},
+  "emptyArray": []
+}

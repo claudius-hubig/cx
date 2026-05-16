@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+# No .py extension — mode must be detected from the shebang line.
+# This whole file should highlight as Python (modeline should show [py]).
+import sys
+
+
+def main() -> int:
+    total = sum(i**2 for i in range(10))
+    print(f"sum of squares = {total}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

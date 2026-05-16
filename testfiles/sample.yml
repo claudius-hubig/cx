@@ -1,0 +1,39 @@
+%YAML 1.2
+---
+# sample.yml — YAML mode manual highlight check
+name: sample-config
+version: 2
+enabled: true
+disabled: off
+missing: null
+shorthand: ~
+ratio: 3.14
+negative: -17
+exponent: 6.022e23
+quoted_key: "value with: a colon inside"
+'single quoted key': plain value
+url: http://example.com/not-a-key   # colon w/o space stays scalar
+
+defaults: &base
+  retries: 3
+  timeout: 30
+
+service:
+  <<: *base
+  tags: [web, !!str 42, production]
+  matrix: { os: linux, arch: arm64 }
+  members:
+    - alice
+    - bob
+    - name: carol
+      role: admin
+
+literal_block: |
+  This whole indented region is one
+  String span.  key: not-a-key here.
+    deeper indent still in the block
+folded_block: >
+  Folded scalar lines are also
+  literal block content.
+after_block: done   # back at column 0 — block has ended
+...

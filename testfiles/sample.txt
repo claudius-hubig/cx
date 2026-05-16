@@ -1,0 +1,16 @@
+sample.txt — plain text mode
+
+No syntax highlighting applies here: keywords like if/for/def,
+"quoted strings", $VARS, and # hashes are all rendered normally.
+
+Conflict-marker overlay is independent of the syntax mode, so the
+block below should still get its distinct ours/divider/theirs
+backgrounds even in txt mode:
+
+<<<<<<< HEAD
+our version of the line
+=======
+their version of the line
+>>>>>>> feature-branch
+
+Everything after the conflict is plain text again.

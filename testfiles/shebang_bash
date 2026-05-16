@@ -1,0 +1,8 @@
+#!/bin/bash
+# No .sh extension — mode must be detected from the shebang line.
+# This whole file should highlight as shell (modeline should show [sh]).
+greeting="hello from a shebang-detected script"
+for n in one two three; do
+  echo "$greeting: $n (${#greeting} chars)"
+done
+exit 0
