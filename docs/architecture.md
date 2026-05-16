@@ -235,7 +235,7 @@ Public API:
 - **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.
-- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`)
+- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`)
   determines syntax highlighting, auto-indent, and formatting behaviour.
   Changed via `setMode()`, which invalidates the per-line syntax cache.
 - **Line-number gutter**: `RenderParams::leftGutter` (in screen columns)
@@ -343,7 +343,11 @@ user-invoked `Revert` action) explicitly reset `_view->setPoint(0,0)`
 and clear the mark. Exposes `setPath()` for the save-as rename
 workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
-`.diff`, `.patch` → `Dif`; otherwise `Txt`).
+`.diff`, `.patch` → `Dif`; `.sh`, `.bash`, `.zsh`, `.ksh` → `Sh`;
+otherwise `Txt`). When the extension is unknown, a leading `#!` line
+is sniffed for a shell interpreter (`bash`/`zsh`/`ksh`/`dash`/`sh`)
+as a fallback; only line 0 is inspected, so `detectMode()` now runs
+after `loadFromFile()` in the file constructor.
 
 `TextBuffer` also tracks the on-disk mtime + size (captured on load and
 after a successful `save()`) so `changedOnDisk()` can warn when the file
@@ -554,11 +558,21 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   `findMatchingBracketJson()` for jump-to-matching-bracket; only `[]`
   and `{}` are matched, brackets inside strings are skipped.
 
+- **Shell mode** (`modes/sh/syntax.hpp/.cpp`): Tokenizes `#` comments,
+  single/double-quoted and backtick strings, the reserved word set
+  (`if`/`then`/`fi`/`for`/`while`/`do`/`done`/…), `$VAR`/`${...}`/`$?`
+  parameter expansions (the `Variable` token), brackets, and the `|`
+  `&` `;` `<` `>` `=` operators. Maintains multi-line state for
+  heredocs: `state.heredocTag` makes every following line one `String`
+  span until a line equal to the tag (leading tabs stripped for the
+  `<<-` form, tracked by `state.heredocStripTabs`); `<<<` here-strings
+  are not heredocs.
+
 `BufferView::gotoMatchingBracket()` dispatches to the JSON matcher in
 JSON mode and to the C/C++ matcher in every other mode. Because the
 C/C++ matcher only treats `<>` as brackets when tagged `Angle`, plain
-text and Markdown buffers (where tokens are all `Normal`) get a clean
-`()[]{}`-only fallback for free.
+text, Markdown and shell buffers (where `<>` are `Operator`/`Normal`,
+never `Angle`) get a clean `()[]{}`-only fallback for free.
 
 - **Conflict markers**: Regardless of mode, lines matching `<<<<<<<`,
   `=======`, or `>>>>>>>` (7 identical characters) are overlaid with
@@ -568,8 +582,8 @@ text and Markdown buffers (where tokens are all `Normal`) get a clean
 The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 `Operator`, `Paren`, `Bracket`, `Brace`, `Angle`, `Heading`, `Bold`,
 `Link`, `Number`, `Preprocessor`, `DiffAdd`, `DiffRemove`, `DiffMeta`,
-`DiffHunk`, `ConflictMarker`) is shared across modes. Tokens are mapped
-to ANSI colours in `Buffer::render()`.
+`DiffHunk`, `ConflictMarker`, `Variable`) is shared across modes.
+Tokens are mapped to ANSI colours in `Buffer::render()`.
 
 Per-line tokenisation results are cached in `Buffer::_synCache` and
 invalidated from the edited line forward. `Buffer::render()` extends

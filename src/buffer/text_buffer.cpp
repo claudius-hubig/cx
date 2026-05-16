@@ -13,8 +13,9 @@ TextBuffer::TextBuffer(std::string name) : Buffer(std::move(name)) {
 
 TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
     : Buffer(std::move(name)), _path(path) {
-  detectMode();
   loadFromFile(path);
+  // After load so the shebang fallback can inspect the first line.
+  detectMode();
   _history.captureInitial(_lines, {0, 0});
 }
 
@@ -196,8 +197,21 @@ void TextBuffer::detectMode() {
     _mode = BufferMode::Jsn;
   else if (ext == ".diff" || ext == ".patch")
     _mode = BufferMode::Dif;
+  else if (ext == ".sh" || ext == ".bash" || ext == ".zsh" || ext == ".ksh")
+    _mode = BufferMode::Sh;
   else
     _mode = BufferMode::Txt;
+
+  // Shebang fallback: when the extension didn't pin a mode, sniff the
+  // interpreter from a leading `#!` line (only line 0 is inspected).
+  if (_mode == BufferMode::Txt && !_lines.empty()) {
+    auto const& first = *_lines[0];
+    if (first.size() >= 2 && first[0] == '#' && first[1] == '!') {
+      auto has = [&](std::string_view needle) { return first.find(needle) != std::string::npos; };
+      if (has("bash") || has("zsh") || has("ksh") || has("dash") || has("/sh") || has(" sh"))
+        _mode = BufferMode::Sh;
+    }
+  }
 }
 
 void TextBuffer::setPath(std::filesystem::path p) {

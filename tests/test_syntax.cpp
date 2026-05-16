@@ -5,6 +5,7 @@
 #include "buffer/modes/c/syntax.hpp"
 #include "buffer/modes/dif/syntax.hpp"
 #include "buffer/modes/jsn/syntax.hpp"
+#include "buffer/modes/sh/syntax.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
 
@@ -1359,4 +1360,137 @@ BOOST_AUTO_TEST_CASE(conflict_cleared_after_save) {
   auto result = buf.save();
   BOOST_CHECK(result.has_value());
   BOOST_CHECK(!buf.hasConflicts()); // cleared after save
+}
+
+// ============================================================
+// Shell (sh) mode
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(sh_comment_after_space) {
+  auto line = mkline("echo hi # note");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 8, line.size(), SyntaxToken::Comment));
+  BOOST_CHECK(toks[0] == SyntaxToken::Normal); // 'echo' is not a keyword
+}
+
+BOOST_AUTO_TEST_CASE(sh_hash_without_space_is_not_comment) {
+  auto line = mkline("a#b");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(sh_single_quoted_string) {
+  auto line = mkline("x='a b'");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 2, 7, SyntaxToken::String));
+  BOOST_CHECK(toks[1] == SyntaxToken::Operator); // '='
+}
+
+BOOST_AUTO_TEST_CASE(sh_double_quoted_string_with_escape) {
+  auto line = mkline(R"(s="a\"b")");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  // Whole "a\"b" span (offsets 2..8) is String, escaped quote included.
+  BOOST_CHECK(allTokens(toks, 2, 8, SyntaxToken::String));
+}
+
+BOOST_AUTO_TEST_CASE(sh_backtick_is_string) {
+  auto line = mkline("x=`date`");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 2, 8, SyntaxToken::String));
+}
+
+BOOST_AUTO_TEST_CASE(sh_keywords_if_then) {
+  auto line = mkline("if true; then");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Keyword));  // if
+  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Keyword)); // then
+  BOOST_CHECK(toks[7] == SyntaxToken::Operator);             // ';'
+  BOOST_CHECK(toks[3] == SyntaxToken::Normal);               // 'true' is a command
+}
+
+BOOST_AUTO_TEST_CASE(sh_variable_simple) {
+  auto line = mkline("echo $HOME");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 5, 10, SyntaxToken::Variable));
+}
+
+BOOST_AUTO_TEST_CASE(sh_variable_braced) {
+  auto line = mkline("echo ${HOME}");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 5, 12, SyntaxToken::Variable));
+}
+
+BOOST_AUTO_TEST_CASE(sh_variable_special_param) {
+  auto line = mkline("echo $?");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeShellLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 5, 7, SyntaxToken::Variable));
+}
+
+BOOST_AUTO_TEST_CASE(sh_heredoc_open_body_close) {
+  SyntaxState st;
+  std::vector<SyntaxToken> t1, t2, t3;
+  auto l1 = mkline("cat <<EOF");
+  tokenizeShellLine(l1, st, t1);
+  BOOST_CHECK(t1[4] == SyntaxToken::Operator && t1[5] == SyntaxToken::Operator);
+  BOOST_CHECK(allTokens(t1, 6, 9, SyntaxToken::String)); // delimiter word
+  BOOST_CHECK(st.heredocTag.has_value());
+
+  auto l2 = mkline("  hello $x");
+  tokenizeShellLine(l2, st, t2);
+  BOOST_CHECK(allTokens(t2, 0, l2.size(), SyntaxToken::String)); // body
+  BOOST_CHECK(st.heredocTag.has_value());                        // still open
+
+  auto l3 = mkline("EOF");
+  tokenizeShellLine(l3, st, t3);
+  BOOST_CHECK(allTokens(t3, 0, 3, SyntaxToken::Normal)); // terminator
+  BOOST_CHECK(!st.heredocTag.has_value());               // closed
+}
+
+BOOST_AUTO_TEST_CASE(sh_heredoc_fake_terminator_inside_is_body) {
+  SyntaxState st;
+  std::vector<SyntaxToken> t;
+  auto l1 = mkline("cat <<END");
+  tokenizeShellLine(l1, st, t);
+  auto body = mkline("ENDX"); // not exactly the tag — still body
+  tokenizeShellLine(body, st, t);
+  BOOST_CHECK(allTokens(t, 0, 4, SyntaxToken::String));
+  BOOST_CHECK(st.heredocTag.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(sh_heredoc_dash_strips_leading_tabs) {
+  SyntaxState st;
+  std::vector<SyntaxToken> t;
+  auto l1 = mkline("cat <<-END");
+  tokenizeShellLine(l1, st, t);
+  BOOST_CHECK(st.heredocTag.has_value());
+  BOOST_CHECK(st.heredocStripTabs);
+  auto term = mkline("\tEND"); // tab-indented terminator closes <<-
+  tokenizeShellLine(term, st, t);
+  BOOST_CHECK(!st.heredocTag.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(sh_here_string_is_not_heredoc) {
+  SyntaxState st;
+  std::vector<SyntaxToken> t;
+  auto line = mkline("cat <<<word");
+  tokenizeShellLine(line, st, t);
+  BOOST_CHECK(!st.heredocTag.has_value()); // <<< is a here-string
 }

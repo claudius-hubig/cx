@@ -390,6 +390,7 @@ void Screen::drawModeline(Panel& panel, bool focused) {
               : pbuf.mode() == BufferMode::Md  ? " [md]"
               : pbuf.mode() == BufferMode::Jsn ? " [jsn]"
               : pbuf.mode() == BufferMode::Dif ? " [dif]"
+              : pbuf.mode() == BufferMode::Sh  ? " [sh]"
                                                : " [txt]";
   suffix += pbuf.modified() ? " +" : "  ";
   auto suffix_vwidth = visualWidth(suffix);
@@ -1240,7 +1241,7 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
 
 void Screen::openSetModePrompt() {
   _prompt = Prompt{
-      .label = "Mode [txt/c/md/jsn/dif]: ",
+      .label = "Mode [txt/c/md/jsn/dif/sh]: ",
       .onResult =
           [this](std::string const& value) {
             if (value == "c" || value == "cpp" || value == "c++") {
@@ -1263,9 +1264,13 @@ void Screen::openSetModePrompt() {
               if (_buf)
                 _buf->setMode(BufferMode::Dif);
               setStatus("Mode: dif");
+            } else if (value == "sh" || value == "shell" || value == "bash") {
+              if (_buf)
+                _buf->setMode(BufferMode::Sh);
+              setStatus("Mode: sh");
             } else {
               setStatus("Unknown mode: " + escapeNonPrintable(value) +
-                        " (use 'txt', 'c', 'md', 'jsn', or 'dif')");
+                        " (use 'txt', 'c', 'md', 'jsn', 'dif', or 'sh')");
             }
           },
   };

@@ -309,6 +309,36 @@ BOOST_AUTO_TEST_CASE(setPath_to_txt_resets_mode) {
   BOOST_CHECK(buf.mode() == BufferMode::Txt);
 }
 
+BOOST_AUTO_TEST_CASE(sh_extension_sets_sh_mode) {
+  TempFile tmp("echo hi\n", ".sh");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Sh);
+}
+
+BOOST_AUTO_TEST_CASE(bash_extension_sets_sh_mode) {
+  TempFile tmp("echo hi\n", ".bash");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Sh);
+}
+
+BOOST_AUTO_TEST_CASE(shebang_bash_sets_sh_mode_without_extension) {
+  TempFile tmp("#!/bin/bash\necho hi\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Sh);
+}
+
+BOOST_AUTO_TEST_CASE(shebang_usr_bin_env_sh_sets_sh_mode) {
+  TempFile tmp("#!/usr/bin/env sh\necho hi\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Sh);
+}
+
+BOOST_AUTO_TEST_CASE(non_shell_shebang_stays_text_mode) {
+  TempFile tmp("#!/usr/bin/perl\nprint 1;\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Txt);
+}
+
 // --- Line ending detection ---
 
 BOOST_AUTO_TEST_CASE(line_endings_unix_default_for_scratch_buffer) {

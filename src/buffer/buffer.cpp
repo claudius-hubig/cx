@@ -4,6 +4,7 @@
 #include "modes/dif/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
 #include "modes/md/syntax.hpp"
+#include "modes/sh/syntax.hpp"
 #include "utf8.hpp"
 
 #include <algorithm>
@@ -316,6 +317,8 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
       tokenizeDiffLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Cpp)
       tokenizeLine(line, state, _synCache[i].tokens);
+    else if (_mode == BufferMode::Sh)
+      tokenizeShellLine(line, state, _synCache[i].tokens);
     else
       _synCache[i].tokens.assign(line.size(), SyntaxToken::Normal);
     _synCache[i].stateAfter = state;
@@ -359,6 +362,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   static constexpr auto kSynOperator = "\x1b[38;2;150;100;200m"; // purple
   static constexpr auto kSynNumber = "\x1b[38;2;100;200;200m";   // light turquoise
   static constexpr auto kSynPreproc = "\x1b[38;2;180;140;60m";   // amber
+  static constexpr auto kSynVariable = "\x1b[38;2;210;150;90m";  // orange (shell $VAR/${...})
   static constexpr auto kSynReset = "\x1b[22;39m";               // bold off + default fg
   // Bracket match: turquoise foreground (no bold/underline).
   static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
@@ -625,6 +629,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       return kSynNumber;
     case SyntaxToken::Preprocessor:
       return kSynPreproc;
+    case SyntaxToken::Variable:
+      return kSynVariable;
     case SyntaxToken::DiffHunk:
       return kDiffHunkFg;
     case SyntaxToken::DiffAdd:

@@ -109,6 +109,7 @@ src/
       dif/syntax.hpp/.cpp          Diff/patch tokenizer (add, remove, meta, hunk)
       md/syntax.hpp/.cpp           Markdown tokenizer (headings, bold, links)
       jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
+      sh/syntax.hpp/.cpp           Shell tokenizer (comments, strings, heredocs, $VAR, keywords)
 tests/
   test_helpers.hpp                 Shared test utilities
   test_buffer.cpp                  Buffer base class tests

@@ -11,6 +11,7 @@ set(SYNTAX_SOURCES
     src/buffer/modes/dif/syntax.cpp
     src/buffer/modes/md/syntax.cpp
     src/buffer/modes/jsn/syntax.cpp
+    src/buffer/modes/sh/syntax.cpp
 )
 
 add_executable(cx
