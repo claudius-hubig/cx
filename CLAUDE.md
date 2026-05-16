@@ -110,6 +110,7 @@ src/
       md/syntax.hpp/.cpp           Markdown tokenizer (headings, bold, links)
       jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
       sh/syntax.hpp/.cpp           Shell tokenizer (comments, strings, heredocs, $VAR, keywords)
+      yml/syntax.hpp/.cpp          YAML tokenizer (keys, strings, constants, block scalars)
 tests/
   test_helpers.hpp                 Shared test utilities
   test_buffer.cpp                  Buffer base class tests

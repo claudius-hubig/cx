@@ -339,6 +339,18 @@ BOOST_AUTO_TEST_CASE(non_shell_shebang_stays_text_mode) {
   BOOST_CHECK(buf.mode() == BufferMode::Txt);
 }
 
+BOOST_AUTO_TEST_CASE(yml_extension_sets_yml_mode) {
+  TempFile tmp("a: 1\n", ".yml");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Yml);
+}
+
+BOOST_AUTO_TEST_CASE(yaml_extension_sets_yml_mode) {
+  TempFile tmp("a: 1\n", ".yaml");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Yml);
+}
+
 // --- Line ending detection ---
 
 BOOST_AUTO_TEST_CASE(line_endings_unix_default_for_scratch_buffer) {

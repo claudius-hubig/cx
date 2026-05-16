@@ -6,6 +6,7 @@
 #include "buffer/modes/dif/syntax.hpp"
 #include "buffer/modes/jsn/syntax.hpp"
 #include "buffer/modes/sh/syntax.hpp"
+#include "buffer/modes/yml/syntax.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
 
@@ -1493,4 +1494,91 @@ BOOST_AUTO_TEST_CASE(sh_here_string_is_not_heredoc) {
   auto line = mkline("cat <<<word");
   tokenizeShellLine(line, st, t);
   BOOST_CHECK(!st.heredocTag.has_value()); // <<< is a here-string
+}
+
+// ============================================================
+// YAML (yml) mode
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(yml_key_and_string_value) {
+  auto line = mkline(R"(name: "John")");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeYamlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword)); // name
+  BOOST_CHECK(toks[4] == SyntaxToken::Operator);            // ':'
+  BOOST_CHECK(allTokens(toks, 6, 12, SyntaxToken::String)); // "John"
+}
+
+BOOST_AUTO_TEST_CASE(yml_bool_and_number_scalars) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("enabled: true");
+  tokenizeYamlLine(l1, st, toks);
+  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Keyword)); // true
+  auto l2 = mkline("count: -12.5");
+  tokenizeYamlLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 7, 12, SyntaxToken::Number)); // -12.5
+}
+
+BOOST_AUTO_TEST_CASE(yml_comment_after_space) {
+  auto line = mkline("port: 80 # http");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeYamlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 9, line.size(), SyntaxToken::Comment));
+  BOOST_CHECK(allTokens(toks, 6, 8, SyntaxToken::Number)); // 80
+}
+
+BOOST_AUTO_TEST_CASE(yml_sequence_bullet_is_operator) {
+  auto line = mkline("  - item");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeYamlLine(line, st, toks);
+  BOOST_CHECK(toks[2] == SyntaxToken::Operator); // '-'
+  BOOST_CHECK(toks[4] == SyntaxToken::Normal);   // plain scalar 'item'
+}
+
+BOOST_AUTO_TEST_CASE(yml_anchor_and_doc_marker) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto doc = mkline("---");
+  tokenizeYamlLine(doc, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Preprocessor));
+  auto anc = mkline("base: &a value");
+  tokenizeYamlLine(anc, st, toks);
+  BOOST_CHECK(allTokens(toks, 6, 8, SyntaxToken::Preprocessor)); // &a
+}
+
+BOOST_AUTO_TEST_CASE(yml_block_scalar_spans_until_dedent) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("script: |");
+  tokenizeYamlLine(l1, st, toks);
+  BOOST_CHECK(toks[8] == SyntaxToken::Operator); // '|'
+  BOOST_CHECK(st.yamlBlockCol == 0);
+
+  auto l2 = mkline("  echo hi: not a key");
+  tokenizeYamlLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::String)); // body
+  BOOST_CHECK(st.yamlBlockCol == 0);                               // still open
+
+  auto blank = mkline("");
+  tokenizeYamlLine(blank, st, toks);
+  BOOST_CHECK(st.yamlBlockCol == 0); // blank line stays in block
+
+  auto l3 = mkline("next: 1");
+  tokenizeYamlLine(l3, st, toks);
+  BOOST_CHECK(st.yamlBlockCol == -1);                       // dedent closes
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword)); // parsed normally
+}
+
+BOOST_AUTO_TEST_CASE(yml_colon_without_space_is_not_key) {
+  auto line = mkline("http://example.com");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeYamlLine(line, st, toks);
+  // No "<key>: " so nothing is a Keyword; URL stays a plain scalar.
+  BOOST_CHECK(toks[0] == SyntaxToken::Normal);
+  BOOST_CHECK(toks[4] == SyntaxToken::Normal); // the ':' in http:
 }

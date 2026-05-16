@@ -45,7 +45,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
 - **Mouse support** — left-click positions the cursor (and focuses a non-focused panel); left-drag selects a region (the `mark`→cursor span, mirrored to the X11 PRIMARY selection), autoscrolling when dragged past the top or bottom of a panel. Middle-click pastes the X11 PRIMARY selection at the cursor. The wheel scrolls the panel under the pointer. While mouse tracking is on, the terminal's own right-click context menu and selection are suppressed — hold `Shift` while clicking to bypass tracking, or toggle tracking off with `C-x m`.
 - **Long-running command kill prompt** — external commands launched via Esc-f, Tab-format, or Ctrl-p that take longer than 10 s show a "Kill? y/n" prompt so a hung formatter or pipe never freezes the editor.
-- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]` / `[sh]`), and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
+- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]` / `[sh]` / `[yml]`), and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
 - **Terminal title** — set to `cx@<cwd>` on startup so cx tabs are easy to identify.
 - **Error log** — uncaught exceptions, clipboard failures and the like are appended to `~/.cx-errors` for post-mortem inspection (never surfaced as UI noise).
 
@@ -115,8 +115,8 @@ in every mode:
   strings, character literals and comments are skipped.
 - **Jsn** (`.json`): matches `[]` and `{}`. Brackets inside strings are
   skipped.
-- **Md / Dif / Sh / Txt** (and any buffer with no specific mode): matches
-  `()[]{}` only. `<` and `>` are treated as ordinary characters.
+- **Md / Dif / Sh / Yml / Txt** (and any buffer with no specific mode):
+  matches `()[]{}` only. `<` and `>` are treated as ordinary characters.
 
 If the cursor is not on a bracket, `?` is inserted normally.
 
@@ -147,7 +147,7 @@ These shortcuts are active when viewing a directory listing.
 | Esc-l | Toggle line wrap                                                                    |
 | Esc-_ | Toggle highlight on the cursor's line                                               |
 | Esc-# | Toggle line-number gutter                                                           |
-| Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`, `sh`/`shell`/`bash`) |
+| Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`, `sh`/`shell`/`bash`, `yml`/`yaml`) |
 
 ### Panels
 

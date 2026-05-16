@@ -5,6 +5,7 @@
 #include "modes/jsn/syntax.hpp"
 #include "modes/md/syntax.hpp"
 #include "modes/sh/syntax.hpp"
+#include "modes/yml/syntax.hpp"
 #include "utf8.hpp"
 
 #include <algorithm>
@@ -319,6 +320,8 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
       tokenizeLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Sh)
       tokenizeShellLine(line, state, _synCache[i].tokens);
+    else if (_mode == BufferMode::Yml)
+      tokenizeYamlLine(line, state, _synCache[i].tokens);
     else
       _synCache[i].tokens.assign(line.size(), SyntaxToken::Normal);
     _synCache[i].stateAfter = state;

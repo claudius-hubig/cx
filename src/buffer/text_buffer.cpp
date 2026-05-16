@@ -199,6 +199,8 @@ void TextBuffer::detectMode() {
     _mode = BufferMode::Dif;
   else if (ext == ".sh" || ext == ".bash" || ext == ".zsh" || ext == ".ksh")
     _mode = BufferMode::Sh;
+  else if (ext == ".yml" || ext == ".yaml")
+    _mode = BufferMode::Yml;
   else
     _mode = BufferMode::Txt;
 

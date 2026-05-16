@@ -235,8 +235,9 @@ Public API:
 - **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.
-- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`)
-  determines syntax highlighting, auto-indent, and formatting behaviour.
+- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`,
+  `Yml`) determines syntax highlighting, auto-indent, and formatting
+  behaviour.
   Changed via `setMode()`, which invalidates the per-line syntax cache.
 - **Line-number gutter**: `RenderParams::leftGutter` (in screen columns)
   reserves space at the left of the panel for right-aligned 1-based
@@ -344,7 +345,8 @@ and clear the mark. Exposes `setPath()` for the save-as rename
 workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
 `.diff`, `.patch` → `Dif`; `.sh`, `.bash`, `.zsh`, `.ksh` → `Sh`;
-otherwise `Txt`). When the extension is unknown, a leading `#!` line
+`.yml`, `.yaml` → `Yml`; otherwise `Txt`). When the extension is
+unknown, a leading `#!` line
 is sniffed for a shell interpreter (`bash`/`zsh`/`ksh`/`dash`/`sh`)
 as a fallback; only line 0 is inspected, so `detectMode()` now runs
 after `loadFromFile()` in the file constructor.
@@ -568,11 +570,23 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   `<<-` form, tracked by `state.heredocStripTabs`); `<<<` here-strings
   are not heredocs.
 
+- **YAML mode** (`modes/yml/syntax.hpp/.cpp`): Tokenizes `#` comments,
+  mapping keys (`Keyword`, the text before a `: `/EOL colon), `'...'`
+  and `"..."` strings, the plain constants `true`/`false`/`yes`/`no`/
+  `on`/`off`/`null`/`~`/`nan` (case-insensitive, `Keyword`), numeric
+  scalars (`Number`), `: , -` and flow brackets, and node properties
+  `&anchor`/`*alias`/`!tag` (`Preprocessor`). Directives (`%YAML`) and
+  document markers (`---`/`...`) are `Preprocessor`. Maintains
+  multi-line state for `|`/`>` block scalars: `state.yamlBlockCol`
+  holds the introducing line's indent; deeper-indented or blank lines
+  are one `String` span until a non-blank line dedents back to it.
+
 `BufferView::gotoMatchingBracket()` dispatches to the JSON matcher in
 JSON mode and to the C/C++ matcher in every other mode. Because the
 C/C++ matcher only treats `<>` as brackets when tagged `Angle`, plain
-text, Markdown and shell buffers (where `<>` are `Operator`/`Normal`,
-never `Angle`) get a clean `()[]{}`-only fallback for free.
+text, Markdown, shell and YAML buffers (where `<>` are
+`Operator`/`Normal`, never `Angle`) get a clean `()[]{}`-only
+fallback for free.
 
 - **Conflict markers**: Regardless of mode, lines matching `<<<<<<<`,
   `=======`, or `>>>>>>>` (7 identical characters) are overlaid with
