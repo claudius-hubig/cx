@@ -62,12 +62,14 @@ BOOST_AUTO_TEST_CASE(thousand_separator_not_string) {
   SyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
-  // The apostrophes at positions 10 and 14 should NOT be String.
-  BOOST_CHECK(toks[10] != SyntaxToken::String);
-  BOOST_CHECK(toks[14] != SyntaxToken::String);
-  // The digits around them should be Normal.
-  BOOST_CHECK_EQUAL(static_cast<int>(toks[8]), static_cast<int>(SyntaxToken::Normal));
-  BOOST_CHECK_EQUAL(static_cast<int>(toks[11]), static_cast<int>(SyntaxToken::Normal));
+  // 1'000'000 is one Number token spanning [8, 17); the ' digit
+  // separators (offsets 9 and 13) are part of the number, not String
+  // (i.e. not misparsed as character literals).
+  BOOST_CHECK(allTokens(toks, 8, 17, SyntaxToken::Number));
+  BOOST_CHECK(toks[9] != SyntaxToken::String);
+  BOOST_CHECK(toks[13] != SyntaxToken::String);
+  // The trailing ';' is not part of the number.
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[17]), static_cast<int>(SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(raw_string_single_line) {
@@ -429,6 +431,97 @@ BOOST_AUTO_TEST_CASE(nullptr_still_keyword) {
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Keyword));
   // "nullptr" at 7..13 is Keyword.
   BOOST_CHECK(allTokens(toks, 7, 14, SyntaxToken::Keyword));
+}
+
+// ============================================================
+// Item 5b: Number highlighting (C/C++)
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(cpp_integer_is_number) {
+  auto line = mkline("int x = 42;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 8, 10, SyntaxToken::Number));                             // 42
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[10]), static_cast<int>(SyntaxToken::Normal)); // ;
+}
+
+BOOST_AUTO_TEST_CASE(cpp_float_with_exponent_is_number) {
+  auto line = mkline("double r = 3.14e-2;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // 3.14e-2 spans [11, 18).
+  BOOST_CHECK(allTokens(toks, 11, 18, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(cpp_hex_literal_is_number) {
+  auto line = mkline("auto m = 0xFF00u;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // 0xFF00u spans [9, 16) — prefix, hex digits and the u suffix.
+  BOOST_CHECK(allTokens(toks, 9, 16, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(cpp_binary_and_suffix_is_number) {
+  auto line = mkline("auto b = 0b1010'1100ULL;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // 0b1010'1100ULL spans [9, 23).
+  BOOST_CHECK(allTokens(toks, 9, 23, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(cpp_leading_dot_float_is_number) {
+  auto line = mkline("float f = .5f;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // .5f spans [10, 13).
+  BOOST_CHECK(allTokens(toks, 10, 13, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(cpp_hex_float_is_number) {
+  auto line = mkline("double h = 0x1.8p3;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // 0x1.8p3 spans [11, 18).
+  BOOST_CHECK(allTokens(toks, 11, 18, SyntaxToken::Number));
+}
+
+BOOST_AUTO_TEST_CASE(cpp_identifier_with_digits_is_not_number) {
+  auto line = mkline("int x1 = y2;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  // x1 and y2 are identifiers, not numbers.
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[4]), static_cast<int>(SyntaxToken::Normal));  // x
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[5]), static_cast<int>(SyntaxToken::Normal));  // 1
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[9]), static_cast<int>(SyntaxToken::Normal));  // y
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[10]), static_cast<int>(SyntaxToken::Normal)); // 2
+}
+
+BOOST_AUTO_TEST_CASE(cpp_number_does_not_swallow_following_operator) {
+  auto line = mkline("n = 3+4;");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[4]), static_cast<int>(SyntaxToken::Number));   // 3
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[5]), static_cast<int>(SyntaxToken::Operator)); // +
+  BOOST_CHECK_EQUAL(static_cast<int>(toks[6]), static_cast<int>(SyntaxToken::Number));   // 4
+}
+
+BOOST_AUTO_TEST_CASE(cpp_number_render_uses_turquoise_color) {
+  TB<TextBuffer> buf("test.cpp");
+  buf.setMode(BufferMode::Cpp);
+  insertString(buf, "int n = 42;");
+  buf.moveHome();
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
+  // Number color (light turquoise): \x1b[38;2;100;200;200m
+  BOOST_CHECK(out.find("\x1b[38;2;100;200;200m") != std::string::npos);
 }
 
 // ============================================================

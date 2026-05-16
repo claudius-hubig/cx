@@ -17,7 +17,7 @@
 | Heading        | `# ...` headings                                   | Markdown    |
 | Bold           | `**...**` bold text                                | Markdown    |
 | Link           | `[text](url)` links                                | Markdown    |
-| Number         | Numeric literals                                   | JSON        |
+| Number         | Numeric literals                                   | C/C++, JSON |
 | DiffAdd        | Whole `+` line                                     | Diff        |
 | DiffRemove     | Whole `-` line                                     | Diff        |
 | DiffMeta       | `+++` / `---` file headers                         | Diff        |
@@ -116,7 +116,7 @@ by a mode are reported as `Normal`.
 | Heading        |  —  | ✓  |  —  |  —  |  —  |
 | Bold           |  —  | ✓  |  —  |  —  |  —  |
 | Link           |  —  | ✓  |  —  |  —  |  —  |
-| Number         |  —  | —  |  ✓  |  —  |  —  |
+| Number         |  ✓  | —  |  ✓  |  —  |  —  |
 | DiffAdd        |  —  | —  |  —  |  ✓  |  —  |
 | DiffRemove     |  —  | —  |  —  |  ✓  |  —  |
 | DiffMeta       |  —  | —  |  —  |  ✓  |  —  |

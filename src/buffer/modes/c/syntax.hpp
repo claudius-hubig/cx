@@ -22,7 +22,7 @@ enum class SyntaxToken : uint8_t {
   Heading,        // Markdown headings (# ...)
   Bold,           // Markdown bold (**...**)
   Link,           // Markdown links [text](url)
-  Number,         // JSON numeric literals
+  Number,         // numeric literals (C/C++, JSON, Python, YAML)
   Preprocessor,   // C/C++ preprocessor directives (#include, #define, etc.)
   DiffAdd,        // + lines in unified diff
   DiffRemove,     // - lines in unified diff

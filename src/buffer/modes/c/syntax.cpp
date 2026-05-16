@@ -23,6 +23,12 @@ static bool isIdentStart(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
+static bool isDigit(char c) { return c >= '0' && c <= '9'; }
+
+static bool isHexDigit(char c) {
+  return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
 // Treat any high-bit byte (>= 0x80) as part of an identifier so a UTF-8
 // lead byte does not split an identifier and cause an adjacent ASCII
 // keyword to be highlighted in error. C++ permits non-ASCII characters
@@ -279,6 +285,61 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
         tokens[i] = SyntaxToken::String;
         ++i;
       }
+      continue;
+    }
+
+    // Numeric literal. Starts with a digit, or a '.' immediately
+    // followed by a digit (e.g. .5f). A leading sign is left to the
+    // operator branch, matching the Python/JSON tokenizers. Digit
+    // separators (1'000), 0x/0b prefixes, fraction, exponent (e/E for
+    // decimal, p/P for hex floats) and the trailing suffix run
+    // (u/l/f/z combinations, user-defined-literal suffixes) are all
+    // swept into one Number token. The grammar check is deliberately
+    // coarse — anything shaped like a number is coloured as one.
+    if (isDigit(line[i]) || (line[i] == '.' && i + 1 < sz && isDigit(line[i + 1]))) {
+      std::size_t start = i;
+      if (line[i] == '0' && i + 1 < sz &&
+          (line[i + 1] == 'x' || line[i + 1] == 'X' || line[i + 1] == 'b' || line[i + 1] == 'B')) {
+        bool hex = (line[i + 1] == 'x' || line[i + 1] == 'X');
+        i += 2;
+        while (i < sz && (line[i] == '\'' ||
+                          (hex ? isHexDigit(line[i]) : (line[i] == '0' || line[i] == '1'))))
+          ++i;
+        // Hex float: optional fraction and binary exponent (0x1.8p3).
+        if (hex && i < sz && line[i] == '.') {
+          ++i;
+          while (i < sz && (line[i] == '\'' || isHexDigit(line[i])))
+            ++i;
+        }
+        if (hex && i < sz && (line[i] == 'p' || line[i] == 'P')) {
+          ++i;
+          if (i < sz && (line[i] == '+' || line[i] == '-'))
+            ++i;
+          while (i < sz && (line[i] == '\'' || isDigit(line[i])))
+            ++i;
+        }
+      } else {
+        while (i < sz && (line[i] == '\'' || isDigit(line[i])))
+          ++i;
+        if (i < sz && line[i] == '.') {
+          ++i;
+          while (i < sz && (line[i] == '\'' || isDigit(line[i])))
+            ++i;
+        }
+        if (i < sz && (line[i] == 'e' || line[i] == 'E')) {
+          ++i;
+          if (i < sz && (line[i] == '+' || line[i] == '-'))
+            ++i;
+          while (i < sz && (line[i] == '\'' || isDigit(line[i])))
+            ++i;
+        }
+      }
+      // Suffix run: u/U/l/L/f/F/z/Z and combinations, plus any
+      // user-defined-literal suffix (_id). Identifier-class bytes only.
+      while (i < sz && isIdentChar(line[i]))
+        ++i;
+      for (std::size_t j = start; j < i; ++j)
+        tokens[j] = SyntaxToken::Number;
       continue;
     }
 

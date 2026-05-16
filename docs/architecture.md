@@ -540,10 +540,13 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 
 - **C/C++ mode** (`modes/c/syntax.hpp/.cpp`): Tokenizes keywords,
   comments (line and block), strings (regular, character literals, raw
-  strings with `R"delim(...)delim"`), operators, and brackets (parens,
-  brackets, braces, angles). Maintains multi-line state (`SyntaxState`)
-  for block comments and raw string literals. Also provides
-  `findMatchingBracket()` for jump-to-matching-bracket support.
+  strings with `R"delim(...)delim"`), numeric literals (`Number`:
+  integer/float, `0x`/`0b` prefixes, `'` digit separators, hex floats,
+  and `u`/`l`/`f`/`z`/user-defined suffixes), operators, and brackets
+  (parens, brackets, braces, angles). Maintains multi-line state
+  (`SyntaxState`) for block comments and raw string literals. Also
+  provides `findMatchingBracket()` for jump-to-matching-bracket
+  support.
 
 - **Markdown mode** (`modes/md/syntax.hpp/.cpp`): Tokenizes headings
   (`# ...`), bold (`**...**`, single-line), and links (`[text](url)`).
