@@ -398,28 +398,26 @@ BOOST_AUTO_TEST_CASE(bracket_at_point_also_highlighted) {
 }
 
 // ============================================================
-// Item 5: true/false not highlighted as keywords
+// Item 5: true/false highlighted as keywords (consistent with the
+// boolean/null literal colouring in JSON, YAML and Python modes).
 // ============================================================
 
-BOOST_AUTO_TEST_CASE(true_not_keyword) {
+BOOST_AUTO_TEST_CASE(true_is_keyword) {
   auto line = mkline("bool x = true;");
   SyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
-  // "true" starts at position 9.
-  BOOST_CHECK_EQUAL(static_cast<int>(toks[9]), static_cast<int>(SyntaxToken::Normal));
-  BOOST_CHECK_EQUAL(static_cast<int>(toks[10]), static_cast<int>(SyntaxToken::Normal));
-  BOOST_CHECK_EQUAL(static_cast<int>(toks[11]), static_cast<int>(SyntaxToken::Normal));
-  BOOST_CHECK_EQUAL(static_cast<int>(toks[12]), static_cast<int>(SyntaxToken::Normal));
+  // "true" occupies positions 9..12.
+  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Keyword));
 }
 
-BOOST_AUTO_TEST_CASE(false_not_keyword) {
+BOOST_AUTO_TEST_CASE(false_is_keyword) {
   auto line = mkline("bool x = false;");
   SyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
-  // "false" starts at position 9.
-  BOOST_CHECK(allTokens(toks, 9, 14, SyntaxToken::Normal));
+  // "false" occupies positions 9..13.
+  BOOST_CHECK(allTokens(toks, 9, 14, SyntaxToken::Keyword));
 }
 
 BOOST_AUTO_TEST_CASE(nullptr_still_keyword) {
