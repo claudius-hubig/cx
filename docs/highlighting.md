@@ -2,27 +2,28 @@
 
 ## Token Types
 
-| Token          | Description                                        | Modes       |
-|----------------|----------------------------------------------------|-------------|
-| Normal         | Default text, digits, whitespace                   | All         |
-| Keyword        | Language keywords (`if`, `for`, `class`, ...)      | C/C++, JSON |
-| Comment        | Line (`//`) and block (`/* */`) comments           | C/C++       |
-| String         | `"..."`, `'...'`, raw string literals              | C/C++, JSON |
-| Operator       | `+`, `-`, `=`, `&&`, `<<`, `<=>` etc.              | C/C++       |
-| Preprocessor   | `#include`, `#define`, and backslash continuations | C/C++       |
-| Paren          | `(` `)`                                            | C/C++       |
-| Bracket        | `[` `]`                                            | C/C++, JSON |
-| Brace          | `{` `}`                                            | C/C++, JSON |
-| Angle          | `<` `>` when used as template brackets             | C/C++       |
-| Heading        | `# ...` headings                                   | Markdown    |
-| Bold           | `**...**` bold text                                | Markdown    |
-| Link           | `[text](url)` links                                | Markdown    |
-| Number         | Numeric literals                                   | C/C++, JSON |
-| DiffAdd        | Whole `+` line                                     | Diff        |
-| DiffRemove     | Whole `-` line                                     | Diff        |
-| DiffMeta       | `+++` / `---` file headers                         | Diff        |
-| DiffHunk       | `@@ ... @@` hunk headers                           | Diff        |
-| ConflictMarker | `<<<<<<<`, `=======`, `>>>>>>>` (any 7-char run)   | All         |
+| Token          | Description                                        | Modes                          |
+|----------------|----------------------------------------------------|--------------------------------|
+| Normal         | Default text, digits, whitespace                   | All                            |
+| Keyword        | Language keywords / boolean & null literals        | C/C++, JSON, Shell, YAML, Py   |
+| Comment        | Line and block comments (`//`, `/* */`, `#`)       | C/C++, Shell, YAML, Py         |
+| String         | `"..."`, `'...'`, raw / triple / heredoc strings   | C/C++, JSON, Shell, YAML, Py   |
+| Operator       | `+`, `-`, `=`, `&&`, `<<`, `:`, `,`, pipes etc.    | C/C++, Shell, YAML, Py         |
+| Preprocessor   | `#`-directives; YAML directives/anchors/tags; `@decorator` | C/C++, YAML, Py        |
+| Paren          | `(` `)`                                            | C/C++, Shell, Py               |
+| Bracket        | `[` `]`                                            | C/C++, JSON, Shell, YAML, Py   |
+| Brace          | `{` `}`                                            | C/C++, JSON, Shell, YAML, Py   |
+| Angle          | `<` `>` when used as template brackets             | C/C++                          |
+| Heading        | `# ...` headings                                   | Markdown                       |
+| Bold           | `**...**` bold text                                | Markdown                       |
+| Link           | `[text](url)` links                                | Markdown                       |
+| Number         | Numeric literals                                   | C/C++, JSON, YAML, Py          |
+| Variable       | `$VAR`, `${...}`, `$?` parameter expansions        | Shell                          |
+| DiffAdd        | Whole `+` line                                     | Diff                           |
+| DiffRemove     | Whole `-` line                                     | Diff                           |
+| DiffMeta       | `+++` / `---` file headers                         | Diff                           |
+| DiffHunk       | `@@ ... @@` hunk headers                           | Diff                           |
+| ConflictMarker | `<<<<<<<`, `=======`, `>>>>>>>` (any 7-char run)   | All                            |
 
 ## Colors (24-bit RGB)
 
@@ -34,6 +35,7 @@
 | Operator      | (150, 100, 200) | Purple          | `\x1b[38;2;150;100;200m`   |
 | Number        | (100, 200, 200) | Light turquoise | `\x1b[38;2;100;200;200m`   |
 | Preprocessor  | (180, 140, 60)  | Amber           | `\x1b[38;2;180;140;60m`    |
+| Variable      | (210, 150, 90)  | Orange          | `\x1b[38;2;210;150;90m`    |
 | Heading       | (80, 130, 200)  | Bold + Blue     | `\x1b[1;38;2;80;130;200m`  |
 | Bold          | —               | Bold (no color) | `\x1b[1m`                  |
 | Link          | (100, 180, 180) | Teal            | `\x1b[38;2;100;180;180m`   |
@@ -81,13 +83,22 @@ Colors that are still unused and would be readable on both dark and light backgr
 
 The `SyntaxState` struct carries state between lines:
 
-- **inBlockComment** — inside `/* ... */`
-- **inPreprocessor** — prior line was a `#`-directive ending with `\`
-- **rawDelim** — inside `R"delim(...)delim"`, holds the delimiter string
+- **inBlockComment** — inside `/* ... */` (C/C++)
+- **inPreprocessor** — prior line was a `#`-directive ending with `\` (C/C++)
+- **rawDelim** — inside `R"delim(...)delim"`, holds the delimiter string (C/C++)
+- **heredocTag** / **heredocStripTabs** — inside a shell heredoc body
+  until a line equal to the tag; the `StripTabs` flag is the `<<-` form
+- **pyTriple** / **pyTripleRaw** — inside a Python `'''`/`"""` string;
+  `Raw` suppresses backslash-escape handling for `r'''...'''`
+- **yamlBlockCol** — inside a YAML `|`/`>` block scalar introduced at
+  the given indent column (`-1` = not in one)
+- **mdLink** — a Markdown `[...](...)` link spanning the line boundary
+  (`None` / `Label` / `Url`)
 
-Only C/C++ tokenisation actually maintains state. Markdown, JSON and
-Diff tokenizers accept the `SyntaxState` parameter for interface
-consistency only; they read and write nothing through it.
+C/C++, Shell, Python, YAML and Markdown tokenisation each maintain
+multi-line state. Only the JSON and Diff tokenizers are stateless: they
+accept the `SyntaxState` parameter for interface consistency but read
+and write nothing through it.
 
 A cheaper companion `advanceBlockCommentState()` is provided for
 callers that need to fast-forward the state across many lines without
@@ -101,24 +112,25 @@ block-comment / raw-string-literal tracking.
 A given mode emits only a subset of the token set. Tokens not produced
 by a mode are reported as `Normal`.
 
-| Token          | Cpp | Md | Jsn | Dif | Txt |
-|----------------|-----|----|-----|-----|-----|
-| Normal         |  ✓  | ✓  |  ✓  |  ✓  |  ✓  |
-| Keyword        |  ✓  | —  |  ✓  |  —  |  —  |
-| Comment        |  ✓  | —  |  —  |  —  |  —  |
-| String         |  ✓  | —  |  ✓  |  —  |  —  |
-| Operator       |  ✓  | —  |  —  |  —  |  —  |
-| Preprocessor   |  ✓  | —  |  —  |  —  |  —  |
-| Paren          |  ✓  | —  |  —  |  —  |  —  |
-| Bracket        |  ✓  | —  |  ✓  |  —  |  —  |
-| Brace          |  ✓  | —  |  ✓  |  —  |  —  |
-| Angle          |  ✓  | —  |  —  |  —  |  —  |
-| Heading        |  —  | ✓  |  —  |  —  |  —  |
-| Bold           |  —  | ✓  |  —  |  —  |  —  |
-| Link           |  —  | ✓  |  —  |  —  |  —  |
-| Number         |  ✓  | —  |  ✓  |  —  |  —  |
-| DiffAdd        |  —  | —  |  —  |  ✓  |  —  |
-| DiffRemove     |  —  | —  |  —  |  ✓  |  —  |
-| DiffMeta       |  —  | —  |  —  |  ✓  |  —  |
-| DiffHunk       |  —  | —  |  —  |  ✓  |  —  |
-| ConflictMarker |  ✓  | ✓  |  ✓  |  ✓  |  ✓  |, holds the delimiter string
+| Token          | Cpp | Md | Jsn | Dif | Sh | Yml | Py | Txt |
+|----------------|-----|----|-----|-----|----|-----|----|-----|
+| Normal         |  ✓  | ✓  |  ✓  |  ✓  | ✓  |  ✓  | ✓  |  ✓  |
+| Keyword        |  ✓  | —  |  ✓  |  —  | ✓  |  ✓  | ✓  |  —  |
+| Comment        |  ✓  | —  |  —  |  —  | ✓  |  ✓  | ✓  |  —  |
+| String         |  ✓  | —  |  ✓  |  —  | ✓  |  ✓  | ✓  |  —  |
+| Operator       |  ✓  | —  |  —  |  —  | ✓  |  ✓  | ✓  |  —  |
+| Preprocessor   |  ✓  | —  |  —  |  —  | —  |  ✓  | ✓  |  —  |
+| Paren          |  ✓  | —  |  —  |  —  | ✓  |  —  | ✓  |  —  |
+| Bracket        |  ✓  | —  |  ✓  |  —  | ✓  |  ✓  | ✓  |  —  |
+| Brace          |  ✓  | —  |  ✓  |  —  | ✓  |  ✓  | ✓  |  —  |
+| Angle          |  ✓  | —  |  —  |  —  | —  |  —  | —  |  —  |
+| Heading        |  —  | ✓  |  —  |  —  | —  |  —  | —  |  —  |
+| Bold           |  —  | ✓  |  —  |  —  | —  |  —  | —  |  —  |
+| Link           |  —  | ✓  |  —  |  —  | —  |  —  | —  |  —  |
+| Number         |  ✓  | —  |  ✓  |  —  | —  |  ✓  | ✓  |  —  |
+| Variable       |  —  | —  |  —  |  —  | ✓  |  —  | —  |  —  |
+| DiffAdd        |  —  | —  |  —  |  ✓  | —  |  —  | —  |  —  |
+| DiffRemove     |  —  | —  |  —  |  ✓  | —  |  —  | —  |  —  |
+| DiffMeta       |  —  | —  |  —  |  ✓  | —  |  —  | —  |  —  |
+| DiffHunk       |  —  | —  |  —  |  ✓  | —  |  —  | —  |  —  |
+| ConflictMarker |  ✓  | ✓  |  ✓  |  ✓  | ✓  |  ✓  | ✓  |  ✓  |
