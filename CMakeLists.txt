@@ -64,62 +64,88 @@ target_link_libraries(cx cx_core)
 target_link_options(cx PRIVATE -static-libstdc++ -static-libgcc)
 
 # --- Tests ---
-enable_testing()
-find_package(Boost REQUIRED COMPONENTS unit_test_framework)
+# Boost.Test is the project's only external dependency, and only the
+# test targets need it (cx, cx_core and the bench_* targets do not).
+# Some machines (e.g. GCC 15 without installable Boost) can build a
+# perfectly good cx but cannot satisfy Boost.Test, so the test section
+# is optional:
+#
+#   * CX_BUILD_TESTS=OFF              -> tests skipped entirely.
+#   * CX_BUILD_TESTS=ON (default) and
+#       - Boost.Test found            -> tests built.
+#       - Boost.Test missing          -> tests skipped with a notice;
+#                                        cx still builds normally.
+#
+# find_package is QUIET (not REQUIRED) so a missing Boost downgrades
+# gracefully instead of failing configuration.
+option(CX_BUILD_TESTS "Build the test suite (requires Boost.Test)" ON)
 
-# Every test/bench links cx_core; the linker pulls only the object
-# members it references. Helper keeps the per-target boilerplate to
-# one line.
-function(cx_test name)
-    add_executable(test_${name} tests/test_${name}.cpp)
-    target_link_libraries(test_${name} cx_core Boost::unit_test_framework)
-    add_test(NAME ${name} COMMAND test_${name})
-endfunction()
+if(CX_BUILD_TESTS)
+    find_package(Boost QUIET COMPONENTS unit_test_framework)
+endif()
 
-cx_test(char_width)
-cx_test(buffer)
-cx_test(text_buffer)
-cx_test(help_buffer)
-cx_test(buffer_list_buffer)
-cx_test(buffer_manager)
-cx_test(render)
-cx_test(movement)
-cx_test(comment_toggle)
-cx_test(chunk_delete)
-cx_test(scroll)
-cx_test(shortcut)
-cx_test(prompt_history)
-cx_test(syntax)
-cx_test(dir_buffer)
-cx_test(buffer_view)
-cx_test(paste_ring)
-cx_test(version_history)
-cx_test(paste_ring_buffer)
-cx_test(search)
-cx_test(file_arg)
-cx_test(mouse)
-cx_test(replace)
-cx_test(regex_search)
-cx_test(panel_layout)
+if(CX_BUILD_TESTS AND Boost_FOUND)
+    enable_testing()
 
-# test_e2e drives a real PTY, so it also needs libutil.
-add_executable(test_e2e tests/test_e2e.cpp)
-target_link_libraries(test_e2e cx_core Boost::unit_test_framework util)
-add_test(NAME e2e COMMAND test_e2e)
+    # Every test links cx_core; the linker pulls only the object
+    # members it references. Helper keeps the per-target boilerplate
+    # to one line.
+    function(cx_test name)
+        add_executable(test_${name} tests/test_${name}.cpp)
+        target_link_libraries(test_${name} cx_core Boost::unit_test_framework)
+        add_test(NAME ${name} COMMAND test_${name})
+    endfunction()
 
-# test_clipboard compiles clipboard.cpp/error_log.cpp itself with a
-# macro that redirects xclip/xsel discovery to a fake bin dir, so it
-# does not use cx_core's (macro-free) clipboard objects.
-add_executable(test_clipboard
-    tests/test_clipboard.cpp
-    src/clipboard.cpp
-    src/error_log.cpp
-)
-target_include_directories(test_clipboard PRIVATE src)
-target_compile_definitions(test_clipboard PRIVATE
-    CX_FAKE_CLIPBOARD_BIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fake_clipboard")
-target_link_libraries(test_clipboard Boost::unit_test_framework)
-add_test(NAME clipboard COMMAND test_clipboard)
+    cx_test(char_width)
+    cx_test(buffer)
+    cx_test(text_buffer)
+    cx_test(help_buffer)
+    cx_test(buffer_list_buffer)
+    cx_test(buffer_manager)
+    cx_test(render)
+    cx_test(movement)
+    cx_test(comment_toggle)
+    cx_test(chunk_delete)
+    cx_test(scroll)
+    cx_test(shortcut)
+    cx_test(prompt_history)
+    cx_test(syntax)
+    cx_test(dir_buffer)
+    cx_test(buffer_view)
+    cx_test(paste_ring)
+    cx_test(version_history)
+    cx_test(paste_ring_buffer)
+    cx_test(search)
+    cx_test(file_arg)
+    cx_test(mouse)
+    cx_test(replace)
+    cx_test(regex_search)
+    cx_test(panel_layout)
+
+    # test_e2e drives a real PTY, so it also needs libutil.
+    add_executable(test_e2e tests/test_e2e.cpp)
+    target_link_libraries(test_e2e cx_core Boost::unit_test_framework util)
+    add_test(NAME e2e COMMAND test_e2e)
+
+    # test_clipboard compiles clipboard.cpp/error_log.cpp itself with a
+    # macro that redirects xclip/xsel discovery to a fake bin dir, so
+    # it does not use cx_core's (macro-free) clipboard objects.
+    add_executable(test_clipboard
+        tests/test_clipboard.cpp
+        src/clipboard.cpp
+        src/error_log.cpp
+    )
+    target_include_directories(test_clipboard PRIVATE src)
+    target_compile_definitions(test_clipboard PRIVATE
+        CX_FAKE_CLIPBOARD_BIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fake_clipboard")
+    target_link_libraries(test_clipboard Boost::unit_test_framework)
+    add_test(NAME clipboard COMMAND test_clipboard)
+elseif(CX_BUILD_TESTS AND NOT Boost_FOUND)
+    message(STATUS
+        "cx: Boost.Test not found — skipping test targets; cx itself "
+        "still builds. Install Boost.Test to enable tests, or pass "
+        "-DCX_BUILD_TESTS=OFF to silence this notice.")
+endif()
 
 # --- Benchmarks ---
 foreach(bench history editing open)
