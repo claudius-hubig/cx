@@ -2,7 +2,9 @@
 
 #include <string_view>
 
-static bool isJsonKeyword(std::string_view word) {
+// true/false/null are literal values; they share the numeric-literal
+// colour (SyntaxToken::Number), like JSON numbers.
+static bool isJsonValueLiteral(std::string_view word) {
   return word == "true" || word == "false" || word == "null";
 }
 
@@ -32,15 +34,15 @@ void tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/,
       continue;
     }
 
-    // Keywords: true, false, null.
+    // Literal values: true, false, null.
     if (line[i] >= 'a' && line[i] <= 'z') {
       std::size_t start = i;
       while (i < sz && line[i] >= 'a' && line[i] <= 'z')
         ++i;
       std::string_view word(line.data() + start, i - start);
-      if (isJsonKeyword(word)) {
+      if (isJsonValueLiteral(word)) {
         for (std::size_t j = start; j < i; ++j)
-          tokens[j] = SyntaxToken::Keyword;
+          tokens[j] = SyntaxToken::Number;
       }
       continue;
     }

@@ -4,9 +4,9 @@
 #include <string_view>
 
 // Sorted keyword list for binary search. `true`/`false`/`nullptr` are
-// the boolean and null literals; they are coloured as keywords so the
-// constant highlighting matches the other modes (JSON true/false/null,
-// YAML true/false/..., Python True/False/None all render as Keyword).
+// deliberately absent: they are literal values, not keywords, so they
+// are coloured with the numeric-literal colour (see isValueLiteral),
+// consistently with JSON/YAML/Python.
 static constexpr std::string_view kKeywords[] = {
     "alignas",
     "alignof",
@@ -34,7 +34,6 @@ static constexpr std::string_view kKeywords[] = {
     "explicit",
     "export",
     "extern",
-    "false",
     "for",
     "friend",
     "goto",
@@ -44,7 +43,6 @@ static constexpr std::string_view kKeywords[] = {
     "namespace",
     "new",
     "noexcept",
-    "nullptr",
     "operator",
     "override",
     "private",
@@ -62,7 +60,6 @@ static constexpr std::string_view kKeywords[] = {
     "template",
     "this",
     "throw",
-    "true",
     "try",
     "typedef",
     "typeid",
@@ -97,6 +94,12 @@ static bool isIdentChar(char c) {
 
 static bool isKeyword(std::string_view word) {
   return std::binary_search(std::begin(kKeywords), std::end(kKeywords), word);
+}
+
+// Boolean / null literals. These are literal values, not keywords, so
+// they share the numeric-literal colour (SyntaxToken::Number).
+static bool isValueLiteral(std::string_view word) {
+  return word == "true" || word == "false" || word == "nullptr";
 }
 
 static bool isOperatorChar(char c) {
@@ -404,7 +407,10 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
       while (i < sz && isIdentChar(line[i]))
         ++i;
       std::string_view word(line.data() + start, i - start);
-      if (isKeyword(word)) {
+      if (isValueLiteral(word)) {
+        for (std::size_t j = start; j < i; ++j)
+          tokens[j] = SyntaxToken::Number;
+      } else if (isKeyword(word)) {
         for (std::size_t j = start; j < i; ++j)
           tokens[j] = SyntaxToken::Keyword;
       }

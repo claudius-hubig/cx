@@ -398,37 +398,38 @@ BOOST_AUTO_TEST_CASE(bracket_at_point_also_highlighted) {
 }
 
 // ============================================================
-// Item 5: true/false highlighted as keywords (consistent with the
-// boolean/null literal colouring in JSON, YAML and Python modes).
+// Item 5: true/false/nullptr are literal values, coloured like
+// numeric literals (Number), not as keywords. if/for/etc. stay
+// keywords. Consistent with JSON/YAML/Python literal colouring.
 // ============================================================
 
-BOOST_AUTO_TEST_CASE(true_is_keyword) {
+BOOST_AUTO_TEST_CASE(true_is_value_literal) {
   auto line = mkline("bool x = true;");
   SyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // "true" occupies positions 9..12.
-  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Keyword));
+  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Number));
 }
 
-BOOST_AUTO_TEST_CASE(false_is_keyword) {
+BOOST_AUTO_TEST_CASE(false_is_value_literal) {
   auto line = mkline("bool x = false;");
   SyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // "false" occupies positions 9..13.
-  BOOST_CHECK(allTokens(toks, 9, 14, SyntaxToken::Keyword));
+  BOOST_CHECK(allTokens(toks, 9, 14, SyntaxToken::Number));
 }
 
-BOOST_AUTO_TEST_CASE(nullptr_still_keyword) {
+BOOST_AUTO_TEST_CASE(nullptr_is_value_literal) {
   auto line = mkline("return nullptr;");
   SyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
-  // "return" at 0..5 is Keyword.
+  // "return" at 0..5 stays Keyword.
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Keyword));
-  // "nullptr" at 7..13 is Keyword.
-  BOOST_CHECK(allTokens(toks, 7, 14, SyntaxToken::Keyword));
+  // "nullptr" at 7..13 is a literal value (Number colour).
+  BOOST_CHECK(allTokens(toks, 7, 14, SyntaxToken::Number));
 }
 
 // ============================================================
@@ -1158,25 +1159,25 @@ BOOST_AUTO_TEST_CASE(json_string_with_escape) {
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::String));
 }
 
-BOOST_AUTO_TEST_CASE(json_true_is_keyword) {
+BOOST_AUTO_TEST_CASE(json_true_is_value_literal) {
   SyntaxState state;
   std::vector<SyntaxToken> toks;
   tokenizeJsonLine(mkline("true"), state, toks);
-  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
 }
 
-BOOST_AUTO_TEST_CASE(json_false_is_keyword) {
+BOOST_AUTO_TEST_CASE(json_false_is_value_literal) {
   SyntaxState state;
   std::vector<SyntaxToken> toks;
   tokenizeJsonLine(mkline("false"), state, toks);
-  BOOST_CHECK(allTokens(toks, 0, 5, SyntaxToken::Keyword));
+  BOOST_CHECK(allTokens(toks, 0, 5, SyntaxToken::Number));
 }
 
-BOOST_AUTO_TEST_CASE(json_null_is_keyword) {
+BOOST_AUTO_TEST_CASE(json_null_is_value_literal) {
   SyntaxState state;
   std::vector<SyntaxToken> toks;
   tokenizeJsonLine(mkline("null"), state, toks);
-  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_integer_is_number) {
@@ -1317,15 +1318,17 @@ BOOST_AUTO_TEST_CASE(json_render_string_red) {
   BOOST_CHECK(out.find("\x1b[38;2;200;80;80m") != std::string::npos);
 }
 
-BOOST_AUTO_TEST_CASE(json_render_keyword_blue) {
+BOOST_AUTO_TEST_CASE(json_render_value_literal_turquoise) {
   TB<TextBuffer> buf("test.json");
   buf.setMode(BufferMode::Jsn);
   insertString(buf, "true");
   buf.moveHome();
   std::string out;
   buf.render(out, RowIdx{5}, ColIdx{40}, renderParams(buf));
-  // Keyword color: blue \x1b[38;2;80;130;200m
-  BOOST_CHECK(out.find("\x1b[38;2;80;130;200m") != std::string::npos);
+  // true/false/null share the numeric-literal colour: light
+  // turquoise \x1b[38;2;100;200;200m (not the blue keyword colour).
+  BOOST_CHECK(out.find("\x1b[38;2;100;200;200m") != std::string::npos);
+  BOOST_CHECK(out.find("\x1b[38;2;80;130;200m") == std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(json_render_number_turquoise) {
@@ -1681,7 +1684,8 @@ BOOST_AUTO_TEST_CASE(yml_bool_and_number_scalars) {
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("enabled: true");
   tokenizeYamlLine(l1, st, toks);
-  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Keyword)); // true
+  BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::Keyword)); // 'enabled' key
+  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Number)); // true (literal value)
   auto l2 = mkline("count: -12.5");
   tokenizeYamlLine(l2, st, toks);
   BOOST_CHECK(allTokens(toks, 7, 12, SyntaxToken::Number)); // -12.5
@@ -1770,6 +1774,18 @@ BOOST_AUTO_TEST_CASE(py_keyword_def_and_punctuation) {
   BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Keyword)); // def
   BOOST_CHECK(toks[7] == SyntaxToken::Paren);               // (
   BOOST_CHECK(toks[9] == SyntaxToken::Operator);            // :
+}
+
+BOOST_AUTO_TEST_CASE(py_value_literals_are_number) {
+  auto line = mkline("x = None or True and False");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizePythonLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 4, 8, SyntaxToken::Number));    // None
+  BOOST_CHECK(allTokens(toks, 9, 11, SyntaxToken::Keyword));  // or
+  BOOST_CHECK(allTokens(toks, 12, 16, SyntaxToken::Number));  // True
+  BOOST_CHECK(allTokens(toks, 17, 20, SyntaxToken::Keyword)); // and
+  BOOST_CHECK(allTokens(toks, 21, 26, SyntaxToken::Number));  // False
 }
 
 BOOST_AUTO_TEST_CASE(py_fstring_keeps_braces_in_string) {

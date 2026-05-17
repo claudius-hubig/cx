@@ -19,15 +19,20 @@ static bool isStringPrefix(char c) {
 
 static bool isPyKeyword(std::string_view w) {
   static constexpr std::string_view kw[] = {
-      "def",    "class",   "if",    "elif",     "else",   "for",      "while",  "try",
-      "except", "finally", "with",  "as",       "import", "from",     "return", "yield",
-      "lambda", "pass",    "break", "continue", "global", "nonlocal", "assert", "del",
-      "raise",  "async",   "await", "match",    "case",   "None",     "True",   "False",
-      "and",    "or",      "not",   "is",       "in"};
+      "def",     "class",    "if",     "elif",     "else",   "for",    "while", "try",    "except",
+      "finally", "with",     "as",     "import",   "from",   "return", "yield", "lambda", "pass",
+      "break",   "continue", "global", "nonlocal", "assert", "del",    "raise", "async",  "await",
+      "match",   "case",     "and",    "or",       "not",    "is",     "in"};
   for (auto k : kw)
     if (w == k)
       return true;
   return false;
+}
+
+// None/True/False are literal values, not keywords; they share the
+// numeric-literal colour (SyntaxToken::Number).
+static bool isPyValueLiteral(std::string_view w) {
+  return w == "None" || w == "True" || w == "False";
 }
 
 // Scan a triple-quoted body starting at `i`, marking every byte (and
@@ -173,12 +178,16 @@ void tokenizePythonLine(std::string const& line, SyntaxState& state,
       continue;
     }
 
-    // Identifier / keyword.
+    // Identifier / keyword / literal value.
     if (isWordStart(c)) {
       std::size_t s = i;
       while (i < sz && isWordChar(line[i]))
         ++i;
-      if (isPyKeyword(std::string_view(line.data() + s, i - s)))
+      std::string_view w(line.data() + s, i - s);
+      if (isPyValueLiteral(w))
+        for (std::size_t k = s; k < i; ++k)
+          tokens[k] = SyntaxToken::Number;
+      else if (isPyKeyword(w))
         for (std::size_t k = s; k < i; ++k)
           tokens[k] = SyntaxToken::Keyword;
       continue;

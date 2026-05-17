@@ -5,7 +5,7 @@
 | Token          | Description                                        | Modes                          |
 |----------------|----------------------------------------------------|--------------------------------|
 | Normal         | Default text, digits, whitespace                   | All                            |
-| Keyword        | Language keywords / boolean & null literals        | C/C++, JSON, Shell, YAML, Py   |
+| Keyword        | Language keywords (`if`, `for`, ...); YAML keys    | C/C++, Shell, YAML, Py         |
 | Comment        | Line and block comments (`//`, `/* */`, `#`)       | C/C++, Shell, YAML, Py         |
 | String         | `"..."`, `'...'`, raw / triple / heredoc strings   | C/C++, JSON, Shell, YAML, Py   |
 | Operator       | `+`, `-`, `=`, `&&`, `<<`, `:`, `,`, pipes etc.    | C/C++, Shell, YAML, Py         |
@@ -17,13 +17,21 @@
 | Heading        | `# ...` headings                                   | Markdown                       |
 | Bold           | `**...**` bold text                                | Markdown                       |
 | Link           | `[text](url)` links                                | Markdown                       |
-| Number         | Numeric literals                                   | C/C++, JSON, YAML, Py          |
+| Number         | Value literals: numbers + `true`/`false`/`null`/`None`/`nullptr` | C/C++, JSON, YAML, Py |
 | Variable       | `$VAR`, `${...}`, `$?` parameter expansions        | Shell                          |
 | DiffAdd        | Whole `+` line                                     | Diff                           |
 | DiffRemove     | Whole `-` line                                     | Diff                           |
 | DiffMeta       | `+++` / `---` file headers                         | Diff                           |
 | DiffHunk       | `@@ ... @@` hunk headers                           | Diff                           |
 | ConflictMarker | `<<<<<<<`, `=======`, `>>>>>>>` (any 7-char run)   | All                            |
+
+Numbers and the boolean/null constants (`true`/`false`/`null`/`None`/
+`nullptr`/YAML `yes`/`no`/`~`/…) are all *literal values* and share a
+single token (`Number`) and colour, deliberately distinct from language
+keywords (`if`, `for`, `class`, …) which keep the `Keyword` colour, and
+from string literals which keep their own `String` colour. Shell has no
+literal-value syntax, so it emits neither `Number` nor those constants
+(its `true`/`false` are ordinary commands).
 
 ## Colors (24-bit RGB)
 
@@ -115,7 +123,7 @@ by a mode are reported as `Normal`.
 | Token          | Cpp | Md | Jsn | Dif | Sh | Yml | Py | Txt |
 |----------------|-----|----|-----|-----|----|-----|----|-----|
 | Normal         |  ✓  | ✓  |  ✓  |  ✓  | ✓  |  ✓  | ✓  |  ✓  |
-| Keyword        |  ✓  | —  |  ✓  |  —  | ✓  |  ✓  | ✓  |  —  |
+| Keyword        |  ✓  | —  |  —  |  —  | ✓  |  ✓  | ✓  |  —  |
 | Comment        |  ✓  | —  |  —  |  —  | ✓  |  ✓  | ✓  |  —  |
 | String         |  ✓  | —  |  ✓  |  —  | ✓  |  ✓  | ✓  |  —  |
 | Operator       |  ✓  | —  |  —  |  —  | ✓  |  ✓  | ✓  |  —  |

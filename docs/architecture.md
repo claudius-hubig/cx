@@ -541,10 +541,12 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 
 - **C/C++ mode** (`modes/c/syntax.hpp/.cpp`): Tokenizes keywords,
   comments (line and block), strings (regular, character literals, raw
-  strings with `R"delim(...)delim"`), numeric literals (`Number`:
-  integer/float, `0x`/`0b` prefixes, `'` digit separators, hex floats,
-  and `u`/`l`/`f`/`z`/user-defined suffixes), operators, and brackets
-  (parens, brackets, braces, angles). Maintains multi-line state
+  strings with `R"delim(...)delim"`), value literals (`Number`:
+  numeric literals — integer/float, `0x`/`0b` prefixes, `'` digit
+  separators, hex floats, `u`/`l`/`f`/`z`/user-defined suffixes — plus
+  the boolean/null literals `true`/`false`/`nullptr`, which are values
+  rather than keywords and so share the numeric colour), operators, and
+  brackets (parens, brackets, braces, angles). Maintains multi-line state
   (`SyntaxState`) for block comments and raw string literals. Also
   provides `findMatchingBracket()` for jump-to-matching-bracket
   support.
@@ -562,8 +564,9 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   headers), `@@` (hunk headers). No multi-line state needed.
 
 - **JSON mode** (`modes/jsn/syntax.hpp/.cpp`): Tokenizes strings,
-  numbers, the literal keywords `true`/`false`/`null`, and brackets
-  (`[]`, `{}`). No multi-line state needed (the `SyntaxState`
+  numbers, the value literals `true`/`false`/`null` (coloured as
+  `Number`, like numeric literals — JSON emits no `Keyword`), and
+  brackets (`[]`, `{}`). No multi-line state needed (the `SyntaxState`
   parameter is accepted for interface consistency only). Provides
   `findMatchingBracketJson()` for jump-to-matching-bracket; only `[]`
   and `{}` are matched, brackets inside strings are skipped.
@@ -581,8 +584,9 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 - **YAML mode** (`modes/yml/syntax.hpp/.cpp`): Tokenizes `#` comments,
   mapping keys (`Keyword`, the text before a `: `/EOL colon), `'...'`
   and `"..."` strings, the plain constants `true`/`false`/`yes`/`no`/
-  `on`/`off`/`null`/`~`/`nan` (case-insensitive, `Keyword`), numeric
-  scalars (`Number`), `: , -` and flow brackets, and node properties
+  `on`/`off`/`null`/`~`/`nan` (case-insensitive) and numeric scalars —
+  both value literals, coloured as `Number`; mapping keys remain
+  `Keyword` — `: , -` and flow brackets, and node properties
   `&anchor`/`*alias`/`!tag` (`Preprocessor`). Directives (`%YAML`) and
   document markers (`---`/`...`) are `Preprocessor`. Maintains
   multi-line state for `|`/`>` block scalars: `state.yamlBlockCol`
@@ -592,8 +596,10 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 - **Python mode** (`modes/py/syntax.hpp/.cpp`): Tokenizes `#`
   comments, strings with optional `r`/`b`/`f`/`u` prefixes
   (single/double and triple-quoted), the keyword set
-  (`def`/`class`/`for`/`lambda`/`None`/`True`/… ), numbers
-  (`0x`/`0o`/`0b`, `_` groups, fraction/exponent, imaginary `j`),
+  (`def`/`class`/`for`/`lambda`/… ), numbers
+  (`0x`/`0o`/`0b`, `_` groups, fraction/exponent, imaginary `j`) and
+  the value literals `None`/`True`/`False` (coloured as `Number`, not
+  `Keyword`),
   `@decorator` lines (`Preprocessor`), brackets, and `:` (`Operator`).
   Maintains multi-line state for triple-quoted strings:
   `state.pyTriple` holds the open quote char and `state.pyTripleRaw`

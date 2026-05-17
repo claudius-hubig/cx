@@ -27,6 +27,7 @@ static bool ciEqual(std::string_view a, std::string_view b) {
 }
 
 // YAML 1.1 plain boolean / null scalars (case-insensitive), plus `~`.
+// These are literal values and share the numeric-literal colour.
 static bool isYamlConst(std::string_view w) {
   if (w == "~")
     return true;
@@ -233,16 +234,14 @@ void tokenizeYamlLine(std::string const& line, SyntaxState& state,
       tokens[i++] = SyntaxToken::Operator;
       continue;
     }
-    // Plain scalar word: classify booleans/null/numbers.
+    // Plain scalar word: booleans, null and numbers are all literal
+    // values and share the numeric-literal colour.
     std::size_t s = i;
     while (i < sz && line[i] != ' ' && line[i] != ',' && line[i] != ']' && line[i] != '}' &&
            line[i] != '#')
       ++i;
     std::string_view w(line.data() + s, i - s);
-    if (isYamlConst(w))
-      for (std::size_t p = s; p < i; ++p)
-        tokens[p] = SyntaxToken::Keyword;
-    else if (isYamlNumber(w))
+    if (isYamlConst(w) || isYamlNumber(w))
       for (std::size_t p = s; p < i; ++p)
         tokens[p] = SyntaxToken::Number;
   }
