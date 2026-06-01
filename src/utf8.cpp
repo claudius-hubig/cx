@@ -9,7 +9,7 @@
 std::size_t visualWidth(std::string_view s) {
   std::size_t w = 0;
   for (std::size_t i = 0; i < s.size();) {
-    auto ci = charInfoAt(s.data() + i, s.size() - i);
+    auto ci = displayCharInfoAt(s.data() + i, s.size() - i);
     w += ci.width;
     i += ci.len;
   }
@@ -90,7 +90,7 @@ std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth) {
   std::size_t i = 0;
   std::size_t dropped = 0;
   while (i < s.size() && total - dropped > tailBudget) {
-    auto info = charInfoAt(s.data() + i, s.size() - i);
+    auto info = displayCharInfoAt(s.data() + i, s.size() - i);
     dropped += info.width;
     i += info.len;
   }

@@ -160,13 +160,35 @@ struct CharInfo {
 };
 
 /// Combined decode + width for the character at data[0..avail).
-/// Precondition: avail > 0. For ASCII bytes, applies charWidth rules
-/// (tab/control -> width 2, printable -> 1). For ANSI CSI escape sequences
-/// (ESC[ ... letter), returns width 0 and consumes the full sequence.
-/// For valid multi-byte UTF-8, decodes and returns codepointWidth. Invalid
-/// bytes (>= 0x80 with len == 1 from decodeUtf8) get width 4 for "\xHH"
-/// display.
+/// Precondition: avail > 0. Measures a byte exactly as Buffer::render's
+/// emitChar draws it: ASCII applies charWidth rules (tab and control bytes
+/// — ESC included — are width 2, rendered "^X"/"^["; printable is 1); a
+/// valid multi-byte UTF-8 sequence decodes to codepointWidth; an invalid
+/// byte (>= 0x80 with len == 1 from decodeUtf8) gets width 4 for "\xHH".
+///
+/// A raw ESC is treated as an ordinary control byte, which is the correct
+/// reading of buffer *content* — the renderer never passes a content ESC
+/// through to the terminal. To measure a string that already contains
+/// renderer-emitted ANSI escapes (the modeline, escapeNonPrintable
+/// output), use displayCharInfoAt, which skips CSI sequences as zero-width.
 inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
+  auto u = static_cast<unsigned char>(data[0]);
+  if (u < 0x80)
+    return {charWidth(static_cast<char>(u)), 1};
+  auto [cp, len] = decodeUtf8(data, avail);
+  if (len == 1)
+    return {4, 1}; // invalid byte — displayed as "\xHH"
+  return {codepointWidth(cp), len};
+}
+
+/// Like charInfoAt, but recognises an ANSI CSI escape that the editor
+/// itself emitted — ESC '[' … final-byte (0x40..0x7E) — as a single
+/// zero-width, full-length pass-through. Use ONLY on already-rendered
+/// strings (the modeline status line, escapeNonPrintable output), never on
+/// raw buffer content: emitChar escapes a content ESC to a visible "^[",
+/// so swallowing an "ESC [" run there would drop the trailing bytes from
+/// the display and desync the width / cursor / wrap math.
+inline constexpr CharInfo displayCharInfoAt(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   // ANSI CSI escape: ESC [ <params> <letter>
   if (u == 0x1b && avail >= 2 && data[1] == '[') {
@@ -178,12 +200,7 @@ inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
       ++i; // consume the final letter
     return {0, i};
   }
-  if (u < 0x80)
-    return {charWidth(static_cast<char>(u)), 1};
-  auto [cp, len] = decodeUtf8(data, avail);
-  if (len == 1)
-    return {4, 1}; // invalid byte — displayed as "\xHH"
-  return {codepointWidth(cp), len};
+  return charInfoAt(data, avail);
 }
 
 /// Visual (display column) width of a string, handling multi-byte UTF-8

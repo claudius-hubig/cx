@@ -421,7 +421,7 @@ void Screen::drawModeline(Panel& panel, bool focused) {
     std::size_t keep = 0;
     std::size_t w = 0;
     while (keep < status.size()) {
-      auto info = charInfoAt(status.data() + keep, status.size() - keep);
+      auto info = displayCharInfoAt(status.data() + keep, status.size() - keep);
       if (w + info.width > pc.value)
         break;
       w += info.width;

@@ -318,6 +318,54 @@ BOOST_AUTO_TEST_CASE(charInfoAt_overlong) {
   BOOST_CHECK_EQUAL(info.len, 1u);
 }
 
+BOOST_AUTO_TEST_CASE(charInfoAt_escape_is_a_control_byte) {
+  // On raw buffer content a bare ESC is a control byte: width 2 ("^[")
+  // and length 1, matching how Buffer::render's emitChar draws it.
+  char esc[] = "\x1b";
+  auto info = charInfoAt(esc, 1);
+  BOOST_CHECK_EQUAL(info.width, 2u);
+  BOOST_CHECK_EQUAL(info.len, 1u);
+
+  // "ESC[31m" as content: charInfoAt must NOT swallow it as a zero-width
+  // CSI run. It sees only the ESC (the "[31m" are ordinary printables),
+  // so it advances one byte at a time — which is what keeps a file full
+  // of ANSI escapes from dropping bytes and desyncing the cursor column.
+  char csi[] = "\x1b[31m";
+  auto first = charInfoAt(csi, 5);
+  BOOST_CHECK_EQUAL(first.width, 2u);
+  BOOST_CHECK_EQUAL(first.len, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(displayCharInfoAt_skips_csi) {
+  // On already-rendered strings (modeline / escapeNonPrintable output) a
+  // CSI escape is a zero-width, full-length pass-through.
+  char csi[] = "\x1b[31m";
+  auto info = displayCharInfoAt(csi, 5);
+  BOOST_CHECK_EQUAL(info.width, 0u);
+  BOOST_CHECK_EQUAL(info.len, 5u);
+
+  // Non-CSI bytes fall through to charInfoAt's content semantics.
+  char a[] = "A";
+  auto plain = displayCharInfoAt(a, 1);
+  BOOST_CHECK_EQUAL(plain.width, 1u);
+  BOOST_CHECK_EQUAL(plain.len, 1u);
+
+  // A lone ESC not followed by '[' is still a control byte.
+  char esc[] = "\x1bX";
+  auto lone = displayCharInfoAt(esc, 2);
+  BOOST_CHECK_EQUAL(lone.width, 2u);
+  BOOST_CHECK_EQUAL(lone.len, 1u);
+}
+
+// Content-width helpers must count an embedded ANSI escape as the visible
+// "^[" plus its now-ordinary trailing bytes, mirroring what the renderer
+// paints — regression for the charInfoAt/emitChar mismatch.
+BOOST_AUTO_TEST_CASE(visualColRange_counts_escape_as_content) {
+  std::string line = "\x1b[31mX"; // ESC [ 3 1 m X
+  // "^[" (2) + '[' + '3' + '1' + 'm' (1 each) + 'X' (1) = 7 columns.
+  BOOST_CHECK_EQUAL(visualColRange(line, 0, line.size()), 7u);
+}
+
 // --- truncateVisualFromFront ---
 
 BOOST_AUTO_TEST_CASE(truncateFromFront_fits) {
