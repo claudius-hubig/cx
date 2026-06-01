@@ -134,7 +134,11 @@ DirBuffer::DeleteResult DirBuffer::executeDelete() {
     if (idx >= _entries.size())
       continue;
     std::error_code ec;
-    if (_entries[idx].isDir)
+    // A symlink — even one pointing at a directory (isDir follows the
+    // link) — is unlinked, never recursed into: recursing would delete
+    // the target's contents, which live outside this listing. Only a
+    // real directory takes the recursive remove_all path.
+    if (_entries[idx].isDir && !_entries[idx].isSymlink)
       std::filesystem::remove_all(_entries[idx].path, ec);
     else
       std::filesystem::remove(_entries[idx].path, ec);

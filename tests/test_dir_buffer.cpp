@@ -229,6 +229,40 @@ BOOST_AUTO_TEST_CASE(execute_delete_removes_directories) {
   BOOST_CHECK(!fs::exists(tmp.path / "subdir"));
 }
 
+BOOST_AUTO_TEST_CASE(delete_symlinked_dir_removes_only_the_link) {
+  TmpDir tmp;
+  tmp.createDir("real");
+  tmp.createFile("real/keep.txt", "data");
+  std::error_code ec;
+  fs::create_directory_symlink(tmp.path / "real", tmp.path / "link", ec);
+  if (ec)
+    return; // filesystem without symlink support — skip
+
+  TB<DirBuffer> buf(tmp.path);
+  auto const& entries = buf.entries();
+  std::size_t idx = 0;
+  for (std::size_t i = 0; i < entries.size(); ++i)
+    if (entries[i].name == "link") {
+      idx = i;
+      break;
+    }
+  BOOST_REQUIRE_GT(idx, 0u);
+  // A link to a directory is reported as a symlink (and listed among dirs).
+  BOOST_CHECK(entries[idx].isSymlink);
+
+  for (std::size_t i = 0; i < idx; ++i)
+    buf.movePhysicalDown();
+  buf.toggleDeleteMark(buf.point());
+  auto result = buf.executeDelete();
+  BOOST_CHECK_EQUAL(result.count, 1u);
+
+  // The symlink itself is gone, but the target directory and its contents
+  // must survive — deleting a symlink must not recurse through it.
+  BOOST_CHECK(!fs::exists(fs::symlink_status(tmp.path / "link")));
+  BOOST_CHECK(fs::exists(tmp.path / "real"));
+  BOOST_CHECK(fs::exists(tmp.path / "real" / "keep.txt"));
+}
+
 BOOST_AUTO_TEST_CASE(entry_has_owner_and_group) {
   TmpDir tmp;
   tmp.createFile("file.txt");
