@@ -371,7 +371,12 @@ void Screen::drawModeline(Panel& panel, bool focused) {
     if (_prompt) {
       status += " | " + _prompt->label;
       if (_prompt->showInput)
-        status += _prompt->input;
+        // Escape at the display site: the typed-input path filters
+        // control bytes, but completion-accept (Tab / Right-arrow) and
+        // history replay copy raw filesystem names into `input`, which a
+        // crafted filename could use to inject terminal escapes through
+        // the modeline. The raw value is kept for onResult/path lookup.
+        status += escapeNonPrintable(_prompt->input);
       status_vwidth = visualWidth(status);
       status += _prompt->display.rendered;
       status_vwidth += _prompt->display.visualWidth;
