@@ -46,6 +46,23 @@ std::string formatMtime(struct timespec const& ts) {
   return buf;
 }
 
+// Truncate a (possibly ANSI-styled) display string to at most `maxCols`
+// visual columns, cutting only on whole character / escape-sequence
+// boundaries so a multi-byte char or CSI sequence is never split. Display
+// lines may carry escapeNonPrintable styling for control-byte filenames,
+// so the width walk is CSI-aware (displayCharInfoAt).
+std::string truncateDisplayToWidth(std::string_view s, std::size_t maxCols) {
+  std::size_t col = 0, i = 0;
+  while (i < s.size()) {
+    auto info = displayCharInfoAt(s.data() + i, s.size() - i);
+    if (col + info.width > maxCols)
+      break;
+    col += info.width;
+    i += info.len;
+  }
+  return std::string(s.substr(0, i));
+}
+
 } // namespace
 
 namespace dir_buffer_detail {
@@ -255,8 +272,11 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
   std::size_t maxGroup = 0;
   std::size_t maxSize = 0;
   for (auto& e : _entries) {
-    maxOwner = std::max(maxOwner, e.owner.size());
-    maxGroup = std::max(maxGroup, e.group.size());
+    // Owner/group can be multi-byte UTF-8 (e.g. an NSS name), so align by
+    // visual width rather than byte length. They carry no ANSI styling
+    // (sanitizeNssField strips control bytes), so visualWidth is exact.
+    maxOwner = std::max(maxOwner, visualWidth(e.owner));
+    maxGroup = std::max(maxGroup, visualWidth(e.group));
     maxSize = std::max(maxSize, e.isDir ? std::size_t{1} : formatSize(e.size).size());
   }
 
@@ -278,10 +298,10 @@ ViewHint DirBuffer::refresh(std::string const& prevName) {
     line += e.permissions;
     line += "  ";
     line += e.owner;
-    line.append(maxOwner - e.owner.size(), ' ');
+    line.append(maxOwner - visualWidth(e.owner), ' ');
     line += "  ";
     line += e.group;
-    line.append(maxGroup - e.group.size(), ' ');
+    line.append(maxGroup - visualWidth(e.group), ' ');
     line += "  ";
     auto sz = e.isDir ? "-" : formatSize(e.size);
     line.append(maxSize - sz.size(), ' ');
@@ -340,13 +360,20 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
       if (marked)
         out += kRedFg;
 
-      if (marked) {
-        // Replace the 4-space prefix with "DEL ".
-        out += "DEL ";
-        out += std::string_view(_displayLines[lineIdx]).substr(4);
-      } else {
-        out += _displayLines[lineIdx];
-      }
+      // Build the row text (marked rows show a "DEL " prefix in place of
+      // the 4-space gutter) and clamp it to the panel width, reserving
+      // the final column for the gutter indicator, so a long filename or
+      // deep listing can't bleed past the panel into a sibling pane.
+      std::string_view full = _displayLines[lineIdx];
+      std::string content = marked ? "DEL " + std::string(full.substr(4)) : std::string(full);
+      std::size_t budget = cols.value > 1 ? cols.value - 1 : 0;
+      std::string clipped = truncateDisplayToWidth(content, budget);
+      out += clipped;
+      // A clamp may have cut between an escaped byte's colour-on and
+      // colour-off; reset so styling never leaks into the cleared
+      // remainder or the gutter cell.
+      if (clipped.size() < content.size())
+        out += ansi::Reset;
 
       if (marked || highlight)
         out += ansi::Reset;

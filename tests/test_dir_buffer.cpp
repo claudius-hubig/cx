@@ -297,6 +297,26 @@ BOOST_AUTO_TEST_CASE(display_lines_have_del_prefix_area) {
   BOOST_CHECK(out.find("DEL ") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(render_clamps_long_name_to_panel_width) {
+  TmpDir tmp;
+  std::string longName(120, 'x');
+  tmp.createFile(longName);
+
+  TB<DirBuffer> buf(tmp.path);
+
+  // Narrow panel: the row is clamped to the panel width, so the full
+  // filename is not emitted — otherwise it would bleed past the panel
+  // into a sibling pane in a split layout.
+  std::string narrow;
+  buf.render(narrow, RowIdx{24}, ColIdx{40}, renderParams(buf));
+  BOOST_CHECK(narrow.find(longName) == std::string::npos);
+
+  // Wide panel: the whole row fits, so the filename is emitted in full.
+  std::string wide;
+  buf.render(wide, RowIdx{24}, ColIdx{300}, renderParams(buf));
+  BOOST_CHECK(wide.find(longName) != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(navigate_clears_marks) {
   TmpDir tmp;
   tmp.createFile("file.txt");
