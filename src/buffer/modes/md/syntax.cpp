@@ -75,6 +75,25 @@ void tokenizeMarkdownLine(std::string const& line, SyntaxState& state,
   // Inline scan for bold (**...**) and links ([text](url)), starting
   // at i (0, or just past a link that closed mid-line).
   for (; i < sz;) {
+    // Inline code span: `...`. Markdown markup is not processed inside a
+    // code span, so a stray '[' between backticks must not open a link —
+    // otherwise an unbalanced bracket in code (e.g. `arr[i`) would set
+    // MdLink state and paint every following line as link text until a
+    // ']' appears. Skip to the matching closing backtick on this line.
+    // A backtick with no partner is a literal character (CommonMark):
+    // advance one byte and keep scanning so later markup still resolves.
+    if (line[i] == '`') {
+      std::size_t close = i + 1;
+      while (close < sz && line[close] != '`')
+        ++close;
+      if (close < sz) {
+        i = close + 1; // skip the whole `...` span, markup-free
+        continue;
+      }
+      ++i;
+      continue;
+    }
+
     // Bold: **...** (single-line only).
     if (i + 1 < sz && line[i] == '*' && line[i + 1] == '*') {
       std::size_t start = i;

@@ -557,7 +557,10 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   an open `[...` label or `](...` destination across the boundary and
   is Link-coloured until it closes (optimistically to end of file if
   it never does). Headings are suppressed while a link continuation is
-  open. Bold is single-line only.
+  open. Bold is single-line only. Inline code spans (`` `...` ``) are
+  skipped so markup inside them is not tokenised — most importantly a
+  stray `[` cannot open a link, which prevents an unbalanced bracket in
+  code from carrying link highlighting onto the following lines.
 
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file

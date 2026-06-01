@@ -1006,6 +1006,31 @@ BOOST_AUTO_TEST_CASE(md_link_no_paren) {
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
 }
 
+BOOST_AUTO_TEST_CASE(md_code_span_suppresses_link) {
+  // An unbalanced '[' inside a backtick code span must not open a link,
+  // and must not carry MdLink state onto the next line. Without the
+  // code-span skip, `arr[i` set MdLink::Label and painted "[i" as Link.
+  auto line = mkline("`arr[i`");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(line, st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::None);
+  BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+}
+
+BOOST_AUTO_TEST_CASE(md_code_span_then_link_still_highlights) {
+  // A code span containing a stray '[' is skipped, but a real link
+  // after it must still highlight.
+  auto line = mkline("`a[b` [x](y)");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(line, st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::None);
+  // "[x](y)" occupies positions 6..11.
+  BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Normal));
+  BOOST_CHECK(allTokens(toks, 6, 12, SyntaxToken::Link));
+}
+
 BOOST_AUTO_TEST_CASE(md_empty_line) {
   auto line = mkline("");
   SyntaxState st;
