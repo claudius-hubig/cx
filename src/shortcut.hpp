@@ -1,4 +1,15 @@
 #pragma once
+
+/**
+ * @file shortcut.hpp
+ * @brief The single source of truth for editor keybindings: the Action
+ *        enum, the Shortcut struct, and lookup/formatting helpers.
+ *
+ * A single @c constexpr binding table (in shortcut.cpp) maps Shortcut
+ * values to Actions. Both input dispatch and the help display read from
+ * it, so the two can never drift.
+ */
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -6,6 +17,13 @@
 #include <utility>
 #include <vector>
 
+/**
+ * @brief One value per editor command.
+ *
+ * Each Action is bound to a Shortcut in the binding table and carries a
+ * human-readable description (see descriptionForAction). Screen's
+ * dispatchAction() executes the effect of any Action.
+ */
 enum class Action {
   Help,
   Exit,
@@ -56,44 +74,58 @@ enum class Action {
   ToggleMouseTracking,
 };
 
+/** @brief A key combination identifying a binding. */
 struct Shortcut {
-  bool esc = false;
-  bool ctrl = false;
-  bool cx = false;  // Ctrl-x prefix (two-key sequence)
-  uint32_t key = 0; // lowercase letter, ' ' for space, 0x7F for backspace
+  bool esc = false;  /**< Reached via an Esc-prefix chord. */
+  bool ctrl = false; /**< Ctrl is held. */
+  bool cx = false;   /**< Ctrl-x prefix (two-key sequence). */
+  uint32_t key = 0;  /**< Lowercase letter, ' ' for space, 0x7F for backspace. */
   bool operator==(Shortcut const&) const = default;
 };
 
-// Forward lookup: Shortcut -> Action (nullopt if unrecognised).
+/**
+ * @brief Forward lookup of a Shortcut to its bound Action.
+ * @return The Action, or nullopt if the shortcut is unrecognised.
+ */
 std::optional<Action> handleShortcut(Shortcut s);
 
-// Reverse lookup: Action -> its primary shortcut (first match in table).
+/**
+ * @brief Reverse lookup of an Action's primary Shortcut.
+ * @return The first matching shortcut in the binding table.
+ */
 Shortcut shortcutForAction(Action a);
 
-// Human-readable label: "Ctrl-s", "Esc-?", "Ctrl-Bksp", etc.
+/**
+ * @brief Format a Shortcut as a human-readable label.
+ * @return e.g. "Ctrl-s", "Esc-?", "Ctrl-Bksp".
+ */
 std::string formatShortcut(Shortcut s);
 
-// Description string for an action (e.g. "Save file").
+/** @brief Short description string for an action (e.g. "Save file"). */
 std::string_view descriptionForAction(Action a);
 
-// All unique (description, Action) pairs, sorted alphabetically by
-// description. Used by Esc-x execute-by-name to populate completions.
-// `ExecuteCommand` itself is excluded so the prompt cannot recurse.
+/**
+ * @brief All unique (description, Action) pairs, sorted alphabetically by
+ *        description.
+ *
+ * Used by Esc-x execute-by-name to populate completions. @c ExecuteCommand
+ * itself is excluded so the prompt cannot recurse.
+ */
 std::vector<std::pair<std::string_view, Action>> allCommands();
 
-// Convert raw control char (0x00-0x1F) to a Shortcut.
+/** @brief Convert a raw control char (0x00-0x1F) to a Shortcut. */
 inline Shortcut shortcutFromCtrlChar(char c) {
   if (c == 0)
     return {.ctrl = true, .key = ' '};
   return {.ctrl = true, .key = static_cast<uint32_t>(c) | 0x60u};
 }
 
-// Convert byte received after ESC to a Shortcut.
+/** @brief Convert a byte received after ESC to a Shortcut. */
 inline Shortcut shortcutFromEscChar(char c) {
   return {.esc = true, .key = static_cast<uint32_t>(static_cast<unsigned char>(c))};
 }
 
-// Convert byte received after Ctrl-x to a Shortcut.
+/** @brief Convert a byte received after the Ctrl-x prefix to a Shortcut. */
 inline Shortcut shortcutFromCxChar(char c) {
   return {.cx = true, .key = static_cast<uint32_t>(static_cast<unsigned char>(c))};
 }

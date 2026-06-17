@@ -1,5 +1,16 @@
 #pragma once
 
+/**
+ * @file utf8.hpp
+ * @brief UTF-8 decoding/encoding, character classification, display-width
+ *        measurement, and visual-row layout helpers.
+ *
+ * The constexpr predicates and decode/encode routines are the single
+ * place that knows the UTF-8 bit patterns. The display-width and
+ * visual-row functions (defined in utf8.cpp) measure text exactly as
+ * Buffer::render draws it, so cursor, scroll, and wrap math stay in sync.
+ */
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -8,19 +19,28 @@
 #include <utility>
 #include <vector>
 
-/// Return true if b is a UTF-8 continuation byte: (b & 0xC0) == 0x80.
-/// Pure predicate — works on any unsigned char value. This is the single
-/// place that knows the continuation-byte bit pattern.
+/**
+ * @brief True if @p b is a UTF-8 continuation byte ((b & 0xC0) == 0x80).
+ *
+ * Pure predicate that works on any unsigned char value. This is the
+ * single place that knows the continuation-byte bit pattern.
+ */
 inline constexpr bool isUtf8Continuation(unsigned char b) { return (b & 0xC0) == 0x80; }
 
-/// The low six payload bits a UTF-8 continuation byte carries — also the
-/// per-byte group emitted when encoding.
+/**
+ * @brief The low six payload bits a UTF-8 continuation byte carries.
+ *
+ * Also the per-byte group emitted when encoding.
+ */
 inline constexpr unsigned char kUtf8ContValueMask = 0x3F;
 
-/// Number of bytes in a UTF-8 sequence starting with the given lead byte.
-/// Returns 1 for ASCII (<0x80), 2-4 for valid multi-byte lead bytes, and
-/// 1 for invalid/continuation bytes (no error signaling). This is the
-/// single place that classifies a lead byte by its high bits.
+/**
+ * @brief Number of bytes in the UTF-8 sequence starting with @p lead.
+ *
+ * Returns 1 for ASCII (<0x80), 2-4 for valid multi-byte lead bytes, and
+ * 1 for invalid/continuation bytes (no error signalling). This is the
+ * single place that classifies a lead byte by its high bits.
+ */
 inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
   if (lead < 0x80)
     return 1;
@@ -33,27 +53,40 @@ inline constexpr std::size_t utf8SeqLen(unsigned char lead) {
   return 1; // invalid or continuation — treat as single byte
 }
 
-/// Smallest code point that legitimately needs an N-byte sequence,
-/// indexed by sequence length (entries 0/1 unused — ASCII has no
-/// minimum). Shared by the decoder (overlong rejection) and the encoder
-/// (length selection) so these boundaries live in exactly one place.
+/**
+ * @brief Smallest code point that legitimately needs an N-byte sequence,
+ *        indexed by sequence length.
+ *
+ * Entries 0/1 are unused (ASCII has no minimum). Shared by the decoder
+ * (overlong rejection) and the encoder (length selection) so these
+ * boundaries live in exactly one place.
+ */
 inline constexpr std::array<uint32_t, 5> kUtf8MinForLen{0, 0, 0x80, 0x800, 0x10000};
 
-/// UTF-16 surrogate range and the largest Unicode scalar value. Neither
-/// is well-formed in UTF-8; both decode and encode reject them.
+/** @brief Lowest UTF-16 surrogate code point; not well-formed in UTF-8. */
 inline constexpr uint32_t kSurrogateMin = 0xD800;
+/** @brief Highest UTF-16 surrogate code point; not well-formed in UTF-8. */
 inline constexpr uint32_t kSurrogateMax = 0xDFFF;
+/** @brief Largest Unicode scalar value. */
 inline constexpr uint32_t kMaxCodepoint = 0x10FFFF;
 
+/** @brief True if @p cp falls in the UTF-16 surrogate range. */
 inline constexpr bool isSurrogate(uint32_t cp) {
   return cp >= kSurrogateMin && cp <= kSurrogateMax;
 }
 
-/// Decode a UTF-8 code point starting at data[0].
-/// Precondition: avail > 0 (at least one byte available).
-/// Returns {codepoint, byte_length}. For malformed, truncated, overlong,
-/// surrogate (U+D800–U+DFFF), or out-of-range (>U+10FFFF) sequences the
-/// raw byte value is returned with length 1.
+/**
+ * @brief Decode the UTF-8 code point starting at @p data[0].
+ *
+ * For malformed, truncated, overlong, surrogate (U+D800–U+DFFF), or
+ * out-of-range (>U+10FFFF) sequences the raw byte value is returned with
+ * length 1.
+ *
+ * @param data Pointer to the first byte of the sequence.
+ * @param avail Bytes available at @p data.
+ * @pre @p avail > 0.
+ * @return {codepoint, byte_length}.
+ */
 inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   std::size_t len = utf8SeqLen(u);
@@ -78,11 +111,16 @@ inline constexpr std::pair<uint32_t, std::size_t> decodeUtf8(char const* data, s
   return {cp, len};
 }
 
-/// Encode a Unicode code point as UTF-8.
-/// Returns {byte_count, bytes}. Only the first byte_count entries in
-/// the array are valid. Surrogate code points (U+D800..U+DFFF) and
-/// codepoints above U+10FFFF are rejected and encoded as the
-/// replacement character (U+FFFD).
+/**
+ * @brief Encode a Unicode code point as UTF-8.
+ *
+ * Surrogate code points (U+D800..U+DFFF) and code points above U+10FFFF
+ * are rejected and encoded as the replacement character (U+FFFD).
+ *
+ * @param cp The code point to encode.
+ * @return {byte_count, bytes}. Only the first @c byte_count array entries
+ *         are valid.
+ */
 inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8(uint32_t cp) {
   // Surrogates and out-of-range values are not valid scalar values:
   // normalise to U+FFFD up front so the single encode path below emits
@@ -104,14 +142,17 @@ inline constexpr std::pair<std::size_t, std::array<unsigned char, 4>> encodeUtf8
   return {len, buf};
 }
 
-/// True if c is a horizontal whitespace character (space or tab).
+/** @brief True if @p c is horizontal whitespace (space or tab). */
 inline constexpr bool isWhitespace(char c) { return c == ' ' || c == '\t'; }
 
-/// Visual display width of a single ASCII byte (excluding newline).
-/// ASCII only: tab and control characters (including NUL and DEL) return 2
-/// (rendered as two-character sequences like ^X or \0); printable bytes
-/// (including space) return 1. Does not handle newline or multi-byte UTF-8
-/// lead bytes — callers must check for those separately.
+/**
+ * @brief Visual display width of a single ASCII byte (excluding newline).
+ *
+ * ASCII only: tab and control characters (including NUL and DEL) return 2
+ * (rendered as two-character sequences like ^X or \\0); printable bytes
+ * (including space) return 1. Does not handle newline or multi-byte
+ * UTF-8 lead bytes — callers must check for those separately.
+ */
 inline constexpr std::size_t charWidth(char ch) {
   auto u = static_cast<unsigned char>(ch);
   if (u == '\t')
@@ -121,10 +162,14 @@ inline constexpr std::size_t charWidth(char ch) {
   return 1;
 }
 
-/// Display width of a Unicode code point: 2 for CJK / wide ranges
-/// (Hangul Jamo, CJK radicals, Hiragana/Katakana, CJK unified, Yi,
-/// Hangul syllables, fullwidth forms, CJK extensions B-G), 1 otherwise.
-/// Does not handle combining marks or zero-width characters.
+/**
+ * @brief Display width of a Unicode code point.
+ *
+ * Returns 2 for CJK / wide ranges (Hangul Jamo, CJK radicals,
+ * Hiragana/Katakana, CJK unified, Yi, Hangul syllables, fullwidth forms,
+ * CJK extensions B-G) and 1 otherwise. Does not handle combining marks or
+ * zero-width characters.
+ */
 inline constexpr std::size_t codepointWidth(uint32_t cp) {
   if (cp >= 0x1100 && cp <= 0x115F)
     return 2; // Hangul Jamo
@@ -153,24 +198,29 @@ inline constexpr std::size_t codepointWidth(uint32_t cp) {
   return 1;
 }
 
-/// Width and byte length of the character/code-point at data[0..avail).
+/** @brief Width and byte length of the character at @c data[0..avail). */
 struct CharInfo {
-  std::size_t width; // display columns
-  std::size_t len;   // bytes consumed
+  std::size_t width; /**< Display columns. */
+  std::size_t len;   /**< Bytes consumed. */
 };
 
-/// Combined decode + width for the character at data[0..avail).
-/// Precondition: avail > 0. Measures a byte exactly as Buffer::render's
-/// emitChar draws it: ASCII applies charWidth rules (tab and control bytes
-/// — ESC included — are width 2, rendered "^X"/"^["; printable is 1); a
-/// valid multi-byte UTF-8 sequence decodes to codepointWidth; an invalid
-/// byte (>= 0x80 with len == 1 from decodeUtf8) gets width 4 for "\xHH".
-///
-/// A raw ESC is treated as an ordinary control byte, which is the correct
-/// reading of buffer *content* — the renderer never passes a content ESC
-/// through to the terminal. To measure a string that already contains
-/// renderer-emitted ANSI escapes (the modeline, escapeNonPrintable
-/// output), use displayCharInfoAt, which skips CSI sequences as zero-width.
+/**
+ * @brief Combined decode + width for the character at @c data[0..avail).
+ *
+ * Measures a byte exactly as Buffer::render's emitChar draws it: ASCII
+ * applies charWidth() rules (tab and control bytes — ESC included — are
+ * width 2, rendered "^X"/"^["; printable is 1); a valid multi-byte UTF-8
+ * sequence decodes to codepointWidth(); an invalid byte (>= 0x80 with
+ * len == 1 from decodeUtf8) gets width 4 for "\\xHH".
+ *
+ * A raw ESC is treated as an ordinary content control byte (the renderer
+ * never passes a content ESC through to the terminal). To measure a
+ * string that already contains renderer-emitted ANSI escapes (the
+ * modeline, escapeNonPrintable output), use displayCharInfoAt(), which
+ * skips CSI sequences as zero-width.
+ *
+ * @pre @p avail > 0.
+ */
 inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   if (u < 0x80)
@@ -181,13 +231,17 @@ inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
   return {codepointWidth(cp), len};
 }
 
-/// Like charInfoAt, but recognises an ANSI CSI escape that the editor
-/// itself emitted — ESC '[' … final-byte (0x40..0x7E) — as a single
-/// zero-width, full-length pass-through. Use ONLY on already-rendered
-/// strings (the modeline status line, escapeNonPrintable output), never on
-/// raw buffer content: emitChar escapes a content ESC to a visible "^[",
-/// so swallowing an "ESC [" run there would drop the trailing bytes from
-/// the display and desync the width / cursor / wrap math.
+/**
+ * @brief Like charInfoAt(), but recognises an editor-emitted ANSI CSI
+ *        escape (ESC '[' … final-byte 0x40..0x7E) as a single zero-width,
+ *        full-length pass-through.
+ *
+ * Use ONLY on already-rendered strings (the modeline status line,
+ * escapeNonPrintable output), never on raw buffer content: emitChar
+ * escapes a content ESC to a visible "^[", so swallowing an "ESC [" run
+ * there would drop trailing bytes and desync the width / cursor / wrap
+ * math.
+ */
 inline constexpr CharInfo displayCharInfoAt(char const* data, std::size_t avail) {
   auto u = static_cast<unsigned char>(data[0]);
   // ANSI CSI escape: ESC [ <params> <letter>
@@ -203,74 +257,114 @@ inline constexpr CharInfo displayCharInfoAt(char const* data, std::size_t avail)
   return charInfoAt(data, avail);
 }
 
-/// Visual (display column) width of a string, handling multi-byte UTF-8
-/// and ANSI escape sequences (which contribute 0 width). Defined in utf8.cpp.
+/**
+ * @brief Visual (display-column) width of a string, accounting for
+ *        multi-byte UTF-8 and ANSI escape sequences (zero width).
+ *
+ * Defined in utf8.cpp.
+ */
 std::size_t visualWidth(std::string_view s);
 
-/// Return `s` with any non-printable byte replaced by a visible "\xHH"
-/// escape so it cannot be silently swallowed by the terminal. Bytes
-/// rendered as escapes are: ASCII control characters (< 0x20, including
-/// TAB and newline), DEL (0x7F), and any high byte (>= 0x80) that does
-/// not start a valid UTF-8 sequence. Printable ASCII and valid
-/// multi-byte UTF-8 pass through unchanged. Intended for filenames and
-/// other short user-visible strings whose contents come from outside
-/// the editor; not for buffer text content, which the buffer renderer
-/// styles separately. Defined in utf8.cpp.
+/**
+ * @brief Return @p s with any non-printable byte replaced by a visible
+ *        "\\xHH" escape so it cannot be silently swallowed by the terminal.
+ *
+ * Bytes rendered as escapes are: ASCII control characters (< 0x20,
+ * including TAB and newline), DEL (0x7F), and any high byte (>= 0x80) that
+ * does not start a valid UTF-8 sequence. Printable ASCII and valid
+ * multi-byte UTF-8 pass through unchanged. Intended for filenames and
+ * other short user-visible strings from outside the editor; not for
+ * buffer text content, which the buffer renderer styles separately.
+ * Defined in utf8.cpp.
+ */
 std::string escapeNonPrintable(std::string_view s);
 
-/// Truncate `s` from the front so its visual width is at most `maxWidth`,
-/// prepending a horizontal ellipsis ("…", U+2026, visual width 1) when any
-/// content was dropped. If `s` already fits, it is returned unchanged.
-/// If `maxWidth` is 0, returns an empty string. Defined in utf8.cpp.
+/**
+ * @brief Truncate @p s from the front so its visual width is at most
+ *        @p maxWidth, prepending a horizontal ellipsis ("…", visual width
+ *        1) when content was dropped.
+ *
+ * Returns @p s unchanged if it already fits, or an empty string when
+ * @p maxWidth is 0. Defined in utf8.cpp.
+ */
 std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth);
 
-/// Sum of display widths of characters in line[from..to). Defined in utf8.cpp.
+/**
+ * @brief Sum of display widths of characters in @c line[from..to).
+ *
+ * Defined in utf8.cpp.
+ */
 std::size_t visualColRange(std::string const& line, std::size_t from, std::size_t to);
 
-/// Walk a line from byte offset `from` to find the byte offset matching a
-/// target visual column `goal`. Stops at `to` (or line.size()). Defined in utf8.cpp.
+/**
+ * @brief Walk a line from byte offset @p from to find the byte offset
+ *        matching a target visual column @p goal.
+ *
+ * Stops at @p to (or line.size()). Defined in utf8.cpp.
+ */
 std::size_t offsetForVisualCol(std::string const& line, std::size_t from, std::size_t to,
                                std::size_t goal);
 
-/// Visual-row boundary info for a byte offset within a wrapped line.
+/** @brief Visual-row boundary offsets around a byte offset in a wrapped line. */
 struct VisualRowInfo {
   std::size_t prevRowStart;
   std::size_t curRowStart;
   std::size_t nextRowStart;
 };
 
-/// Scan a line to find the visual-row boundaries around a byte offset
-/// at a given column width. Defined in utf8.cpp.
+/**
+ * @brief Scan a line to find the visual-row boundaries around a byte
+ *        offset at a given column width.
+ *
+ * Defined in utf8.cpp.
+ */
 VisualRowInfo findVisualRow(std::string const& line, std::size_t byteOff, std::size_t cols);
 
-/// Find the byte offset at the start of the last visual row of a line
-/// at a given column width. Defined in utf8.cpp.
+/**
+ * @brief Byte offset at the start of a line's last visual row at a given
+ *        column width.
+ *
+ * Defined in utf8.cpp.
+ */
 std::size_t lastVisualRowStart(std::string const& line, std::size_t cols);
 
-/// Look up VisualRowInfo from pre-computed row boundary offsets using binary
-/// search. Defined in utf8.cpp.
+/**
+ * @brief Look up VisualRowInfo from pre-computed row-boundary offsets via
+ *        binary search.
+ *
+ * Defined in utf8.cpp.
+ */
 VisualRowInfo findVisualRowCached(std::vector<std::size_t> const& rowStarts, std::size_t byteOff,
                                   std::size_t lineSize);
 
-/// Compute visual-row boundary byte offsets for a line at a given column
-/// width. Returns a vector where each entry is the byte offset of the start
-/// of a visual row. Defined in utf8.cpp.
+/**
+ * @brief Compute visual-row boundary byte offsets for a line at a given
+ *        column width.
+ *
+ * @return A vector whose entries are the byte offsets that begin each
+ *         visual row. Defined in utf8.cpp.
+ */
 std::vector<std::size_t> computeRowBounds(std::string const& line, std::size_t cols);
 
-/// Append the tail of a UTF-8 sequence to `dest`, given the lead byte
-/// that the caller has already appended to `dest`. Bytes are pulled
-/// one at a time via the `readByte` callback (must return true and set
-/// its `char&` out-parameter on success, false on EOF/error).
-///
-/// On EOF mid-sequence the partial tail is kept (callers may render
-/// the partial sequence as a broken lead). When a non-continuation
-/// byte arrives mid-sequence the entire malformed sequence — both the
-/// lead the caller pre-appended and any continuation bytes consumed so
-/// far — is removed from `dest`, and the offending byte is discarded.
-/// This is what keeps a paste like `\xC2\x1B[31m` from leaking a raw
-/// ESC into a string that will be written verbatim to the terminal:
-/// the tail reader cannot become a back door around the caller's
-/// "printable bytes only" filter.
+/**
+ * @brief Append the tail of a UTF-8 sequence to @p dest, given a lead byte
+ *        the caller has already appended.
+ *
+ * Bytes are pulled one at a time via @p readByte. On EOF mid-sequence the
+ * partial tail is kept (callers may render it as a broken lead). When a
+ * non-continuation byte arrives mid-sequence the entire malformed
+ * sequence — the lead the caller pre-appended plus any continuation bytes
+ * consumed — is removed from @p dest and the offending byte is discarded.
+ * This stops a paste like `\\xC2\\x1B[31m` from leaking a raw ESC into a
+ * string written verbatim to the terminal: the tail reader cannot become
+ * a back door around the caller's "printable bytes only" filter.
+ *
+ * @tparam ReadByte Callable `bool(char&)` returning true and setting its
+ *         out-parameter on success, false on EOF/error.
+ * @param lead The lead byte already appended to @p dest.
+ * @param dest Destination string.
+ * @param readByte The continuation-byte source.
+ */
 template <typename ReadByte>
 void appendUtf8Tail(unsigned char lead, std::string& dest, ReadByte readByte) {
   std::size_t expectedTail = utf8SeqLen(lead) - 1;
@@ -289,15 +383,22 @@ void appendUtf8Tail(unsigned char lead, std::string& dest, ReadByte readByte) {
   }
 }
 
-/// Convenience wrapper: read continuation bytes for `lead` from stdin
-/// and append them to `dest`. Same contract as `appendUtf8Tail` —
-/// malformed sequences are dropped rather than passed through.
+/**
+ * @brief Convenience wrapper: read continuation bytes for @p lead from
+ *        stdin and append them to @p dest.
+ *
+ * Same contract as appendUtf8Tail() — malformed sequences are dropped
+ * rather than passed through. Defined in utf8.cpp.
+ */
 void readUtf8Tail(unsigned char lead, std::string& dest);
 
-/// Read a complete UTF-8 codepoint from stdin given the lead byte.
-/// For ASCII (< 0x80), returns the byte directly. For multi-byte sequences,
-/// reads the continuation bytes from stdin and decodes. On a read error
-/// or EOF mid-sequence the partial buffer is fed to decodeUtf8, which
-/// returns the lead byte itself with len=1 — the caller therefore sees
-/// the lead byte rather than a malformed codepoint. Defined in utf8.cpp.
+/**
+ * @brief Read a complete UTF-8 code point from stdin given the lead byte.
+ *
+ * For ASCII (< 0x80) returns the byte directly. For multi-byte sequences,
+ * reads the continuation bytes from stdin and decodes. On a read error or
+ * EOF mid-sequence the partial buffer is fed to decodeUtf8(), which
+ * returns the lead byte with len=1 — so the caller sees the lead byte
+ * rather than a malformed code point. Defined in utf8.cpp.
+ */
 uint32_t readUtf8Codepoint(unsigned char lead);

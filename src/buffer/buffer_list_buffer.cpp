@@ -7,18 +7,19 @@
 
 namespace {
 
+/** @brief One node of the directory trie used to lay out the listing. */
 struct DirNode {
   std::map<std::string, DirNode> subdirs;
-  // (filename, full_path) pairs, kept in insertion (sorted) order.
-  std::vector<std::pair<std::string, std::string>> files;
-  // Non-empty if an open DirBuffer corresponds to this directory.
-  std::string dirBufferName;
+  std::vector<std::pair<std::string, std::string>> files; /**< (filename, full_path), sorted. */
+  std::string dirBufferName; /**< Non-empty if an open DirBuffer maps to this dir. */
 };
 
-// Split an absolute path on '/', skipping the leading '/'. A trailing
-// '/' produces an empty final component (matching the prior behavior
-// of insertPath/insertDirBuffer); callers either ignore that or
-// inspect parts.empty() before walking the result.
+/**
+ * @brief Split an absolute path on '/', skipping the leading '/'.
+ *
+ * A trailing '/' produces an empty final component; callers either ignore
+ * it or check parts.empty() before walking the result.
+ */
 std::vector<std::string> splitPath(std::string const& fullPath) {
   std::vector<std::string> parts;
   std::size_t start = 1;
@@ -43,9 +44,11 @@ void insertPath(DirNode& root, std::string const& fullPath) {
   node->files.push_back({parts.back(), fullPath});
 }
 
-// Insert a DirBuffer name into the trie, marking the corresponding
-// node so it renders as a selectable directory header. Returns true
-// if the path was placed on an existing or newly created node.
+/**
+ * @brief Insert a DirBuffer name into the trie, marking its node so it
+ *        renders as a selectable directory header.
+ * @return True if the path was placed on an existing or new node.
+ */
 bool insertDirBuffer(DirNode& root, std::string const& fullPath) {
   auto parts = splitPath(fullPath);
   if (parts.empty())
@@ -58,12 +61,14 @@ bool insertDirBuffer(DirNode& root, std::string const& fullPath) {
   return true;
 }
 
-// Render a directory node's contents into lines/names. `prefix` is the
-// already-escaped path fragment (display form); raw names entering the
-// display path get run through escapeNonPrintable so control bytes
-// stand out instead of being silently swallowed by the terminal. The
-// `names` vector keeps the raw, unescaped buffer/path so selection
-// dispatch resolves to the actual buffer.
+/**
+ * @brief Render a directory node's contents into @p lines and @p names.
+ *
+ * @p prefix is the already-escaped display path fragment; raw names are run
+ * through escapeNonPrintable() so control bytes stand out instead of being
+ * silently swallowed by the terminal. @p names keeps the raw, unescaped
+ * buffer/path so selection dispatch resolves to the actual buffer.
+ */
 void renderNode(DirNode const& node, std::string const& prefix, std::size_t indent, bool showHeader,
                 std::vector<std::string>& lines, std::vector<std::string>& names) {
   bool hasContent = !node.files.empty() || !node.subdirs.empty();

@@ -1,5 +1,11 @@
 #pragma once
 
+/**
+ * @file dir_buffer.hpp
+ * @brief DirBuffer — a read-only directory browser supporting navigation,
+ *        deletion, rename, and subdirectory creation.
+ */
+
 #include "buffer.hpp"
 
 #include <cstdint>
@@ -8,9 +14,13 @@
 #include <string>
 #include <vector>
 
-/// Readonly buffer that displays a directory listing with permissions,
-/// owner, group, and size. Supports navigation into subdirectories,
-/// toggling hidden files, and marking entries for deletion.
+/**
+ * @brief Read-only buffer that displays a directory listing with
+ *        permissions, owner, group, size, and modification time.
+ *
+ * Supports navigating into subdirectories, toggling hidden files, marking
+ * entries for deletion, renaming entries, and creating subdirectories.
+ */
 class DirBuffer : public Buffer {
 public:
   explicit DirBuffer(std::filesystem::path dir);
@@ -21,63 +31,78 @@ public:
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
                                     RenderParams const& params) const override;
 
-  /// Return the full path for the entry at the given cursor position.
+  /** @brief Full path for the entry at cursor position @p p. */
   std::filesystem::path selectedPath(BufferPoint p) const;
 
-  /// True if the entry at the given position is a directory.
+  /** @brief True if the entry at @p p is a directory. */
   bool selectedIsDir(BufferPoint p) const;
 
-  /// Navigate to a new directory and rebuild the listing.
-  /// Returns a ViewHint for the caller to position the cursor.
+  /**
+   * @brief Navigate to @p dir and rebuild the listing.
+   * @return A ViewHint for the caller to position the cursor.
+   */
   ViewHint navigate(std::filesystem::path dir);
 
-  /// Toggle visibility of dotfiles. Returns a ViewHint that tries
-  /// to restore the cursor on the same entry.
+  /**
+   * @brief Toggle visibility of dotfiles.
+   * @return A ViewHint that tries to keep the cursor on the same entry.
+   */
   ViewHint toggleHidden(BufferPoint currentPoint);
 
-  /// Toggle deletion mark at the given line. No-op on . and .. entries.
+  /** @brief Toggle the deletion mark at line @p p. A no-op on `.` and `..`. */
   void toggleDeleteMark(BufferPoint p);
 
-  /// Return the set of paths currently marked for deletion.
+  /** @brief Paths currently marked for deletion. */
   std::vector<std::filesystem::path> markedPaths() const;
 
-  /// Clear all deletion marks.
+  /** @brief Clear all deletion marks. */
   void clearMarks();
 
-  /// Remove all marked entries from disk. Returns count, error, and a
-  /// ViewHint for cursor positioning after the listing is refreshed.
+  /** @brief Outcome of executeDelete(). */
   struct DeleteResult {
-    std::size_t count;
-    std::string error;
-    ViewHint hint;
+    std::size_t count;  /**< Number of entries removed. */
+    std::string error;  /**< Error message, empty on success. */
+    ViewHint hint;      /**< Cursor placement after the refresh. */
   };
+  /**
+   * @brief Remove all marked entries from disk and refresh the listing.
+   * @return The count removed, any error, and a cursor hint.
+   */
   DeleteResult executeDelete();
 
-  /// Result of a rename or mkdir operation: a status hint or error
-  /// message plus a ViewHint for the cursor after listing refresh.
+  /** @brief Outcome of renameEntry() / makeSubdir(). */
   struct ChangeResult {
-    bool ok;
-    std::string error; // populated when ok == false
-    ViewHint hint;
+    bool ok;            /**< True on success. */
+    std::string error;  /**< Error message, populated when @c ok is false. */
+    ViewHint hint;      /**< Cursor placement after the refresh. */
   };
 
-  /// Rename the entry at `p` to `newName` (relative to the current
-  /// directory). Refuses on `.` / `..`, on empty/separator-bearing
-  /// names, and when the target already exists. Refreshes the listing
-  /// on success and tries to leave the cursor on the renamed entry.
+  /**
+   * @brief Rename the entry at @p p to @p newName (relative to the current
+   *        directory).
+   *
+   * Refuses on `.` / `..`, empty or separator-bearing names, and when the
+   * target already exists. Refreshes the listing on success and tries to
+   * leave the cursor on the renamed entry.
+   */
   ChangeResult renameEntry(BufferPoint p, std::string const& newName);
 
-  /// Create a new subdirectory `newName` inside the current directory.
-  /// Refuses on empty/separator-bearing names. Refreshes the listing
-  /// and returns a hint that lands the cursor on the new entry.
+  /**
+   * @brief Create a new subdirectory @p newName inside the current
+   *        directory.
+   *
+   * Refuses on empty or separator-bearing names. Refreshes the listing and
+   * returns a hint that lands the cursor on the new entry.
+   */
   ChangeResult makeSubdir(std::string const& newName);
 
-  /// The directory currently being listed.
+  /** @brief The directory currently being listed. */
   std::filesystem::path const& directory() const { return _dir; }
 
-  /// Whether hidden files are currently shown.
+  /** @brief Whether hidden files are currently shown. */
   bool showingHidden() const { return _showHidden; }
 
+  /** @brief Metadata for one listed filesystem entry. */
   struct Entry {
     std::string name;
     std::filesystem::path path;
@@ -86,19 +111,22 @@ public:
     std::uintmax_t size = 0;
     std::string owner;
     std::string group;
-    std::string permissions; // e.g. "drwxr-xr-x"
-    std::string mtime;       // e.g. "2026-03-27 14:05:12"
+    std::string permissions; /**< e.g. "drwxr-xr-x". */
+    std::string mtime;       /**< e.g. "2026-03-27 14:05:12". */
   };
 
-  /// Access entries (for testing).
+  /** @brief Access the entry list (for testing). */
   std::vector<Entry> const& entries() const { return _entries; }
 
-  /// Check if an index is marked for deletion (for testing).
+  /** @brief Whether index @p idx is marked for deletion (for testing). */
   bool isMarked(std::size_t idx) const { return _markedForDelete.contains(idx); }
 
 private:
-  /// Rebuild the entry list and display lines. If `prevName` is non-empty,
-  /// tries to place the returned cursor on the entry with that name.
+  /**
+   * @brief Rebuild the entry list and display lines.
+   * @param prevName When non-empty, tries to place the returned cursor on
+   *        the entry with that name.
+   */
   ViewHint refresh(std::string const& prevName = {});
 
   std::filesystem::path _dir;
@@ -108,11 +136,15 @@ private:
   std::set<std::size_t> _markedForDelete;
 };
 
+/** @brief DirBuffer implementation helpers exposed for testing. */
 namespace dir_buffer_detail {
-/// Length-preserving sanitizer for NSS-sourced fields (owner / group
-/// from getpwuid / getgrgid). Replaces C0 controls, DEL, and 8-bit C1
-/// controls with '?' so they can't drive a terminal escape when the
-/// listing is written direct-to-terminal. Exposed for tests; not
-/// intended for general use (caller-context-specific).
+/**
+ * @brief Length-preserving sanitiser for NSS-sourced fields (owner / group
+ *        from getpwuid / getgrgid).
+ *
+ * Replaces C0 controls, DEL, and 8-bit C1 controls with '?' so they cannot
+ * drive a terminal escape when the listing is written direct-to-terminal.
+ * Exposed for tests; not intended for general (context-specific) use.
+ */
 std::string sanitizeNssField(std::string s);
 } // namespace dir_buffer_detail

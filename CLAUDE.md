@@ -42,6 +42,7 @@ See `docs/architecture.md` for a detailed summary of the codebase.
 - Build: `cmake -B build && cmake --build build`
 - Binary: `./build/cx`
 - Tests: `cmake --build build && ctest --test-dir build` (uses Boost.Test)
+- API docs (optional, needs Doxygen): `cmake --build build --target docs` → `build/docs/html`
 
 ## Formatting
 

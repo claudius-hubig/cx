@@ -16,9 +16,12 @@
 #include <optional>
 #include <string>
 
-// Drain all bytes from fd 0 into a string. Used when stdin is a pipe
-// so the data can be seeded into a scratch buffer before raw-mode
-// terminal setup takes over fd 0.
+/**
+ * @brief Drain all bytes from fd 0 into a string.
+ *
+ * Used when stdin is a pipe so the data can be seeded into a scratch
+ * buffer before raw-mode terminal setup takes over fd 0.
+ */
 static std::string drainStdin() {
   std::string out;
   char buf[4096];

@@ -1,79 +1,114 @@
 #pragma once
 
+/**
+ * @file clipboard.hpp
+ * @brief X11 PRIMARY/CLIPBOARD integration via the xclip / xsel
+ *        command-line tools.
+ *
+ * The project rule forbids linking libX11 (stdlib only), so all
+ * interaction goes through one of those external programs. They are
+ * detected lazily on first use and cached; if neither is on PATH, or
+ * DISPLAY is unset, every method becomes a silent no-op so the editor
+ * still works unchanged on a tty without a graphical session.
+ *
+ * API assumptions:
+ * - Single-threaded; not safe to call from a signal handler.
+ * - Writes (setPrimary / setClipboard) are best-effort and never block
+ *   the caller for more than the cost of a single fork (~1 ms): a
+ *   double-fork detach lets the grandchild xclip/xsel run independently
+ *   and be reaped by init.
+ * - Reads (getClipboard / getPrimary) ARE synchronous, since the caller
+ *   wants the text immediately. Bounded by xclip/xsel startup (~30 ms).
+ * - Errors are written to ~/.cx-errors via error_log and never surfaced
+ *   to the user.
+ */
+
 #include <optional>
 #include <string>
 #include <string_view>
 
-// X11 clipboard integration via the xclip / xsel command-line tools.
-//
-// We can't link libX11 (project rule: stdlib only), so all interaction
-// goes through one of those external programs. They are detected lazily
-// on first use and cached; if neither is on PATH, or DISPLAY is unset,
-// every method becomes a silent no-op so the editor still works
-// unchanged on a tty without a graphical session.
-//
-// API assumptions:
-//  - Single-threaded. Not safe to call from a signal handler.
-//  - Writes (setPrimary / setClipboard) are best-effort and never block
-//    the caller for more than the cost of a single fork (~1 ms): a
-//    double-fork detach lets the grandchild xclip/xsel run independently
-//    and be reaped by init.
-//  - Reads (getClipboard) ARE synchronous, since the caller wants the
-//    text immediately. Bounded by xclip/xsel startup (~30 ms typical).
-//  - Errors are written to ~/.cx-errors via the existing error_log
-//    module and never surfaced to the user.
+/** @brief Best-effort X11 clipboard adapter backed by xclip/xsel. */
 class Clipboard {
 public:
   Clipboard() = default;
 
-  // Best-effort write to the X11 PRIMARY selection (the mouse-drag /
-  // middle-click buffer). Empty text is ignored. Re-publishing the same
-  // text as the previous successful call is a free no-op (no fork).
+  /**
+   * @brief Best-effort write to the X11 PRIMARY selection (the mouse-drag
+   *        / middle-click buffer).
+   *
+   * Empty text is ignored. Re-publishing text identical to the previous
+   * successful call is a free no-op (no fork).
+   */
   void setPrimary(std::string_view text);
 
-  // Best-effort write to the X11 CLIPBOARD selection (Ctrl-C/Ctrl-V).
-  // Empty text is ignored. Not deduped — cut/copy is rare enough that
-  // we always republish.
+  /**
+   * @brief Best-effort write to the X11 CLIPBOARD selection
+   *        (Ctrl-C/Ctrl-V).
+   *
+   * Empty text is ignored. Not deduped — cut/copy is rare enough that we
+   * always republish.
+   */
   void setClipboard(std::string_view text);
 
-  // Synchronously read the X11 CLIPBOARD selection. Returns nullopt
-  // when no backend is available, the read fails, or the selection is
-  // empty.
+  /**
+   * @brief Synchronously read the X11 CLIPBOARD selection.
+   * @return The selection text, or nullopt when no backend is available,
+   *         the read fails, or the selection is empty.
+   */
   std::optional<std::string> getClipboard();
 
-  // Synchronously read the X11 PRIMARY selection (the mouse-drag /
-  // middle-click buffer). Same nullopt contract as getClipboard. Used
-  // by the in-app middle-click paste.
+  /**
+   * @brief Synchronously read the X11 PRIMARY selection (mouse-drag /
+   *        middle-click buffer).
+   *
+   * Same nullopt contract as getClipboard(); used by the in-app
+   * middle-click paste.
+   */
   std::optional<std::string> getPrimary();
 
-  // Mostly for tests: true iff a backend was detected on first use.
+  /**
+   * @brief Whether a backend was detected on first use.
+   * @return True if xclip or xsel is available. Mostly for tests.
+   */
   bool active();
 
 private:
   enum class Backend { Unknown, None, Xclip, Xsel };
 
-  // Lazy probe: checks DISPLAY and walks PATH looking for xclip then
-  // xsel. Idempotent and cached in `_backend`.
+  /**
+   * @brief Lazy probe: check DISPLAY and walk PATH for xclip then xsel.
+   *
+   * Idempotent; the result is cached in @c _backend.
+   */
   void ensureDetected();
 
-  // Spawn `argv` with `text` on stdin via a double-fork detach.
+  /** @brief Spawn the backend with @p text on stdin via a double-fork detach. */
   void publishAsync(std::string_view text, char const* selection);
 
-  // Spawn `argv` and read its stdout to EOF synchronously.
+  /** @brief Spawn the backend and read its stdout to EOF synchronously. */
   std::optional<std::string> readSync(char const* selection);
 
-  // Shared body of getClipboard / getPrimary: detect a backend, read
-  // `selection` synchronously, and map an absent backend or empty
-  // result to nullopt. `selection` is "clipboard" or "primary".
+  /**
+   * @brief Shared body of getClipboard() / getPrimary().
+   *
+   * Detects a backend, reads @p selection synchronously, and maps an
+   * absent backend or empty result to nullopt.
+   * @param selection "clipboard" or "primary".
+   */
   std::optional<std::string> getSelection(char const* selection);
 
   Backend _backend = Backend::Unknown;
-  std::string _lastPrimary; // dedup key for setPrimary
+  std::string _lastPrimary; /**< Dedup key for setPrimary. */
 };
 
+/** @brief Implementation helpers exposed for testing. */
 namespace clipboard_detail {
-// Walk a colon-separated PATH-style string for an executable named
-// `name`. Returns the first hit, or empty if none. Exposed so tests
-// can drive the lookup with synthetic PATH strings.
+/**
+ * @brief Walk a colon-separated PATH-style string for an executable named
+ *        @p name.
+ *
+ * Exposed so tests can drive the lookup with synthetic PATH strings.
+ * @return The first hit, or an empty string if none is found.
+ */
 std::string findOnPath(std::string_view path, std::string_view name);
 } // namespace clipboard_detail

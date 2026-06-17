@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-// Generate a help line: "  <shortcut>  <description>" with consistent padding.
+/** @brief Build a help line "  <shortcut>  <description>" with padding. */
 static std::string formatHelpLine(Action a) {
   auto s = shortcutForAction(a);
   auto label = formatShortcut(s);
@@ -23,7 +23,7 @@ static std::string formatHelpLine(Action a) {
   return line;
 }
 
-// A hardcoded line with the same padding convention.
+/** @brief Build a help line for a hardcoded key/description, same padding. */
 static std::string formatRawLine(std::string_view key, std::string_view desc) {
   std::string line = "  ";
   line += key;
@@ -33,6 +33,7 @@ static std::string formatRawLine(std::string_view key, std::string_view desc) {
   return line;
 }
 
+/** @brief The lazily-built, cached left help column (files/edit/etc.). */
 static std::vector<std::string> const& leftColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
@@ -77,6 +78,7 @@ static std::vector<std::string> const& leftColumn() {
   return lines;
 }
 
+/** @brief The lazily-built, cached right help column (search/display/etc.). */
 static std::vector<std::string> const& rightColumn() {
   static std::vector<std::string> lines = [] {
     std::vector<std::string> v;
@@ -144,6 +146,7 @@ static constexpr std::string_view kTitle = "cx";
 static constexpr std::size_t kGap = 6;
 static constexpr std::size_t kHeaderLines = 3;
 
+/** @brief Maximum visual width across @p lines. */
 static std::size_t maxWidth(std::span<std::string const> lines) {
   std::size_t w = 0;
   for (auto& l : lines)
@@ -151,37 +154,60 @@ static std::size_t maxWidth(std::span<std::string const> lines) {
   return w;
 }
 
-// Cached maximum visual widths of the left/right columns. The column
-// content is static (computed once via lambdas in leftColumn/rightColumn),
-// so the widths never change — compute each once and reuse.
+/**
+ * @brief Cached maximum visual width of the left column.
+ *
+ * Column content is static, so the width never changes — compute it once
+ * and reuse it to keep the per-cursor-move hot path (dataLineToVisualRow())
+ * free of repeated visualWidth() scans.
+ */
 static std::size_t cachedLeftWidth() {
   static std::size_t const w = maxWidth(leftColumn());
   return w;
 }
 
+/**
+ * @brief Cached maximum visual width of the right column.
+ *
+ * Column content is static, so the width never changes — compute it once
+ * and reuse it to keep the per-cursor-move hot path (dataLineToVisualRow())
+ * free of repeated visualWidth() scans.
+ */
 static std::size_t cachedRightWidth() {
   static std::size_t const w = maxWidth(rightColumn());
   return w;
 }
 
-// Counts mirror the widths above. dataLineToVisualRow runs per cursor
-// movement and was calling .size() on the function-static vector each
-// time; cache the length so the hot path is purely arithmetic.
+/**
+ * @brief Cached line count of the left column.
+ *
+ * dataLineToVisualRow() runs on every cursor movement; caching the count
+ * keeps that hot path purely arithmetic instead of calling .size() on the
+ * function-static vector each time.
+ */
 static std::size_t cachedLeftCount() {
   static std::size_t const n = leftColumn().size();
   return n;
 }
 
+/**
+ * @brief Cached line count of the right column.
+ *
+ * dataLineToVisualRow() runs on every cursor movement; caching the count
+ * keeps that hot path purely arithmetic instead of calling .size() on the
+ * function-static vector each time.
+ */
 static std::size_t cachedRightCount() {
   static std::size_t const n = rightColumn().size();
   return n;
 }
 
+/** @brief Whether both columns fit side-by-side at @p cols columns. */
 static bool isSideBySide(std::size_t cols) {
   return cachedLeftWidth() + kGap + cachedRightWidth() <= cols;
 }
 
-// Map a data-line index to an absolute visual row.
+/** @brief Map a data-line index to its absolute visual row. */
 static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
   auto leftCount = cachedLeftCount();
   auto rightCount = cachedRightCount();
@@ -208,11 +234,12 @@ static std::size_t dataLineToVisualRow(std::size_t dataLine, std::size_t cols) {
   return kHeaderLines + mergedRows + (dataLine - rightEnd);
 }
 
-// Build all visual lines for a given column width.
+/** @brief One rendered visual line of the help screen. */
 struct VisualLine {
   std::string content;
 };
 
+/** @brief Build all visual lines for a given column width. */
 static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   auto const& leftLines = leftColumn();
   auto const& rightLines = rightColumn();
@@ -295,10 +322,13 @@ static std::vector<VisualLine> buildVisualLines(std::size_t cols) {
   return vlines;
 }
 
-// Return a cached vector of visual lines for the given content width.
-// The help content is static, so we only need to rebuild when the
-// column count changes (e.g. on terminal resize). Single-threaded
-// editor, so a simple function-level static is safe.
+/**
+ * @brief Cached visual lines for content width @p cols.
+ *
+ * The help content is static, so the cache is rebuilt only when the column
+ * count changes (e.g. on resize). A function-level static is safe in this
+ * single-threaded editor.
+ */
 static std::vector<VisualLine> const& cachedVisualLines(std::size_t cols) {
   static std::vector<VisualLine> cache;
   static std::size_t cachedCols = 0;

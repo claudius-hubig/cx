@@ -30,7 +30,6 @@ void PanelLayout::forEachPanel(std::function<void(Panel const&)> const& fn) cons
 std::size_t PanelLayout::count() const { return countImpl(_root); }
 
 Panel* PanelLayout::splitFocused(SplitDir dir, Buffer& buf) {
-  // Check that the split won't produce panels that are too small.
   auto& fp = focused();
   auto rect = fp.rect();
   if (dir == SplitDir::Vertical) {
@@ -43,9 +42,8 @@ Panel* PanelLayout::splitFocused(SplitDir dir, Buffer& buf) {
 
   int newId = _nextId++;
 
-  // We need to find the leaf node holding the focused panel, replace it
-  // with a split node containing the old leaf + a new leaf.
-  // Walk the tree to find the parent slot.
+  // Find the leaf holding the focused panel and replace it with a split
+  // node containing the old leaf plus a new sibling leaf.
   struct Finder {
     int targetId;
     Node* result = nullptr;
@@ -67,23 +65,17 @@ Panel* PanelLayout::splitFocused(SplitDir dir, Buffer& buf) {
   if (!finder.result)
     return nullptr;
 
-  // Extract the existing leaf from the slot.
   auto existingLeaf = std::move(std::get<std::unique_ptr<LeafNode>>(*finder.result));
 
-  // Create new leaf.
   auto newLeaf = std::make_unique<LeafNode>();
   newLeaf->panel = std::make_unique<Panel>(newId, buf, PanelRect{});
 
-  // Create split node.
   auto splitNode = std::make_unique<SplitNode>();
   splitNode->dir = dir;
   splitNode->left = std::move(existingLeaf);
   splitNode->right = std::move(newLeaf);
-
-  // Place the split node into the slot.
   *finder.result = std::move(splitNode);
 
-  // Recompute rects.
   computeRects(_root, PanelRect{0, 0, _termRows, _termCols});
 
   return findPanel(_root, newId);
@@ -95,17 +87,14 @@ bool PanelLayout::closeFocused() {
 
   int closedId = _focusedId;
 
-  // Remove the focused leaf, promoting its sibling.
   removeLeaf(_root, closedId);
 
-  // Drop the closed panel from history if it somehow appears there
-  // (shouldn't, since the focused panel is never in history, but guard
-  // against id reuse).
+  // Guard against id reuse: drop the closed panel from history even
+  // though the focused panel should never appear there.
   _focusHistory.erase(std::remove(_focusHistory.begin(), _focusHistory.end(), closedId),
                       _focusHistory.end());
 
-  // Walk the MRU history from the back, picking the most recently
-  // focused panel that still exists.
+  // Pick the most recently focused panel that still exists.
   int newFocus = 0;
   while (!_focusHistory.empty()) {
     int candidate = _focusHistory.back();
@@ -116,8 +105,7 @@ bool PanelLayout::closeFocused() {
     }
   }
 
-  // Fallback: if history is empty or stale, focus the first panel in
-  // tree order.
+  // History empty or stale: fall back to the first panel in tree order.
   if (newFocus == 0) {
     forEachPanel([&](Panel& p) {
       if (newFocus == 0)
@@ -155,7 +143,6 @@ bool PanelLayout::focusMRU() {
   if (countImpl(_root) <= 1)
     return false;
 
-  // Try the MRU history (most recent is at the back).
   for (auto it = _focusHistory.rbegin(); it != _focusHistory.rend(); ++it) {
     if (findPanel(_root, *it))
       return focusPanel(*it);
@@ -262,7 +249,6 @@ bool PanelLayout::removeLeaf(Node& node, int id) {
   if (!split)
     return false; // leaf node — can't remove from here
 
-  // Check if left child is the target leaf.
   if (auto* leftLeaf = std::get_if<std::unique_ptr<LeafNode>>(&(*split)->left)) {
     if ((*leftLeaf)->panel->id() == id) {
       // Extract sibling before assigning to node (which destroys the SplitNode).
@@ -271,7 +257,6 @@ bool PanelLayout::removeLeaf(Node& node, int id) {
       return true;
     }
   }
-  // Check if right child is the target leaf.
   if (auto* rightLeaf = std::get_if<std::unique_ptr<LeafNode>>(&(*split)->right)) {
     if ((*rightLeaf)->panel->id() == id) {
       Node promoted = std::move((*split)->left);

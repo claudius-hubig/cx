@@ -1,41 +1,57 @@
 #pragma once
 
+/**
+ * @file buffer_list_buffer.hpp
+ * @brief BufferListBuffer — a read-only buffer listing the open buffers as
+ *        a collapsed trie-based directory tree.
+ */
+
 #include "buffer.hpp"
 
 #include <string>
 #include <vector>
 
-/// Readonly buffer that displays open buffers organized as a trie-based
-/// directory tree. Collapses single-child subdirectories.
+/**
+ * @brief Read-only buffer that displays open buffers as a trie-based
+ *        directory tree, collapsing single-child subdirectories.
+ */
 class BufferListBuffer : public Buffer {
 public:
-  /// Construct the buffer list from sorted buffer names and directory
-  /// buffer names. Directory buffers are merged into the trie as
-  /// selectable directory headers rather than separate leaf entries.
-  /// startName positions the cursor on the matching line (or line 0).
+  /**
+   * @brief Build the listing from sorted buffer and directory names.
+   *
+   * Directory buffers are merged into the trie as selectable directory
+   * headers rather than separate leaf entries.
+   * @param names Open text-buffer names (sorted).
+   * @param dirNames Open directory-buffer names (sorted).
+   * @param startName Positions the cursor on the matching line (or line 0).
+   */
   BufferListBuffer(std::vector<std::string> names, std::vector<std::string> dirNames = {},
                    std::string const& startName = {});
 
   bool readonly() const override { return true; }
   bool supportsLineNumberGutter() const override { return false; }
 
-  /// Render the buffer list with reverse-video highlighting on the
-  /// selected line.
+  /** @brief Render the list with reverse-video on the selected line. */
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
                                     RenderParams const& params) const override;
 
-  /// Return the full buffer name for the line at the given position.
-  /// Returns empty string for directory header lines.
+  /**
+   * @brief Full buffer name for the line at @p p.
+   * @return The buffer name, or an empty string for directory header lines.
+   */
   std::string selectedName(BufferPoint p) const;
 
-  /// Rebuild the display from a new set of buffer names. Safe to call
-  /// repeatedly. Returns a ViewHint positioning the cursor on startName.
+  /**
+   * @brief Rebuild the display from a new set of names.
+   *
+   * Safe to call repeatedly.
+   * @return A ViewHint positioning the cursor on @p startName.
+   */
   ViewHint refresh(std::vector<std::string> names, std::vector<std::string> dirNames = {},
                    std::string const& startName = {});
 
 private:
-  // Display text for each line (with indentation).
-  std::vector<std::string> _displayLines;
-  // Buffer name for each display line (empty for directory headers).
-  std::vector<std::string> _lineToName;
+  std::vector<std::string> _displayLines; /**< Display text per line (with indentation). */
+  std::vector<std::string> _lineToName;   /**< Buffer name per line (empty for dir headers). */
 };

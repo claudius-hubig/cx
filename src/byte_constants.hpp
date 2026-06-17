@@ -1,87 +1,121 @@
 #pragma once
 
+/**
+ * @file byte_constants.hpp
+ * @brief Named constants for terminal input bytes and ANSI output
+ *        sequences.
+ *
+ * The @c key namespace names raw bytes that arrive on stdin; the @c ansi
+ * namespace names the escape sequences the editor writes to the terminal.
+ * The same underlying value may appear under different names when it
+ * serves different semantic roles (e.g. 'C' is both a Ctrl-key offset and
+ * the ANSI right-arrow final byte).
+ */
+
 #include <array>
 #include <charconv>
 #include <cstddef>
 #include <string>
 #include <string_view>
 
-// Named constants for special byte values used in terminal input handling.
-// The same underlying value may appear under different names when it serves
-// different semantic roles (e.g. 'C' is both a Ctrl-key offset and the
-// ANSI right-arrow final byte).
-
+/** @brief Named byte values used when interpreting terminal input. */
 namespace key {
 
-// --- Control characters (0x00–0x1F) ---
+/** @name Control characters (0x00–0x1F) */
+/** @{ */
 constexpr char Tab = '\t';
 constexpr char Enter = '\r';
 constexpr char Newline = '\n';
 constexpr char Escape = '\x1b';
-constexpr char CtrlF = '\x06'; // Find
-constexpr char CtrlR = '\x12'; // Reverse find
-constexpr char CtrlX = '\x18'; // Prefix for C-x chord
+constexpr char CtrlF = '\x06'; /**< Find */
+constexpr char CtrlR = '\x12'; /**< Reverse find */
+constexpr char CtrlX = '\x18'; /**< Prefix for the C-x chord */
+/** @} */
 
-// --- Printable threshold ---
-// Characters below this are control characters.
+/** @brief Bytes below this threshold are control characters. */
 constexpr unsigned char PrintableMin = 0x20;
 
-// --- Special non-printable above 0x7E ---
-constexpr char Backspace = '\x7f'; // Terminal sends DEL for Backspace
+/** @brief Byte the terminal sends for the Backspace key (DEL). */
+constexpr char Backspace = '\x7f';
 
 } // namespace key
 
+/** @brief Named ANSI escape sequences and CSI bytes used for output. */
 namespace ansi {
 
-// --- CSI (Control Sequence Introducer) ---
-constexpr char CsiIntro = '['; // Byte after ESC that starts a CSI sequence
+/** @brief Byte after ESC that starts a CSI (Control Sequence Introducer). */
+constexpr char CsiIntro = '[';
 
-// --- Final bytes of CSI cursor/arrow sequences (ESC [ X) ---
+/** @name Final bytes of CSI cursor/arrow sequences (ESC [ X) */
+/** @{ */
 constexpr char UpArrow = 'A';
 constexpr char DownArrow = 'B';
 constexpr char RightArrow = 'C';
 constexpr char LeftArrow = 'D';
 constexpr char Home = 'H';
 constexpr char End = 'F';
+/** @} */
 
-// --- Parameter bytes in extended sequences ---
-constexpr char ModifiedKey = '1'; // ESC[1;modX — modified arrow/home/end
-constexpr char Delete = '3';      // ESC[3~ — Delete key
-constexpr char PageUp = '5';      // ESC[5~ — Page Up
-constexpr char PageDown = '6';    // ESC[6~ — Page Down
-constexpr char Separator = ';';   // Parameter separator in CSI sequences
-constexpr char Terminator = '~';  // Final byte for extended key sequences
+/** @name Parameter bytes in extended key sequences */
+/** @{ */
+constexpr char ModifiedKey = '1'; /**< ESC[1;modX — modified arrow/home/end */
+constexpr char Delete = '3';      /**< ESC[3~ — Delete key */
+constexpr char PageUp = '5';      /**< ESC[5~ — Page Up */
+constexpr char PageDown = '6';    /**< ESC[6~ — Page Down */
+constexpr char Separator = ';';   /**< Parameter separator in CSI sequences */
+constexpr char Terminator = '~';  /**< Final byte for extended key sequences */
+/** @} */
 
-// --- Modifier codes (the digit after ';' in ESC[1;modX) ---
-constexpr char ModCtrl = '5'; // Ctrl modifier
+/** @brief Modifier code (digit after ';' in ESC[1;modX) for the Ctrl key. */
+constexpr char ModCtrl = '5';
 
-// --- Output escape sequences (CSI SGR and editing) ---
-// Declared as string_view so callers using `+=` against std::string get
-// the size-aware overload and avoid an internal strlen() per write.
+/**
+ * @name Output escape sequences (CSI SGR and editing)
+ *
+ * Declared as @c string_view so callers using @c += against a
+ * std::string get the size-aware overload and avoid an internal
+ * strlen() per write.
+ */
+/** @{ */
 constexpr std::string_view Reset = "\x1b[0m";
 constexpr std::string_view Bold = "\x1b[1m";
 constexpr std::string_view Dim = "\x1b[2m";
 constexpr std::string_view DimOff = "\x1b[22m";
 constexpr std::string_view ReverseVideo = "\x1b[7m";
 constexpr std::string_view DefaultFg = "\x1b[39m";
-// Foreground used by Buffer::render for escaped control bytes / broken
-// UTF-8 in text content. Lifted into the namespace so non-renderer
-// surfaces (escapeNonPrintable, prompts) can match the styling.
+/**
+ * @brief Foreground used by Buffer::render for escaped control bytes and
+ *        broken UTF-8. Shared so non-renderer surfaces
+ *        (escapeNonPrintable, prompts) can match the styling.
+ */
 constexpr std::string_view CtrlColor = "\x1b[38;2;204;120;50m";
 constexpr std::string_view EraseLine = "\x1b[K";
 constexpr std::string_view ShowCursor = "\x1b[?25h";
-constexpr std::string_view CsiPrefix = "\x1b["; // start of CUP / parameterised sequences
+constexpr std::string_view CsiPrefix = "\x1b["; /**< Start of CUP / parameterised sequences */
+/** @} */
 
-/// Return the ANSI CUP sequence to move the cursor to (row, col).
-/// Both row and col are 0-based and converted to 1-based for the terminal.
+/**
+ * @brief Build the ANSI CUP sequence that moves the cursor to (row, col).
+ * @param row 0-based row, converted to the terminal's 1-based coordinate.
+ * @param col 0-based column, converted to the terminal's 1-based coordinate.
+ * @return The escape sequence as a freshly allocated string.
+ */
 inline std::string cursorTo(std::size_t row, std::size_t col) {
   return "\x1b[" + std::to_string(row + 1) + ";" + std::to_string(col + 1) + "H";
 }
 
-/// Append the ANSI CUP sequence directly to `out` without allocating an
-/// intermediate std::string. Used by Buffer::render which emits one
-/// cursorTo per visual row per frame; the no-alloc variant saves N
-/// small heap allocations per draw on a tall terminal.
+/**
+ * @brief Append the ANSI CUP sequence to @p out without an intermediate
+ *        allocation.
+ *
+ * Buffer::render emits one cursorTo per visual row per frame; the
+ * no-alloc variant saves N small heap allocations per draw on a tall
+ * terminal.
+ *
+ * @param out Destination string to append to.
+ * @param row 0-based row, converted to 1-based.
+ * @param col 0-based column, converted to 1-based.
+ */
 inline void appendCursorTo(std::string& out, std::size_t row, std::size_t col) {
   out += "\x1b[";
   std::array<char, 32> buf;

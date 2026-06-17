@@ -137,7 +137,6 @@ void BufferManager::refreshDisplayNames() {
     else
       _displayNames[name] = name;
   }
-  // Dir buffers use their path as display name.
   for (auto& [name, _] : _dirBuffers)
     _displayNames[name] = name;
 }
@@ -212,7 +211,6 @@ BufferManager::completions(std::string const& prefix) const {
   }
 
   std::sort(result.begin(), result.end());
-  // Deduplicate by match string.
   auto last = std::unique(result.begin(), result.end(),
                           [](auto const& a, auto const& b) { return a.first == b.first; });
   result.erase(last, result.end());
@@ -229,7 +227,6 @@ void BufferManager::rename(std::string const& oldName, std::filesystem::path new
   auto newName = buf->name();
   _buffers.emplace(newName, std::move(buf));
   refreshDisplayNames();
-  // Update MRU.
   auto mi = std::find(_mru.begin(), _mru.end(), oldName);
   if (mi != _mru.end())
     *mi = newName;
@@ -261,7 +258,6 @@ Buffer& BufferManager::kill(std::string name) {
 }
 
 void BufferManager::touch(std::string const& name) {
-  // Move name to front of MRU list.
   auto it = std::find(_mru.begin(), _mru.end(), name);
   if (it != _mru.end())
     _mru.erase(it);

@@ -1,59 +1,87 @@
 #pragma once
 
+/**
+ * @file mouse.hpp
+ * @brief SGR mouse parser: decode `ESC[<…M/m` payloads from the input
+ *        loop into structured MouseEvent values.
+ */
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
 
-// SGR mouse event decoded from `ESC[<b;col;row;M` or `...m` sequences.
-//
-// `button` is the raw SGR button code: bits 0-1 are the button index
-// (0=left, 1=middle, 2=right), bit 2 is shift, bit 3 is alt, bit 4 is
-// ctrl, bit 5 distinguishes motion-while-held from a fresh press, and
-// bit 6 marks wheel events (wheel-up=64, wheel-down=65). `press` is
-// true for the `M`-terminated variant (button down) and false for `m`
-// (release). `row` and `col` are 1-based screen coordinates as
-// reported by the terminal.
+/**
+ * @brief A mouse event decoded from an `ESC[<b;col;row;M` (or `…m`)
+ *        SGR sequence.
+ *
+ * @c button is the raw SGR button code; its bit layout is documented by
+ * the bit-mask constants below. @c press is true for the `M`-terminated
+ * variant (button down) and false for `m` (release). @c row and @c col
+ * are 1-based screen coordinates as reported by the terminal.
+ */
 struct MouseEvent {
-  std::uint32_t button = 0;
-  std::size_t col = 0;
-  std::size_t row = 0;
-  bool press = true;
+  std::uint32_t button = 0; /**< Raw SGR button code. */
+  std::size_t col = 0;      /**< 1-based screen column. */
+  std::size_t row = 0;      /**< 1-based screen row. */
+  bool press = true;        /**< True for press (`M`), false for release (`m`). */
 
-  // SGR button-code bit layout:
-  //   bits 0-1: button index (0=left, 1=middle, 2=right)
-  //   bits 2-4: shift / alt / ctrl modifiers
-  //   bit 5:    motion (drag) marker
-  //   bit 6:    wheel-event marker
+  /**
+   * @name SGR button-code bit layout
+   *
+   * bits 0-1: button index (0=left, 1=middle, 2=right);
+   * bits 2-4: shift / alt / ctrl modifiers;
+   * bit 5: motion (drag) marker; bit 6: wheel-event marker.
+   */
+  /** @{ */
   static constexpr std::uint32_t kWheelBit = 0x40;
   static constexpr std::uint32_t kMotionBit = 0x20;
   static constexpr std::uint32_t kButtonMask = 0x03;
+  /** @} */
 
+  /** @brief True if this is a button-press event. */
   bool isPress() const { return press; }
+  /** @brief True if this is a button-release event. */
   bool isRelease() const { return !press; }
+  /** @brief True if this is a scroll-wheel event. */
   bool isWheel() const { return (button & kWheelBit) != 0; }
+  /** @brief True if this is a wheel-up scroll event. */
   bool isWheelUp() const { return isWheel() && (button & kButtonMask) == 0; }
+  /** @brief True if this is a wheel-down scroll event. */
   bool isWheelDown() const { return isWheel() && (button & kButtonMask) == 1; }
+  /** @brief True if this event carries the motion-while-held (drag) marker. */
   bool isMotion() const { return (button & kMotionBit) != 0; }
+  /** @brief True if the left button is the subject of this event. */
   bool isLeftButton() const { return !isWheel() && (button & kButtonMask) == 0; }
+  /** @brief True if the middle button is the subject of this event. */
   bool isMiddleButton() const { return !isWheel() && (button & kButtonMask) == 1; }
 };
 
-// Upper bound on the SGR mouse body the input loop is willing to
-// accumulate before giving up on finding a terminator. A real payload
-// — three decimal integers plus separators plus the M/m terminator —
-// is well under 32 bytes; 64 leaves slack for over-helpful terminals
-// without letting a hostile or broken stream grow the buffer
-// unboundedly.
+/**
+ * @brief Upper bound on the SGR mouse body the input loop accumulates
+ *        before giving up on finding a terminator.
+ *
+ * A real payload — three decimal integers, separators, and the M/m
+ * terminator — is well under 32 bytes; 64 leaves slack for over-helpful
+ * terminals without letting a hostile or broken stream grow the buffer
+ * unboundedly.
+ */
 constexpr std::size_t kMaxMouseBody = 64;
 
-// Pull bytes from `readByte` until either an SGR terminator ('M' or
-// 'm') is seen or the body reaches kMaxMouseBody. Returns the collected
-// bytes including the terminator (when present); caller passes the
-// result to `parseSgrMouse`. `readByte` returns true and sets its
-// out-parameter on success, false on EOF/error. Templated so callers
-// driving real stdin and callers driving a synthetic queue (tests)
-// share the same collection logic.
+/**
+ * @brief Collect the bytes of an SGR mouse body.
+ *
+ * Pulls bytes from @p readByte until an SGR terminator ('M' or 'm') is
+ * seen or the body reaches ::kMaxMouseBody. The result (including the
+ * terminator when present) is passed to parseSgrMouse(). Templated so
+ * callers driving real stdin and callers driving a synthetic queue
+ * (tests) share the same collection logic.
+ *
+ * @tparam ReadByte Callable `bool(char&)` returning true and setting its
+ *         out-parameter on success, false on EOF/error.
+ * @param readByte The byte source.
+ * @return The collected body bytes.
+ */
 template <typename ReadByte> std::string collectSgrMouseBody(ReadByte readByte) {
   std::string body;
   body.reserve(kMaxMouseBody);
@@ -68,9 +96,13 @@ template <typename ReadByte> std::string collectSgrMouseBody(ReadByte readByte) 
   return body;
 }
 
-// Parse the SGR mouse payload that follows `ESC[<`. `tail` should end
-// with the terminating `M` or `m`; any extra bytes after the
-// terminator are ignored. Returns nullopt on malformed input.
+/**
+ * @brief Parse the SGR mouse payload that follows `ESC[<`.
+ *
+ * @param tail The payload; should end with the terminating `M` or `m`.
+ *        Any extra bytes after the terminator are ignored.
+ * @return The decoded MouseEvent, or nullopt on malformed input.
+ */
 inline std::optional<MouseEvent> parseSgrMouse(std::string_view tail) {
   if (tail.empty())
     return std::nullopt;

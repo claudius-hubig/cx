@@ -51,7 +51,6 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
 
   _lines.clear();
   _lines.reserve(bytesRead / 40 + 1);
-  // Helper to push a fresh line from a [begin, end) byte range.
   auto pushLine = [&](char const* begin, char const* end) {
     _lines.push_back(makeLine(std::string_view(begin, end - begin)));
   };

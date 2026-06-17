@@ -2,21 +2,26 @@
 
 #include <string_view>
 
+/** @brief True if @p c is an identifier/word character. */
 static bool isWordChar(char c) {
   return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
 }
 
+/** @brief True if @p c may start an identifier. */
 static bool isWordStart(char c) {
   return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
+/** @brief True if @p c is a decimal digit. */
 static bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
+/** @brief True if @p c is a Python string-literal prefix (r/b/f/u, any case). */
 static bool isStringPrefix(char c) {
   return c == 'r' || c == 'b' || c == 'f' || c == 'u' || c == 'R' || c == 'B' || c == 'F' ||
          c == 'U';
 }
 
+/** @brief True if @p w is a Python keyword. */
 static bool isPyKeyword(std::string_view w) {
   static constexpr std::string_view kw[] = {
       "def",     "class",    "if",     "elif",     "else",   "for",    "while", "try",    "except",
@@ -29,16 +34,23 @@ static bool isPyKeyword(std::string_view w) {
   return false;
 }
 
-// None/True/False are literal values, not keywords; they share the
-// numeric-literal colour (SyntaxToken::Number).
+/**
+ * @brief True if @p w is a Python value literal (None/True/False).
+ *
+ * These share the numeric-literal colour (SyntaxToken::Number).
+ */
 static bool isPyValueLiteral(std::string_view w) {
   return w == "None" || w == "True" || w == "False";
 }
 
-// Scan a triple-quoted body starting at `i`, marking every byte (and
-// the closing `qqq`) as String. Returns true and advances `i` past
-// the closing quote if the string closes on this line; otherwise
-// marks the rest of the line String, leaves `i == sz`, returns false.
+/**
+ * @brief Scan a triple-quoted body starting at @p i, marking every byte
+ *        (and the closing `qqq`) as String.
+ *
+ * @return True (advancing @p i past the closing quote) if the string closes
+ *         on this line; otherwise marks the rest of the line String, leaves
+ *         @p i == @p sz, and returns false.
+ */
 static bool scanTriple(std::string const& line, std::size_t sz, std::size_t& i, char q, bool raw,
                        std::vector<SyntaxToken>& tokens) {
   while (i < sz) {

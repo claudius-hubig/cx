@@ -28,13 +28,15 @@
 #include <optional>
 #include <string>
 
-// Read a full UTF-8 character from stdin (given the lead byte) and insert
-// it into the buffer as a single codepoint.
+/**
+ * @brief Read a full UTF-8 character from stdin (given the lead byte) and
+ *        insert it into the view as a single code point.
+ */
 static void insertCharWithUtf8(BufferView& view, char c) {
   view.insert(readUtf8Codepoint(static_cast<unsigned char>(c)));
 }
 
-// Write all bytes to fd, retrying on partial writes and EINTR.
+/** @brief Write all bytes to @p fd, retrying on partial writes and EINTR. */
 static void writeAll(int fd, char const* data, std::size_t len) {
   while (len > 0) {
     ssize_t n = write(fd, data, len);
@@ -53,12 +55,15 @@ static void writeAll(int fd, char const* data, std::size_t len) {
 // only one of those code paths runs at a time on the main thread.
 static sig_atomic_t volatile g_resized = 0;
 
-// Build a PromptDisplay summarising the current completions list,
-// shared by openSaveAsPrompt and openSwitchBufferPrompt: dim-styled
-// hint after the input, optional [a/b/c] for a small number of
-// alternatives, or an "(N matches)" suffix when there are too many.
-// Caller is responsible for tracking the user's selected index in
-// `idxSelected` so we can suppress the hint mid-tab-cycle.
+/**
+ * @brief Build a PromptDisplay summarising the current completions list.
+ *
+ * Shared by openSaveAsPrompt and openSwitchBufferPrompt: a dim-styled hint
+ * after the input, an optional [a/b/c] for a few alternatives, or an
+ * "(N matches)" suffix when there are too many. The caller tracks the
+ * user's selected index in @p idxSelected so the hint is suppressed
+ * mid-tab-cycle.
+ */
 static PromptDisplay
 buildCompletionDisplay(std::string const& input,
                        std::vector<std::pair<std::string, std::string>> const& completions,
@@ -120,10 +125,13 @@ constexpr int kEscDisambiguationMs = 50;
 
 static void handle_sigwinch(int) { g_resized = 1; }
 
-// Read a single byte from stdin, retrying on EINTR. Returns true on a
-// successful 1-byte read, false on EOF or non-EINTR error. Used by the
-// escape-sequence and prompt input paths so a SIGWINCH mid-CSI doesn't
-// drop the next byte and corrupt arrow-key dispatch.
+/**
+ * @brief Read a single byte from stdin, retrying on EINTR.
+ *
+ * Used by the escape-sequence and prompt input paths so a SIGWINCH mid-CSI
+ * doesn't drop the next byte and corrupt arrow-key dispatch.
+ * @return True on a successful 1-byte read, false on EOF or non-EINTR error.
+ */
 static bool readByte(char& out) {
   for (;;) {
     ssize_t n = read(STDIN_FILENO, &out, 1);
@@ -135,18 +143,20 @@ static bool readByte(char& out) {
   }
 }
 
-// After consuming an Esc byte that we suspect was actually the prefix
-// of a following escape sequence (e.g. the user typed Esc then Down,
-// which arrives as `\x1b\x1b[B`), drain the rest of that sequence and
-// return a short human-readable label for status display. Returns
-// nullopt when no further bytes arrive within the disambiguation
-// window — the caller treats that as a genuine bare Esc-Esc.
-//
-// The returned label is fed into setStatus(...) and so must not contain
-// raw control bytes: a pasted `\x1b\x1b[\x1b]X` sequence would otherwise
-// produce body "[\x1b]X" which, written verbatim through the modeline,
-// puts the terminal into OSC parse mode. Filter intermediate bytes that
-// could break terminal-emulator state.
+/**
+ * @brief Drain a suspected escape-sequence tail after a leading Esc byte
+ *        and return a short human-readable label for status display.
+ *
+ * Handles the case where the user typed Esc then an arrow (arriving as
+ * `\x1b\x1b[B`). Returns nullopt when no further bytes arrive within the
+ * disambiguation window — the caller treats that as a genuine bare
+ * Esc-Esc.
+ *
+ * The returned label is fed into setStatus() and so must not contain raw
+ * control bytes: a pasted `\x1b\x1b[\x1b]X` sequence would otherwise put
+ * the terminal into OSC parse mode when written through the modeline.
+ * Intermediate bytes that could break terminal state are filtered.
+ */
 static std::optional<std::string> drainEscapeTail() {
   auto safeForStatus = [](unsigned char b) {
     // Allow 0x20..0x7E (printable ASCII) and 0xA0..0xFF (UTF-8 lead /
@@ -1514,8 +1524,7 @@ void Screen::openConfirmKillPrompt(std::string question) {
       [this]() { _exitPending = false; });
 }
 
-// --- Subprocess execution with kill-prompt support ---
-
+/** @brief Append all currently-available bytes from @p fd to @p out. */
 static void drainFd(int fd, std::string& out) {
   char buf[4096];
   for (;;) {
@@ -2664,6 +2673,10 @@ void Screen::findPrev() {
   setStatus("Not found");
 }
 
+/**
+ * @brief True if @p line is a block-navigation target: a diff hunk header
+ *        (in diff mode) or a merge-conflict marker (when conflicts exist).
+ */
 static bool isBlockTarget(std::string const& line, bool isDiff, bool hasConflicts) {
   if (isDiff && line.size() >= 2 && line[0] == '@' && line[1] == '@')
     return true;

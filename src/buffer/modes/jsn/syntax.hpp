@@ -1,24 +1,39 @@
 #pragma once
 
-#include "buffer/modes/c/syntax.hpp" // SyntaxToken, SyntaxState
+/**
+ * @file jsn/syntax.hpp
+ * @brief JSON tokenizer (strings, numbers, value literals, brackets) plus
+ *        JSON-specific bracket matching.
+ */
+
+#include "buffer/modes/c/syntax.hpp"
 
 #include <string>
 #include <vector>
 
-// Tokenize a single JSON line, writing per-byte SyntaxToken values
-// into `out`. `out` is resized/overwritten; reusing a vector avoids
-// heap allocation per line. state is unused for JSON (no multi-line
-// constructs) but kept for interface consistency with the C tokenizer.
+/**
+ * @brief Tokenize a single JSON line, writing per-byte SyntaxToken values
+ *        into @p out.
+ *
+ * @p out is resized/overwritten; reusing a vector avoids per-line heap
+ * allocation. @p state is unused (JSON has no multi-line constructs) but
+ * kept for interface consistency with the C tokenizer.
+ */
 void tokenizeJsonLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
 
-// Find the matching bracket for the character at pos in a JSON buffer.
-// Only matches [] and {}. Brackets inside strings are skipped.
-// Returns nullopt if pos is not on a bracket or no match is found.
-//
-// The three-argument overload uses the caller-supplied tokens source
-// (typically backed by Buffer::cachedLineTokens). The two-argument
-// overload re-tokenizes each visited line from scratch.
+/**
+ * @brief Find the matching bracket for the character at @p pos in a JSON
+ *        buffer, using a caller-supplied token source.
+ *
+ * Only `[]` and `{}` are matched; brackets inside strings are skipped.
+ * @return The matching bracket position, or nullopt if @p pos is not on a
+ *         bracket or no match is found.
+ */
 std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
                                                    BufferPoint pos, LineTokensFn const& getTokens);
+/**
+ * @brief Convenience overload that re-tokenizes each visited line from
+ *        scratch.
+ */
 std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
                                                    BufferPoint pos);

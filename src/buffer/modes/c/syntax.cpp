@@ -3,10 +3,13 @@
 #include <algorithm>
 #include <string_view>
 
-// Sorted keyword list for binary search. `true`/`false`/`nullptr` are
-// deliberately absent: they are literal values, not keywords, so they
-// are coloured with the numeric-literal colour (see isValueLiteral),
-// consistently with JSON/YAML/Python.
+/**
+ * @brief Sorted keyword list for binary search.
+ *
+ * `true`/`false`/`nullptr` are deliberately absent: they are literal
+ * values, not keywords, so they are coloured with the numeric-literal
+ * colour (see isValueLiteral), consistently with JSON/YAML/Python.
+ */
 static constexpr std::string_view kKeywords[] = {
     "alignas",
     "alignof",
@@ -71,37 +74,49 @@ static constexpr std::string_view kKeywords[] = {
     "while",
 };
 
+/** @brief True if @p c may start an identifier (letter or underscore). */
 static bool isIdentStart(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
+/** @brief True if @p c is a decimal digit. */
 static bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
+/** @brief True if @p c is a hexadecimal digit. */
 static bool isHexDigit(char c) {
   return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-// Treat any high-bit byte (>= 0x80) as part of an identifier so a UTF-8
-// lead byte does not split an identifier and cause an adjacent ASCII
-// keyword to be highlighted in error. C++ permits non-ASCII characters
-// in identifiers (UAX #31); this is a coarse approximation that matches
-// every byte of any UTF-8 sequence and keeps highlighting honest at the
-// cost of accepting some bytes that are not technically XID_Continue.
+/**
+ * @brief True if @p c may continue an identifier.
+ *
+ * Any high-bit byte (>= 0x80) counts so a UTF-8 lead byte does not split an
+ * identifier and cause an adjacent ASCII keyword to be highlighted in
+ * error. C++ permits non-ASCII identifier characters (UAX #31); this is a
+ * coarse approximation that accepts some bytes that are not technically
+ * XID_Continue.
+ */
 static bool isIdentChar(char c) {
   unsigned char u = static_cast<unsigned char>(c);
   return isIdentStart(c) || (u >= '0' && u <= '9') || u >= 0x80;
 }
 
+/** @brief True if @p word is a C/C++ keyword. */
 static bool isKeyword(std::string_view word) {
   return std::binary_search(std::begin(kKeywords), std::end(kKeywords), word);
 }
 
-// Boolean / null literals. These are literal values, not keywords, so
-// they share the numeric-literal colour (SyntaxToken::Number).
+/**
+ * @brief True if @p word is a boolean/null literal.
+ *
+ * These are literal values, not keywords, so they share the numeric-literal
+ * colour (SyntaxToken::Number).
+ */
 static bool isValueLiteral(std::string_view word) {
   return word == "true" || word == "false" || word == "nullptr";
 }
 
+/** @brief True if @p c is a single-character C/C++ operator byte. */
 static bool isOperatorChar(char c) {
   switch (c) {
   case '+':
@@ -123,9 +138,13 @@ static bool isOperatorChar(char c) {
   }
 }
 
-// Heuristic: < or > used as an operator (not a template bracket).
-// Operator if: preceded by a space AND followed by a space, or part of
-// <<, >>, <=, >=, <=>, ->, or <<= / >>=.
+/**
+ * @brief Heuristic: whether the `<`/`>` at @p i is an operator rather than
+ *        a template bracket.
+ *
+ * Operator when surrounded by spaces, or part of `<<`, `>>`, `<=`, `>=`,
+ * `<=>`, `->`, `<<=`, or `>>=`.
+ */
 static bool isAngleOperator(std::string const& line, std::size_t i) {
   char c = line[i];
   std::size_t sz = line.size();
@@ -159,7 +178,7 @@ static bool isAngleOperator(std::string const& line, std::size_t i) {
   return false;
 }
 
-// Check whether a line begins a preprocessor directive (# after optional whitespace).
+/** @brief True if @p line begins a preprocessor directive (# after optional whitespace). */
 static bool startsWithHash(std::string const& line) {
   for (std::size_t j = 0; j < line.size(); ++j) {
     if (line[j] == '#')
@@ -170,6 +189,7 @@ static bool startsWithHash(std::string const& line) {
   return false;
 }
 
+/** @brief True if @p line ends with a backslash (a directive continuation). */
 static bool endsWithBackslash(std::string const& line) {
   return !line.empty() && line.back() == '\\';
 }
@@ -614,7 +634,7 @@ void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
   }
 }
 
-// Bracket pairing table.
+/** @brief Return the bracket that pairs with @p c, or 0 if @p c is not a bracket. */
 static char matchingBracket(char c) {
   switch (c) {
   case '(':
@@ -638,11 +658,15 @@ static char matchingBracket(char c) {
   }
 }
 
+/** @brief True if @p c is an opening bracket. */
 static bool isOpenBracket(char c) { return c == '(' || c == '[' || c == '{' || c == '<'; }
 
-// Returns true if the character `c` with token `tok` should be counted as a
-// bracket during matching. Brackets inside strings and comments are skipped.
-// Angle brackets are only counted when tokenized as Angle (not Operator).
+/**
+ * @brief Whether @p c with token @p tok counts as a bracket during matching.
+ *
+ * Brackets inside strings, comments, and preprocessor lines are skipped;
+ * angle brackets count only when tokenized as Angle (not Operator).
+ */
 static bool isBracketChar(char c, SyntaxToken tok) {
   if (tok == SyntaxToken::Comment || tok == SyntaxToken::String || tok == SyntaxToken::Preprocessor)
     return false;

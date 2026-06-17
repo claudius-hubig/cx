@@ -1,10 +1,19 @@
 #pragma once
 
+/**
+ * @file paste_ring_buffer.hpp
+ * @brief PasteRingBuffer — a read-only buffer displaying the contents of
+ *        the paste ring.
+ */
+
 #include "buffer.hpp"
 #include "paste_ring.hpp"
 
-/// Readonly buffer displaying paste ring contents. Modeled after
-/// BufferListBuffer.
+/**
+ * @brief Read-only buffer displaying the paste-ring contents.
+ *
+ * Modelled after BufferListBuffer.
+ */
 class PasteRingBuffer : public Buffer {
 public:
   PasteRingBuffer();
@@ -12,7 +21,9 @@ public:
   bool readonly() const override { return true; }
   bool supportsLineNumberGutter() const override { return false; }
 
-  /// Rebuild _lines from paste ring contents. Returns a ViewHint
-  /// positioning the cursor at the top.
+  /**
+   * @brief Rebuild the lines from @p pr.
+   * @return A ViewHint positioning the cursor at the top.
+   */
   ViewHint refresh(PasteRing const& pr);
 };

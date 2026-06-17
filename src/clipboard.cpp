@@ -13,11 +13,13 @@
 
 namespace {
 
-// Walk a PATH-style colon-separated list looking for an executable
-// `name`. Returns the first hit, or empty string if none. Pulled out
-// of the class so tests can drive it with synthetic PATH strings
-// without touching the filesystem ordering rules. (We re-expose it
-// in the clipboard_detail namespace below.)
+/**
+ * @brief Walk a PATH-style colon-separated list for an executable @p name.
+ *
+ * Pulled out of the class so tests can drive it with synthetic PATH
+ * strings; re-exposed in the clipboard_detail namespace below.
+ * @return The first hit, or an empty string if none.
+ */
 std::string findOnPathImpl(std::string_view path, std::string_view name) {
   if (path.empty() || name.empty())
     return {};
@@ -41,7 +43,7 @@ std::string findOnPathImpl(std::string_view path, std::string_view name) {
   return {};
 }
 
-// Redirect /dev/null onto fd; best-effort, ignores failure.
+/** @brief Redirect /dev/null onto @p fd; best-effort, ignores failure. */
 void redirectNull(int fd, int flags) {
   int devnull = ::open("/dev/null", flags);
   if (devnull < 0)
@@ -55,14 +57,11 @@ void redirectNull(int fd, int flags) {
 
 namespace clipboard_detail {
 
-// Re-export the PATH-walk for tests.
 std::string findOnPath(std::string_view path, std::string_view name) {
   return findOnPathImpl(path, name);
 }
 
 } // namespace clipboard_detail
-
-// ---------------------------------------------------------------------------
 
 void Clipboard::ensureDetected() {
   if (_backend != Backend::Unknown)
@@ -127,14 +126,10 @@ std::optional<std::string> Clipboard::getClipboard() { return getSelection("clip
 
 std::optional<std::string> Clipboard::getPrimary() { return getSelection("primary"); }
 
-// Spawn the chosen backend with `text` on stdin and detach it via a
-// double-fork so the parent never blocks on xclip/xsel startup or on
-// their post-read daemonization. Errors are logged but never surfaced.
 void Clipboard::publishAsync(std::string_view text, char const* selection) {
-  // Resolve argv from (backend, selection). We hold the pointers as
-  // const because execvp takes char* const argv[]; we cast away const
-  // at call time, which is the standard idiom (POSIX guarantees
-  // execvp doesn't write through them).
+  // argv pointers are const because execvp takes char* const argv[]; the
+  // const is cast away at call time (POSIX guarantees execvp does not
+  // write through them).
   char const* argv[6] = {nullptr};
   if (_backend == Backend::Xclip) {
     argv[0] = "xclip";
@@ -220,8 +215,6 @@ void Clipboard::publishAsync(std::string_view text, char const* selection) {
   }
 }
 
-// Synchronous read of a selection. Used only on Paste, so the cost of
-// blocking the caller for one xclip startup is acceptable.
 std::optional<std::string> Clipboard::readSync(char const* selection) {
   char const* argv[6] = {nullptr};
   if (_backend == Backend::Xclip) {

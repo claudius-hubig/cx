@@ -86,7 +86,6 @@ std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth) {
     return std::string(s);
   // Reserve one visual column for the leading ellipsis.
   std::size_t tailBudget = maxWidth - 1;
-  // Advance from the start until the remaining tail fits in tailBudget.
   std::size_t i = 0;
   std::size_t dropped = 0;
   while (i < s.size() && total - dropped > tailBudget) {

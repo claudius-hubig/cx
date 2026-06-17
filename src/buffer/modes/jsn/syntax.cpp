@@ -2,8 +2,11 @@
 
 #include <string_view>
 
-// true/false/null are literal values; they share the numeric-literal
-// colour (SyntaxToken::Number), like JSON numbers.
+/**
+ * @brief True if @p word is a JSON value literal (true/false/null).
+ *
+ * These share the numeric-literal colour (SyntaxToken::Number).
+ */
 static bool isJsonValueLiteral(std::string_view word) {
   return word == "true" || word == "false" || word == "null";
 }
@@ -97,8 +100,7 @@ void tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/,
   }
 }
 
-// --- Bracket matching for JSON ---
-
+/** @brief Return the bracket that pairs with @p c, or 0 if not a JSON bracket. */
 static char jsonMatchingBracket(char c) {
   switch (c) {
   case '[':
@@ -114,9 +116,10 @@ static char jsonMatchingBracket(char c) {
   }
 }
 
+/** @brief True if @p c is an opening JSON bracket. */
 static bool isJsonOpenBracket(char c) { return c == '[' || c == '{'; }
 
-// A bracket is matchable if it is not inside a string.
+/** @brief Whether @p c with token @p tok is a matchable bracket (not in a string). */
 static bool isJsonBracketChar(char c, SyntaxToken tok) {
   if (tok == SyntaxToken::String)
     return false;

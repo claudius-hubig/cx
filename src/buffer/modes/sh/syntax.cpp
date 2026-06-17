@@ -2,6 +2,7 @@
 
 #include <string_view>
 
+/** @brief True if @p w is a shell reserved word. */
 static bool isShellKeyword(std::string_view w) {
   static constexpr std::string_view kw[] = {
       "if",    "then",   "else",    "elif",     "fi",       "case",     "esac",   "for",
@@ -13,6 +14,7 @@ static bool isShellKeyword(std::string_view w) {
   return false;
 }
 
+/** @brief True if @p c is an identifier/word character. */
 static bool isWordChar(char c) {
   return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
 }

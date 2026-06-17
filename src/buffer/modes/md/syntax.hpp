@@ -1,13 +1,22 @@
 #pragma once
 
-#include "buffer/modes/c/syntax.hpp" // SyntaxToken, SyntaxState
+/**
+ * @file md/syntax.hpp
+ * @brief Markdown tokenizer: headings, bold, and (possibly multi-line)
+ *        links.
+ */
+
+#include "buffer/modes/c/syntax.hpp"
 
 #include <string>
 #include <vector>
 
-// Tokenize a single markdown line, writing per-byte SyntaxToken values
-// into `out`. `out` is resized/overwritten; reusing a vector avoids
-// heap allocation per line. state is unused for markdown (no multi-line
-// constructs) but kept for interface consistency with the C tokenizer.
+/**
+ * @brief Tokenize a single Markdown line, writing per-byte SyntaxToken
+ *        values into @p out.
+ *
+ * @p out is resized/overwritten; reusing a vector avoids per-line heap
+ * allocation. @p state carries the cross-line link state (see MdLink).
+ */
 void tokenizeMarkdownLine(std::string const& line, SyntaxState& state,
                           std::vector<SyntaxToken>& out);

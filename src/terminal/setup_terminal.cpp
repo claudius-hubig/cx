@@ -17,11 +17,8 @@ static constexpr std::string_view kAltScreenOn =
 static constexpr std::string_view kAltScreenOff = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l";
 
 SetupTerminal::SetupTerminal() {
-  // If tcgetattr fails we have no usable termios to base raw mode on.
-  // Throw so main() exits cleanly without ever entering raw mode or
-  // touching the alternate screen — which means the destructor must
-  // not run, hence the throw before _haveSavedFlags conceptually
-  // becomes true. _saved_flags stays value-initialised regardless.
+  // Throw before touching raw mode or the alternate screen so a failure
+  // here leaves the terminal untouched and the destructor's teardown a no-op.
   if (tcgetattr(STDIN_FILENO, &_saved_flags) != 0) {
     logError("tcgetattr failed");
     throw std::runtime_error("tcgetattr failed (cannot enter raw mode)");
@@ -33,8 +30,6 @@ SetupTerminal::SetupTerminal() {
     throw std::runtime_error("tcsetattr failed (cannot enter raw mode)");
   }
 
-  // Switch to the alternate screen buffer and move the cursor to the
-  // top-left. The previous screen contents are saved and restored on exit.
   if (write(STDOUT_FILENO, kAltScreenOn.data(), kAltScreenOn.size()) == -1)
     logError("write failed (alt screen setup)");
 }

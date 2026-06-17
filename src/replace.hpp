@@ -1,5 +1,16 @@
 #pragma once
 
+/**
+ * @file replace.hpp
+ * @brief Exact-match find-and-replace helpers used by
+ *        Screen::openReplacePrompt.
+ *
+ * Replace deliberately uses byte-exact matching (not the smart-find rules
+ * in search.hpp): fuzzy skipping is helpful for locating text you can
+ * already see, but dangerous when the editor is about to rewrite bytes
+ * you may not have intended to touch.
+ */
+
 #include "buffer/buffer.hpp"
 #include "types.hpp"
 
@@ -8,15 +19,16 @@
 #include <string>
 #include <utility>
 
-// Find the next exact substring match of `pattern` starting at `start` in
-// `buf`, scanning line-by-line and never wrapping past end-of-buffer.
-// Matches do not span line boundaries. Returns the matched region as
-// {from, to} or nullopt when no further match exists.
-//
-// Replace deliberately uses byte-exact matching (not the smart-find rules
-// in `search.hpp`) — fuzzy skipping makes sense when locating something
-// you can already see, but is dangerous when the editor is about to
-// rewrite bytes you may not have intended to touch.
+/**
+ * @brief Find the next exact substring match of @p pattern at or after
+ *        @p start in @p buf.
+ *
+ * Scans line by line and never wraps past end-of-buffer; matches do not
+ * span line boundaries.
+ *
+ * @return The matched region as {from, to}, or nullopt when no further
+ *         match exists.
+ */
 inline std::optional<std::pair<BufferPoint, BufferPoint>>
 findNextMatchInBuffer(Buffer const& buf, BufferPoint start, std::string const& pattern) {
   if (pattern.empty())
@@ -32,12 +44,17 @@ findNextMatchInBuffer(Buffer const& buf, BufferPoint start, std::string const& p
   return std::nullopt;
 }
 
-// Replace every forward exact-match occurrence of `pattern` with
-// `replacement` from `start` to end-of-buffer. After each replacement
-// the scan resumes at the position immediately after the inserted text —
-// guaranteeing termination even when `replacement` itself matches
-// `pattern` (the inserted text is not re-scanned). Returns the number
-// of replacements performed.
+/**
+ * @brief Replace every forward exact-match occurrence of @p pattern with
+ *        @p replacement from @p start to end-of-buffer.
+ *
+ * After each replacement the scan resumes immediately after the inserted
+ * text, guaranteeing termination even when @p replacement itself matches
+ * @p pattern (the inserted text is not re-scanned). A no-op on a
+ * read-only buffer or an empty pattern.
+ *
+ * @return The number of replacements performed.
+ */
 inline std::size_t replaceAllForward(Buffer& buf, BufferPoint start, std::string const& pattern,
                                      std::string const& replacement) {
   if (pattern.empty() || buf.readonly())

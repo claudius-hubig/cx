@@ -1,0 +1,28 @@
+# Doxygen configuration template. CMake substitutes the @VAR@ paths via
+# configure_file() and writes the result to the build tree; the `docs`
+# target then runs `doxygen` against it. Only the non-default settings
+# the project relies on are listed here.
+
+PROJECT_NAME           = "cx"
+PROJECT_BRIEF          = "A simple terminal text editor"
+OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIR@
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+# Document every declaration, not just the ones with a docstring, so the
+# generated reference stays complete even where a comment is still missing.
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = YES
+
+# Sources plus the prose docs. README.md is the landing page; the design
+# notes under docs/ are pulled in as supporting pages.
+INPUT                  = @DOXYGEN_INPUT_DIR@/src \
+                         @DOXYGEN_INPUT_DIR@/README.md \
+                         @DOXYGEN_INPUT_DIR@/docs
+FILE_PATTERNS          = *.hpp *.cpp *.md
+RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = @DOXYGEN_INPUT_DIR@/README.md
+
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO

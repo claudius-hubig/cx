@@ -3,14 +3,19 @@
 #include <array>
 #include <unordered_set>
 
+/** @brief One row of the keybinding table: shortcut, action, description. */
 struct Binding {
   Shortcut shortcut;
   Action action;
   std::string_view description;
 };
 
-// The single source of truth for all keybindings. Help display and input
-// dispatch both read from this table. Order matches the help screen layout.
+/**
+ * @brief The single source of truth for all keybindings.
+ *
+ * Both help display and input dispatch read from this table; the order
+ * matches the help-screen layout.
+ */
 static constexpr auto kBindings = std::array<Binding, 48>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},

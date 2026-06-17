@@ -1,5 +1,18 @@
 #pragma once
 
+/**
+ * @file screen.hpp
+ * @brief Screen — the terminal I/O hub: the main input loop, action
+ *        dispatch, drawing, prompts, find/replace, mouse handling, and
+ *        subprocess execution.
+ *
+ * Screen owns the active buffer pointer and the panel layout, and
+ * implements BufferSink so BufferManager can push buffer switches to it.
+ * Session-wide state that belongs to no single buffer (active prompt, find
+ * state, paste ring, clipboard adapter, status message) lives here; per-view
+ * display toggles live on BufferView.
+ */
+
 #include "buffer/buffer_sink.hpp"
 #include "buffer/buffer_view.hpp"
 #include "buffer/dir_buffer.hpp"
@@ -24,179 +37,259 @@ class Buffer;
 class BufferManager;
 struct MouseEvent;
 
-// Manages terminal I/O and the main input loop.
-//
-// On construction, queries the terminal size. draw() calls Buffer::render()
-// to produce a screen image into an internal buffer, then writes it in a
-// single writeAll() syscall. loop() reads raw keystrokes and forwards
-// them to the Buffer.
+/**
+ * @brief Manages terminal I/O and the main input loop.
+ *
+ * On construction, queries the terminal size. draw() calls
+ * Buffer::render() to produce a screen image into an internal buffer, then
+ * writes it in a single writeAll() syscall. loop() reads raw keystrokes
+ * and dispatches them.
+ */
 class Screen : public BufferSink {
 public:
   Screen();
 
+  /** @brief BufferSink hook: make @p buf active and redraw. */
   void setBuffer(Buffer& buf) override;
+  /** @brief Wire up the BufferManager used for buffer switching/killing. */
   void setBufferManager(BufferManager& mgr);
 
-  // Render the buffer to the terminal and move the hardware cursor
-  // to the current buffer point position.
+  /**
+   * @brief Render the buffer to the terminal and place the hardware cursor
+   *        at the current point.
+   */
   void draw();
 
-  // Read keystrokes one character at a time, forward them to the buffer,
-  // and redraw after each keystroke. Returns when stdin is closed or on
-  // Esc-c exit.
+  /**
+   * @brief Run the main input loop.
+   *
+   * Reads keystrokes one character at a time, dispatches them, and redraws
+   * after each. Returns when stdin is closed or on the exit command.
+   */
   void loop();
 
-  // Display a timed status message on the status line.
+  /** @brief Display a timed status message on the status line. */
   void setStatus(std::string msg);
 
-  // Move the focused view to the given 1-based line (clamped to the
-  // buffer's last line). Used by main() to honour `cx path:LINE`.
+  /**
+   * @brief Move the focused view to the 1-based @p line (clamped to the
+   *        last line).
+   *
+   * Used by main() to honour `cx path:LINE`.
+   */
   void gotoLine(std::size_t line);
 
-  // Insert `text` into the focused view at the cursor. Used by main()
-  // to seed the *stdin* scratch buffer when stdin is piped.
+  /**
+   * @brief Insert @p text into the focused view at the cursor.
+   *
+   * Used by main() to seed the *stdin* scratch buffer when stdin is piped.
+   */
   void insertText(std::string_view text);
 
 private:
-  // Centralised action handler: executes the effect of the given Action.
+  /** @brief Centralised action handler: execute the effect of @p action. */
   void dispatchAction(Action action);
-  // Try to dispatch an Esc-chord for the given byte. Returns true if
-  // the byte was a recognised command, false otherwise.
+  /**
+   * @brief Try to dispatch an Esc-chord for @p ch.
+   * @return True if the byte was a recognised command.
+   */
   bool handleEscChord(char ch);
 
-  // Returns true and sets a status message if the current view is in
-  // history mode (i.e. read-only-browse), so the caller can `break`
-  // out of the action handler. Returns false otherwise.
+  /**
+   * @brief Guard for actions that are invalid while browsing history.
+   * @return True (after posting a status message) when the current view is
+   *         in history mode, so the caller can `break` out of the handler.
+   */
   bool requireNotInHistoryMode();
 
-  // draw() helpers. Both append directly to _renderBuf.
-  // drawModeline composes the focused-or-non-focused modeline for a
-  // panel: cursor row:col + history badge + prompt/status + buffer
-  // name and mode suffix, with truncation and right-alignment.
+  /**
+   * @brief Compose a panel's modeline (cursor row:col, history badge,
+   *        prompt/status, buffer name + mode) into @c _renderBuf.
+   */
   void drawModeline(Panel& panel, bool focused);
-  // placePanelId emits the small panel-id digit in the gutter's
-  // top-right cell when there are multiple panels.
+  /**
+   * @brief Emit the small panel-id digit in the gutter's top-right cell
+   *        when there are multiple panels.
+   */
   void placePanelId(Panel const& panel, bool multiPanel);
-  // Walk buffers looking for the next modified one. If found, switch to
-  // it and show a save prompt. Returns true when no modified buffers
-  // remain (caller should exit the loop).
+  /**
+   * @brief Walk buffers looking for the next modified one, switching to it
+   *        and showing a save prompt.
+   * @return True when no modified buffers remain (the caller should exit).
+   */
   bool tryExit();
-  // Kill the named buffer via BufferManager and switch all panels
-  // (including non-focused) that show it to the replacement buffer.
-  // Handles the focused panel's prevBuf clearing. The caller must
-  // clear its own prevBuf before calling if appropriate.
+  /**
+   * @brief Kill the named buffer and switch every panel showing it to the
+   *        replacement buffer.
+   *
+   * Handles the focused panel's prevBuf clearing; the caller must clear its
+   * own prevBuf beforehand if appropriate.
+   */
   void killBufferAndSwitchPanels(std::string const& name);
 
-  // Loop sub-handlers. The caller in loop() always redraws after the
-  // handler returns; the handlers may issue intermediate draws (e.g.
-  // a status update during a chord prompt) but do not signal that
-  // back to the caller.
+  /**
+   * @name Input-loop sub-handlers
+   *
+   * loop() always redraws after a handler returns; handlers may issue
+   * intermediate draws but do not signal that back to the caller.
+   */
+  /** @{ */
   void handlePromptInput(char c);
   void handleEscapeInput(std::optional<char>& pendingChar);
-  // Bare Esc-Esc behaviour: dismiss a readonly overlay if one is
-  // active; otherwise clear the mark on the focused view. Shared by
-  // both the fast (sequence-of-bytes) and slow (paused-Esc) paths.
+  /**
+   * @brief Bare Esc-Esc: dismiss a read-only overlay if active, otherwise
+   *        clear the mark on the focused view.
+   *
+   * Shared by the fast (sequence-of-bytes) and slow (paused-Esc) paths.
+   */
   void handleBareEscEsc();
-  // Apply a parsed SGR mouse event: focus the panel under the cursor,
-  // then left-press moves the point (and arms a drag), left-drag
-  // extends a mark→point selection, middle-press pastes the X11
-  // PRIMARY selection, and wheel up/down scrolls the panel.
+  /**
+   * @brief Apply a parsed SGR mouse event.
+   *
+   * Focuses the panel under the cursor, then: left-press moves the point
+   * (and arms a drag), left-drag extends a mark→point selection,
+   * middle-press pastes the X11 PRIMARY selection, and the wheel scrolls
+   * the panel.
+   */
   void handleMouseEvent(MouseEvent const& event);
-  // Continuation of an in-progress left-drag: clamp (row,col) into the
-  // focused panel's content, autoscroll when the pointer is at/above
-  // the top or at/below the bottom content row, set the mark to the
-  // drag anchor (overriding any prior mark), and move the point so the
-  // mark→point region tracks the drag. The input loop's
-  // syncPrimarySelection() then mirrors it to X11 PRIMARY.
+  /**
+   * @brief Continue an in-progress left-drag.
+   *
+   * Clamps (row,col) into the focused panel's content, autoscrolls at the
+   * top/bottom content row, sets the mark to the drag anchor (overriding
+   * any prior mark), and moves the point so the mark→point region tracks
+   * the drag. syncPrimarySelection() then mirrors it to X11 PRIMARY.
+   */
   void extendDragSelection(std::size_t row, std::size_t col);
   void handleCtrlXInput();
   void handleNormalInput(char c, std::optional<char>& pendingChar);
+  /** @} */
   void resize();
-  // Focused panel's content dimensions (rows minus modeline, total cols).
+  /** @brief Focused panel's content height (rows minus modeline). */
   RowIdx rowsForBuffer() const;
+  /** @brief Focused panel's total column count. */
   ColIdx colsForBuffer() const;
 
-  // Update _buf and _view from the focused panel in _layout.
+  /** @brief Rebind @c _buf / @c _view to the focused panel in @c _layout. */
   void updateFocusPointers();
 
-  // Inspect the buffer's detected line ending style. Shows a status
-  // message for mixed endings, or prompts the user to translate CRLF
-  // or lone CR to Unix line endings. Acknowledges the style on the
-  // buffer so it is not flagged again on subsequent switches.
+  /**
+   * @brief Inspect the buffer's detected line-ending style.
+   *
+   * Shows a status message for mixed endings, or prompts the user to
+   * translate CRLF / lone CR to Unix endings. Acknowledges the style on the
+   * buffer so it is not flagged again on subsequent switches.
+   */
   void checkLineEndings(Buffer& buf);
 
-  // Per-panel overlay buffer accessor (focused panel's prevBuf).
+  /** @brief Accessor for the focused panel's overlay-restore slot. */
   Buffer*& prevBuf();
 
-  // Prompt construction helpers.
+  /**
+   * @name Prompt construction helpers
+   */
+  /** @{ */
   void openGoToLinePrompt();
   void openSaveAsPrompt();
   void openSwitchBufferPrompt();
   void openFindPrompt(bool backward);
-  // Two-step replace flow: prompt for pattern, then replacement, then
-  // iterate forward from the cursor with a y/n/!/q confirmation per match.
+  /**
+   * @brief Two-step replace flow: prompt for pattern, then replacement,
+   *        then iterate forward with a y/n/!/q confirmation per match.
+   */
   void openReplacePrompt();
-  // Find the next match for `pattern` starting at the current cursor; on
-  // hit, highlight it and open the y/n/!/q confirm prompt. On miss, set a
-  // status with the running count.
+  /**
+   * @brief Find the next match for @p pattern from the cursor.
+   *
+   * On a hit, highlights it and opens the y/n/!/q confirm prompt; on a
+   * miss, sets a status with the running count.
+   */
   void replacePump(std::string pattern, std::string replacement, std::size_t replaced);
-  // Confirm prompt for a single replace decision. Stores the matched range
-  // so 'y'/'n' know whether to advance past or replace the highlighted hit.
+  /**
+   * @brief Confirm prompt for a single replace decision.
+   *
+   * Stores the matched range so 'y'/'n' know whether to advance past or
+   * replace the highlighted hit.
+   */
   void openReplaceConfirmPrompt(std::string pattern, std::string replacement, std::size_t replaced,
                                 BufferPoint matchStart, BufferPoint matchEnd);
   void openSetModePrompt();
-  // Esc-x: prompt for an action by description, run it, then surface
-  // the action's primary shortcut as a status hint so the user can
-  // learn the binding without having to remember it.
+  /**
+   * @brief Esc-x: prompt for an action by description, run it, then surface
+   *        the action's primary shortcut as a status hint.
+   */
   void openExecuteCommandPrompt();
-  // Esc-X: regex find. Prompts for an ECMAScript pattern (per
-  // std::regex), highlights the next match, leaves _lastRegex set so
-  // a subsequent Esc-X with empty input re-uses it.
+  /**
+   * @brief Esc-X: regex find.
+   *
+   * Prompts for an ECMAScript pattern, highlights the next match, and
+   * leaves @c _lastRegex set so a subsequent Esc-X with empty input reuses
+   * it.
+   */
   void openRegexFindPrompt();
-  // Esc-Y: regex find-and-replace. Two-step prompt (pattern, then
-  // replacement template with $0..$9 / $& back-references), then walks
-  // forward through matches with the same y/n/!/q decisions as plain
-  // Replace. The pump and confirm helpers mirror the plain-Replace
-  // flow.
+  /**
+   * @brief Esc-Y: regex find-and-replace.
+   *
+   * Two-step prompt (pattern, then replacement template with $0..$9 / $&
+   * back-references), then walks forward through matches with the same
+   * y/n/!/q decisions as plain Replace.
+   */
   void openRegexReplacePrompt();
   void regexReplacePump(std::string pattern, std::string replacement, std::size_t replaced);
   void openRegexReplaceConfirmPrompt(std::string pattern, std::string replacement,
                                      std::size_t replaced, BufferPoint matchStart,
                                      BufferPoint matchEnd);
-  // Forward regex search using _lastRegex; mirrors findNext().
+  /** @brief Forward regex search using @c _lastRegex; mirrors findNext(). */
   void regexFindNext();
   void openConfirmPrompt(std::string question, std::function<void(std::string const&)> onResult,
                          std::function<void()> onAbort);
-  // Confirm-kill prompt shared by KillBuffer and tryExit.
+  /** @brief Confirm-kill prompt shared by KillBuffer and tryExit. */
   void openConfirmKillPrompt(std::string question);
-  // Save the current buffer and, if _killPending, kill it afterwards.
+  /** @brief Save the current buffer and, if @c _killPending, kill it afterwards. */
   void saveAndMaybeKill();
+  /** @} */
 
-  // Run the prompt's autocomplete and cache the result. If autocomplete
-  // returns an early-exit result, closes the prompt and calls onResult.
-  // Returns true if the prompt was closed by early exit.
+  /**
+   * @brief Run the prompt's autocomplete and cache the result.
+   *
+   * If autocomplete returns an early-exit result, closes the prompt and
+   * calls onResult.
+   * @return True if the prompt was closed by early exit.
+   */
   bool runAutocomplete();
 
-  // Working directory for the current buffer: parent dir if it has a path,
-  // else the process working directory. Used by all subprocess callers.
+  /**
+   * @brief Working directory for the current buffer.
+   *
+   * The buffer's parent directory if it has a path, else the process
+   * working directory. Used by all subprocess callers.
+   */
   std::string bufferWorkDir() const;
 
-  // Subprocess execution with a kill-prompt poll loop. Used by Format,
-  // Tab-format, and PipeReplace. Returns nullopt on fork/pipe failure.
+  /** @brief Result of a runPipeCommand() invocation. */
   struct PipeResult {
     std::string stdoutData;
     std::string stderrData;
     int exitCode;
     bool killed;
   };
+  /**
+   * @brief Run a subprocess with a kill-prompt poll loop.
+   *
+   * Used by Format, Tab-format, and PipeReplace. Forks/execs @p args, pipes
+   * @p input to stdin, and monitors the child with poll(); after 10s of
+   * inactivity it offers a kill prompt.
+   * @return The captured output, or nullopt on fork/pipe failure.
+   */
   std::optional<PipeResult> runPipeCommand(std::vector<std::string> const& args,
                                            std::string_view input, std::string const& workDir);
 
-  // Format the current buffer using clang-format via runPipeCommand.
+  /** @brief Format the current buffer (or @p lineRange) via clang-format. */
   void executeFormat(std::optional<std::pair<std::size_t, std::size_t>> lineRange);
 
-  // Pipe-replace: prompt for a shell command, pipe the region through it.
+  /** @brief Pipe-replace: prompt for a shell command. */
   void openPipeReplacePrompt();
+  /** @brief Pipe the region through @p command and replace it with the output. */
   void executePipeReplace(std::string command);
 
   std::tuple<RowIdx, ColIdx> _size;
@@ -211,30 +304,37 @@ private:
 
   std::string _statusMsg;
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
-  // Wrap mode and whitespace visibility live per-view on BufferView
-  // (see _view->wrap() / _view->showWhitespace()), so different panels
-  // can have different settings.
-  bool _killPending = false; // kill buffer after SaveAs completes
-  bool _exitPending = false; // exit after all modified buffers are handled
-  // SetupTerminal enables ?1000h / ?1006h on construction; mirror that
-  // default here so the runtime toggle starts in agreement with the
-  // actual terminal state.
+  bool _killPending = false; /**< Kill the buffer after SaveAs completes. */
+  bool _exitPending = false; /**< Exit after all modified buffers are handled. */
+  /**
+   * @brief Runtime mouse-tracking toggle.
+   *
+   * SetupTerminal enables ?1000h / ?1006h on construction; this mirrors
+   * that default so the toggle starts in agreement with the terminal.
+   */
   bool _mouseEnabled = true;
 
-  // Buffer point where the left button went down, set on left-press and
-  // cleared on release. While set, left-motion events extend a
-  // selection anchored here. nullopt means no drag is in progress.
+  /**
+   * @brief Buffer point where the left button went down.
+   *
+   * Set on left-press, cleared on release. While set, left-motion events
+   * extend a selection anchored here; nullopt means no drag in progress.
+   */
   std::optional<BufferPoint> _dragAnchor;
 
   PasteRing _pasteRing;
   Clipboard _clipboard;
 
-  // After every keystroke, mirror the active mark region (if any)
-  // into the X11 PRIMARY selection so middle-click paste picks it up.
-  // Internal dedup means cursor moves that don't change the selected
-  // text cost zero forks.
+  /**
+   * @brief Mirror the active mark region into the X11 PRIMARY selection.
+   *
+   * Called after every keystroke so middle-click paste picks it up.
+   * Internal dedup means cursor moves that don't change the selected text
+   * cost zero forks.
+   */
   void syncPrimarySelection();
 
+  /** @brief In-flight paste-cycle state (Esc-y after a paste). */
   struct PasteState {
     BufferPoint start;
     BufferPoint end;
@@ -242,22 +342,31 @@ private:
   };
   std::optional<PasteState> _pasteState;
 
-  // Find state.
+  /**
+   * @name Find state
+   */
+  /** @{ */
   void findNext();
   void findPrev();
   void blockNext();
   void blockPrev();
   void onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd, bool wrapped);
   std::string _lastSearch;
-  // Last regex pattern (raw source; recompiled on each search). Kept
-  // separate from _lastSearch so Ctrl-f and Esc-X don't clobber each
-  // other's history.
+  /**
+   * @brief Last regex pattern (raw source; recompiled per search).
+   *
+   * Separate from @c _lastSearch so Ctrl-f and Esc-X do not clobber each
+   * other's history.
+   */
   std::string _lastRegex;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
+  /** @} */
 
-  // Recenter (Ctrl-l) cycling state. Each consecutive press advances
-  // through the slots; any other action resets it so the next Ctrl-l
-  // starts at the middle slot again.
+  /** @brief Recenter (Ctrl-l) target slot. */
   enum class RecenterSlot { Middle, Top, Bottom };
+  /**
+   * @brief Recenter cycling state: each consecutive Ctrl-l advances through
+   *        the slots; any other action resets it to Middle.
+   */
   std::optional<RecenterSlot> _lastRecenter;
 };

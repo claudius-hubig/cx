@@ -3,6 +3,7 @@
 #include <cctype>
 #include <string_view>
 
+/** @brief Number of leading space characters in @p l. */
 static int leadingSpaces(std::string const& l) {
   int n = 0;
   while (n < static_cast<int>(l.size()) && l[n] == ' ')
@@ -10,6 +11,7 @@ static int leadingSpaces(std::string const& l) {
   return n;
 }
 
+/** @brief True if @p l is empty or only spaces/tabs. */
 static bool isBlank(std::string const& l) {
   for (char c : l)
     if (c != ' ' && c != '\t')
@@ -17,6 +19,7 @@ static bool isBlank(std::string const& l) {
   return true;
 }
 
+/** @brief ASCII case-insensitive equality (@p b assumed already lowercase). */
 static bool ciEqual(std::string_view a, std::string_view b) {
   if (a.size() != b.size())
     return false;
@@ -26,8 +29,12 @@ static bool ciEqual(std::string_view a, std::string_view b) {
   return true;
 }
 
-// YAML 1.1 plain boolean / null scalars (case-insensitive), plus `~`.
-// These are literal values and share the numeric-literal colour.
+/**
+ * @brief True if @p w is a YAML 1.1 plain boolean/null scalar
+ *        (case-insensitive), or `~`.
+ *
+ * These are literal values and share the numeric-literal colour.
+ */
 static bool isYamlConst(std::string_view w) {
   if (w == "~")
     return true;
@@ -39,6 +46,7 @@ static bool isYamlConst(std::string_view w) {
   return false;
 }
 
+/** @brief True if @p w is a YAML numeric scalar. */
 static bool isYamlNumber(std::string_view w) {
   if (w.empty())
     return false;

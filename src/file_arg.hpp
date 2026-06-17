@@ -1,5 +1,11 @@
 #pragma once
 
+/**
+ * @file file_arg.hpp
+ * @brief parseFileArg — split a command-line `path:LINE` argument into a
+ *        path and an optional 1-based line number.
+ */
+
 #include <cstddef>
 #include <filesystem>
 #include <optional>
@@ -7,18 +13,24 @@
 #include <string_view>
 #include <utility>
 
-// Parse a command-line file argument that may carry a trailing line
-// specifier (`path:LINE`). Used by main() so users can run
-// `cx src/foo.cpp:42` and land on line 42 directly.
-//
-// Rules:
-// - Split at the LAST ':' in the argument.
-// - The suffix must be a non-empty all-decimal-digit positive integer
-//   for the split to be honoured. Trailing junk (e.g. ":42:") falls
-//   back to "path = whole arg, no line".
-// - If the un-split argument already names an existing file or
-//   directory, treat it as a path (handles filenames containing ':').
-// - A line of 0 is treated as no-line; cx is 1-based for line numbers.
+/**
+ * @brief Parse a command-line file argument that may carry a trailing
+ *        line specifier (`path:LINE`).
+ *
+ * Lets users run `cx src/foo.cpp:42` and land directly on line 42.
+ *
+ * Rules:
+ * - Split at the LAST ':' in the argument.
+ * - The suffix must be a non-empty, all-decimal-digit positive integer
+ *   for the split to be honoured; trailing junk (e.g. ":42:") falls back
+ *   to "path = whole arg, no line".
+ * - If the un-split argument already names an existing file or directory,
+ *   treat it as a path (handles filenames containing ':').
+ * - A line of 0 is treated as no-line; cx line numbers are 1-based.
+ *
+ * @param arg The raw command-line argument.
+ * @return A pair of {path, optional line number}.
+ */
 inline std::pair<std::string, std::optional<std::size_t>> parseFileArg(std::string_view arg) {
   std::pair<std::string, std::optional<std::size_t>> none{std::string(arg), std::nullopt};
   // If the literal arg exists on disk, do not split — preserve filenames

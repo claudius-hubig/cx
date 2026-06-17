@@ -9,6 +9,12 @@ cmake -B build
 cmake --build build
 ```
 
+API documentation can be generated with Doxygen (optional):
+
+```sh
+cmake --build build --target docs   # output in build/docs/html
+```
+
 ## Usage
 
 ```sh

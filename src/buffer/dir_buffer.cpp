@@ -10,9 +10,12 @@
 
 namespace {
 
-// Suffixes are 1024-based (KiB/MiB/GiB) but rendered without the 'i'
-// to match the long-standing POSIX `ls -h` convention. Strictly
-// ambiguous with the SI 1000-based meaning of K/M/G.
+/**
+ * @brief Format a byte count with a K/M/G suffix.
+ *
+ * Suffixes are 1024-based but rendered without the 'i' to match the
+ * long-standing POSIX `ls -h` convention.
+ */
 std::string formatSize(std::uintmax_t bytes) {
   if (bytes < 1024)
     return std::to_string(bytes);
@@ -23,6 +26,7 @@ std::string formatSize(std::uintmax_t bytes) {
   return std::to_string(bytes / (1024 * 1024 * 1024)) + "G";
 }
 
+/** @brief Build an `ls`-style permission string (e.g. "drwxr-xr-x"). */
 std::string formatPermissions(mode_t mode, bool isDir, bool isSymlink) {
   std::string s;
   s += isSymlink ? 'l' : isDir ? 'd' : '-';
@@ -38,6 +42,7 @@ std::string formatPermissions(mode_t mode, bool isDir, bool isSymlink) {
   return s;
 }
 
+/** @brief Format a modification time as "YYYY-MM-DD HH:MM:SS" (local time). */
 std::string formatMtime(struct timespec const& ts) {
   std::tm tm{};
   localtime_r(&ts.tv_sec, &tm);
@@ -46,11 +51,15 @@ std::string formatMtime(struct timespec const& ts) {
   return buf;
 }
 
-// Truncate a (possibly ANSI-styled) display string to at most `maxCols`
-// visual columns, cutting only on whole character / escape-sequence
-// boundaries so a multi-byte char or CSI sequence is never split. Display
-// lines may carry escapeNonPrintable styling for control-byte filenames,
-// so the width walk is CSI-aware (displayCharInfoAt).
+/**
+ * @brief Truncate a (possibly ANSI-styled) display string to at most
+ *        @p maxCols visual columns.
+ *
+ * Cuts only on whole character / escape-sequence boundaries so a
+ * multi-byte char or CSI sequence is never split. The width walk is
+ * CSI-aware (displayCharInfoAt) because display lines may carry
+ * escapeNonPrintable styling for control-byte filenames.
+ */
 std::string truncateDisplayToWidth(std::string_view s, std::size_t maxCols) {
   std::size_t col = 0, i = 0;
   while (i < s.size()) {

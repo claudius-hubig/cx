@@ -1,5 +1,15 @@
 #pragma once
 
+/**
+ * @file prompt.hpp
+ * @brief The status-line prompt machinery: the Prompt struct that
+ *        describes an active prompt, its display cache, and per-label
+ *        input history.
+ *
+ * Prompts are constructed by Screen's various @c openXxxPrompt() helpers
+ * and driven generically by Screen::handlePromptInput().
+ */
+
 #include "byte_constants.hpp"
 #include "utf8.hpp"
 
@@ -11,17 +21,24 @@
 #include <variant>
 #include <vector>
 
-// Hint text to append after the prompt label+input on the status line.
+/** @brief Hint text drawn after the prompt label+input on the status line. */
 struct PromptDisplay {
-  std::string rendered;    // ANSI-formatted hint (may contain escape sequences)
-  std::size_t visualWidth; // display columns of `rendered` (excluding escapes)
+  std::string rendered;    /**< ANSI-formatted hint (may contain escapes). */
+  std::size_t visualWidth; /**< Display columns of @c rendered (excluding escapes). */
 };
 
-// Build a dim-styled hint echoing `hint` (typically the user's previous
-// Find/Regex search) for redisplay in the autocomplete area of a prompt.
-// `hint` is escaped via escapeNonPrintable so a stray control byte
-// (e.g. an ESC that slipped past a prior input filter) cannot be
-// written verbatim into the modeline.
+/**
+ * @brief Build a dim-styled hint echoing @p hint for the autocomplete
+ *        area of a prompt.
+ *
+ * Typically used to redisplay the user's previous Find/Regex search.
+ * @p hint is escaped via escapeNonPrintable() so a stray control byte
+ * (e.g. an ESC that slipped past an input filter) cannot be written
+ * verbatim into the modeline.
+ *
+ * @param hint The text to echo.
+ * @return The styled, width-measured display hint.
+ */
 inline PromptDisplay buildDimHint(std::string const& hint) {
   if (hint.empty())
     return {"", 0};
@@ -30,51 +47,76 @@ inline PromptDisplay buildDimHint(std::string const& hint) {
   return {std::string(ansi::Dim) + escaped + std::string(ansi::DimOff), vw};
 }
 
-// A prompt shown on the status line. Constructed by the various openXxxPrompt()
-// helpers; driven generically by handlePromptInput().
-//
-// Autocomplete returns either a display hint (partial match) or a result string
-// (unique match that should close the prompt immediately).
+/**
+ * @brief A prompt shown on the status line.
+ *
+ * Constructed by the various @c openXxxPrompt() helpers in Screen and
+ * driven generically by Screen::handlePromptInput(). The callbacks let
+ * each prompt type customise autocomplete, completion, abort, and special
+ * keys without the generic driver knowing the specifics.
+ */
 struct Prompt {
+  /**
+   * @brief Result of an autocomplete call: a display hint for a partial
+   *        match, or a string that closes the prompt as a unique match.
+   */
   using AutocompleteResult = std::variant<PromptDisplay, std::string>;
 
-  std::string label;     // e.g. "Go to line: ", "Buffer: "
-  std::string input;     // current typed text
-  bool showInput = true; // false for confirm prompts (label IS the display)
+  std::string label;     /**< Prompt label, e.g. "Go to line: ", "Buffer: ". */
+  std::string input;     /**< Current typed text. */
+  bool showInput = true; /**< False for confirm prompts (label IS the display). */
 
-  // Called after every input change. Returns a display hint or an early-exit
-  // result value that closes the prompt.
+  /**
+   * @brief Called after every input change; returns a display hint or an
+   *        early-exit result value that closes the prompt.
+   */
   std::function<AutocompleteResult(std::string const& input)> autocomplete;
 
-  // Called when the prompt completes (Enter, or autocomplete returned a result).
+  /**
+   * @brief Called when the prompt completes (Enter, or autocomplete
+   *        returned a result).
+   */
   std::function<void(std::string const& value)> onResult;
 
-  // Called when the user presses Esc.
+  /** @brief Called when the user presses Esc. */
   std::function<void()> onAbort;
 
-  // Optional: Tab key handler. May modify input. Returns updated display.
+  /** @brief Optional Tab handler; may modify @c input, returns updated display. */
   std::function<PromptDisplay(std::string& input)> onTab;
 
-  // Optional: Right-arrow handler. May modify input. Returns updated display.
+  /**
+   * @brief Optional Right-arrow handler; may modify @c input, returns
+   *        updated display.
+   */
   std::function<PromptDisplay(std::string& input)> onRightArrow;
 
-  // Optional: handler for control chars not consumed by the generic handler
-  // (e.g. Ctrl-F/Ctrl-R in Find). Returns true if consumed.
+  /**
+   * @brief Optional handler for control chars the generic driver does not
+   *        consume (e.g. Ctrl-F/Ctrl-R in Find). Returns true if consumed.
+   */
   std::function<bool(char key, std::string& input)> onSpecialKey;
 
-  // Cached display from last autocomplete call (read by draw()).
+  /** @brief Cached display from the last autocomplete call (read by draw()). */
   PromptDisplay display;
 
-  // History navigation state.
-  std::optional<std::size_t> historyIdx;
-  std::string savedInput;
+  std::optional<std::size_t> historyIdx; /**< Current history index, if browsing. */
+  std::string savedInput;                /**< Input stashed before history navigation. */
 };
 
-// Per-label history of completed prompt inputs.
+/** @brief Per-label history of completed prompt inputs. */
 class PromptHistory {
 public:
+  /** @brief Maximum entries retained per label. */
   static constexpr std::size_t kMaxPerLabel = 50;
 
+  /**
+   * @brief Record a completed input under @p label.
+   *
+   * Empty values are ignored; an existing duplicate is moved to the front
+   * rather than duplicated; the list is capped at ::kMaxPerLabel.
+   * @param label Prompt label the value belongs to.
+   * @param value The completed input (ownership taken).
+   */
   void push(std::string const& label, std::string value) {
     if (value.empty())
       return;
@@ -91,7 +133,10 @@ public:
       vec.pop_back();
   }
 
-  // Returns nullptr if no history for this label.
+  /**
+   * @brief Most-recent-first history for @p label.
+   * @return Pointer to the entry list, or nullptr if there is no history.
+   */
   std::vector<std::string> const* get(std::string const& label) const {
     auto it = _entries.find(label);
     if (it == _entries.end() || it->second.empty())

@@ -1,5 +1,17 @@
 #pragma once
 
+/**
+ * @file regex_search.hpp
+ * @brief Per-line regex search/replace helpers used by Esc-X / Esc-Y.
+ *
+ * Kept separate from the smart-find helpers in search.hpp because regex
+ * matching uses anchors, character classes and back-references that
+ * smart-find deliberately avoids, and regex replace honours capture-group
+ * substitution ($1, $&, …) so a plain replacement loop is the wrong
+ * primitive. Matches do not span line boundaries — the same convention as
+ * the rest of the editor's search/replace infrastructure.
+ */
+
 #include "buffer/buffer.hpp"
 #include "types.hpp"
 
@@ -10,19 +22,14 @@
 #include <string_view>
 #include <utility>
 
-// Per-line regex search helpers used by Esc-X / Esc-Y. Kept separate
-// from the smart-find helpers in `search.hpp` because:
-// - Regex matching uses anchors, character classes and back-references
-//   that smart-find deliberately avoids.
-// - Regex replace honours capture-group substitution ($1, $&, …) so a
-//   plain replacement loop is the wrong primitive.
-//
-// Matches do not span line boundaries — same convention as the rest of
-// the editor's search/replace infrastructure.
-
-// Compile a pattern. Returns nullopt for invalid syntax so the caller
-// can surface the std::regex error message in the status line rather
-// than letting the exception escape.
+/**
+ * @brief Compile @p pattern as an ECMAScript regex.
+ * @param pattern The pattern source.
+ * @param[out] error Set to a human-readable message on failure.
+ * @return The compiled regex, or nullopt for an empty or invalid pattern
+ *         (so the caller can surface @p error rather than let the
+ *         exception escape).
+ */
 inline std::optional<std::regex> compileRegex(std::string const& pattern, std::string& error) {
   if (pattern.empty()) {
     error = "empty pattern";
@@ -36,8 +43,11 @@ inline std::optional<std::regex> compileRegex(std::string const& pattern, std::s
   }
 }
 
-// Scan a line for the first regex match starting at or after `from`.
-// Returns {matchStart, matchEnd} byte offsets, or nullopt.
+/**
+ * @brief Scan a line for the first regex match starting at or after
+ *        @p from.
+ * @return {matchStart, matchEnd} byte offsets, or nullopt.
+ */
 inline std::optional<std::pair<std::size_t, std::size_t>>
 findFirstRegex(std::string const& line, std::size_t from, std::regex const& re) {
   if (from > line.size())
@@ -55,8 +65,12 @@ findFirstRegex(std::string const& line, std::size_t from, std::regex const& re) 
   return std::pair{s, e};
 }
 
-// Scan a line for the last regex match within [from, limit). Used by
-// the backward-search path.
+/**
+ * @brief Scan a line for the last regex match within [from, limit).
+ *
+ * Used by the backward-search path.
+ * @return {matchStart, matchEnd} byte offsets, or nullopt.
+ */
 inline std::optional<std::pair<std::size_t, std::size_t>>
 findLastRegex(std::string const& line, std::size_t from, std::size_t limit, std::regex const& re) {
   std::optional<std::pair<std::size_t, std::size_t>> last;
@@ -72,8 +86,12 @@ findLastRegex(std::string const& line, std::size_t from, std::size_t limit, std:
   return last;
 }
 
-// Find the next regex match in the buffer starting at `start`. Scans
-// line-by-line; never wraps. Returns the matched region or nullopt.
+/**
+ * @brief Find the next regex match in the buffer at or after @p start.
+ *
+ * Scans line by line and never wraps.
+ * @return The matched region, or nullopt.
+ */
 inline std::optional<std::pair<BufferPoint, BufferPoint>>
 findNextRegexInBuffer(Buffer const& buf, BufferPoint start, std::regex const& re) {
   std::size_t lineCount = buf.lineCount();
@@ -85,9 +103,13 @@ findNextRegexInBuffer(Buffer const& buf, BufferPoint start, std::regex const& re
   return std::nullopt;
 }
 
-// Substitute a single match's region with `replacement`, honouring
-// capture-group back-references ($0..$9, $&, $$). Caller has already
-// located the match's [from, to) and verified the line.
+/**
+ * @brief Substitute a single match's region with @p replacement,
+ *        honouring capture-group back-references ($0..$9, $&, $$).
+ *
+ * The caller has already located the match's [from, to) and verified the
+ * line.
+ */
 inline std::string substituteCaptures(std::string const& line, std::size_t from, std::size_t to,
                                       std::regex const& re, std::string const& replacement) {
   // Run regex_match on the exact region so $1.. resolve correctly.
@@ -99,11 +121,16 @@ inline std::string substituteCaptures(std::string const& line, std::size_t from,
   return m.format(replacement, std::regex_constants::format_default);
 }
 
-// Replace every forward regex match of `re` with the result of running
-// `replacement` (a sed-style template with $&/$N back-references)
-// against each match. Scan resumes after the inserted text so a
-// replacement that itself matches the pattern does not loop. Returns
-// the number of replacements performed.
+/**
+ * @brief Replace every forward regex match of @p re with the result of
+ *        applying @p replacement (a sed-style template with $&/$N
+ *        back-references) to each match.
+ *
+ * The scan resumes after the inserted text so a replacement that itself
+ * matches the pattern does not loop. A no-op on a read-only buffer.
+ *
+ * @return The number of replacements performed.
+ */
 inline std::size_t replaceAllRegexForward(Buffer& buf, BufferPoint start, std::regex const& re,
                                           std::string const& replacement) {
   if (buf.readonly())

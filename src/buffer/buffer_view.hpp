@@ -1,5 +1,16 @@
 #pragma once
 
+/**
+ * @file buffer_view.hpp
+ * @brief BufferView — all per-view state and behaviour for one logical
+ *        view of a Buffer: cursor, mark, viewport, movement, editing, and
+ *        rendering.
+ *
+ * Multiple BufferViews may share one Buffer for split-window editing; each
+ * keeps independent cursor/viewport state and re-clamps itself when it
+ * notices the buffer changed underneath it.
+ */
+
 #include "buffer.hpp"
 #include "types.hpp"
 
@@ -11,41 +22,53 @@
 #include <tuple>
 #include <vector>
 
-/// Display settings passed to BufferView::render(). `showWhitespace`
-/// and `wrap` are per-view state on `BufferView` itself; this struct
-/// only carries the inputs that come from the surrounding panel /
-/// screen (focus, panel rect offsets).
+/**
+ * @brief Display inputs for BufferView::render() that come from the
+ *        surrounding panel/screen rather than the view itself.
+ *
+ * Per-view flags such as @c showWhitespace and @c wrap live on BufferView;
+ * this struct carries only focus and panel-rect offsets.
+ */
 struct BufferRenderArgs {
-  bool focused = true;
-  std::size_t rowOffset = 0;
-  std::size_t colOffset = 0;
+  bool focused = true;       /**< Whether this panel has focus. */
+  std::size_t rowOffset = 0; /**< Screen row at which the panel starts. */
+  std::size_t colOffset = 0; /**< Screen column at which the panel starts. */
 };
 
-/// Per-view state for a Buffer. Owns the cursor position, selection mark,
-/// viewport scroll, wrap mode, desired column, find highlight, and
-/// per-view caches. Movement, editing, and rendering are implemented
-/// directly using the Buffer's public accessors (lineContent, lineCount,
-/// isBlankLine, lines) and its position-explicit editing API
-/// (insertAt, deleteAt, deleteBefore, insertText, deleteRegion).
-///
-/// Multiple BufferViews can reference the same Buffer (for multi-panel
-/// editing). Each view maintains independent cursor/viewport state and
-/// detects external edits via Buffer::docVersion(), clamping its
-/// positions on the next access.
+/**
+ * @brief Per-view state and behaviour for a Buffer.
+ *
+ * Owns the cursor, selection mark, viewport scroll, wrap mode, desired
+ * column, find highlight, and per-view caches. Movement, editing, and
+ * rendering are implemented on top of Buffer's public accessors and its
+ * position-explicit editing API.
+ *
+ * Multiple BufferViews can reference the same Buffer; each maintains
+ * independent cursor/viewport state and detects external edits via
+ * Buffer::docVersion(), clamping its positions on the next access.
+ */
 class BufferView {
 public:
-  /// Construct a view with default position (0,0) for the given buffer.
+  /** @brief Construct a view at position (0,0) for @p buf. */
   explicit BufferView(Buffer& buf);
 
-  /// Construct a view from the buffer's saved view state (if any).
-  /// If the buffer has no saved state, starts at position (0,0).
-  /// Clears the saved state after reading it.
+  /**
+   * @brief Construct a view from the buffer's saved view state, if any.
+   *
+   * Starts at (0,0) when the buffer has no saved state. Clears the saved
+   * state after reading it.
+   */
   static BufferView fromSavedState(Buffer& buf);
 
+  /** @brief The buffer this view observes. */
   Buffer& buffer() { return _buf; }
+  /** @brief The buffer this view observes (const). */
   Buffer const& buffer() const { return _buf; }
 
-  // --- View state accessors ---
+  /**
+   * @name View-state accessors
+   */
+  /** @{ */
   BufferPoint point() const { return _point; }
   std::optional<BufferPoint> mark() const { return _mark; }
   BufferPoint viewFrom() const;
@@ -59,44 +82,62 @@ public:
   void setHighlight(BufferPoint from, BufferPoint to) { _highlight = Highlight{from, to}; }
   void clearHighlight() { _highlight.reset(); }
   std::optional<Highlight> const& highlight() const { return _highlight; }
+  /** @} */
 
-  /// Per-view soft-wrap mode. False = no wrap (horizontal scroll); true
-  /// = wrap visual lines. Toggling clears the horizontal/sub-line scroll
-  /// state because the variant alternative changes.
+  /**
+   * @brief Per-view soft-wrap mode (false = horizontal scroll, true = wrap).
+   *
+   * Toggling clears the horizontal/sub-line scroll state because the
+   * ViewFrom variant alternative changes.
+   */
   bool wrap() const { return _wrap; }
   void setWrap(bool w);
   void toggleWrap() { setWrap(!_wrap); }
 
-  /// Per-view whitespace-marker visibility (spaces · , tabs ▶, control
-  /// bytes). Pure render flag — does not affect editing or storage.
+  /**
+   * @brief Per-view whitespace-marker visibility (spaces, tabs, control
+   *        bytes).
+   *
+   * A pure render flag; does not affect editing or storage.
+   */
   bool showWhitespace() const { return _showWhitespace; }
   void setShowWhitespace(bool s) { _showWhitespace = s; }
   void toggleShowWhitespace() { _showWhitespace = !_showWhitespace; }
 
-  /// Per-view current-line highlight: when on, the cursor's physical
-  /// line is rendered with a subtle background tint (lines that already
-  /// carry a diff or conflict background keep that background instead).
+  /**
+   * @brief Per-view current-line highlight.
+   *
+   * When on, the cursor's physical line gets a subtle background tint;
+   * lines that already carry a diff/conflict background keep theirs.
+   */
   bool highlightCurrentLine() const { return _highlightCurrentLine; }
   void setHighlightCurrentLine(bool h) { _highlightCurrentLine = h; }
   void toggleHighlightCurrentLine() { _highlightCurrentLine = !_highlightCurrentLine; }
 
-  /// Per-view line-number gutter. When on, render() reserves columns
-  /// at the left of the panel for right-aligned 1-based line numbers.
-  /// The width is derived from the buffer's current line count and a
-  /// trailing single-space separator.
+  /**
+   * @brief Per-view line-number gutter.
+   *
+   * When on, render() reserves columns at the panel's left edge for
+   * right-aligned 1-based line numbers; the width derives from the
+   * buffer's line count plus a trailing separator space.
+   */
   bool showLineNumbers() const { return _showLineNumbers; }
   void setShowLineNumbers(bool s) { _showLineNumbers = s; }
   void toggleShowLineNumbers() { _showLineNumbers = !_showLineNumbers; }
-  /// Width of the left gutter in screen columns (0 when off).
+  /** @brief Width of the left gutter in screen columns (0 when off). */
   std::size_t lineNumberGutterWidth() const;
 
+  /** @brief Current cursor position as a 1-based {line, column} pair. */
   std::tuple<std::size_t, std::size_t> lineCol() const;
 
-  // --- Movement ---
-  // Methods that are wrap-mode-sensitive read the per-view `wrap()`
-  // state. `wrap` parameters on the lower-level helpers (pageUp, scrollUp,
-  // pointForScreenRowCol, ensureVisible, screenRow) remain because some
-  // call sites need to ask "what would happen at a given wrap setting".
+  /**
+   * @name Movement
+   *
+   * Wrap-sensitive methods read the per-view wrap() state. The explicit
+   * @c wrap parameters on the lower-level helpers remain so call sites can
+   * ask "what would happen at a given wrap setting".
+   */
+  /** @{ */
   void moveLeft();
   void moveRight();
   void moveUp(ColIdx cols);
@@ -117,14 +158,23 @@ public:
   void scrollUp(bool wrap = false);
   void scrollViewNearEnd(RowIdx screenRows);
 
-  /// Scroll so the cursor sits at a chosen vertical position on the
-  /// screen. `screenRows` is the panel's content height; `position` is
-  /// the 0-indexed target row within that height (clamped). Wrap-aware:
-  /// in wrap mode, walks visual rows; in no-wrap mode, physical lines.
-  /// Used by the centre-cursor (Ctrl-l) action.
+  /**
+   * @brief Scroll so the cursor sits at a chosen vertical screen position.
+   *
+   * Wrap-aware: walks visual rows in wrap mode, physical lines otherwise.
+   * Used by the centre-cursor (Ctrl-l) action.
+   * @param screenRows Panel content height.
+   * @param position 0-indexed target row within that height (clamped).
+   * @param cols Panel width (used for visual-row counting in wrap mode).
+   * @param wrap Whether the view is in line-wrap mode.
+   */
   void recenter(RowIdx screenRows, std::size_t position, ColIdx cols, bool wrap);
+  /** @} */
 
-  // --- Editing ---
+  /**
+   * @name Editing
+   */
+  /** @{ */
   void insert(uint32_t cp);
   void deleteAtPoint();
   void deleteBeforePoint();
@@ -132,77 +182,104 @@ public:
   void deleteChunkBeforePoint();
   void deleteLine();
 
-  // Toggle a line-comment prefix on the lines covered by the active
-  // mark/point region (or the current line if no mark is set). If every
-  // non-blank line in the range already begins with `prefix` (after its
-  // leading whitespace), the prefix is removed; otherwise `prefix` is
-  // prepended at column 0 to every non-blank line. The prefix is
-  // mode-defined by the caller (e.g. "// " for C/C++). Blank lines are
-  // preserved either way so adding then removing comments round-trips.
+  /**
+   * @brief Toggle a line-comment prefix on the lines under the active
+   *        region (or the current line if no mark is set).
+   *
+   * If every non-blank line in the range already begins with @p prefix
+   * (after its leading whitespace), the prefix is removed; otherwise
+   * @p prefix is prepended at column 0 to every non-blank line. Blank
+   * lines are preserved, so add-then-remove round-trips. The prefix is
+   * mode-defined by the caller (e.g. "// " for C/C++).
+   */
   void toggleComment(std::string_view prefix);
 
-  /// Reflow the paragraph containing the cursor (or the lines under the
-  /// active region) to fit within `targetWidth` visual columns. The
-  /// common leading-whitespace prefix of the input lines is preserved
-  /// on every output line; a recognised list bullet on the first input
-  /// line (`- `, `* `, `+ `, `1. `, `1) `) is preserved on the first
-  /// output line, and continuation lines are indented under the bullet
-  /// so list structure round-trips. Words are split on whitespace; UTF-8
-  /// wide-character widths are counted via the renderer's `visualWidth`
-  /// rules. No-op on a blank cursor line with no active region.
+  /**
+   * @brief Reflow the paragraph at the cursor (or the lines under the
+   *        active region) to fit @p targetWidth visual columns.
+   *
+   * The common leading-whitespace prefix is preserved on every output
+   * line; a recognised list bullet on the first input line
+   * (`- `, `* `, `+ `, `1. `, `1) `) is preserved and continuation lines
+   * are indented under it so list structure round-trips. Words split on
+   * whitespace; UTF-8 widths follow the renderer's visualWidth rules.
+   * A no-op on a blank cursor line with no active region.
+   */
   void reflowParagraph(std::size_t targetWidth);
 
+  /** @brief Advance the cursor to the first non-space byte if it sits in
+   *         the leading whitespace. */
   void adjustCursorToIndent();
 
-  // Region operations.
   std::string extractRegion(BufferPoint from, BufferPoint to) const;
   void deleteRegion(BufferPoint from, BufferPoint to);
   BufferPoint insertText(std::string_view text);
+  /** @} */
 
-  // --- History mode ---
-  // Only meaningful when the underlying buffer is a TextBuffer; no-ops
-  // otherwise. Entering history mode flips the buffer to readonly; all
-  // edit methods already guard on readonly() and become no-ops. Committing
-  // truncates any forward history after the selected version.
+  /**
+   * @name History mode
+   *
+   * Meaningful only when the underlying buffer is a TextBuffer; no-ops
+   * otherwise. Entering flips the buffer to read-only (so all edit methods
+   * become no-ops via their readonly() guard); committing truncates any
+   * forward history after the selected version.
+   */
+  /** @{ */
   bool inHistoryMode() const { return _historyIndex.has_value(); }
   std::optional<std::size_t> historyIndex() const { return _historyIndex; }
   void enterHistoryMode();
   void stepHistory(int delta);
   void exitHistoryModeCommit();
+  /** @} */
 
-  // --- Rendering ---
+  /**
+   * @name Rendering
+   */
+  /** @{ */
   void ensureVisible(RowIdx rows, ColIdx cols, bool wrap);
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,
                                     BufferRenderArgs const& args = {}) const;
   std::size_t screenRow(ColIdx cols, bool wrap = true) const;
   bool currentLineWraps(ColIdx cols) const;
 
-  /// Inverse of screenRow: given a 0-based screen position relative to
-  /// the viewport (`screenRow` rows down, `screenCol` columns from the
-  /// content area's left edge), return the buffer point that lives at
-  /// that visual cell. The result is clamped to a valid position. Used
-  /// by `Screen` to translate mouse clicks into cursor positions.
+  /**
+   * @brief Inverse of screenRow: the buffer point at a screen cell.
+   *
+   * Given a 0-based screen position relative to the viewport (@p screenRow
+   * rows down, @p screenCol columns from the content area's left edge),
+   * return the buffer point at that visual cell, clamped to a valid
+   * position. Used by Screen to translate mouse clicks into cursor
+   * positions.
+   */
   BufferPoint pointForScreenRowCol(std::size_t screenRow, std::size_t screenCol, ColIdx cols,
                                    bool wrap) const;
+  /** @} */
 
-  /// Clamp point/mark/viewport to valid buffer positions after external
-  /// edits, drop the desired-column memory, and invalidate per-view
-  /// caches. Automatically invoked by all public methods on a
-  /// docVersion mismatch; exposed publicly so `Screen` can call it
-  /// explicitly after large buffer rebuilds (e.g. a buffer-list refresh).
+  /**
+   * @brief Re-clamp point/mark/viewport to valid positions after external
+   *        edits, drop the desired-column memory, and invalidate caches.
+   *
+   * Invoked automatically by public methods on a docVersion mismatch;
+   * exposed so Screen can call it explicitly after large buffer rebuilds
+   * (e.g. a buffer-list refresh).
+   */
   void clampToBuffer();
 
-  /// Persist this view's state to the buffer's saved-state slot, so a
-  /// later view constructed via `fromSavedState()` can restore it.
-  /// Preserved fields: point, viewFrom (variant alternative + value),
-  /// mark, desired column, and wrap mode. Called whenever a panel is
-  /// about to drop its `BufferView` — buffer switch or panel close —
-  /// not just at last-view destruction.
+  /**
+   * @brief Persist this view's state to the buffer's saved-state slot.
+   *
+   * Lets a later view built via fromSavedState() restore point, viewFrom,
+   * mark, desired column, and wrap mode. Called whenever a panel is about
+   * to drop its BufferView — buffer switch or panel close — not just at
+   * last-view destruction.
+   */
   void saveViewState();
 
 private:
-  /// Cached visual column of the point. Avoids re-scanning the line on
-  /// every movement command.
+  /**
+   * @brief Cached visual column of the point, to avoid re-scanning the
+   *        line on every movement command.
+   */
   struct PointColCache {
     std::size_t line = SIZE_MAX;
     std::size_t offset = 0;
@@ -210,43 +287,46 @@ private:
     std::size_t codepointCol = 0;
   };
 
-  /// Cached visual-row boundaries for a wrapped line. Rebuilt when the
-  /// line index or column count changes.
+  /**
+   * @brief Cached visual-row boundaries for a wrapped line; rebuilt when
+   *        the line index or column count changes.
+   */
   struct RowBoundsCache {
     std::size_t lineIdx = SIZE_MAX;
     std::size_t cols = 0;
     std::vector<std::size_t> rowStarts;
   };
 
-  /// Effective width of the content area inside a panel of `cols`
-  /// total columns: subtracts the right gutter (always 1) and the left
-  /// line-number gutter (0 unless `showLineNumbers()` is on).
+  /**
+   * @brief Effective content width inside a panel of @p cols total
+   *        columns: total minus the right gutter and any left line-number
+   *        gutter.
+   */
   std::size_t contentCols(ColIdx cols) const;
 
-  /// Visual column of the point from byte 0, cached.
+  /** @brief Visual column of the point from byte 0, cached. */
   std::size_t pointVisualCol() const;
 
-  /// Ensure the row bounds cache is populated for the given line and cols.
-  /// Mirrors Buffer::ensureRowBounds() but reads line data through
-  /// _buf.lineContent().
+  /**
+   * @brief Ensure the row-bounds cache is populated for @p lineIdx at
+   *        @p cols columns.
+   */
   std::vector<std::size_t> const& ensureRowBounds(std::size_t lineIdx, std::size_t cols) const;
 
-  /// Line index that is `lines` lines before the end of the buffer.
+  /** @brief Line index that is @p lines lines before the end of the buffer. */
   std::size_t viewFromLinesBeforeEnd(std::size_t lines) const;
 
-  /// True if point is at the very end of the buffer (last line, past all
-  /// chars).
+  /** @brief True if the point is at the very end of the buffer. */
   bool atEnd() const;
 
   Buffer& _buf;
   BufferPoint _point;
   std::optional<BufferPoint> _mark;
   ViewFrom _viewFrom;
-  // Soft-wrap mode for this view (source of truth). `_wrapMode` mirrors
-  // it for ensureVisible's "did wrap mode change?" detection — kept
-  // separate so future call sites that pass an explicit wrap value into
-  // ensureVisible (e.g. a temporary preview render) still get the
-  // change-detection behaviour.
+  /**
+   * @brief Soft-wrap mode (source of truth). @c _wrapMode mirrors it for
+   *        ensureVisible's "did wrap mode change?" detection.
+   */
   bool _wrap = false;
   bool _wrapMode = false;
   bool _showWhitespace = false;
@@ -258,13 +338,15 @@ private:
   mutable PointColCache _pointColCache;
   mutable RowBoundsCache _rowBoundsCache;
 
-  /// Scratch ring buffer for ensureVisible's forward scan. Stored as a
-  /// member so the per-call resize is in-place rather than a fresh heap
-  /// allocation on every cursor move and render.
+  /** @brief Position used by ensureVisible's forward scan. */
   struct ViewPos {
     std::size_t line;
     std::size_t byteOff;
   };
+  /**
+   * @brief Scratch ring buffer for ensureVisible's forward scan, kept as a
+   *        member so the per-call resize is in-place.
+   */
   mutable std::vector<ViewPos> _ensureVisibleRing;
 
   std::size_t _docVersion = 0;

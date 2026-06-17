@@ -147,6 +147,28 @@ elseif(CX_BUILD_TESTS AND NOT Boost_FOUND)
         "-DCX_BUILD_TESTS=OFF to silence this notice.")
 endif()
 
+# --- Documentation ---
+# `doxygen` is an optional, developer-only tool: configuration succeeds
+# without it and only the `docs` target is skipped. When present, the
+# target regenerates HTML API docs from the sources plus README.md and
+# the markdown under docs/ into ${CMAKE_BINARY_DIR}/docs/html.
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    set(DOXYGEN_INPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+    set(DOXYGEN_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/docs)
+    set(DOXYFILE ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in ${DOXYFILE} @ONLY)
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYFILE}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating API documentation with Doxygen"
+        VERBATIM)
+else()
+    message(STATUS
+        "cx: Doxygen not found — the `docs` target is unavailable. "
+        "Install Doxygen to generate HTML API documentation.")
+endif()
+
 # --- Benchmarks ---
 foreach(bench history editing open)
     add_executable(bench_${bench} tests/bench_${bench}.cpp)
