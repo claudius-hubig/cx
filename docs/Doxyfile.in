@@ -15,9 +15,10 @@ EXTRACT_ALL            = YES
 EXTRACT_STATIC         = YES
 EXTRACT_PRIVATE        = YES
 
-# Sources plus the prose docs. README.md is the landing page; the design
-# notes under docs/ are pulled in as supporting pages.
+# The entire source tree (src + tests) plus the prose docs. README.md is the
+# landing page; the design notes under docs/ are pulled in as supporting pages.
 INPUT                  = @DOXYGEN_INPUT_DIR@/src \
+                         @DOXYGEN_INPUT_DIR@/tests \
                          @DOXYGEN_INPUT_DIR@/README.md \
                          @DOXYGEN_INPUT_DIR@/docs
 FILE_PATTERNS          = *.hpp *.cpp *.md
@@ -26,3 +27,12 @@ USE_MDFILE_AS_MAINPAGE = @DOXYGEN_INPUT_DIR@/README.md
 
 QUIET                  = YES
 WARN_IF_UNDOCUMENTED   = NO
+
+# Embed a browsable, cross-referenced copy of the full source into the docs
+# so every file can be read and navigated from the generated HTML.
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = YES
+STRIP_CODE_COMMENTS    = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+VERBATIM_HEADERS       = YES
