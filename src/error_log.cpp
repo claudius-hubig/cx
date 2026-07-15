@@ -9,6 +9,14 @@
 
 #include <unistd.h>
 
+/**
+ * @brief Append an error message to the user's error log file.
+ *
+ * Writes the message with a timestamp and process ID to ~/.cx-errors.
+ * If HOME is not set or the file cannot be opened, the error is silently dropped.
+ *
+ * @param msg The error message to log.
+ */
 void logError(std::string_view msg) {
   char const* home = std::getenv("HOME");
   if (!home)

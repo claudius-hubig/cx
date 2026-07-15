@@ -2,6 +2,21 @@
 
 #include <algorithm>
 
+/**
+ * @brief Capture a snapshot of the current buffer state.
+ *
+ * If this is the first snapshot, stores a full copy. Otherwise, if the edit
+ * is a single-line change (dirtyFrom specified, no line count change, and
+ * delta chain not too long), stores only the changed line as a delta patch.
+ * Full snapshots are taken when line count changes or delta chain limit is reached.
+ *
+ * Automatically prunes old snapshots if the history exceeds kMaxVersions.
+ *
+ * @param currentLines The current line vector from the buffer.
+ * @param cursor The cursor position at the time of capture.
+ * @param dirtyFrom The first modified line (SIZE_MAX if unknown/force full snapshot).
+ * @param lineShift Net change in line count (non-zero forces full snapshot).
+ */
 void VersionHistory::capture(std::vector<LinePtr> const& currentLines, BufferPoint cursor,
                              std::size_t dirtyFrom, int lineShift) {
   if (!_pendingDestroy.empty())
@@ -34,6 +49,15 @@ void VersionHistory::capture(std::vector<LinePtr> const& currentLines, BufferPoi
   pruneIfNeeded();
 }
 
+/**
+ * @brief Capture the initial snapshot for a freshly loaded buffer.
+ *
+ * Same as capture() but skips the comparison with previous snapshot
+ * (there is no previous snapshot when loading a file).
+ *
+ * @param lines The initial line vector from the loaded buffer.
+ * @param cursor The cursor position (typically {0, 0}).
+ */
 void VersionHistory::captureInitial(std::vector<LinePtr> const& lines, BufferPoint cursor) {
   VersionSnapshot snap;
   snap.timestamp = std::chrono::system_clock::now();
@@ -46,6 +70,17 @@ void VersionHistory::captureInitial(std::vector<LinePtr> const& lines, BufferPoi
   _deltaChainLen = 0;
 }
 
+/**
+ * @brief Materialize a delta snapshot into a full snapshot.
+ *
+ * If the snapshot at @p idx is a delta (stored as patches), this walks back
+ * through the delta chain to find the base full snapshot, then applies all
+ * intermediate patches to reconstruct the complete line vector.
+ *
+ * Uses lazy materialization - deltas are only resolved when accessed.
+ *
+ * @param idx The index of the snapshot to materialize.
+ */
 void VersionHistory::materialize(std::size_t idx) const {
   if (idx >= _versions.size() || !_versions[idx].isDelta())
     return;
@@ -65,6 +100,14 @@ void VersionHistory::materialize(std::size_t idx) const {
   _versions[idx].lines = std::move(lines);
 }
 
+/**
+ * @brief Drop all snapshots after the given index.
+ *
+ * Used when committing a history-mode rewind. Resets the delta chain length
+ * counter and updates it based on trailing deltas in the remaining history.
+ *
+ * @param idx The index after which to truncate (keeps snapshots [0, idx]).
+ */
 void VersionHistory::truncateAfter(std::size_t idx) {
   if (idx + 1 < _versions.size())
     _versions.erase(_versions.begin() + idx + 1, _versions.end());
@@ -73,6 +116,14 @@ void VersionHistory::truncateAfter(std::size_t idx) {
     ++_deltaChainLen;
 }
 
+/**
+ * @brief Prune the history if it exceeds the maximum version count.
+ *
+ * When history size exceeds kMaxVersions, thins every other entry in the
+ * oldest kThinCount slots. Merges dropped delta patches into their successors
+ * to maintain delta chain validity without materializing full snapshots.
+ * After pruning, enforces that no delta chain exceeds kMaxDeltaChain length.
+ */
 void VersionHistory::pruneIfNeeded() {
   if (_versions.size() <= kMaxVersions)
     return;
