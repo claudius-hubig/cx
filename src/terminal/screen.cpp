@@ -399,6 +399,9 @@ void Screen::drawModeline(Panel& panel, bool focused) {
   // Right-align: buffer name + mode + modification indicator.
   std::string filename =
       escapeNonPrintable(_bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name());
+  // Insert/overwrite only applies to editable buffers; read-only buffers
+  // (help, directory browser, …) show no indicator.
+  std::string modeIndicator = pbuf.readonly() ? "" : (pbuf.overwriteMode() ? " O" : " I");
   std::string suffix;
   if (!pbuf.readonly())
     suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
@@ -410,7 +413,9 @@ void Screen::drawModeline(Panel& panel, bool focused) {
               : pbuf.mode() == BufferMode::Py  ? " [py]"
                                                : " [txt]";
   suffix += pbuf.modified() ? " +" : "  ";
+  suffix += modeIndicator;
   auto suffix_vwidth = visualWidth(suffix);
+  auto modeIndicator_vwidth = visualWidth(modeIndicator);
   auto filename_vwidth = visualWidth(filename);
   auto buf_name_vwidth = filename_vwidth + suffix_vwidth;
 
@@ -427,8 +432,12 @@ void Screen::drawModeline(Panel& panel, bool focused) {
     if (used < pc.value)
       status.append(pc.value - used, ' ');
     status += truncated + suffix;
+  } else if (status_vwidth + modeIndicator_vwidth <= pc.value) {
+    // No room for a meaningful buffer name, but room for the mode indicator.
+    status.append(pc.value - status_vwidth - modeIndicator_vwidth, ' ');
+    status += modeIndicator;
   } else if (status_vwidth < pc.value) {
-    // No room for a meaningful buffer name — pad the rest with spaces.
+    // No room for the mode indicator — pad the rest with spaces.
     status.append(pc.value - status_vwidth, ' ');
   } else if (status_vwidth > pc.value) {
     // Status itself overflows (e.g. very long prompt); truncate from
@@ -495,6 +504,7 @@ void Screen::draw() {
 
   RowIdx cur_row{0};
   ColIdx cur_col{0};
+  bool focusedOverwrite = false;
 
   if (_layout) {
     bool multiPanel = _layout->count() > 1;
@@ -518,6 +528,7 @@ void Screen::draw() {
       if (focused) {
         cur_row = RowIdx{rect.row + cr.value};
         cur_col = ColIdx{rect.col + cc.value};
+        focusedOverwrite = panel.buffer().overwriteMode();
       }
 
       drawModeline(panel, focused);
@@ -526,6 +537,9 @@ void Screen::draw() {
   }
 
   ansi::appendCursorTo(_renderBuf, cur_row.value, cur_col.value);
+  // Cursor shape signals the edit mode: steady block for insert, steady bar
+  // for overwrite.
+  _renderBuf += focusedOverwrite ? ansi::CursorBar : ansi::CursorBlock;
   _renderBuf += ansi::ShowCursor;
 
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
@@ -2024,6 +2038,12 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
             _view->pageDown(rowsForBuffer(), pcols, _view->wrap());
           break;
         }
+        case ansi::Insert: {
+          char tilde;
+          if (readByte(tilde) && tilde == ansi::Terminator && _buf)
+            dispatchAction(Action::ToggleOverwriteMode);
+          break;
+        }
         default: {
           // Drain remaining bytes of unrecognised escape sequence.
           char discard;
@@ -3024,6 +3044,12 @@ void Screen::dispatchAction(Action action) {
                             : "Mouse tracking off (Shift+click also bypasses)");
     break;
   }
+  case Action::ToggleOverwriteMode:
+    if (_buf && !_buf->readonly()) {
+      _buf->toggleOverwriteMode();
+      setStatus(_buf->overwriteMode() ? "Overwrite mode" : "Insert mode");
+    }
+    break;
   case Action::ExecuteCommand:
     openExecuteCommandPrompt();
     break;

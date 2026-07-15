@@ -200,6 +200,40 @@ BOOST_AUTO_TEST_CASE(e2e_type_and_display) {
   session.waitExit();
 }
 
+BOOST_AUTO_TEST_CASE(e2e_insert_key_toggles_overwrite_mode) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Press the Insert key (ESC[2~) to switch to overwrite mode. The status
+  // line reports the switch and the cursor turns into a steady bar.
+  session.send("\x1b[2~");
+  auto over = session.readUntil("Overwrite mode", std::chrono::milliseconds{1000});
+  BOOST_CHECK_MESSAGE(over.find("Overwrite mode") != std::string::npos,
+                      "Expected 'Overwrite mode' status: " + stripAnsi(over));
+  BOOST_CHECK_MESSAGE(over.find("\x1b[6 q") != std::string::npos,
+                      "Expected steady-bar cursor (ESC[6 q) in overwrite mode");
+
+  // Press Insert again to return to insert mode: status flips back and the
+  // cursor returns to a steady block.
+  session.send("\x1b[2~");
+  auto ins = session.readUntil("Insert mode", std::chrono::milliseconds{1000});
+  BOOST_CHECK_MESSAGE(ins.find("Insert mode") != std::string::npos,
+                      "Expected 'Insert mode' status: " + stripAnsi(ins));
+  BOOST_CHECK_MESSAGE(ins.find("\x1b[2 q") != std::string::npos,
+                      "Expected steady-block cursor (ESC[2 q) in insert mode");
+
+  // Toggling the mode does not modify the buffer, so Esc-c exits directly.
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
+
 BOOST_AUTO_TEST_CASE(e2e_esc_then_arrow_does_not_insert_csi_bytes) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

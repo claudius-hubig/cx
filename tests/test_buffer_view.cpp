@@ -967,3 +967,66 @@ BOOST_AUTO_TEST_CASE(recenter_clamps_at_buffer_start) {
   view.recenter(RowIdx{10}, 8, ColIdx{40}, false);
   BOOST_CHECK_EQUAL(view.viewFrom().line, 0u);
 }
+
+// --- Overwrite mode ---
+
+BOOST_AUTO_TEST_CASE(overwrite_mode_toggle_default) {
+  TempFile f("abc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BOOST_CHECK(!buf.overwriteMode()); // buffers start in insert mode
+  buf.toggleOverwriteMode();
+  BOOST_CHECK(buf.overwriteMode());
+  buf.toggleOverwriteMode();
+  BOOST_CHECK(!buf.overwriteMode());
+}
+
+BOOST_AUTO_TEST_CASE(overwrite_replaces_char_under_cursor) {
+  TempFile f("abc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  buf.setOverwriteMode(true);
+  BufferView view(buf);
+  view.insert('X'); // at offset 0, over 'a'
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "Xbc");
+  BOOST_CHECK_EQUAL(view.point().offset, 1u); // advanced past 'X'
+}
+
+BOOST_AUTO_TEST_CASE(overwrite_at_end_of_line_appends_without_joining) {
+  TempFile f("ab\ncd\n");
+  TextBuffer buf(f.path().string(), f.path());
+  buf.setOverwriteMode(true);
+  BufferView view(buf);
+  view.moveRight();
+  view.moveRight(); // end of line 0, nothing under the cursor
+  view.insert('X');
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "abX"); // appended, not overwritten
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "cd");  // next line untouched
+}
+
+BOOST_AUTO_TEST_CASE(overwrite_newline_still_inserts) {
+  TempFile f("abc\n");
+  TextBuffer buf(f.path().string(), f.path());
+  buf.setOverwriteMode(true);
+  BufferView view(buf);
+  view.moveRight(); // after 'a'
+  view.insert('\n');
+  // Newline splits the line rather than overwriting 'b'.
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "a");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "bc");
+  BOOST_CHECK_EQUAL(view.point().line, 1u);
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(overwrite_preserves_mark_after_cursor) {
+  TempFile f("abcde\n");
+  TextBuffer buf(f.path().string(), f.path());
+  buf.setOverwriteMode(true);
+  BufferView view(buf);
+  view.setPoint(0, 3); // before 'd'
+  view.toggleMark();   // mark anchored at offset 3
+  view.setPoint(0, 1); // point before 'b', mark still at 3
+  view.insert('X');    // overwrite 'b'
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "aXcde");
+  // The delete (-1) and insert (+1) of a single-byte char cancel, so the
+  // mark stays anchored before 'd'.
+  BOOST_CHECK_EQUAL(view.mark().value().offset, 3u);
+}

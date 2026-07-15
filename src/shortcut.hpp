@@ -72,6 +72,7 @@ enum class Action {
   RegexReplace,
   ToggleLineNumbers,
   ToggleMouseTracking,
+  ToggleOverwriteMode,
 };
 
 /** @brief A key combination identifying a binding. */

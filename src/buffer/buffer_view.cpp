@@ -841,6 +841,26 @@ void BufferView::insert(uint32_t cp) {
   auto insertLine = _point.line;
   auto insertOff = _point.offset;
   auto lineCountBefore = _buf.lineCount();
+
+  // In overwrite mode: delete character under cursor before inserting (unless at end of line)
+  // Exception: newline characters are always inserted (don't overwrite)
+  bool didOverwriteDelete = false;
+  if (_buf.overwriteMode() && cp != '\n') {
+    auto const& lineContent = _buf.lineContent(insertLine);
+    if (insertOff < lineContent.size()) {
+      // Delete the character(s) under the cursor
+      _point = _buf.deleteAt(_point);
+      _docVersion = _buf.docVersion();
+      _rowBoundsCache.lineIdx = SIZE_MAX;
+      _pointColCache.line = SIZE_MAX;
+      didOverwriteDelete = true;
+      // Update line/offset after potential line join
+      insertLine = _point.line;
+      insertOff = _point.offset;
+      lineCountBefore = _buf.lineCount();
+    }
+  }
+
   _point = _buf.insertAt(cp, _point);
   _docVersion = _buf.docVersion();
   _rowBoundsCache.lineIdx = SIZE_MAX;
@@ -863,8 +883,15 @@ void BufferView::insert(uint32_t cp) {
       }
     } else {
       auto [n, enc] = encodeUtf8(cp);
-      if (m.line == insertLine && m.offset >= insertOff)
+      // In overwrite mode with a delete, the mark was affected by both delete and insert.
+      // Net effect: if mark was at or after the cursor on the same line, it moved back 1
+      // from the delete, then forward n from the insert, so net change is n-1.
+      if (didOverwriteDelete && m.line == insertLine && m.offset >= insertOff) {
+        m.offset += n - 1;
+      } else if (m.line == insertLine && m.offset >= insertOff) {
+        // Normal insert mode: just add n
         m.offset += n;
+      }
     }
   }
 

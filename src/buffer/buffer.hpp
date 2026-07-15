@@ -141,6 +141,12 @@ public:
   BufferMode mode() const { return _mode; }
   /** @brief True if the buffer currently contains merge-conflict markers. */
   bool hasConflicts() const { return _hasConflicts; }
+  /** @brief Whether the buffer is in overwrite mode (vs insert mode). */
+  bool overwriteMode() const { return _overwriteMode; }
+  /** @brief Set overwrite mode. */
+  void setOverwriteMode(bool o) { _overwriteMode = o; }
+  /** @brief Toggle between insert and overwrite mode. */
+  void toggleOverwriteMode() { _overwriteMode = !_overwriteMode; }
   /**
    * @brief Switch the buffer mode.
    *
@@ -405,6 +411,7 @@ protected:
   static LinePtr makeLine() { return std::make_shared<std::string const>(); }
   bool _modified = false;
   bool _hasConflicts = false;
+  bool _overwriteMode = false; /**< Insert vs overwrite mode toggle. */
   std::size_t _docVersion = 0; /**< Incremented on every edit. */
   std::optional<SavedViewState> _savedView;
 

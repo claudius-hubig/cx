@@ -14,7 +14,8 @@
 // button down generate no input, keeping the byte volume low.
 static constexpr std::string_view kAltScreenOn =
     "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q\x1b[?1000h\x1b[?1002h\x1b[?1006h";
-static constexpr std::string_view kAltScreenOff = "\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l";
+static constexpr std::string_view kAltScreenOff =
+    "\x1b[0 q\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l";
 
 SetupTerminal::SetupTerminal() {
   // Throw before touching raw mode or the alternate screen so a failure

@@ -59,6 +59,7 @@ constexpr char End = 'F';
 /** @name Parameter bytes in extended key sequences */
 /** @{ */
 constexpr char ModifiedKey = '1'; /**< ESC[1;modX — modified arrow/home/end */
+constexpr char Insert = '2';      /**< ESC[2~ — Insert key */
 constexpr char Delete = '3';      /**< ESC[3~ — Delete key */
 constexpr char PageUp = '5';      /**< ESC[5~ — Page Up */
 constexpr char PageDown = '6';    /**< ESC[6~ — Page Down */
@@ -91,6 +92,10 @@ constexpr std::string_view DefaultFg = "\x1b[39m";
 constexpr std::string_view CtrlColor = "\x1b[38;2;204;120;50m";
 constexpr std::string_view EraseLine = "\x1b[K";
 constexpr std::string_view ShowCursor = "\x1b[?25h";
+/** @brief DECSCUSR steady block cursor — used to signal insert mode. */
+constexpr std::string_view CursorBlock = "\x1b[2 q";
+/** @brief DECSCUSR steady bar cursor — used to signal overwrite mode. */
+constexpr std::string_view CursorBar = "\x1b[6 q";
 constexpr std::string_view CsiPrefix = "\x1b["; /**< Start of CUP / parameterised sequences */
 /** @} */
 

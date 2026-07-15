@@ -94,6 +94,10 @@ Key responsibilities:
 - **Drawing**: `draw()` calls `Buffer::render()` to produce an ANSI escape
   string, then writes it to stdout along with a status line and cursor
   positioning. Manages timed status messages and find-highlight expiry.
+  The cursor shape is emitted per frame from the focused buffer's
+  overwrite flag via DECSCUSR — steady block (`ansi::CursorBlock`) for
+  insert, steady bar (`ansi::CursorBar`) for overwrite — and reset to the
+  terminal default when the alternate screen is torn down.
 - **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH, and
   dispatches to sub-handlers:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
@@ -270,6 +274,13 @@ classes override). The `_modified` flag is set on any edit and cleared by
 a successful `save()`. While history browsing is active, `TextBuffer`
 reports `readonly() == true`, so all editing entry points become no-ops
 without any per-method special-casing.
+
+Insert vs. overwrite is a per-buffer flag (`_overwriteMode`, toggled via
+`toggleOverwriteMode()`) that lives on the base `Buffer` so every view of
+the buffer shares it. It changes only editing semantics —
+`BufferView::insert()` deletes the character under the cursor before
+inserting when the flag is set — plus two purely presentational cues: the
+`I`/`O` modeline indicator and the terminal cursor shape (see Screen).
 
 Caching:
 - `_synCache` — per-line syntax tokenisation cache, invalidated on edits.

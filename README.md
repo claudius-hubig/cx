@@ -45,13 +45,14 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Save / Save As** — write to the backing file or choose a new path. Saving prompts for confirmation if the file no longer exists on disk, or if its mtime/size has changed since load (external-modification guard).
 - **Revert** — reload a buffer's contents from disk with confirmation
 - **Auto-indent** — pressing Enter in C/C++, JSON, or Python modes preserves the leading-spaces indent of the previous line.
+- **Overwrite mode** — the `Insert` key toggles between insert and overwrite editing (per buffer). In overwrite mode typing replaces the character under the cursor instead of pushing it right; at end of line it appends, and Enter always inserts a newline. The active mode shows as `I`/`O` on the modeline and as the cursor shape (steady block for insert, steady bar for overwrite).
 - **Line-ending detection** — files loaded with CRLF or lone-CR endings prompt to translate to `\n`; mixed-ending files surface a warning. Acknowledged once per load.
 - **Undo / version history** — `Ctrl-u` enters a read-only history mode: `[` and `]` step through earlier/later versions, `Enter` commits the selected version as the new live state, `Esc-Esc` cancels and returns to the latest. (Pressing `Ctrl-u` again is equivalent to `Enter`.) History survives save and revert.
 - **Directory browser** — open directories to see files with permissions, owner, group, and size; navigate into subdirectories; toggle hidden files; mark and delete entries; rename entries; create subdirectories
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
 - **Mouse support** — left-click positions the cursor (and focuses a non-focused panel); left-drag selects a region (the `mark`→cursor span, mirrored to the X11 PRIMARY selection), autoscrolling when dragged past the top or bottom of a panel. Middle-click pastes the X11 PRIMARY selection at the cursor. The wheel scrolls the panel under the pointer. While mouse tracking is on, the terminal's own right-click context menu and selection are suppressed — hold `Shift` while clicking to bypass tracking, or toggle tracking off with `C-x m`.
 - **Long-running command kill prompt** — external commands launched via Esc-f, Tab-format, or Ctrl-p that take longer than 10 s show a "Kill? y/n" prompt so a hung formatter or pipe never freezes the editor.
-- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]` / `[sh]` / `[yml]` / `[py]`), and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
+- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]` / `[sh]` / `[yml]` / `[py]`), an `I`/`O` insert/overwrite indicator, and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
 - **Terminal title** — set to `cx@<cwd>` on startup so cx tabs are easy to identify.
 - **Error log** — uncaught exceptions, clipboard failures and the like are appended to `~/.cx-errors` for post-mortem inspection (never surfaced as UI noise).
 
@@ -155,6 +156,7 @@ These shortcuts are active when viewing a directory listing.
 | Esc-_ | Toggle highlight on the cursor's line                                               |
 | Esc-# | Toggle line-number gutter                                                           |
 | Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`, `sh`/`shell`/`bash`, `yml`/`yaml`, `py`/`python`) |
+| Insert | Toggle insert/overwrite mode                                                       |
 
 ### Panels
 

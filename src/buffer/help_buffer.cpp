@@ -48,6 +48,7 @@ static std::vector<std::string> const& leftColumn() {
                    Action::PasteRing, Action::Format, Action::PipeReplace, Action::ToggleComment,
                    Action::Reflow})
       v.push_back(formatHelpLine(a));
+    v.push_back(formatRawLine("Insert", "Toggle insert/overwrite mode"));
     v.push_back(formatRawLine("Esc-Esc", "Clear mark"));
     v.emplace_back("");
     v.emplace_back("Bracket matching:");
