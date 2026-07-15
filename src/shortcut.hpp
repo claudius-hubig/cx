@@ -73,6 +73,9 @@ enum class Action {
   ToggleLineNumbers,
   ToggleMouseTracking,
   ToggleOverwriteMode,
+  Uppercase,
+  Lowercase,
+  Capitalize,
 };
 
 /** @brief A key combination identifying a binding. */

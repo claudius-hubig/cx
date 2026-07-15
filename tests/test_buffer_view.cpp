@@ -1030,3 +1030,127 @@ BOOST_AUTO_TEST_CASE(overwrite_preserves_mark_after_cursor) {
   // mark stays anchored before 'd'.
   BOOST_CHECK_EQUAL(view.mark().value().offset, 3u);
 }
+
+// --- Case conversion ---
+
+BOOST_AUTO_TEST_CASE(case_uppercase_word_no_mark) {
+  TempFile f("hello world\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 2); // inside "hello"
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "HELLO world");
+  // Cursor advances to the end of the affected word.
+  BOOST_CHECK_EQUAL(view.point().offset, 5u);
+  BOOST_CHECK(!view.mark().has_value());
+}
+
+BOOST_AUTO_TEST_CASE(case_lowercase_word_no_mark) {
+  TempFile f("HELLO WORLD\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.convertCase(BufferView::CaseOp::Lower);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "hello WORLD");
+}
+
+BOOST_AUTO_TEST_CASE(case_capitalize_word_no_mark) {
+  TempFile f("hELLO world\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.convertCase(BufferView::CaseOp::Capitalize);
+  // First letter upper, remainder lower.
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "Hello world");
+}
+
+BOOST_AUTO_TEST_CASE(case_no_mark_uses_next_word_to_the_right) {
+  TempFile f("  foo bar\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0); // on leading whitespace
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "  FOO bar");
+  BOOST_CHECK_EQUAL(view.point().offset, 5u); // end of "foo"
+}
+
+BOOST_AUTO_TEST_CASE(case_no_word_after_cursor_is_noop) {
+  TempFile f("foo   \n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 3); // trailing whitespace, no word to the right
+  auto before = buf.docVersion();
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "foo   ");
+  BOOST_CHECK_EQUAL(buf.docVersion(), before); // no edit recorded
+}
+
+BOOST_AUTO_TEST_CASE(case_region_uppercase_preserves_mark_and_point) {
+  TempFile f("hello world foo\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.toggleMark();    // mark at offset 0
+  view.setPoint(0, 11); // through "hello world"
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "HELLO WORLD foo");
+  // Region-mode keeps both endpoints (length-preserving edit).
+  BOOST_CHECK(view.mark().has_value());
+  BOOST_CHECK_EQUAL(view.mark().value().offset, 0u);
+  BOOST_CHECK_EQUAL(view.point().offset, 11u);
+}
+
+BOOST_AUTO_TEST_CASE(case_region_capitalize_titlecases_each_word) {
+  TempFile f("the quick brown\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.toggleMark();
+  view.setPoint(0, 15);
+  view.convertCase(BufferView::CaseOp::Capitalize);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "The Quick Brown");
+}
+
+BOOST_AUTO_TEST_CASE(case_region_spans_multiple_lines) {
+  TempFile f("alpha\nbeta\ngamma\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.toggleMark(); // (0,0)
+  view.setPoint(2, 5);
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "ALPHA");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "BETA");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "GAMMA");
+}
+
+BOOST_AUTO_TEST_CASE(case_utf8_multibyte_is_preserved) {
+  // "café" — the 'é' is two bytes (0xC3 0xA9). ASCII upper touches only
+  // a-z, leaving the multi-byte character intact and unsplit.
+  TempFile f("caf\xc3\xa9 x\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "CAF\xc3\xa9 x");
+}
+
+BOOST_AUTO_TEST_CASE(case_already_uppercase_records_no_version) {
+  TempFile f("HELLO world\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  auto before = buf.docVersion();
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "HELLO world");
+  BOOST_CHECK_EQUAL(buf.docVersion(), before); // unchanged text => no edit
+  // ... but the cursor still advances past the word.
+  BOOST_CHECK_EQUAL(view.point().offset, 5u);
+}
+
+BOOST_AUTO_TEST_CASE(case_readonly_buffer_is_noop) {
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  buf.setBrowsingHistory(true); // makes the buffer report readonly()
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.convertCase(BufferView::CaseOp::Upper);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "hello");
+}

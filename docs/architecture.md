@@ -317,6 +317,10 @@ All user-facing movement, editing, and render operations are methods on
   `deleteChunkAtPoint`, `deleteChunkBeforePoint`, `insertText`,
   `deleteRegion`. These call the position-explicit methods on `Buffer`
   and apply the necessary mark-adjustment locally.
+- **Case conversion**: `convertCase(CaseOp)` upper/lower/capitalizes the
+  active region, or the word at/after the cursor when no mark is set. The
+  transform is byte-wise ASCII (UTF-8-safe and length-preserving), applied
+  as a single `deleteRegion`+`insertText` edit.
 - **Mark and region**: `toggleMark`, `setMark`, `clearMark`,
   `extractRegion`.
 - **Viewport management**: `ensureVisible`, `scrollUp/Down`,

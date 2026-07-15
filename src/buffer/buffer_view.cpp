@@ -1144,6 +1144,110 @@ void BufferView::toggleComment(std::string_view prefix) {
   _buf.recordVersion(_point, fromLine, 0);
 }
 
+namespace {
+
+// A "word" byte for case operations: ASCII alphanumerics plus any
+// non-ASCII byte (>= 0x80), so multi-byte UTF-8 sequences stay within a
+// word and are never split. ASCII whitespace and punctuation act as word
+// boundaries.
+bool isCaseWordByte(unsigned char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c >= 0x80;
+}
+
+// ASCII-only case transform. Bytes outside A-Z/a-z (including every UTF-8
+// lead/continuation byte and all whitespace/newlines) are left untouched,
+// so the result is byte-length identical to the input.
+std::string applyCaseOp(BufferView::CaseOp op, std::string_view text) {
+  auto upper = [](char& ch) {
+    if (ch >= 'a' && ch <= 'z')
+      ch -= 'a' - 'A';
+  };
+  auto lower = [](char& ch) {
+    if (ch >= 'A' && ch <= 'Z')
+      ch += 'a' - 'A';
+  };
+  std::string r(text);
+  switch (op) {
+  case BufferView::CaseOp::Upper:
+    for (auto& ch : r)
+      upper(ch);
+    break;
+  case BufferView::CaseOp::Lower:
+    for (auto& ch : r)
+      lower(ch);
+    break;
+  case BufferView::CaseOp::Capitalize: {
+    bool inWord = false;
+    for (auto& ch : r) {
+      bool alpha = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+      if (alpha) {
+        inWord ? lower(ch) : upper(ch);
+        inWord = true;
+      } else {
+        inWord = false;
+      }
+    }
+    break;
+  }
+  }
+  return r;
+}
+
+} // namespace
+
+void BufferView::convertCase(CaseOp op) {
+  if (_buf.readonly())
+    return;
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+
+  bool hadMark = _mark.has_value();
+  BufferPoint from, to;
+  if (hadMark) {
+    from = std::min(*_mark, _point);
+    to = std::max(*_mark, _point);
+  } else {
+    // No mark: operate on the word at, or the next word to the right of,
+    // the cursor on the current line.
+    auto const& line = _buf.lineContent(_point.line);
+    std::size_t off = _point.offset;
+    while (off < line.size() && !isCaseWordByte(static_cast<unsigned char>(line[off])))
+      ++off;
+    if (off >= line.size())
+      return; // no word at or after the cursor on this line
+    std::size_t start = off;
+    while (start > 0 && isCaseWordByte(static_cast<unsigned char>(line[start - 1])))
+      --start;
+    std::size_t end = off;
+    while (end < line.size() && isCaseWordByte(static_cast<unsigned char>(line[end])))
+      ++end;
+    from = {_point.line, start};
+    to = {_point.line, end};
+  }
+
+  std::string text = _buf.extractRegion(from, to);
+  std::string converted = applyCaseOp(op, text);
+
+  if (converted != text) {
+    // Rewrite as a single edit so undo restores in one step. The
+    // replacement is byte-length identical, so mark/point offsets and the
+    // line count are unchanged.
+    _buf.deleteRegion(from, to);
+    _buf.insertText(converted, from);
+    _docVersion = _buf.docVersion();
+    _rowBoundsCache.lineIdx = SIZE_MAX;
+    _pointColCache.line = SIZE_MAX;
+    _buf.recordVersion(hadMark ? _point : to, from.line, 0);
+  }
+
+  // A word operation advances the cursor past the word (even when the
+  // text was already in the target case) so repeated presses march on.
+  if (!hadMark) {
+    _point = to;
+    _desiredCol.reset();
+  }
+}
+
 void BufferView::reflowParagraph(std::size_t targetWidth) {
   if (_buf.readonly() || targetWidth == 0)
     return;

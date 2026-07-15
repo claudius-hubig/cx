@@ -3060,6 +3060,17 @@ void Screen::dispatchAction(Action action) {
       _pasteState.reset();
     }
     break;
+  case Action::Uppercase:
+  case Action::Lowercase:
+  case Action::Capitalize:
+    if (!requireNotInHistoryMode() && _buf && !_buf->readonly()) {
+      _view->convertCase(action == Action::Uppercase   ? BufferView::CaseOp::Upper
+                         : action == Action::Lowercase ? BufferView::CaseOp::Lower
+                                                       : BufferView::CaseOp::Capitalize);
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+      _pasteState.reset();
+    }
+    break;
   case Action::RegexFind:
     openRegexFindPrompt();
     break;

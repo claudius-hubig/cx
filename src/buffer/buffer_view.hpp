@@ -207,6 +207,29 @@ public:
    */
   void reflowParagraph(std::size_t targetWidth);
 
+  /** @brief Case transform applied by convertCase(). */
+  enum class CaseOp {
+    Upper,      /**< Every ASCII letter uppercased. */
+    Lower,      /**< Every ASCII letter lowercased. */
+    Capitalize, /**< First letter of each word uppercased, the rest lowercased. */
+  };
+
+  /**
+   * @brief Apply an ASCII case transform to the active region, or — when
+   *        no mark is set — to the word at or after the cursor on the
+   *        current line.
+   *
+   * The transform is byte-wise ASCII: bytes outside `A-Z`/`a-z` (which
+   * includes every UTF-8 lead/continuation byte) are left untouched, so
+   * the edit is UTF-8-safe and length-preserving. Non-ASCII letters
+   * (accented Latin, Greek, Cyrillic, …) are deliberately not converted.
+   * With an active mark the region and cursor are preserved; without one
+   * the cursor advances to the end of the affected word so repeated
+   * invocations march across words. A no-op (nothing to convert, or the
+   * text is already in the target case) records no version.
+   */
+  void convertCase(CaseOp op);
+
   /** @brief Advance the cursor to the first non-space byte if it sits in
    *         the leading whitespace. */
   void adjustCursorToIndent();

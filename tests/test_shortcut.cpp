@@ -51,6 +51,29 @@ BOOST_AUTO_TEST_CASE(esc_c_maps_to_exit) {
   BOOST_CHECK(*action == Action::Exit);
 }
 
+// Case-conversion chords use the *uppercase* letters, which are distinct
+// bytes from the lowercase chords (Esc-c = Exit, Esc-l = ToggleWrap) — so
+// they never collide.
+BOOST_AUTO_TEST_CASE(esc_uppercase_u_maps_to_uppercase) {
+  auto action = handleShortcut({.esc = true, .key = 'U'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::Uppercase);
+}
+
+BOOST_AUTO_TEST_CASE(esc_uppercase_l_maps_to_lowercase) {
+  auto action = handleShortcut({.esc = true, .key = 'L'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::Lowercase);
+}
+
+BOOST_AUTO_TEST_CASE(esc_uppercase_c_maps_to_capitalize_not_exit) {
+  auto action = handleShortcut({.esc = true, .key = 'C'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::Capitalize);
+  // The lowercase sibling still maps to Exit.
+  BOOST_CHECK(*handleShortcut({.esc = true, .key = 'c'}) == Action::Exit);
+}
+
 BOOST_AUTO_TEST_CASE(ctrl_space_maps_to_toggle_mark) {
   auto action = handleShortcut({.ctrl = true, .key = ' '});
   BOOST_REQUIRE(action.has_value());

@@ -234,6 +234,34 @@ BOOST_AUTO_TEST_CASE(e2e_insert_key_toggles_overwrite_mode) {
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
 
+BOOST_AUTO_TEST_CASE(e2e_esc_uppercase_u_uppercases_word) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Type a word, move back onto it, then press Esc-U (uppercase letter).
+  session.send("hello");
+  session.readUntil("hello");
+  session.send("\x1b[D\x1b[D"); // two left arrows, cursor now inside the word
+  session.send("\x1b"
+               "U");
+  auto out = session.readUntil("HELLO");
+  auto stripped = stripAnsi(out);
+  BOOST_CHECK_MESSAGE(stripped.find("HELLO") != std::string::npos,
+                      "Expected uppercased 'HELLO' in: " + stripped);
+
+  // Exit without saving.
+  session.send("\x1b"
+               "c"
+               "n");
+  session.waitExit();
+}
+
 BOOST_AUTO_TEST_CASE(e2e_esc_then_arrow_does_not_insert_csi_bytes) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

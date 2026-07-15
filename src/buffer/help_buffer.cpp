@@ -46,7 +46,7 @@ static std::vector<std::string> const& leftColumn() {
     v.emplace_back("Regions & Edit:");
     for (auto a : {Action::ToggleMark, Action::Cut, Action::Copy, Action::Paste, Action::PasteCycle,
                    Action::PasteRing, Action::Format, Action::PipeReplace, Action::ToggleComment,
-                   Action::Reflow})
+                   Action::Reflow, Action::Uppercase, Action::Lowercase, Action::Capitalize})
       v.push_back(formatHelpLine(a));
     v.push_back(formatRawLine("Insert", "Toggle insert/overwrite mode"));
     v.push_back(formatRawLine("Esc-Esc", "Clear mark"));
