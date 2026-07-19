@@ -445,6 +445,49 @@ BOOST_AUTO_TEST_CASE(esc_x_maps_to_execute_command) {
   BOOST_CHECK(*action == Action::ExecuteCommand);
 }
 
+// --- Bookmark shortcuts ---
+
+BOOST_AUTO_TEST_CASE(cx_b_maps_to_set_bookmark) {
+  auto action = handleShortcut({.cx = true, .key = 'b'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::SetBookmark);
+}
+
+BOOST_AUTO_TEST_CASE(cx_j_maps_to_jump_bookmark) {
+  auto action = handleShortcut({.cx = true, .key = 'j'});
+  BOOST_REQUIRE(action.has_value());
+  BOOST_CHECK(*action == Action::JumpBookmark);
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_set_bookmark) {
+  auto s = shortcutForAction(Action::SetBookmark);
+  BOOST_CHECK(s.cx);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('b'));
+}
+
+BOOST_AUTO_TEST_CASE(reverse_lookup_jump_bookmark) {
+  auto s = shortcutForAction(Action::JumpBookmark);
+  BOOST_CHECK(s.cx);
+  BOOST_CHECK_EQUAL(s.key, static_cast<uint32_t>('j'));
+}
+
+BOOST_AUTO_TEST_CASE(description_set_bookmark) {
+  BOOST_CHECK_EQUAL(descriptionForAction(Action::SetBookmark), "Set bookmark");
+}
+
+BOOST_AUTO_TEST_CASE(description_jump_bookmark) {
+  BOOST_CHECK_EQUAL(descriptionForAction(Action::JumpBookmark), "Jump to bookmark");
+}
+
+BOOST_AUTO_TEST_CASE(allCommands_includes_bookmark_actions) {
+  auto cmds = allCommands();
+  auto hasAction = [&](Action a) {
+    return std::any_of(cmds.begin(), cmds.end(), [a](auto& p) { return p.second == a; });
+  };
+  BOOST_CHECK(hasAction(Action::SetBookmark));
+  BOOST_CHECK(hasAction(Action::JumpBookmark));
+}
+
 BOOST_AUTO_TEST_CASE(allCommands_excludes_self_and_dedupes) {
   auto cmds = allCommands();
   BOOST_REQUIRE(!cmds.empty());

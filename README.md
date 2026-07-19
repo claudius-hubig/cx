@@ -116,6 +116,15 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | Home / End      | Start / end of line                                        |
 | Ctrl-Home/End   | Start / end of file                                        |
 
+### Bookmarks
+
+Session-wide named positions, global across buffers (not persisted across restarts).
+
+| Key   | Action                                                       |
+|-------|---------------------------------------------------------------|
+| C-x b | Set bookmark (prompts for a slot: `0-9` or `a-z`)              |
+| C-x j | Jump to bookmark (prompts for a slot; shows occupied slots)    |
+
 ### Bracket matching
 
 Pressing `?` while the cursor is on a bracket jumps to its match. Available

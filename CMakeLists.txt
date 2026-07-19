@@ -121,6 +121,7 @@ if(CX_BUILD_TESTS AND Boost_FOUND)
     cx_test(replace)
     cx_test(regex_search)
     cx_test(panel_layout)
+    cx_test(bookmarks)
 
     # test_e2e drives a real PTY, so it also needs libutil.
     add_executable(test_e2e tests/test_e2e.cpp)

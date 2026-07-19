@@ -1218,3 +1218,293 @@ BOOST_AUTO_TEST_CASE(e2e_kill_buffer_blocked_in_history_mode) {
                "c");
   session.waitExit();
 }
+
+// --- Bookmarks (C-x b / C-x j) ---
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("line1\nline2\nline3\nline4\nline5\nline6\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("line1", std::chrono::milliseconds{500});
+
+  // Move down to physical line 4 (1-based "4:1") and bookmark it.
+  sendDownArrows(session, 3);
+  session.readUntil("4:1", std::chrono::milliseconds{1000});
+  session.send("\x18"
+               "b"
+               "a");
+  auto setOut = session.readUntil("Bookmark 'a' set", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(setOut).find("Bookmark 'a' set") != std::string::npos);
+
+  // Move further away from the bookmark. (Not using sendDownArrows here:
+  // it drains output after each keypress, which would swallow the "6:1"
+  // redraw before the readUntil below gets a chance to see it.)
+  session.send("\x1b[B\x1b[B");
+  auto movedOut = session.readUntil("6:1", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(movedOut).find("6:1") != std::string::npos);
+
+  // Jump back — the cursor should return to "4:1".
+  session.send("\x18j"
+               "a");
+  auto jumpOut = session.readUntil("4:1", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(jumpOut).find("4:1") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_jump_switches_buffer) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile a("AAAAA content\n", ".txt");
+  TempFile b("BBBBB content\n", ".txt");
+  PtySession session(24, 80, bin, {std::string(a.path())});
+  session.readUntil("AAAAA content", std::chrono::milliseconds{500});
+
+  // Bookmark the starting position in buffer A.
+  session.send("\x18"
+               "b"
+               "a");
+  session.readUntil("Bookmark 'a' set", std::chrono::milliseconds{1000});
+
+  // Switch to buffer B via Ctrl-O.
+  session.send("\x0f" + b.path().string() + "\r");
+  auto switchedOut = session.readUntil("BBBBB content", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(switchedOut).find("BBBBB content") != std::string::npos);
+
+  // Jumping to the bookmark should switch the panel back to buffer A.
+  session.send("\x18j"
+               "a");
+  auto jumpOut = session.readUntil("AAAAA content", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(jumpOut).find("AAAAA content") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_jump_clamps_after_lines_deleted) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Six physical lines (five content lines plus the trailing empty entry
+  // for the file's final '\n').
+  TempFile tmp("line1\nline2\nline3\nline4\nline5\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("line1", std::chrono::milliseconds{500});
+
+  // Bookmark the last content line ("5:1", 0-indexed line 4).
+  sendDownArrows(session, 4);
+  session.readUntil("5:1", std::chrono::milliseconds{1000});
+  session.send("\x18"
+               "b"
+               "a");
+  session.readUntil("Bookmark 'a' set", std::chrono::milliseconds{1000});
+
+  // Move back to the top, then delete the first four lines (Ctrl-K),
+  // leaving only "line5" and the trailing empty line — the bookmarked
+  // index (4) no longer exists. Sent as one batch (rather than via
+  // sendDownArrows/readOutput per key) so nothing drains the "line5"
+  // redraw before the readUntil below gets to see it.
+  session.send("\x1b[A\x1b[A\x1b[A\x1b[A");
+  session.send("\x0b\x0b\x0b\x0b"); // four Ctrl-K (DeleteLine)
+  auto afterDelete = session.readUntil("line5", std::chrono::milliseconds{1500});
+  BOOST_CHECK(stripAnsi(afterDelete).find("line5") != std::string::npos);
+
+  // Jump to the bookmark — must clamp to the new last line ("2:1") rather
+  // than crash or run off the end of the shrunk buffer.
+  session.send("\x18j"
+               "a");
+  auto jumpOut = session.readUntil("2:1", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(jumpOut).find("2:1") != std::string::npos);
+
+  // Editor must still be responsive after the clamp.
+  session.send("still alive");
+  auto typedOut = session.readUntil("still alive", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(typedOut).find("still alive") != std::string::npos);
+
+  session.send("\x1b"
+               "c"
+               "n"); // discard unsaved edit
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_jump_to_killed_buffer_drops_slot) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile a("doomed buffer content\n", ".txt");
+  PtySession session(24, 80, bin, {std::string(a.path())});
+  session.readUntil("doomed buffer", std::chrono::milliseconds{500});
+
+  // Bookmark 'a' in the file buffer, which will be killed below.
+  session.send("\x18"
+               "b"
+               "a");
+  session.readUntil("Bookmark 'a' set", std::chrono::milliseconds{1000});
+
+  // Switch to a new scratch buffer and bookmark it as 'z' so the store
+  // isn't empty once 'a' is dropped.
+  session.send("\x0fscratch\r");
+  session.readUntil("scratch", std::chrono::milliseconds{1000});
+  session.send("\x18"
+               "b"
+               "z");
+  session.readUntil("Bookmark 'z' set", std::chrono::milliseconds{1000});
+
+  // Switch back to the file buffer and kill it (unmodified, so no confirm
+  // prompt is shown).
+  session.send("\x0f" + a.path().string() + "\r");
+  session.readUntil("doomed buffer", std::chrono::milliseconds{1000});
+  session.send("\x18k");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // First jump: the bookmarked buffer is gone — status reports it and
+  // drops the slot.
+  session.send("\x18j"
+               "a");
+  auto goneOut = session.readUntil("Bookmark 'a': buffer gone", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(goneOut).find("Bookmark 'a': buffer gone") != std::string::npos);
+
+  // Second jump: slot 'a' is now empty ('z' still occupied, so the prompt
+  // still opens rather than short-circuiting to "No bookmarks set").
+  session.send("\x18j"
+               "a");
+  auto emptyOut = session.readUntil("No bookmark 'a'", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(emptyOut).find("No bookmark 'a'") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_jump_with_none_set_shows_status) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  session.send("\x18j");
+  auto output = session.readUntil("No bookmarks set", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(output).find("No bookmarks set") != std::string::npos);
+
+  // Editor must still be responsive — no prompt should have opened.
+  session.send("still here");
+  auto typedOut = session.readUntil("still here", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(typedOut).find("still here") != std::string::npos);
+
+  session.send("\x1b"
+               "c"
+               "n");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_refused_in_help_buffer) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // *help* is a singleton overlay held outside BufferManager's maps, so
+  // find() can never resolve it. Setting a bookmark there used to appear
+  // to succeed and then silently erase the slot on the first jump.
+  session.send("\x1b?");
+  session.readUntil("Show this help", std::chrono::milliseconds{1000});
+  session.send("\x18"
+               "b"
+               "a");
+  auto refusedOut =
+      session.readUntil("Cannot bookmark this buffer", std::chrono::milliseconds{1000});
+  auto strippedRefused = stripAnsi(refusedOut);
+  BOOST_CHECK(strippedRefused.find("Cannot bookmark this buffer") != std::string::npos);
+  BOOST_CHECK(strippedRefused.find("Bookmark 'a' set") == std::string::npos);
+
+  // Leave help; no slot should have been recorded, so the jump prompt
+  // short-circuits rather than opening and reporting "buffer gone".
+  session.send("q");
+  session.readOutput(std::chrono::milliseconds{300});
+  session.send("\x18j");
+  auto jumpOut = session.readUntil("No bookmarks set", std::chrono::milliseconds{1000});
+  auto strippedJump = stripAnsi(jumpOut);
+  BOOST_CHECK(strippedJump.find("No bookmarks set") != std::string::npos);
+  BOOST_CHECK(strippedJump.find("buffer gone") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_bookmark_survives_save_as_rename) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Start pathless ("*1*") so Ctrl-S opens the Save As prompt directly.
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+
+  session.send("hello world");
+  session.readUntil("hello world", std::chrono::milliseconds{1000});
+
+  // Bookmark the current position in the pathless buffer.
+  session.send("\x18"
+               "b"
+               "a");
+  session.readUntil("Bookmark 'a' set", std::chrono::milliseconds{1000});
+
+  // Save As to a path that does not yet exist, so no overwrite-confirm
+  // step is needed.
+  auto newPath = std::filesystem::temp_directory_path() /
+                 ("cx_e2e_bookmark_saveas_" + std::to_string(::getpid()) + ".txt");
+  std::filesystem::remove(newPath); // just in case a stale run left it behind
+  session.send("\x13");             // Ctrl-S
+  session.readUntil("Save as", std::chrono::milliseconds{1000});
+  session.send(newPath.string() + "\r");
+  auto savedOut = session.readUntil("Saved to", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(savedOut).find("Saved to") != std::string::npos);
+
+  // Switch away to a scratch buffer.
+  session.send("\x0fotherbuf\r");
+  session.readUntil("otherbuf", std::chrono::milliseconds{1000});
+
+  // Jump back: if the rename wasn't re-keyed into the bookmark store,
+  // this would report "buffer gone" (still pointing at the old "*1*"
+  // name, which no longer exists after the rename).
+  session.send("\x18j"
+               "a");
+  auto jumpOut = session.readUntil("hello world", std::chrono::milliseconds{1000});
+  auto strippedJump = stripAnsi(jumpOut);
+  BOOST_CHECK(strippedJump.find("hello world") != std::string::npos);
+  BOOST_CHECK(strippedJump.find("buffer gone") == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+  std::filesystem::remove(newPath);
+}

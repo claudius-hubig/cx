@@ -75,7 +75,8 @@ Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`, `DeleteLine`,
 `SplitVertical`, `SplitHorizontal`, `ClosePanel`,
 `FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`,
 `Recenter`, `ToggleCurrentLine`, `ExecuteCommand`, `Reflow`,
-`RegexFind`, `RegexReplace`, `ToggleLineNumbers`, `ToggleMouseTracking`.
+`RegexFind`, `RegexReplace`, `ToggleLineNumbers`, `ToggleMouseTracking`,
+`SetBookmark`, `JumpBookmark`.
 
 Some bindings have two shortcuts: `DeleteChunkBefore` is reachable via
 both `Ctrl-Bksp` (which arrives as `Ctrl-h`) and `Esc-Bksp`. The table
@@ -136,7 +137,20 @@ Key responsibilities:
 
 `Screen` holds session-wide state that does not belong to any one
 buffer: the active prompt, find state, the paste ring, the X11
-`Clipboard` adapter, and the timed status message. Per-view display
+`Clipboard` adapter, the timed status message, and the `Bookmarks`
+store (`_bookmarks`, `src/bookmarks.hpp`). Bookmarks are global across
+buffers and session-only, so `Screen` — not any `Buffer` or
+`BufferView`, which are per-buffer or transient — is their only
+sensible owner. `openSetBookmarkPrompt()` / `openJumpBookmarkPrompt()`
+(bound to `C-x b` / `C-x j`) prompt for a single slot character and
+call `jumpToBookmark()`, which switches the focused panel's buffer if
+needed and clamps the stored point to the target buffer's current
+contents. `renameBufferAndRekeyBookmarks()` wraps every
+`BufferManager::rename()` call site (both Save-As paths) so a renamed
+buffer's bookmarks follow it under the new name. Buffers the manager
+cannot resolve by name — the singleton `*help*`, `*buffers*` and
+`*paste ring*` overlays — are refused at set time, since a bookmark
+into one could never be honoured. Per-view display
 toggles (soft-wrap, whitespace markers) live on `BufferView` so that
 different panels can be configured independently. After every keystroke, `loop()` calls `syncPrimarySelection()`
 to mirror the active mark region into the X11 PRIMARY selection (no-op
@@ -669,6 +683,7 @@ token vector allocation.
 | `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
+| `src/bookmarks.hpp`                    | `Bookmarks` — session-wide named positions (`Bookmark{bufferName, point}`) keyed by a single char in `[0-9a-z]`; owned by `Screen` |
 | `src/clipboard.hpp/.cpp`               | X11 PRIMARY/CLIPBOARD integration via `xclip`/`xsel` subprocesses; lazy detection, async writes, sync reads                   |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |

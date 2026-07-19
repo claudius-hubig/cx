@@ -91,7 +91,8 @@ static std::vector<std::string> const& rightColumn() {
         formatRawLine("\xe2\x86\x90/\xe2\x86\x91/\xe2\x86\x92/\xe2\x86\x93", "Move cursor"));
     v.push_back(formatRawLine("Ctrl-\xe2\x86\x90/\xe2\x86\x92", "Move by word"));
     v.push_back(formatRawLine("Ctrl-\xe2\x86\x91/\xe2\x86\x93", "Move by paragraph"));
-    for (auto a : {Action::GoToLine, Action::NextBlock, Action::PrevBlock, Action::Recenter})
+    for (auto a : {Action::GoToLine, Action::NextBlock, Action::PrevBlock, Action::Recenter,
+                   Action::SetBookmark, Action::JumpBookmark})
       v.push_back(formatHelpLine(a));
     v.push_back(formatRawLine("PgUp/PgDn", "Page up/down (half screen)"));
     v.push_back(formatRawLine("Home/End", "Start/end of line"));

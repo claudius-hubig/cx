@@ -76,6 +76,8 @@ enum class Action {
   Uppercase,
   Lowercase,
   Capitalize,
+  SetBookmark,
+  JumpBookmark,
 };
 
 /** @brief A key combination identifying a binding. */

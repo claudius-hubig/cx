@@ -13,6 +13,7 @@
  * display toggles live on BufferView.
  */
 
+#include "bookmarks.hpp"
 #include "buffer/buffer_sink.hpp"
 #include "buffer/buffer_view.hpp"
 #include "buffer/dir_buffer.hpp"
@@ -214,6 +215,26 @@ private:
   void openReplaceConfirmPrompt(std::string pattern, std::string replacement, std::size_t replaced,
                                 BufferPoint matchStart, BufferPoint matchEnd);
   void openSetModePrompt();
+  /** @brief C-x b: prompt for a slot and bookmark the current position. */
+  void openSetBookmarkPrompt();
+  /** @brief C-x j: prompt for a slot and jump to its bookmark. */
+  void openJumpBookmarkPrompt();
+  /**
+   * @brief Jump to the bookmark stored in @p slot.
+   *
+   * Switches the focused panel's buffer if the bookmark points elsewhere,
+   * then sets the point, clamped to the target buffer's current contents.
+   * Drops the slot if its buffer no longer exists.
+   */
+  void jumpToBookmark(char slot);
+  /**
+   * @brief Rename the focused buffer via BufferManager and re-key any
+   *        bookmarks pointing at it under the new name.
+   *
+   * Wraps every Save-As call site so none can rename a buffer without
+   * keeping its bookmarks in sync.
+   */
+  void renameBufferAndRekeyBookmarks(std::string oldName, std::string const& newName);
   /**
    * @brief Esc-x: prompt for an action by description, run it, then surface
    *        the action's primary shortcut as a status hint.
@@ -324,6 +345,7 @@ private:
 
   PasteRing _pasteRing;
   Clipboard _clipboard;
+  Bookmarks _bookmarks;
 
   /**
    * @brief Mirror the active mark region into the X11 PRIMARY selection.

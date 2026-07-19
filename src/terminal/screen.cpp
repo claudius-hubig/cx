@@ -796,7 +796,7 @@ void Screen::openSaveAsPrompt() {
                   [this, savedName, resolved](std::string const& answer) {
                     if (answer == "y") {
                       if (_buf && _bufMgr) {
-                        _bufMgr->rename(savedName, resolved);
+                        renameBufferAndRekeyBookmarks(savedName, resolved);
                         saveAndMaybeKill();
                       }
                     } else {
@@ -810,7 +810,7 @@ void Screen::openSaveAsPrompt() {
                   });
               return;
             }
-            _bufMgr->rename(_buf->name(), resolved);
+            renameBufferAndRekeyBookmarks(_buf->name(), resolved);
             saveAndMaybeKill();
           },
       // Abort also cancels any in-progress exit flow, so the loop does not
@@ -1313,6 +1313,112 @@ void Screen::openSetModePrompt() {
             }
           },
   };
+}
+
+void Screen::openSetBookmarkPrompt() {
+  _prompt = Prompt{
+      .label = "Set bookmark (0-9 a-z): ",
+      .showInput = false,
+      .autocomplete = [](std::string const& input) -> Prompt::AutocompleteResult {
+        if (!input.empty() && Bookmarks::validSlot(input.back()))
+          return std::string{input.back()};
+        return PromptDisplay{"", 0};
+      },
+      .onResult =
+          [this](std::string const& value) {
+            if (value.empty() || !_buf || !_view)
+              return;
+            // Only buffers the manager can resolve by name can be jumped
+            // back to; the singleton overlays (*help*, *buffers*,
+            // *paste ring*) live outside its maps, so a bookmark in one
+            // could never be honoured and would be silently dropped by
+            // the next jump. Refuse it here, while the user can still act.
+            if (!_bufMgr || !_bufMgr->find(_buf->name())) {
+              setStatus("Cannot bookmark this buffer");
+              return;
+            }
+            char slot = value[0];
+            bool existed = _bookmarks.contains(slot);
+            _bookmarks.set(slot, _buf->name(), _view->point());
+            setStatus(std::string("Bookmark '") + slot + (existed ? "' replaced" : "' set"));
+          },
+  };
+}
+
+void Screen::openJumpBookmarkPrompt() {
+  auto entries = _bookmarks.list();
+  if (entries.empty()) {
+    setStatus("No bookmarks set");
+    return;
+  }
+  std::string hint;
+  for (auto& [slot, mark] : entries) {
+    if (!hint.empty())
+      hint += ' ';
+    hint += slot;
+    hint += ':';
+    hint += _bufMgr ? _bufMgr->displayName(mark.bufferName) : mark.bufferName;
+  }
+  // The hint is fixed for the prompt's lifetime, so build it once rather
+  // than re-escaping and re-measuring it on every ignored keystroke.
+  auto dimHint = buildDimHint(hint);
+  _prompt = Prompt{
+      .label = "Jump to bookmark: ",
+      .showInput = false,
+      .autocomplete = [dimHint](std::string const& input) -> Prompt::AutocompleteResult {
+        if (!input.empty() && Bookmarks::validSlot(input.back()))
+          return std::string{input.back()};
+        return dimHint;
+      },
+      .onResult =
+          [this](std::string const& value) {
+            if (!value.empty())
+              jumpToBookmark(value[0]);
+          },
+      .display = dimHint,
+  };
+}
+
+void Screen::jumpToBookmark(char slot) {
+  if (!_bufMgr)
+    return;
+  auto mark = _bookmarks.get(slot);
+  if (!mark) {
+    setStatus(std::string("No bookmark '") + slot + "'");
+    return;
+  }
+  Buffer* target = _bufMgr->find(mark->bufferName);
+  if (!target) {
+    _bookmarks.erase(slot);
+    setStatus(std::string("Bookmark '") + slot + "': buffer gone");
+    return;
+  }
+  if (target != _buf) {
+    prevBuf() = nullptr;
+    setBuffer(*target);
+  }
+  // setPoint() clamps both line and offset to the current buffer
+  // contents, which is exactly the staleness rule bookmarks want:
+  // edits are not tracked, positions are clamped lazily on jump.
+  _view->setPoint(mark->point.line, mark->point.offset);
+  _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
+}
+
+void Screen::renameBufferAndRekeyBookmarks(std::string oldName, std::string const& newName) {
+  // oldName must be a copy, not a reference into _buf->name(): rename()
+  // mutates the buffer's name in place via setPath(), so a reference
+  // would silently alias the new name by the time renameBuffer() below
+  // reads it back.
+  if (!_bufMgr)
+    return;
+  Buffer* renamed = _bufMgr->find(oldName);
+  if (!renamed)
+    return; // nothing registered under oldName; rename() would no-op too
+  _bufMgr->rename(oldName, newName);
+  // Read the post-rename name off the renamed buffer itself rather than
+  // off _buf: rename() derives the new key internally via setPath(), and
+  // the renamed buffer is not necessarily the focused one.
+  _bookmarks.renameBuffer(oldName, renamed->name());
 }
 
 void Screen::openExecuteCommandPrompt() {
@@ -2779,6 +2885,14 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::GoToLine:
     openGoToLinePrompt();
+    break;
+  case Action::SetBookmark:
+    if (!requireNotInHistoryMode())
+      openSetBookmarkPrompt();
+    break;
+  case Action::JumpBookmark:
+    if (!requireNotInHistoryMode())
+      openJumpBookmarkPrompt();
     break;
   case Action::SwitchBuffer:
     if (requireNotInHistoryMode())
