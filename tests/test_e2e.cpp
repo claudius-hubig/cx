@@ -1508,3 +1508,151 @@ BOOST_AUTO_TEST_CASE(e2e_bookmark_survives_save_as_rename) {
   session.waitExit();
   std::filesystem::remove(newPath);
 }
+
+BOOST_AUTO_TEST_CASE(e2e_select_all_occurrences_then_retype) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("foo one\ntwo foo\nfoo three\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("foo one", std::chrono::milliseconds{500});
+
+  // Esc-* puts a cursor after every "foo"; the modeline shows the count.
+  session.send("\x1b*");
+  auto starOut = session.readUntil("Created 3 cursors", std::chrono::milliseconds{1000});
+  auto starPlain = stripAnsi(starOut);
+  BOOST_CHECK(starPlain.find("Created 3 cursors") != std::string::npos);
+  // The running count lives in the modeline indicator, not the status.
+  BOOST_CHECK(starPlain.find("3@I") != std::string::npos);
+
+  // Ctrl-Bksp kills the word at every cursor, then typing replaces it.
+  session.send("\x08");
+  session.send("bar");
+  auto typedOut = session.readUntil("bar three", std::chrono::milliseconds{1000});
+  auto plain = stripAnsi(typedOut);
+  BOOST_CHECK(plain.find("bar one") != std::string::npos);
+  BOOST_CHECK(plain.find("two bar") != std::string::npos);
+  BOOST_CHECK(plain.find("bar three") != std::string::npos);
+
+  session.send("\x1b"
+               "c"
+               "n");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_add_cursor_down_edits_several_lines) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("aaa\nbbb\nccc\nddd\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{500});
+
+  // Ctrl-Shift-Down twice: three cursors, on lines 1-3 at column 0.
+  session.send("\x1b[1;6B\x1b[1;6B");
+  auto addOut = session.readUntil("3@I", std::chrono::milliseconds{1000});
+  BOOST_CHECK(stripAnsi(addOut).find("3@I") != std::string::npos);
+
+  session.send(">");
+  auto typedOut = session.readUntil(">ccc", std::chrono::milliseconds{1000});
+  auto plain = stripAnsi(typedOut);
+  BOOST_CHECK(plain.find(">aaa") != std::string::npos);
+  BOOST_CHECK(plain.find(">bbb") != std::string::npos);
+  BOOST_CHECK(plain.find(">ccc") != std::string::npos);
+  // The fourth line had no cursor and must be untouched.
+  BOOST_CHECK(plain.find(">ddd") == std::string::npos);
+
+  session.send("\x1b"
+               "c"
+               "n");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_esc_esc_returns_to_a_single_cursor) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("aaa\nbbb\nccc\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{500});
+
+  session.send("\x1b[1;6B");
+  session.readUntil("2@I", std::chrono::milliseconds{1000});
+
+  session.send("\x1b\x1b");
+  auto collapsed = session.readUntil("Single cursor", std::chrono::milliseconds{1000});
+  auto collapsedPlain = stripAnsi(collapsed);
+  BOOST_CHECK(collapsedPlain.find("Single cursor") != std::string::npos);
+  // The count field blanks out again, keeping the indicator's width.
+  BOOST_CHECK(collapsedPlain.find("@I") == std::string::npos);
+
+  // Only the primary line is edited now.
+  session.send("X");
+  auto typedOut = session.readUntil("Xaaa", std::chrono::milliseconds{1000});
+  auto plain = stripAnsi(typedOut);
+  BOOST_CHECK(plain.find("Xaaa") != std::string::npos);
+  BOOST_CHECK(plain.find("Xbbb") == std::string::npos);
+
+  session.send("\x1b"
+               "c"
+               "n");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_add_cursor_reachable_by_name_when_the_chord_is_swallowed) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("aaa\nbbb\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("aaa", std::chrono::milliseconds{500});
+
+  // Esc-x by name is the fallback when a terminal eats Ctrl-Shift-Down.
+  session.send("\x1bx"
+               "Add cursor on line below\r");
+  auto out = session.readUntil("2@I", std::chrono::milliseconds{1000});
+  auto plain = stripAnsi(out);
+  BOOST_CHECK(plain.find("2@I") != std::string::npos);
+  // The chordless action must not splat a NUL binding hint into the modeline.
+  BOOST_CHECK(out.find('\0') == std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_cursor_count_indicator_saturates_above_999) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // 1000 occurrences: one more than the three-digit field can show.
+  std::string content;
+  for (int i = 0; i < 1000; ++i)
+    content += "foo\n";
+  TempFile tmp(content);
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("foo", std::chrono::milliseconds{500});
+
+  session.send("\x1b*");
+  auto out = session.readUntil("***@I", std::chrono::milliseconds{2000});
+  BOOST_CHECK(stripAnsi(out).find("***@I") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}

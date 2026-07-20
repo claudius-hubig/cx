@@ -98,6 +98,14 @@ static std::vector<std::string> const& rightColumn() {
     v.push_back(formatRawLine("Home/End", "Start/end of line"));
     v.push_back(formatRawLine("Ctrl-Home/End", "Start/end of file"));
     v.emplace_back("");
+    v.emplace_back("Multiple cursors:");
+    v.push_back(formatHelpLine(Action::SelectAllOccurrences));
+    v.push_back(
+        formatRawLine("Ctrl-Shift-\xe2\x86\x93", descriptionForAction(Action::AddCursorDown)));
+    v.push_back(
+        formatRawLine("Ctrl-Shift-\xe2\x86\x91", descriptionForAction(Action::AddCursorUp)));
+    v.push_back(formatRawLine("Esc-Esc", "Back to a single cursor"));
+    v.emplace_back("");
     v.emplace_back("Display:");
     for (auto a : {Action::ToggleWhitespace, Action::ToggleWrap, Action::ToggleCurrentLine,
                    Action::ToggleLineNumbers, Action::SetMode})

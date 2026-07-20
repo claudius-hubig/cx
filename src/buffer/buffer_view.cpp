@@ -61,6 +61,9 @@ void BufferView::clampToBuffer() {
     if (off->value > maxOff)
       *off = ByteOffset{maxOff};
   }
+  // Clamp extra cursors by the same rules as point and mark; merging and
+  // re-sorting happens in normalizeCursors().
+  normalizeCursors();
   // Invalidate per-view caches and the desired-column memory: the line
   // it referred to may have changed shape.
   _pointColCache.line = SIZE_MAX;
@@ -183,16 +186,23 @@ BufferPoint BufferView::viewFrom() const {
 void BufferView::setPoint(std::size_t line, std::size_t offset) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  // An absolute jump (goto-line, find, bookmark, mouse click) has no
+  // meaning for a set of scattered cursors — collapse to the primary.
+  collapseCursors();
   _point.line = std::min(line, _buf.lineCount() - 1);
   _point.offset = std::min(offset, _buf.lineContent(_point.line).size());
   _desiredCol.reset();
 }
 
 void BufferView::toggleMark() {
-  if (_mark)
+  if (_mark) {
     _mark.reset();
-  else
+  } else {
+    // Phase 1 has no per-cursor selections, and one region spanning
+    // unrelated cursors is meaningless — collapse before setting.
+    collapseCursors();
     _mark = _point;
+  }
 }
 
 std::tuple<std::size_t, std::size_t> BufferView::lineCol() const {
@@ -204,8 +214,63 @@ std::tuple<std::size_t, std::size_t> BufferView::lineCol() const {
 }
 
 // --- Movement ---
+//
+// The parallel-moving commands are thin wrappers: the *Impl body moves the
+// primary cursor, then moveExtras() replays it at every extra cursor.
+// Commands that jump somewhere unrelated to the current position (page,
+// paragraph, goto, bracket match) collapse to the primary instead.
 
 void BufferView::moveLeft() {
+  moveLeftImpl();
+  moveExtras(&BufferView::moveLeftImpl);
+}
+
+void BufferView::moveRight() {
+  moveRightImpl();
+  moveExtras(&BufferView::moveRightImpl);
+}
+
+void BufferView::moveUp(ColIdx cols) {
+  moveUpImpl(cols);
+  moveExtras(&BufferView::moveUpImpl, cols);
+}
+
+void BufferView::moveDown(ColIdx cols) {
+  moveDownImpl(cols);
+  moveExtras(&BufferView::moveDownImpl, cols);
+}
+
+void BufferView::movePhysicalUp() {
+  movePhysicalUpImpl();
+  moveExtras(&BufferView::movePhysicalUpImpl);
+}
+
+void BufferView::movePhysicalDown() {
+  movePhysicalDownImpl();
+  moveExtras(&BufferView::movePhysicalDownImpl);
+}
+
+void BufferView::moveHome() {
+  moveHomeImpl();
+  moveExtras(&BufferView::moveHomeImpl);
+}
+
+void BufferView::moveEnd() {
+  moveEndImpl();
+  moveExtras(&BufferView::moveEndImpl);
+}
+
+void BufferView::moveWordRight() {
+  moveWordRightImpl();
+  moveExtras(&BufferView::moveWordRightImpl);
+}
+
+void BufferView::moveWordLeft() {
+  moveWordLeftImpl();
+  moveExtras(&BufferView::moveWordLeftImpl);
+}
+
+void BufferView::moveLeftImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   if (_point.offset > 0) {
@@ -220,7 +285,7 @@ void BufferView::moveLeft() {
   _desiredCol.reset();
 }
 
-void BufferView::moveRight() {
+void BufferView::moveRightImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
@@ -234,7 +299,7 @@ void BufferView::moveRight() {
   _desiredCol.reset();
 }
 
-void BufferView::moveUp(ColIdx cols) {
+void BufferView::moveUpImpl(ColIdx cols) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
@@ -275,7 +340,7 @@ void BufferView::moveUp(ColIdx cols) {
     _desiredCol = ColIdx{goal};
 }
 
-void BufferView::moveDown(ColIdx cols) {
+void BufferView::moveDownImpl(ColIdx cols) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
@@ -321,7 +386,7 @@ void BufferView::moveDown(ColIdx cols) {
     _desiredCol = ColIdx{goal};
 }
 
-void BufferView::movePhysicalUp() {
+void BufferView::movePhysicalUpImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   std::size_t vcol = pointVisualCol();
@@ -344,7 +409,7 @@ void BufferView::movePhysicalUp() {
     _desiredCol = ColIdx{goal};
 }
 
-void BufferView::movePhysicalDown() {
+void BufferView::movePhysicalDownImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   std::size_t vcol = pointVisualCol();
@@ -367,21 +432,21 @@ void BufferView::movePhysicalDown() {
     _desiredCol = ColIdx{goal};
 }
 
-void BufferView::moveHome() {
+void BufferView::moveHomeImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   _point.offset = 0;
   _desiredCol.reset();
 }
 
-void BufferView::moveEnd() {
+void BufferView::moveEndImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   _point.offset = _buf.lineContent(_point.line).size();
   _desiredCol.reset();
 }
 
-void BufferView::moveWordRight() {
+void BufferView::moveWordRightImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
@@ -433,7 +498,7 @@ void BufferView::moveWordRight() {
   _desiredCol.reset();
 }
 
-void BufferView::moveWordLeft() {
+void BufferView::moveWordLeftImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   if (_point.line == 0 && _point.offset == 0) {
@@ -530,6 +595,7 @@ void BufferView::moveWordLeft() {
 void BufferView::moveParagraphUp() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
   if (_point.line == 0) {
     _point = {0, 0};
     _desiredCol.reset();
@@ -562,6 +628,7 @@ void BufferView::moveParagraphUp() {
 void BufferView::moveParagraphDown() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
   bool onBlank = _buf.isBlankLine(_point.line);
   std::size_t pos = _point.line + 1;
 
@@ -584,6 +651,7 @@ void BufferView::moveParagraphDown() {
 void BufferView::pageUp(RowIdx screenRows, ColIdx cols, bool wrap) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
@@ -605,6 +673,7 @@ void BufferView::pageUp(RowIdx screenRows, ColIdx cols, bool wrap) {
 void BufferView::pageDown(RowIdx screenRows, ColIdx cols, bool wrap) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
   std::size_t half = screenRows.value / 2;
   if (half == 0)
     half = 1;
@@ -690,6 +759,7 @@ BufferPoint BufferView::pointForScreenRowCol(std::size_t screenRow, std::size_t 
 bool BufferView::gotoMatchingBracket() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
   auto getTokens = [this](std::size_t i) { return _buf.cachedLineTokens(i); };
   auto match = (_buf.mode() == BufferMode::Jsn)
                    ? findMatchingBracketJson(_buf.lines(), _point, getTokens)
@@ -704,6 +774,7 @@ bool BufferView::gotoMatchingBracket() {
 void BufferView::gotoLine(std::size_t line, RowIdx screenRows) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
   if (line == 0)
     line = 1;
   // Convert to 0-based, clamp to last line.
@@ -837,6 +908,10 @@ void BufferView::insert(uint32_t cp) {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  if (multiCursor()) {
+    multiInsert(cp);
+    return;
+  }
 
   auto insertLine = _point.line;
   auto insertOff = _point.offset;
@@ -910,6 +985,10 @@ void BufferView::deleteAtPoint() {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  if (multiCursor()) {
+    multiDeleteForward();
+    return;
+  }
 
   auto delLine = _point.line;
   auto delOff = _point.offset;
@@ -960,6 +1039,10 @@ void BufferView::deleteBeforePoint() {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  if (multiCursor()) {
+    multiDeleteBackward();
+    return;
+  }
 
   auto beforeLine = _point.line;
   auto beforeOff = _point.offset;
@@ -1002,6 +1085,10 @@ void BufferView::deleteChunkAtPoint() {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  if (multiCursor()) {
+    multiDeleteChunkForward();
+    return;
+  }
   if (atEnd())
     return;
 
@@ -1023,6 +1110,10 @@ void BufferView::deleteChunkBeforePoint() {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  if (multiCursor()) {
+    multiDeleteChunkBackward();
+    return;
+  }
   if (_point.line == 0 && _point.offset == 0)
     return;
 
@@ -1075,6 +1166,7 @@ void BufferView::toggleComment(std::string_view prefix) {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
 
   // Determine line range from the mark/point region. The region is half-
   // open in column terms but we operate on whole lines: if the user
@@ -1200,6 +1292,7 @@ void BufferView::convertCase(CaseOp op) {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
 
   bool hadMark = _mark.has_value();
   BufferPoint from, to;
@@ -1253,6 +1346,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth) {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
 
   // Determine line range. With an active mark, use the lines spanned by
   // the region (whole lines, matching toggleComment's convention). Else
@@ -1514,6 +1608,7 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  collapseCursors();
 
   auto lineCountBefore = _buf.lineCount();
   auto regionStart = (to < from) ? to : from;
@@ -1543,6 +1638,10 @@ BufferPoint BufferView::insertText(std::string_view text) {
     return _point;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  if (multiCursor()) {
+    multiInsertText(text);
+    return _point;
+  }
 
   auto startLine = _point.line;
   auto startOff = _point.offset;
@@ -1571,12 +1670,387 @@ BufferPoint BufferView::insertText(std::string_view text) {
   return _point;
 }
 
+// --- Multiple cursors ---
+
+namespace {
+
+/** @brief True for bytes that make up a word: ASCII alphanumerics, '_',
+ *         and every non-ASCII byte (so UTF-8 words stay whole). */
+bool isWordByte(char c) {
+  auto u = static_cast<unsigned char>(c);
+  return u >= 0x80 || u == '_' || (u >= '0' && u <= '9') || (u >= 'a' && u <= 'z') ||
+         (u >= 'A' && u <= 'Z');
+}
+
+/**
+ * @brief Shift @p p to account for an insertion occupying [@p at, @p end).
+ *
+ * Positions before the insertion are untouched; the rest of the insertion
+ * line trails after @p end, and later lines shift by the line delta.
+ */
+BufferPoint shiftForInsert(BufferPoint p, BufferPoint at, BufferPoint end) {
+  if (p < at)
+    return p;
+  if (p.line == at.line)
+    return {end.line, end.offset + (p.offset - at.offset)};
+  p.line += end.line - at.line;
+  return p;
+}
+
+/**
+ * @brief Shift @p p to account for the deletion of the half-open region
+ *        [@p from, @p to).
+ *
+ * Positions inside the deleted region collapse onto @p from; the tail of
+ * the last deleted line joins onto @p from, and later lines shift up.
+ */
+BufferPoint shiftForDelete(BufferPoint p, BufferPoint from, BufferPoint to) {
+  if (p <= from)
+    return p;
+  if (p < to)
+    return from;
+  if (p.line == to.line)
+    return {from.line, from.offset + (p.offset - to.offset)};
+  p.line -= to.line - from.line;
+  return p;
+}
+
+} // namespace
+
+void BufferView::normalizeCursors() {
+  if (_extraCursors.empty())
+    return;
+  for (auto& c : _extraCursors) {
+    if (c.line >= _buf.lineCount())
+      c.line = _buf.lineCount() - 1;
+    if (c.offset > _buf.lineContent(c.line).size())
+      c.offset = _buf.lineContent(c.line).size();
+  }
+  std::sort(_extraCursors.begin(), _extraCursors.end());
+  _extraCursors.erase(std::unique(_extraCursors.begin(), _extraCursors.end()), _extraCursors.end());
+  std::erase(_extraCursors, _point);
+}
+
+void BufferView::moveExtras(void (BufferView::*fn)()) {
+  if (_extraCursors.empty())
+    return;
+  auto savedPoint = _point;
+  auto savedDesired = _desiredCol;
+  for (auto& c : _extraCursors) {
+    _point = c;
+    // Each cursor keeps its own column; a single shared desired column
+    // would drag every extra onto the primary's column.
+    _desiredCol.reset();
+    (this->*fn)();
+    c = _point;
+  }
+  _point = savedPoint;
+  _desiredCol = savedDesired;
+  normalizeCursors();
+}
+
+void BufferView::moveExtras(void (BufferView::*fn)(ColIdx), ColIdx cols) {
+  if (_extraCursors.empty())
+    return;
+  auto savedPoint = _point;
+  auto savedDesired = _desiredCol;
+  for (auto& c : _extraCursors) {
+    _point = c;
+    _desiredCol.reset();
+    (this->*fn)(cols);
+    c = _point;
+  }
+  _point = savedPoint;
+  _desiredCol = savedDesired;
+  normalizeCursors();
+}
+
+void BufferView::addCursor(BufferPoint p) {
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+  _extraCursors.push_back(p);
+  normalizeCursors();
+}
+
+void BufferView::addCursorAtVisualCol(std::size_t line, std::size_t vcol) {
+  auto const& s = _buf.lineContent(line);
+  std::size_t col = 0, i = 0;
+  while (i < s.size() && col < vcol) {
+    auto info = charInfoAt(s.data() + i, s.size() - i);
+    col += info.width;
+    i += info.len;
+  }
+  addCursor({line, i});
+}
+
+bool BufferView::addCursorDown() {
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+  std::size_t lowest = _point.line;
+  for (auto const& c : _extraCursors)
+    lowest = std::max(lowest, c.line);
+  if (lowest + 1 >= _buf.lineCount())
+    return false;
+  addCursorAtVisualCol(lowest + 1, pointVisualCol());
+  return true;
+}
+
+bool BufferView::addCursorUp() {
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+  std::size_t highest = _point.line;
+  for (auto const& c : _extraCursors)
+    highest = std::min(highest, c.line);
+  if (highest == 0)
+    return false;
+  addCursorAtVisualCol(highest - 1, pointVisualCol());
+  return true;
+}
+
+std::size_t BufferView::selectAllOccurrences() {
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+
+  // A marked region matches literally; the word at point matches whole
+  // words only, so renaming `count` never hits `counter`.
+  std::string needle;
+  bool wholeWord = true;
+  if (_mark) {
+    needle = _buf.extractRegion(*_mark, _point);
+    wholeWord = false;
+    if (needle.find('\n') != std::string::npos)
+      return 0; // multi-line regions are out of scope for Phase 1
+  } else {
+    auto const& line = _buf.lineContent(_point.line);
+    std::size_t b = _point.offset, e = _point.offset;
+    while (b > 0 && isWordByte(line[b - 1]))
+      --b;
+    while (e < line.size() && isWordByte(line[e]))
+      ++e;
+    needle = line.substr(b, e - b);
+  }
+  if (needle.empty())
+    return 0;
+
+  std::vector<BufferPoint> hits;
+  for (std::size_t li = 0; li < _buf.lineCount(); ++li) {
+    auto const& line = _buf.lineContent(li);
+    for (std::size_t pos = line.find(needle); pos != std::string::npos;
+         pos = line.find(needle, pos + 1)) {
+      if (wholeWord) {
+        bool leftOk = pos == 0 || !isWordByte(line[pos - 1]);
+        std::size_t after = pos + needle.size();
+        bool rightOk = after >= line.size() || !isWordByte(line[after]);
+        if (!leftOk || !rightOk)
+          continue;
+      }
+      // The cursor lands at the end of the occurrence so a following
+      // chunk-delete-back kills exactly the matched text.
+      hits.push_back({li, pos + needle.size()});
+    }
+  }
+  if (hits.empty())
+    return 0;
+
+  _mark.reset();
+  _point = hits.back();
+  _extraCursors.assign(hits.begin(), hits.end() - 1);
+  _desiredCol.reset();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
+  normalizeCursors();
+  return cursorCount();
+}
+
+bool BufferView::blankAt(BufferPoint p) const {
+  auto const& line = _buf.lineContent(p.line);
+  if (p.offset < line.size())
+    return isWhitespace(line[p.offset]);
+  return true;
+}
+
+bool BufferView::blankBefore(BufferPoint p) const {
+  if (p.offset == 0)
+    return true;
+  auto const& line = _buf.lineContent(p.line);
+  std::size_t pos = p.offset - 1;
+  while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(line[pos])))
+    --pos;
+  return isWhitespace(line[pos]);
+}
+
+void BufferView::beginBatch() {
+  _batch.clear();
+  _batch.reserve(_extraCursors.size() + 1);
+  _batch.push_back(_point);
+  _batch.insert(_batch.end(), _extraCursors.begin(), _extraCursors.end());
+  std::sort(_batch.begin(), _batch.end());
+  // normalizeCursors() guarantees no extra equals _point, so the primary
+  // is at a unique position and lower_bound identifies it exactly.
+  _batchPrimary = static_cast<std::size_t>(std::lower_bound(_batch.begin(), _batch.end(), _point) -
+                                           _batch.begin());
+}
+
+void BufferView::endBatch(std::size_t lineCountBefore, std::size_t versionBefore) {
+  _point = _batch[_batchPrimary];
+  _extraCursors.clear();
+  for (std::size_t i = 0; i < _batch.size(); ++i)
+    if (i != _batchPrimary)
+      _extraCursors.push_back(_batch[i]);
+
+  _docVersion = _buf.docVersion();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
+  _desiredCol.reset();
+  normalizeCursors();
+
+  if (_buf.docVersion() == versionBefore)
+    return; // nothing changed — don't record an empty version
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  // A keystroke applied at N scattered cursors has no single contiguous
+  // dirty region, so recordVersion()'s delta contract does not apply:
+  // SIZE_MAX forces a full snapshot. One version per keystroke regardless
+  // of cursor count.
+  _buf.recordVersion(_point, SIZE_MAX, shift);
+}
+
+void BufferView::batchInsertChar(std::size_t i, uint32_t cp) {
+  BufferPoint at = _batch[i];
+  BufferPoint end = _buf.insertAt(cp, at);
+  for (auto& c : _batch)
+    c = shiftForInsert(c, at, end);
+}
+
+void BufferView::batchInsertText(std::size_t i, std::string_view text) {
+  BufferPoint at = _batch[i];
+  BufferPoint end = _buf.insertText(text, at);
+  for (auto& c : _batch)
+    c = shiftForInsert(c, at, end);
+}
+
+bool BufferView::batchDeleteForward(std::size_t i) {
+  BufferPoint from = _batch[i];
+  auto const& line = _buf.lineContent(from.line);
+  BufferPoint to;
+  if (from.offset < line.size()) {
+    auto len = utf8SeqLen(static_cast<unsigned char>(line[from.offset]));
+    to = {from.line, std::min(from.offset + len, line.size())};
+  } else if (from.line + 1 < _buf.lineCount()) {
+    to = {from.line + 1, 0}; // joins the next line
+  } else {
+    return false; // end of buffer
+  }
+  _buf.deleteAt(from);
+  for (auto& c : _batch)
+    c = shiftForDelete(c, from, to);
+  return true;
+}
+
+bool BufferView::batchDeleteBackward(std::size_t i) {
+  BufferPoint to = _batch[i];
+  if (to.line == 0 && to.offset == 0)
+    return false; // start of buffer
+  // deleteBefore returns the start of what it removed, which is exactly
+  // the region's `from`.
+  BufferPoint from = _buf.deleteBefore(to);
+  for (auto& c : _batch)
+    c = shiftForDelete(c, from, to);
+  return true;
+}
+
+void BufferView::multiInsert(uint32_t cp) {
+  auto lineCountBefore = _buf.lineCount();
+  auto versionBefore = _buf.docVersion();
+  beginBatch();
+  for (std::size_t i = 0; i < _batch.size(); ++i) {
+    if (i > 0 && _batch[i] == _batch[i - 1])
+      continue; // merged onto its predecessor: insert once, not twice
+    // Overwrite mode replaces the character under each cursor, except for
+    // newlines, which always insert (matching the single-cursor path).
+    if (_buf.overwriteMode() && cp != '\n' &&
+        _batch[i].offset < _buf.lineContent(_batch[i].line).size())
+      batchDeleteForward(i);
+    batchInsertChar(i, cp);
+  }
+  endBatch(lineCountBefore, versionBefore);
+}
+
+void BufferView::multiInsertText(std::string_view text) {
+  auto lineCountBefore = _buf.lineCount();
+  auto versionBefore = _buf.docVersion();
+  beginBatch();
+  for (std::size_t i = 0; i < _batch.size(); ++i) {
+    if (i > 0 && _batch[i] == _batch[i - 1])
+      continue;
+    batchInsertText(i, text);
+  }
+  endBatch(lineCountBefore, versionBefore);
+}
+
+void BufferView::multiDeleteForward() {
+  auto lineCountBefore = _buf.lineCount();
+  auto versionBefore = _buf.docVersion();
+  beginBatch();
+  for (std::size_t i = 0; i < _batch.size(); ++i) {
+    if (i > 0 && _batch[i] == _batch[i - 1])
+      continue;
+    batchDeleteForward(i);
+  }
+  endBatch(lineCountBefore, versionBefore);
+}
+
+void BufferView::multiDeleteBackward() {
+  auto lineCountBefore = _buf.lineCount();
+  auto versionBefore = _buf.docVersion();
+  beginBatch();
+  for (std::size_t i = 0; i < _batch.size(); ++i) {
+    if (i > 0 && _batch[i] == _batch[i - 1])
+      continue;
+    batchDeleteBackward(i);
+  }
+  endBatch(lineCountBefore, versionBefore);
+}
+
+void BufferView::multiDeleteChunkForward() {
+  auto lineCountBefore = _buf.lineCount();
+  auto versionBefore = _buf.docVersion();
+  beginBatch();
+  for (std::size_t i = 0; i < _batch.size(); ++i) {
+    if (i > 0 && _batch[i] == _batch[i - 1])
+      continue;
+    bool startBlank = blankAt(_batch[i]);
+    do {
+      if (!batchDeleteForward(i))
+        break;
+    } while (blankAt(_batch[i]) == startBlank);
+  }
+  endBatch(lineCountBefore, versionBefore);
+}
+
+void BufferView::multiDeleteChunkBackward() {
+  auto lineCountBefore = _buf.lineCount();
+  auto versionBefore = _buf.docVersion();
+  beginBatch();
+  for (std::size_t i = 0; i < _batch.size(); ++i) {
+    if (i > 0 && _batch[i] == _batch[i - 1])
+      continue;
+    bool startBlank = blankBefore(_batch[i]);
+    do {
+      if (!batchDeleteBackward(i))
+        break;
+    } while (blankBefore(_batch[i]) == startBlank);
+  }
+  endBatch(lineCountBefore, versionBefore);
+}
+
 // --- History mode ---
 
 void BufferView::enterHistoryMode() {
   auto info = _buf.versionHistoryInfo();
   if (info.empty)
     return;
+  // History browsing walks a single point through time.
+  collapseCursors();
   _buf.setBrowsingHistory(true);
   _historyIndex = info.size - 1;
   // Match stepHistory(): the mark cannot meaningfully refer to a position
@@ -1751,6 +2225,7 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
   params.viewFrom = _viewFrom;
   params.mark = _mark;
   params.highlight = _highlight;
+  params.extraCursors = _extraCursors;
   params.showWhitespace = _showWhitespace;
   params.wrap = _wrap;
   params.highlightCurrentLine = _highlightCurrentLine;

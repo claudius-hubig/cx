@@ -76,12 +76,21 @@ Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`, `DeleteLine`,
 `FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`,
 `Recenter`, `ToggleCurrentLine`, `ExecuteCommand`, `Reflow`,
 `RegexFind`, `RegexReplace`, `ToggleLineNumbers`, `ToggleMouseTracking`,
-`SetBookmark`, `JumpBookmark`.
+`SetBookmark`, `JumpBookmark`, `SelectAllOccurrences`, `AddCursorDown`,
+`AddCursorUp`.
 
 Some bindings have two shortcuts: `DeleteChunkBefore` is reachable via
 both `Ctrl-Bksp` (which arrives as `Ctrl-h`) and `Esc-Bksp`. The table
 contains the bare-Ctrl path first; help and reverse-lookup callers see
 that one.
+
+A few actions have no table shortcut at all (an empty `Shortcut`) because
+they are driven from CSI sequences in the input loop rather than by a
+chord: `ToggleOverwriteMode` (Insert key) and `AddCursorDown` /
+`AddCursorUp` (`Ctrl-Shift-Down/Up`, `ESC[1;6B` / `ESC[1;6A`). They still
+get table rows so they stay listed in help and reachable by name through
+`Esc-x`; help renders them with `formatRawLine` since `formatShortcut`
+has no chord to format.
 
 ---
 
@@ -249,8 +258,12 @@ Public API:
   syntax highlighting (via per-mode tokenizers), region highlighting
   (inverse video when a selection mark is active), and find highlighting.
   `RenderParams` bundles the view-state inputs (point, viewFrom, mark,
-  highlight, showWhitespace, wrap, row/col offsets). Returns the
-  screen `{row, col}` of the cursor.
+  highlight, extraCursors, showWhitespace, wrap, row/col offsets).
+  Returns the screen `{row, col}` of the cursor.
+  `RenderParams::extraCursors` is a sorted span of secondary cursor
+  positions (empty in single-cursor editing); each one that falls in the
+  viewport reverse-videos its character cell — a space at end-of-line —
+  while the hardware terminal cursor stays on `point`.
 - **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.
@@ -295,6 +308,10 @@ the buffer shares it. It changes only editing semantics —
 `BufferView::insert()` deletes the character under the cursor before
 inserting when the flag is set — plus two purely presentational cues: the
 `I`/`O` modeline indicator and the terminal cursor shape (see Screen).
+`drawModeline` prefixes that indicator with the view's live cursor count
+as `<count>@` (blank with one cursor, `***@` above 999). The count and the
+`@` occupy a fixed-width field so the `I`/`O` never changes column as
+cursors are added or dropped.
 
 Caching:
 - `_synCache` — per-line syntax tokenisation cache, invalidated on edits.
@@ -316,10 +333,11 @@ Conflict detection:
 ### `BufferView` (`src/buffer/buffer_view.hpp/.cpp`)
 
 Owns all view-specific state for one logical "view" of a `Buffer`:
-point (`BufferPoint`), mark, viewport (`ViewFrom`), wrap mode, desired
-column for vertical movement, find highlight, and per-view caches
-(`PointColCache`, `RowBoundsCache`). Multiple `BufferView`s can share
-the same `Buffer`, each with independent cursor and viewport.
+point (`BufferPoint`), mark, secondary cursors, viewport (`ViewFrom`),
+wrap mode, desired column for vertical movement, find highlight, and
+per-view caches (`PointColCache`, `RowBoundsCache`). Multiple
+`BufferView`s can share the same `Buffer`, each with independent cursor
+and viewport.
 
 All user-facing movement, editing, and render operations are methods on
 `BufferView`:
@@ -355,10 +373,39 @@ All user-facing movement, editing, and render operations are methods on
   forward history beyond the selected version and re-enables editing.
   `inHistoryMode()` / `historyIndex()` expose the current state to
   `Screen` for status-line rendering.
-- **Consistency**: `clampToBuffer()` re-clamps point, mark, and
-  viewport to valid positions after the underlying buffer changed
-  (e.g. via another view or `revert()`). Called automatically when the
-  view notices a `docVersion` mismatch.
+- **Multiple cursors**: `_extraCursors` holds the secondary cursors,
+  kept sorted, deduplicated, and never equal to `_point`;
+  `multiCursor()` *is* "that vector is non-empty", so there is no
+  separate mode flag to drift. Created by `selectAllOccurrences()`
+  (`Esc-*`) and `addCursorDown/Up()` (`Ctrl-Shift-Down/Up`), dropped by
+  `collapseCursors()`.
+  - *Editing*: `insert`, the deletes, the chunk deletes, and
+    `insertText` route to `multi*` drivers. Each snapshots every cursor
+    into `_batch`, performs primitive edits through `Buffer`'s
+    position-explicit API, and shifts **all** batch entries by that
+    edit's `[from, to)` span — so cursors can be visited in any order
+    and merging falls out for free.
+  - *History*: the batch ends with exactly one
+    `recordVersion(point, SIZE_MAX, netShift)`, so one keystroke is one
+    undo step regardless of cursor count. `SIZE_MAX` is load-bearing: a
+    scattered edit has no single contiguous dirty region, so passing a
+    `dirtyFrom` would violate `recordVersion()`'s contract and corrupt
+    `VersionHistory`'s delta reconstruction. The single-cursor path is
+    untouched and keeps its O(1) delta.
+  - *Movement*: the parallel commands are thin wrappers whose `*Impl`
+    body runs once for the primary and then once per extra cursor
+    (`moveExtras()`), each extra temporarily installed as `_point`.
+    Commands that jump somewhere unrelated — `setPoint` (and so find,
+    bookmarks, mouse clicks), `gotoLine`, paging, paragraph moves,
+    bracket match — collapse to the primary first, as do setting the
+    mark, region edits, and entering history mode.
+  - Extra cursors are deliberately **not** persisted in
+    `Buffer::SavedViewState`: a buffer switch or panel close collapses
+    to the primary cursor.
+- **Consistency**: `clampToBuffer()` re-clamps point, mark, extra
+  cursors, and viewport to valid positions after the underlying buffer
+  changed (e.g. via another view or `revert()`). Called automatically
+  when the view notices a `docVersion` mismatch.
 
 ---
 

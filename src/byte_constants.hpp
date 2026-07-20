@@ -71,6 +71,16 @@ constexpr char Terminator = '~';  /**< Final byte for extended key sequences */
 constexpr char ModCtrl = '5';
 
 /**
+ * @brief Modifier code for Shift+Ctrl (ESC[1;6X).
+ *
+ * Distinct from ModCtrl at the byte level, so there is no conflict. Some
+ * terminal and tmux configurations swallow these sequences before they
+ * reach the application, which is why the actions they drive are also
+ * reachable by name through Esc-x.
+ */
+constexpr char ModCtrlShift = '6';
+
+/**
  * @name Output escape sequences (CSI SGR and editing)
  *
  * Declared as @c string_view so callers using @c += against a

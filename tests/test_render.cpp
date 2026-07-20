@@ -604,3 +604,47 @@ BOOST_AUTO_TEST_CASE(render_conflict_theirs_has_bg) {
   // ConflictTheirs bg (> line): \x1b[48;2;50;70;40m
   BOOST_CHECK(out.find("\x1b[48;2;50;70;40m") != std::string::npos);
 }
+
+// --- Secondary cursors ---
+
+BOOST_AUTO_TEST_CASE(render_extra_cursor_inverts_its_character_cell) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "abcde");
+  buf.view.setPoint(0, 0);
+  buf.view.addCursor({0, 2});
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20}, renderParams(buf));
+  // The 'c' at offset 2 is reverse-videoed, and 'd' turns it back off.
+  BOOST_CHECK(out.find("\x1b[7mc") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_without_extra_cursors_has_no_inverted_cell) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "abcde");
+  buf.view.setPoint(0, 0);
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20}, renderParams(buf));
+  BOOST_CHECK(out.find("\x1b[7mc") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_extra_cursor_outside_viewport_leaves_no_artefact) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "aaa\nbbb\nccc\nddd\nzzz");
+  buf.view.setPoint(0, 0);
+  buf.view.addCursor({4, 1});
+  std::string out;
+  // Only two rows are visible, so the cursor on line 4 is off-screen.
+  buf.render(out, RowIdx{2}, ColIdx{20}, renderParams(buf));
+  BOOST_CHECK(out.find("\x1b[7mz") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_extra_cursor_at_end_of_line_gets_a_space) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "ab\ncd");
+  buf.view.setPoint(1, 0);
+  buf.view.addCursor({0, 2}); // end of the first line
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{20}, renderParams(buf));
+  // A reverse-video space stands in for the missing character cell.
+  BOOST_CHECK(out.find("\x1b[7m ") != std::string::npos);
+}

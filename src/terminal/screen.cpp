@@ -401,7 +401,22 @@ void Screen::drawModeline(Panel& panel, bool focused) {
       escapeNonPrintable(_bufMgr ? _bufMgr->displayName(pbuf.name()) : pbuf.name());
   // Insert/overwrite only applies to editable buffers; read-only buffers
   // (help, directory browser, …) show no indicator.
-  std::string modeIndicator = pbuf.readonly() ? "" : (pbuf.overwriteMode() ? " O" : " I");
+  //
+  // A live cursor count is prefixed to it as "<count>@": three
+  // right-aligned digit columns plus the '@', blank while a single cursor
+  // is active. The columns are reserved either way so the indicator never
+  // shifts as cursors come and go, or as the count crosses 9 / 99. Counts
+  // above 999 show "***@" rather than widening the field.
+  std::string modeIndicator;
+  if (!pbuf.readonly()) {
+    std::string cursorField = "    ";
+    if (view.multiCursor()) {
+      auto n = view.cursorCount();
+      std::string num = n > 999 ? "***" : std::to_string(n);
+      cursorField = std::string(3 - num.size(), ' ') + num + "@";
+    }
+    modeIndicator = " " + cursorField + (pbuf.overwriteMode() ? "O" : "I");
+  }
   std::string suffix;
   if (!pbuf.readonly())
     suffix += pbuf.mode() == BufferMode::Cpp   ? " [c]"
@@ -1520,6 +1535,13 @@ void Screen::openExecuteCommandPrompt() {
             auto desc = descriptionForAction(a);
             dispatchAction(a);
             auto shortcut = formatShortcut(shortcutForAction(a));
+            // Actions with no chord (Insert key, Ctrl-Shift-Up/Down) have
+            // no binding to teach, so leave the hint off entirely.
+            if (shortcut.empty()) {
+              if (_statusMsg.empty())
+                setStatus(std::string(desc));
+              return;
+            }
             // If the dispatched action set its own status, don't
             // overwrite it — append the binding hint instead.
             std::string hint = std::string(desc) + " (" + shortcut + ")";
@@ -2105,6 +2127,12 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
                 break;
               }
               _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+            } else if (mod == ansi::ModCtrlShift && _buf) {
+              // Shift+Ctrl+Up/Down grow the cursor set by a column.
+              if (dir == ansi::UpArrow)
+                dispatchAction(Action::AddCursorUp);
+              else if (dir == ansi::DownArrow)
+                dispatchAction(Action::AddCursorDown);
             }
           }
           break;
@@ -2614,6 +2642,14 @@ void Screen::setStatus(std::string msg) {
 }
 
 void Screen::handleBareEscEsc() {
+  // Collapsing extra cursors comes first: while multiple cursors are
+  // active that is overwhelmingly what Esc-Esc is meant to undo, and a
+  // second Esc-Esc still reaches the overlay/mark duties below.
+  if (_view && _view->multiCursor()) {
+    _view->collapseCursors();
+    setStatus("Single cursor");
+    return;
+  }
   // Overlay dismissal takes precedence over mark clearing: the mark
   // belongs to the underlying buffer and is preserved across an
   // overlay, so a second Esc-Esc after dismissal still clears it.
@@ -2885,6 +2921,34 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::GoToLine:
     openGoToLinePrompt();
+    break;
+  case Action::SelectAllOccurrences:
+    if (_buf) {
+      if (auto n = _view->selectAllOccurrences())
+        setStatus("Created " + std::to_string(n) + (n == 1 ? " cursor" : " cursors"));
+      else
+        setStatus("No word at cursor");
+    }
+    break;
+  case Action::AddCursorDown:
+    if (_buf) {
+      // The running total lives in the modeline indicator, so the status
+      // line only reports what this keystroke did.
+      if (_view->addCursorDown())
+        setStatus("Cursor added");
+      else
+        setStatus("No line below");
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+    }
+    break;
+  case Action::AddCursorUp:
+    if (_buf) {
+      if (_view->addCursorUp())
+        setStatus("Cursor added");
+      else
+        setStatus("No line above");
+      _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+    }
     break;
   case Action::SetBookmark:
     if (!requireNotInHistoryMode())

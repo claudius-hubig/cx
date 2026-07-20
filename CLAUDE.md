@@ -136,4 +136,5 @@ tests/
   test_paste_ring_buffer.cpp       PasteRingBuffer display tests
   test_clipboard.cpp               Clipboard PATH probe and detection tests
   test_search.cpp                  Smart-find matching logic tests
+  test_multi_cursor.cpp            Multiple-cursor creation/edit/undo tests
 ```

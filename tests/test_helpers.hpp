@@ -160,6 +160,7 @@ inline RenderParams renderParams(BufferView const& view, bool showWhitespace = f
   p.viewFrom = view.viewFromRaw();
   p.mark = view.mark();
   p.highlight = view.highlight();
+  p.extraCursors = view.extraCursors();
   p.showWhitespace = showWhitespace;
   p.wrap = wrap;
   p.rowOffset = rowOffset;

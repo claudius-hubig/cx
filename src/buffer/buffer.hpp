@@ -63,9 +63,18 @@ struct RenderParams {
   ViewFrom viewFrom;                  /**< Viewport anchor. */
   std::optional<BufferPoint> mark;    /**< Selection mark, if active. */
   std::optional<Highlight> highlight; /**< Find highlight, if active. */
-  bool showWhitespace = false;        /**< Render whitespace markers. */
-  bool wrap = true;                   /**< Soft-wrap long lines. */
-  bool focused = true;                /**< Whether this panel has focus. */
+  /**
+   * @brief Secondary cursor positions, sorted ascending.
+   *
+   * Empty for ordinary single-cursor editing, which costs nothing. The
+   * renderer reverse-videos the character cell at each position falling
+   * inside the viewport (a space at end-of-line); the hardware terminal
+   * cursor stays on @c point.
+   */
+  std::span<BufferPoint const> extraCursors;
+  bool showWhitespace = false; /**< Render whitespace markers. */
+  bool wrap = true;            /**< Soft-wrap long lines. */
+  bool focused = true;         /**< Whether this panel has focus. */
   /**
    * @brief Tint the entire physical line containing @c point.
    *

@@ -508,3 +508,35 @@ BOOST_AUTO_TEST_CASE(allCommands_excludes_self_and_dedupes) {
   std::sort(actions.begin(), actions.end());
   BOOST_CHECK(std::adjacent_find(actions.begin(), actions.end()) == actions.end());
 }
+
+BOOST_AUTO_TEST_CASE(esc_star_maps_to_select_all_occurrences) {
+  auto a = handleShortcut({.esc = true, .key = '*'});
+  BOOST_REQUIRE(a.has_value());
+  BOOST_CHECK(*a == Action::SelectAllOccurrences);
+}
+
+BOOST_AUTO_TEST_CASE(multi_cursor_actions_are_described_and_executable_by_name) {
+  // AddCursorDown/Up arrive as CSI sequences rather than table shortcuts,
+  // so Esc-x is their only keyboard-independent route — they must still be
+  // listed and described.
+  for (auto a : {Action::SelectAllOccurrences, Action::AddCursorDown, Action::AddCursorUp})
+    BOOST_CHECK(!descriptionForAction(a).empty());
+
+  auto cmds = allCommands();
+  auto hasAction = [&](Action a) {
+    return std::any_of(cmds.begin(), cmds.end(), [a](auto& p) { return p.second == a; });
+  };
+  BOOST_CHECK(hasAction(Action::SelectAllOccurrences));
+  BOOST_CHECK(hasAction(Action::AddCursorDown));
+  BOOST_CHECK(hasAction(Action::AddCursorUp));
+}
+
+BOOST_AUTO_TEST_CASE(chordless_actions_format_to_an_empty_label) {
+  // Actions dispatched from CSI sequences have no Shortcut; formatting one
+  // must yield "" rather than splatting the zero key byte into the UI.
+  BOOST_CHECK(formatShortcut(shortcutForAction(Action::AddCursorDown)).empty());
+  BOOST_CHECK(formatShortcut(shortcutForAction(Action::AddCursorUp)).empty());
+  BOOST_CHECK(formatShortcut(shortcutForAction(Action::ToggleOverwriteMode)).empty());
+  // An action that does have a chord still formats normally.
+  BOOST_CHECK_EQUAL(formatShortcut(shortcutForAction(Action::Save)), "Ctrl-s");
+}

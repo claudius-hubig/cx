@@ -577,6 +577,17 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     return highlight->from <= p && p < highlight->to;
   };
 
+  // Secondary cursors render as a reverse-video cell, so they mark the
+  // character under the cursor instead of replacing it. The span is
+  // sorted, so a binary search suffices.
+  auto const& extraCursors = params.extraCursors;
+  auto atExtraCursor = [&](std::size_t lineIdx, std::size_t byteOffset) -> bool {
+    if (extraCursors.empty())
+      return false;
+    return std::binary_search(extraCursors.begin(), extraCursors.end(),
+                              BufferPoint{lineIdx, byteOffset});
+  };
+
   std::size_t cur_row = 0, cur_col = 0;
   bool pointFound = false;
 
@@ -653,7 +664,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // escapes when transitioning in/out of styled spans.
   auto updateStyle = [&](std::size_t lineIdx, std::size_t byteOff, RenderState& rs) {
     bool wantHl = inHighlight(lineIdx, byteOff);
-    bool wantRegion = !wantHl && inRegion(lineIdx, byteOff);
+    bool wantRegion = !wantHl && (inRegion(lineIdx, byteOff) || atExtraCursor(lineIdx, byteOff));
     if (wantHl && !rs.highlightActive) {
       if (rs.regionActive) {
         out += ansi::Reset;
@@ -728,6 +739,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     }
     if (hasRegion && lineIdx + 1 < _lines.size() && visCol < maxCol &&
         inRegion(lineIdx, lineSize)) {
+      if (!rs.regionActive) {
+        out += ansi::ReverseVideo;
+        rs.regionActive = true;
+      }
+      out += ' ';
+    }
+    // A secondary cursor sitting at end-of-line has no character cell to
+    // invert, so give it a reverse-video space of its own.
+    if (visCol < maxCol && atExtraCursor(lineIdx, lineSize)) {
       if (!rs.regionActive) {
         out += ansi::ReverseVideo;
         rs.regionActive = true;

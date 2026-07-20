@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -75,7 +76,10 @@ public:
   ViewFrom const& viewFromRaw() const { return _viewFrom; }
 
   void setPoint(std::size_t line, std::size_t offset);
-  void setMark(BufferPoint p) { _mark = p; }
+  void setMark(BufferPoint p) {
+    collapseCursors();
+    _mark = p;
+  }
   void clearMark() { _mark.reset(); }
   void toggleMark();
 
@@ -129,6 +133,64 @@ public:
 
   /** @brief Current cursor position as a 1-based {line, column} pair. */
   std::tuple<std::size_t, std::size_t> lineCol() const;
+
+  /**
+   * @name Multiple cursors
+   *
+   * Multi-cursor mode *is* a non-empty extra-cursor set — there is no
+   * separate flag that could drift out of sync. The primary cursor stays
+   * in point() and is never listed in extraCursors().
+   *
+   * Insert, Enter, Tab, Backspace, Delete, chunk delete and paste apply at
+   * the primary and every extra cursor as a single undo step. Parallel
+   * movement (arrows, word, home/end) moves every cursor by the same rule.
+   * Every other command collapses to the primary first, so callers that
+   * know nothing about multiple cursors keep working unchanged.
+   *
+   * Extra cursors are per-view and deliberately not persisted in
+   * Buffer::SavedViewState: switching buffers or closing a panel collapses
+   * back to the primary cursor.
+   */
+  /** @{ */
+  /** @brief Secondary cursors, sorted ascending, deduplicated, never == point(). */
+  std::span<BufferPoint const> extraCursors() const { return _extraCursors; }
+  /** @brief True while more than one cursor is active. */
+  bool multiCursor() const { return !_extraCursors.empty(); }
+  /** @brief Total number of active cursors, including the primary (>= 1). */
+  std::size_t cursorCount() const { return _extraCursors.size() + 1; }
+  /** @brief Drop every extra cursor, leaving single-cursor editing. */
+  void collapseCursors() { _extraCursors.clear(); }
+
+  /**
+   * @brief Add a secondary cursor at @p p.
+   *
+   * A no-op if @p p coincides with the primary or an existing extra
+   * cursor; @p p is clamped to a valid buffer position.
+   */
+  void addCursor(BufferPoint p);
+
+  /**
+   * @brief Add a cursor one line below the lowest existing cursor, at the
+   *        primary's visual column (clamped to the target line's length).
+   * @return False when the lowest cursor is already on the last line.
+   */
+  bool addCursorDown();
+
+  /** @brief Mirror image of addCursorDown(). */
+  bool addCursorUp();
+
+  /**
+   * @brief Place a cursor at the end of every occurrence of the word at
+   *        point, or — when a mark is set — of the marked region's text.
+   *
+   * Word-at-point matches whole words only; a marked region matches as a
+   * plain substring and the mark is cleared. Multi-line regions and empty
+   * needles are rejected. The primary cursor becomes the last occurrence.
+   * @return The resulting cursor count, or 0 if nothing was matched (in
+   *         which case the cursor set is left untouched).
+   */
+  std::size_t selectAllOccurrences();
+  /** @} */
 
   /**
    * @name Movement
@@ -342,8 +404,102 @@ private:
   /** @brief True if the point is at the very end of the buffer. */
   bool atEnd() const;
 
+  /**
+   * @name Multi-cursor internals
+   */
+  /** @{ */
+  /** @brief Restore the extra-cursor invariant: clamped, sorted, unique,
+   *         and never equal to the primary. */
+  void normalizeCursors();
+
+  /**
+   * @name Parallel movement
+   *
+   * Each public movement command below runs its @c *Impl body once for the
+   * primary cursor and then, via moveExtras(), once per extra cursor with
+   * that cursor temporarily installed as @c _point — so the movement code
+   * itself needs no multi-cursor awareness.
+   */
+  /** @{ */
+  void moveLeftImpl();
+  void moveRightImpl();
+  void moveUpImpl(ColIdx cols);
+  void moveDownImpl(ColIdx cols);
+  void movePhysicalUpImpl();
+  void movePhysicalDownImpl();
+  void moveHomeImpl();
+  void moveEndImpl();
+  void moveWordRightImpl();
+  void moveWordLeftImpl();
+
+  void moveExtras(void (BufferView::*fn)());
+  void moveExtras(void (BufferView::*fn)(ColIdx), ColIdx cols);
+  /** @} */
+
+  /** @brief Add a cursor on @p line at (approximately) visual column @p vcol. */
+  void addCursorAtVisualCol(std::size_t line, std::size_t vcol);
+
+  /** @brief True if the byte at @p p is whitespace or ends the line. */
+  bool blankAt(BufferPoint p) const;
+  /** @brief True if the byte before @p p is whitespace or starts the line. */
+  bool blankBefore(BufferPoint p) const;
+
+  /**
+   * @brief Snapshot every cursor into @c _batch (sorted) for a batched
+   *        multi-cursor edit.
+   */
+  void beginBatch();
+  /**
+   * @brief Write @c _batch back to point/extras and record a single
+   *        version for the whole keystroke.
+   *
+   * A scattered edit has no single contiguous dirty region, so this always
+   * passes @c SIZE_MAX as @c dirtyFrom — anything else would violate
+   * Buffer::recordVersion()'s contract and corrupt delta reconstruction.
+   * @param lineCountBefore Buffer line count before the batch started.
+   * @param versionBefore Buffer docVersion before the batch started; no
+   *        version is recorded when the buffer did not actually change.
+   */
+  void endBatch(std::size_t lineCountBefore, std::size_t versionBefore);
+
+  /**
+   * @name Batch primitives
+   *
+   * Each performs one primitive edit at @c _batch[i] via Buffer's
+   * position-explicit API and shifts every entry of @c _batch (including
+   * entry @p i) to account for it, so cursors may be visited in any order.
+   */
+  /** @{ */
+  void batchInsertChar(std::size_t i, uint32_t cp);
+  void batchInsertText(std::size_t i, std::string_view text);
+  /** @return False if there was nothing to delete (buffer edge). */
+  bool batchDeleteForward(std::size_t i);
+  bool batchDeleteBackward(std::size_t i);
+  /** @} */
+
+  /** @brief Multi-cursor implementations behind the public edit methods. */
+  void multiInsert(uint32_t cp);
+  void multiDeleteForward();
+  void multiDeleteBackward();
+  void multiDeleteChunkForward();
+  void multiDeleteChunkBackward();
+  void multiInsertText(std::string_view text);
+  /** @} */
+
   Buffer& _buf;
   BufferPoint _point;
+  /**
+   * @brief Secondary cursors; empty means ordinary single-cursor editing.
+   *
+   * Kept sorted ascending, deduplicated, clamped to the buffer, and never
+   * containing @c _point. normalizeCursors() restores that invariant after
+   * every mutation.
+   */
+  std::vector<BufferPoint> _extraCursors;
+  /** @brief All cursors (primary included) during a batched multi edit. */
+  std::vector<BufferPoint> _batch;
+  /** @brief Index of the primary cursor within @c _batch. */
+  std::size_t _batchPrimary = 0;
   std::optional<BufferPoint> _mark;
   ViewFrom _viewFrom;
   /**

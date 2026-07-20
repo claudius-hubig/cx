@@ -16,7 +16,7 @@ struct Binding {
  * Both help display and input dispatch read from this table; the order
  * matches the help-screen layout.
  */
-static constexpr auto kBindings = std::array<Binding, 54>{{
+static constexpr auto kBindings = std::array<Binding, 57>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},
     {{.ctrl = true, .key = 'o'}, Action::SwitchBuffer, "Switch to buffer/open file"},
@@ -71,6 +71,14 @@ static constexpr auto kBindings = std::array<Binding, 54>{{
     {{.esc = true, .key = '#'}, Action::ToggleLineNumbers, "Toggle line-number gutter"},
     {{.cx = true, .key = 'm'}, Action::ToggleMouseTracking, "Toggle mouse tracking"},
     {{}, Action::ToggleOverwriteMode, "Toggle insert/overwrite mode"},
+    {{.esc = true, .key = '*'}, Action::SelectAllOccurrences, "Cursor at every occurrence"},
+    // Ctrl-Shift-Up/Down arrive as CSI sequences (ESC[1;6A / ESC[1;6B),
+    // not as table shortcuts, so they carry an empty Shortcut and are
+    // dispatched from the input loop — same pattern as the Insert key
+    // driving ToggleOverwriteMode. The empty entry keeps them listed in
+    // help and reachable by name via Esc-x.
+    {{}, Action::AddCursorDown, "Add cursor on line below"},
+    {{}, Action::AddCursorUp, "Add cursor on line above"},
 }};
 
 std::optional<Action> handleShortcut(Shortcut s) {
@@ -109,6 +117,13 @@ std::vector<std::pair<std::string_view, Action>> allCommands() {
 }
 
 std::string formatShortcut(Shortcut s) {
+  // Actions driven from CSI sequences rather than a chord (the Insert key,
+  // Ctrl-Shift-Up/Down) carry an empty Shortcut. There is nothing to
+  // format, and emitting the key byte verbatim would put a NUL in the
+  // modeline; callers treat "" as "this action has no chord".
+  if (s == Shortcut{})
+    return {};
+
   // Ctrl-H is Ctrl-Backspace in terminals.
   if (s.ctrl && s.key == 'h')
     return "Ctrl-Bksp";

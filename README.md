@@ -2,6 +2,12 @@
 
 AI-slopped, simple, terminal text editor. Esc-? for help text. No configuration.
 
+![cx editing its own source in three split panels](docs/screenshot.png)
+
+Three panels editing cx's own source, with line-number gutters and C-mode syntax highlighting. The focused panel
+(bottom left) has three cursors active — note the reverse-video cells on the comment lines and the `3@I` on its
+modeline. See [The Modeline](#the-modeline) for what the rest of that row means.
+
 ## Building
 
 ```sh
@@ -53,9 +59,75 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Split panels** — split the terminal vertically or horizontally into up to 6 independent panels, each with its own cursor and viewport; focus panels by number or switch to the most recently used panel with C-x o
 - **Mouse support** — left-click positions the cursor (and focuses a non-focused panel); left-drag selects a region (the `mark`→cursor span, mirrored to the X11 PRIMARY selection), autoscrolling when dragged past the top or bottom of a panel. Middle-click pastes the X11 PRIMARY selection at the cursor. The wheel scrolls the panel under the pointer. While mouse tracking is on, the terminal's own right-click context menu and selection are suppressed — hold `Shift` while clicking to bypass tracking, or toggle tracking off with `C-x m`.
 - **Long-running command kill prompt** — external commands launched via Esc-f, Tab-format, or Ctrl-p that take longer than 10 s show a "Kill? y/n" prompt so a hung formatter or pipe never freezes the editor.
-- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode (`[txt]` / `[c]` / `[md]` / `[jsn]` / `[dif]` / `[sh]` / `[yml]` / `[py]`), an `I`/`O` insert/overwrite indicator, and a `+` indicator when modified. A history-mode badge replaces the status segment while browsing versions.
+- **Modeline** — the bottom row of each panel shows `line:col`, the active prompt or status message, the buffer's display name, its mode, a `+` when modified, the cursor count, and an `I`/`O` insert/overwrite indicator. See [The Modeline](#the-modeline) for the full breakdown.
 - **Terminal title** — set to `cx@<cwd>` on startup so cx tabs are easy to identify.
 - **Error log** — uncaught exceptions, clipboard failures and the like are appended to `~/.cx-errors` for post-mortem inspection (never surfaced as UI noise).
+
+## The Modeline
+
+The bottom row of every panel is its modeline, drawn in reverse video — bold on the focused panel, dim on the others
+(the [screenshot](#cx) above shows three of them). It has a left segment that tracks what you are doing, and a
+right-aligned segment that describes the buffer:
+
+```
+3:17 | Created 3 cursors                                          notes.md [md] +   3@I
+└──── left segment ────┘                                          └── right segment ──┘
+```
+
+Reading that example: the cursor is on line 3, character 17; the last thing that happened was `Esc-*` creating three
+cursors; the buffer is `notes.md` in Markdown mode with unsaved changes, and has 3 cursors active in insert mode.
+
+### Left segment
+
+- **`3:17`** — cursor position: 1-based line, then 1-based column counted in *characters*, not bytes, so a line of
+  CJK or accented text reports the column you can actually see.
+- **`| v 4/12  2026-07-19 15:04:22  [/] step  Ctrl-U commit`** — the history-mode badge: which version you are on out
+  of how many, when it was captured, and the keys to step or commit.
+- **`| Find: rege`** — the active prompt and what you have typed so far, followed by any completion hint in dim text.
+- **`| Created 3 cursors`** — the most recent status message. It stays up until the next keypress redraws the
+  modeline.
+
+Only one of the prompt and the status message is ever shown, and only on the focused panel; the cursor position and
+the history badge appear on every panel.
+
+### Right segment
+
+- **`notes.md`** — the buffer's display name: the bare filename when that is unambiguous, otherwise the full path.
+  Built-in buffers use a `*name*` form: `*1*` (the scratch buffer cx opens with), `*stdin*`, `*help*`, `*buffers*`,
+  and `*paste ring*`.
+- **`[md]`** — the buffer mode, one of `[txt]` `[c]` `[md]` `[jsn]` `[dif]` `[sh]` `[yml]` `[py]`. It drives syntax
+  highlighting, auto-indent, and formatting, and is changed with `Esc-m`.
+- **`+`** — unsaved changes. Blank means the buffer matches what is on disk.
+- **`3@`** — the cursor count, while multiple cursors are active. Blank with a single cursor; `***@` above 999.
+- **`I` / `O`** — insert or overwrite mode, toggled with the `Insert` key. The terminal cursor shape follows it too:
+  a block for insert, a bar for overwrite.
+
+Read-only buffers — help, the directory browser, the buffer list, the paste ring, and any buffer being browsed in
+history mode — show the name alone. The mode, cursor count and `I`/`O` are all omitted, since none of them apply to a
+buffer you cannot type into.
+
+The count and `@` occupy a fixed-width field, so the `I`/`O` never changes column as cursors come and go:
+
+```
+notes.md [md] +   3@I     modified, 3 cursors, insert mode
+notes.md [md] +     I     modified, single cursor, insert mode
+notes.md [md]       O     saved, single cursor, overwrite mode
+```
+
+### When space runs short
+
+The modeline never wraps or spills past its panel. As the panel narrows, it degrades in this order: the buffer name is
+truncated from the front with a leading `…`; then the name is dropped entirely, keeping only the `I`/`O` block; then
+that goes too. A prompt long enough to fill the whole line is truncated from the back.
+
+### Not on the modeline
+
+Two nearby cues are easy to mistake for part of it:
+
+- A dim digit in the **top**-right corner of a panel is its panel number (shown only when more than one panel is open),
+  for `C-x 1`…`C-x 6`.
+- The rightmost column of the panel body is the wrap/scroll gutter: `↵` marks a soft-wrapped line, `↠` marks a line
+  whose content extends past the right edge in no-wrap mode.
 
 ## Keyboard Shortcuts
 
@@ -115,6 +187,37 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 | PgUp / PgDn     | Page up / down (half screen)                               |
 | Home / End      | Start / end of line                                        |
 | Ctrl-Home/End   | Start / end of file                                        |
+
+### Multiple cursors
+
+Several cursors edit in parallel: typing, Enter, Tab, Backspace, Delete,
+chunk delete and paste all apply at every cursor, and one keystroke is one
+undo step no matter how many cursors are active. Arrow, word and Home/End
+movement moves every cursor by the same rule.
+
+Secondary cursors show as reverse-video cells, and the live cursor count
+sits in front of the insert/overwrite indicator at the right of the
+modeline as `3@I`. The field is blank with a single cursor and reserves
+three digit columns, so the indicator never shifts as cursors come and go;
+counts above 999 show as `***@`.
+
+| Key            | Action                                                    |
+|----------------|-----------------------------------------------------------|
+| Esc-*          | Cursor at the end of every occurrence of the word at point |
+| Ctrl-Shift-Down| Add cursor on the line below, at the same column           |
+| Ctrl-Shift-Up  | Add cursor on the line above, at the same column           |
+| Esc-Esc        | Back to a single cursor                                    |
+
+The headline workflow — rename every occurrence of a word — is `Esc-*`,
+then `Ctrl-Bksp` to kill the word at every cursor, then type the
+replacement.
+
+With a region marked, `Esc-*` matches the region's text literally instead
+of whole words. Any other command (find, goto, mouse click, cut/copy,
+comment toggle, history mode, …) collapses back to a single cursor first.
+
+Some terminals and tmux configurations swallow `Ctrl-Shift-Up/Down`; both
+actions are also reachable by name through `Esc-x`.
 
 ### Bookmarks
 
