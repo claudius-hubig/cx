@@ -43,6 +43,7 @@ enum class Action {
   Find,
   FindBackward,
   Replace,
+  Grep,
   BufferList,
   PasteRing,
   ToggleWhitespace,

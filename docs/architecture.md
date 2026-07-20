@@ -208,14 +208,17 @@ without constructing a real terminal.
 
 Owns all `TextBuffer` instances (keyed by canonical path or synthetic
 name), all `DirBuffer` instances (keyed by canonical directory path),
-plus the singleton `HelpBuffer`, and lazily-created `BufferListBuffer`
-and `PasteRingBuffer`. Maintains an MRU list for buffer switching.
+plus the singleton `HelpBuffer`, and lazily-created `BufferListBuffer`,
+`PasteRingBuffer`, and `GrepBuffer`. Maintains an MRU list for buffer
+switching.
 
 Key responsibilities:
 - `open()` — canonicalizes a path and opens or returns an existing
   `TextBuffer`
 - `openDir()` — canonicalizes a directory path and opens or returns an
   existing `DirBuffer`
+- `grepBuffer()` — creates or refreshes the singleton `GrepBuffer` with a
+  new result set
 - `create()` — creates a new empty `TextBuffer` with a synthetic name
 - `kill()` — removes a buffer; always leaves at least one buffer alive
 - `completions()` — returns match candidates for the switch-buffer prompt,
@@ -482,6 +485,35 @@ owner, group, size, and modification time. Supports:
 
 Each entry is represented as a `DirBuffer::Entry` struct with metadata
 gathered from the filesystem. `refresh()` rebuilds the listing from disk.
+
+---
+
+### `GrepBuffer` (`src/buffer/grep_buffer.hpp/.cpp`)
+
+Readonly buffer listing find-in-files results, one `path:line: text` row
+per hit under a one-line header describing the search. `refresh()`
+rebuilds the listing from a new result set; `selectedHit()` maps a cursor
+position past the header back to a `GrepHit` so `Screen` can open the
+file when the user presses Enter.
+
+The free function `parseGrepOutput()` turns the raw stdout of either
+backend into `GrepHit` values. Both are invoked with a NUL after the
+filename (`git grep -z`, `grep -Z`), which keeps paths containing `:`
+unambiguous; they differ in whether the line number is terminated by NUL
+or `:`, and the parser accepts either. Malformed records are skipped
+rather than aborting the parse.
+
+Backend selection, argument construction, and opening a hit live in
+`Screen` (`runGrep()`, `searchStartDir()`, `openGrepHit()`), not here, so
+this class stays a pure display of an already-computed result set:
+- inside a git work tree, `git grep` runs from the repository root, so
+  `.gitignore` is honoured (and only tracked files are searched)
+- otherwise `grep -r` runs from `searchStartDir()` — the browsed
+  directory for a `DirBuffer`, else the current file's parent, else the
+  process working directory
+- `openGrepHit()` shows the target in the other panel, splitting
+  vertically first when only one panel is open, so the listing survives
+  walking several matches
 
 ---
 

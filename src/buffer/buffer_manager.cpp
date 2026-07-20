@@ -63,6 +63,15 @@ PasteRingBuffer& BufferManager::pasteRingBuffer(PasteRing const& pr) {
   return *_pasteRingBuffer;
 }
 
+GrepBuffer& BufferManager::grepBuffer(std::string pattern, std::filesystem::path root,
+                                      std::vector<GrepHit> hits) {
+  if (!_grepBuffer)
+    _grepBuffer = std::make_unique<GrepBuffer>();
+  auto hint = _grepBuffer->refresh(std::move(pattern), std::move(root), std::move(hits));
+  _grepBuffer->setSavedView({.point = hint.point, .viewFrom = hint.viewFrom});
+  return *_grepBuffer;
+}
+
 DirBuffer& BufferManager::openDir(std::filesystem::path const& dir) {
   auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
   auto key = canonical.string();

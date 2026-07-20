@@ -40,6 +40,7 @@ add_library(cx_core STATIC
     src/buffer/buffer_list_buffer.cpp
     src/buffer/paste_ring_buffer.cpp
     src/buffer/dir_buffer.cpp
+    src/buffer/grep_buffer.cpp
     src/buffer/buffer_manager.cpp
     src/terminal/setup_terminal.cpp
     src/terminal/screen.cpp
@@ -111,6 +112,7 @@ if(CX_BUILD_TESTS AND Boost_FOUND)
     cx_test(prompt_history)
     cx_test(syntax)
     cx_test(dir_buffer)
+    cx_test(grep_buffer)
     cx_test(buffer_view)
     cx_test(paste_ring)
     cx_test(version_history)

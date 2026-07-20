@@ -85,7 +85,7 @@ static std::vector<std::string> const& rightColumn() {
     std::vector<std::string> v;
     v.emplace_back("Search & Movement:");
     for (auto a : {Action::Find, Action::FindBackward, Action::Replace, Action::RegexFind,
-                   Action::RegexReplace})
+                   Action::RegexReplace, Action::Grep})
       v.push_back(formatHelpLine(a));
     v.push_back(
         formatRawLine("\xe2\x86\x90/\xe2\x86\x91/\xe2\x86\x92/\xe2\x86\x93", "Move cursor"));

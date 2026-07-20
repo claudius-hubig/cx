@@ -16,7 +16,7 @@ struct Binding {
  * Both help display and input dispatch read from this table; the order
  * matches the help-screen layout.
  */
-static constexpr auto kBindings = std::array<Binding, 57>{{
+static constexpr auto kBindings = std::array<Binding, 58>{{
     {{.esc = true, .key = '?'}, Action::Help, "Show this help"},
     {{.esc = true, .key = 'c'}, Action::Exit, "Exit"},
     {{.ctrl = true, .key = 'o'}, Action::SwitchBuffer, "Switch to buffer/open file"},
@@ -29,6 +29,7 @@ static constexpr auto kBindings = std::array<Binding, 57>{{
     {{.ctrl = true, .key = 'f'}, Action::Find, "Find forward"},
     {{.ctrl = true, .key = 'r'}, Action::FindBackward, "Find backward"},
     {{.esc = true, .key = '%'}, Action::Replace, "Find and replace"},
+    {{.esc = true, .key = 'g'}, Action::Grep, "Find in files"},
     {{.esc = true, .key = 's'}, Action::ToggleWhitespace, "Toggle whitespace"},
     {{.esc = true, .key = 'l'}, Action::ToggleWrap, "Toggle line wrap"},
     {{.ctrl = true, .key = ' '}, Action::ToggleMark, "Set/clear mark"},

@@ -103,6 +103,7 @@ src/
     buffer_list_buffer.hpp/.cpp    Readonly trie-based open-buffer listing
     paste_ring_buffer.hpp/.cpp     Readonly paste ring display
     dir_buffer.hpp/.cpp            Readonly directory browser with navigation and delete
+    grep_buffer.hpp/.cpp           Readonly find-in-files results; grep output parser
     buffer_manager.hpp/.cpp        Buffer lifecycle, MRU, completions
     version_history.hpp/.cpp       Append-only snapshot history with delta compression
     modes/
@@ -121,6 +122,7 @@ tests/
   test_buffer_list_buffer.cpp      BufferListBuffer trie tests
   test_buffer_manager.cpp          BufferManager lifecycle tests
   test_dir_buffer.cpp              DirBuffer navigation/delete tests
+  test_grep_buffer.cpp             GrepBuffer parsing/selection tests
   test_render.cpp                  Render output tests
   test_movement.cpp                Cursor movement tests
   test_scroll.cpp                  Viewport scrolling tests

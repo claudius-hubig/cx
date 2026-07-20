@@ -8,6 +8,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <poll.h>
 #include <pty.h>
 #include <signal.h>
@@ -1651,6 +1653,165 @@ BOOST_AUTO_TEST_CASE(e2e_cursor_count_indicator_saturates_above_999) {
   session.send("\x1b*");
   auto out = session.readUntil("***@I", std::chrono::milliseconds{2000});
   BOOST_CHECK(stripAnsi(out).find("***@I") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+// Grep runs a real subprocess, so these cover the pieces the GrepBuffer
+// unit tests cannot: backend selection, argument construction, and the
+// parse of what the backend actually wrote.
+BOOST_AUTO_TEST_CASE(e2e_grep_lists_matches) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // TempDir writes each filename as that file's content, so searching for
+  // "beta" matches beta.txt and nothing else.
+  TempDir dir({"alpha.txt", "beta.txt"});
+  PtySession session(24, 80, bin, {(dir.path() / "alpha.txt").string()});
+  session.readUntil("alpha", std::chrono::milliseconds{500});
+
+  session.send("\x1b"
+               "gbeta\r");
+  auto out = session.readUntil("1 match", std::chrono::milliseconds{5000});
+  auto stripped = stripAnsi(out);
+  BOOST_CHECK(stripped.find("1 match") != std::string::npos);
+  BOOST_CHECK(stripped.find("beta.txt:1:") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_grep_reports_no_matches) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir({"alpha.txt"});
+  PtySession session(24, 80, bin, {(dir.path() / "alpha.txt").string()});
+  session.readUntil("alpha", std::chrono::milliseconds{500});
+
+  session.send("\x1b"
+               "gzzzznope\r");
+  auto out = session.readUntil("No matches", std::chrono::milliseconds{5000});
+  BOOST_CHECK(stripAnsi(out).find("No matches") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_grep_enter_opens_hit_beside_results) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir({"alpha.txt", "beta.txt"});
+  PtySession session(24, 80, bin, {(dir.path() / "alpha.txt").string()});
+  session.readUntil("alpha", std::chrono::milliseconds{500});
+
+  session.send("\x1b"
+               "gbeta\r");
+  session.readUntil("beta.txt:1:", std::chrono::milliseconds{5000});
+
+  // Enter opens the hit. Only one panel was open, so cx splits first —
+  // the result listing must still be on screen afterwards.
+  session.send("\r");
+  auto out = session.readUntil("beta.txt", std::chrono::milliseconds{2000});
+  auto stripped = stripAnsi(out);
+  BOOST_CHECK(stripped.find("beta.txt:1:") != std::string::npos);
+  BOOST_CHECK(stripped.find("*grep*") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_grep_in_repo_searches_from_root) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+  if (std::system("git --version >/dev/null 2>&1") != 0) {
+    BOOST_WARN_MESSAGE(false, "git not available, skipping repo grep test");
+    return;
+  }
+
+  // A repo whose match lives at the ROOT, while the open buffer sits in a
+  // subdirectory. A search anchored at the buffer's own directory would
+  // miss it, so finding it proves we searched from the top level.
+  TempDir dir;
+  std::filesystem::create_directories(dir.path() / "sub");
+  {
+    std::ofstream root(dir.path() / "target.txt");
+    root << "the needle is here\n";
+    std::ofstream leaf(dir.path() / "sub" / "open_me.txt");
+    leaf << "unrelated content\n";
+  }
+  auto git = "git -C " + dir.path().string() + " ";
+  BOOST_REQUIRE_EQUAL(std::system((git + "init -q").c_str()), 0);
+  BOOST_REQUIRE_EQUAL(std::system((git + "add -A").c_str()), 0);
+
+  PtySession session(24, 80, bin, {(dir.path() / "sub" / "open_me.txt").string()});
+  session.readUntil("unrelated", std::chrono::milliseconds{500});
+
+  session.send("\x1b"
+               "gneedle\r");
+  auto out = session.readUntil("target.txt", std::chrono::milliseconds{5000});
+  auto stripped = stripAnsi(out);
+  BOOST_CHECK(stripped.find("1 match") != std::string::npos);
+  BOOST_CHECK(stripped.find("target.txt:1:") != std::string::npos);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
+BOOST_AUTO_TEST_CASE(e2e_grep_hit_lands_mid_panel) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir;
+  {
+    std::ofstream f(dir.path() / "long.txt");
+    for (int i = 1; i <= 200; ++i)
+      f << "line" << std::setw(3) << std::setfill('0') << i << "\n";
+    std::ofstream open(dir.path() / "open_me.txt");
+    open << "start here\n";
+  }
+
+  PtySession session(24, 80, bin, {(dir.path() / "open_me.txt").string()});
+  session.readUntil("start here", std::chrono::milliseconds{500});
+
+  session.send("\x1b"
+               "gline100\r");
+  session.readUntil("long.txt:100:", std::chrono::milliseconds{5000});
+  session.send("\r");
+  // Wait on context *below* the match, not on the match itself: the grep
+  // panel still shows "line100" in the hit text, so waiting for that
+  // returns a frame from before the file panel has redrawn.
+  auto stripped = stripAnsi(session.readUntil("line105", std::chrono::milliseconds{2000}));
+
+  // Centred, so lines well after the match are on screen too. Pinned to
+  // the bottom row (the old ensureVisible behaviour) nothing past
+  // line100 was drawn at all.
+  BOOST_CHECK(stripped.find("line100") != std::string::npos);
+  BOOST_CHECK(stripped.find("line105") != std::string::npos);
+  // ...and context before it survives as well.
+  BOOST_CHECK(stripped.find("line095") != std::string::npos);
 
   session.send("\x1b"
                "c");

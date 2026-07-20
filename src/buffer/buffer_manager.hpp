@@ -9,6 +9,7 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/dir_buffer.hpp"
+#include "buffer/grep_buffer.hpp"
 #include "buffer/help_buffer.hpp"
 #include "buffer/paste_ring_buffer.hpp"
 #include "buffer/text_buffer.hpp"
@@ -62,6 +63,13 @@ public:
    *        the current paste-ring contents.
    */
   PasteRingBuffer& pasteRingBuffer(PasteRing const& pr);
+
+  /**
+   * @brief The find-in-files buffer, created lazily and always refreshed
+   *        with the results of the search just run.
+   */
+  GrepBuffer& grepBuffer(std::string pattern, std::filesystem::path root,
+                         std::vector<GrepHit> hits);
 
   /**
    * @brief Open (or return the existing) directory buffer for @p dir.
@@ -135,6 +143,7 @@ private:
   std::unique_ptr<HelpBuffer> _helpBuffer;
   std::unique_ptr<BufferListBuffer> _bufferListBuffer;
   std::unique_ptr<PasteRingBuffer> _pasteRingBuffer;
+  std::unique_ptr<GrepBuffer> _grepBuffer;
   std::unordered_map<std::string, std::unique_ptr<TextBuffer>> _buffers;
   std::unordered_map<std::string, std::unique_ptr<DirBuffer>> _dirBuffers;
   std::unordered_map<std::string, std::string> _displayNames;

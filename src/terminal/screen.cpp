@@ -1002,6 +1002,123 @@ void Screen::openFindPrompt(bool backward) {
   runAutocomplete();
 }
 
+void Screen::openGrepPrompt() {
+  _prompt = Prompt{
+      .label = "Grep: ",
+      .onResult = [this](std::string const& value) { runGrep(value); },
+  };
+}
+
+std::filesystem::path Screen::searchStartDir() const {
+  if (auto* db = dynamic_cast<DirBuffer*>(_buf))
+    return db->directory();
+  if (_buf && _buf->hasPath())
+    return std::filesystem::path(_buf->name()).parent_path();
+  std::error_code ec;
+  auto cwd = std::filesystem::current_path(ec);
+  return ec ? std::filesystem::path(".") : cwd;
+}
+
+void Screen::runGrep(std::string const& pattern) {
+  if (pattern.empty() || !_bufMgr)
+    return;
+
+  auto start = searchStartDir();
+
+  // A work tree gets `git grep`, which honours .gitignore and so keeps
+  // build output and vendored trees out of the results. Anything else
+  // falls back to a plain recursive grep.
+  auto topLevel = runPipeCommand({"git", "rev-parse", "--show-toplevel"}, "", start.string());
+  bool inRepo = topLevel && !topLevel->killed && topLevel->exitCode == 0;
+  std::filesystem::path root = start;
+  if (inRepo) {
+    auto out = topLevel->stdoutData;
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+      out.pop_back();
+    if (out.empty())
+      inRepo = false;
+    else
+      root = out;
+  }
+
+  // -e guards a pattern that begins with '-' from being read as a flag.
+  std::vector<std::string> args;
+  if (inRepo)
+    args = {"git", "grep", "-I", "-n", "-z", "-e", pattern};
+  else
+    args = {"grep", "-r", "-I", "-n", "-Z", "--exclude-dir=.git", "-e", pattern, "."};
+
+  setStatus("Searching...");
+  draw();
+  auto res = runPipeCommand(args, "", root.string());
+  if (!res)
+    return;
+  if (res->killed) {
+    setStatus("Grep cancelled");
+    return;
+  }
+  // Both backends exit 1 for "no matches" and >1 for a real failure.
+  // 127 is runPipeCommand's own marker for a failed exec.
+  if (res->exitCode == 127) {
+    setStatus("No grep available");
+    return;
+  }
+  if (res->exitCode > 1) {
+    auto err = res->stderrData;
+    auto nl = err.find('\n');
+    if (nl != std::string::npos)
+      err.resize(nl);
+    setStatus(err.empty() ? "Grep failed" : "Grep: " + escapeNonPrintable(err));
+    return;
+  }
+
+  auto hits = parseGrepOutput(res->stdoutData, root);
+  auto count = hits.size();
+  auto& gb = _bufMgr->grepBuffer(pattern, root, std::move(hits));
+  // Record the predecessor so `q` dismisses the listing, as it does for
+  // the other read-only overlays. Re-running grep from inside the
+  // results must not make the listing its own predecessor.
+  if (_buf && _buf != &gb)
+    prevBuf() = _buf;
+  setBuffer(gb);
+  if (count == 0)
+    setStatus("No matches for " + escapeNonPrintable(pattern));
+  else
+    setStatus(std::to_string(count) + (count == 1 ? " match" : " matches"));
+}
+
+void Screen::openGrepHit(GrepHit const& hit) {
+  if (!_bufMgr || !_layout)
+    return;
+
+  Buffer& target = _bufMgr->open(hit.path);
+
+  // Show the hit beside the results rather than on top of them, so the
+  // listing survives walking several matches. A split that does not fit
+  // falls back to reusing the current panel.
+  if (_layout->count() == 1) {
+    if (auto* p = _layout->splitFocused(SplitDir::Vertical, target)) {
+      _layout->focusPanel(p->id());
+      updateFocusPointers();
+    }
+  } else {
+    if (_layout->focusMRU())
+      updateFocusPointers();
+  }
+  setBuffer(target);
+
+  std::size_t line = hit.line > 0 ? hit.line - 1 : 0;
+  if (line >= target.lineCount())
+    line = target.lineCount() > 0 ? target.lineCount() - 1 : 0;
+  _view->setPoint(line, 0);
+  // Centre rather than ensureVisible(), which scrolls the minimum amount
+  // and so leaves the hit pinned to the bottom row with no context below
+  // it. recenter() clamps by itself near the start of the file.
+  auto rows = rowsForBuffer();
+  _view->recenter(rows, rows.value / 2, colsForBuffer(), _view->wrap());
+  _pasteState.reset();
+}
+
 void Screen::openReplacePrompt() {
   if (!_buf || _buf->readonly()) {
     setStatus("Buffer is read-only");
@@ -2273,6 +2390,10 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
         prevBuf() = nullptr;
         setBuffer(*target);
       }
+    } else if (auto* gb = dynamic_cast<GrepBuffer*>(_buf); gb && _bufMgr) {
+      // Grep buffer: Enter opens the file behind the selected result.
+      if (auto hit = gb->selectedHit(_view->point()))
+        openGrepHit(*hit);
     } else if (auto* db = dynamic_cast<DirBuffer*>(_buf); db && _bufMgr) {
       // Directory buffer: Enter opens file or navigates into directory.
       auto pt = _view->point();
@@ -3294,6 +3415,11 @@ void Screen::dispatchAction(Action action) {
   case Action::SetMode:
     if (_buf && !_buf->readonly())
       openSetModePrompt();
+    break;
+  case Action::Grep:
+    if (requireNotInHistoryMode())
+      break;
+    openGrepPrompt();
     break;
   case Action::DirBrowser:
     if (requireNotInHistoryMode())

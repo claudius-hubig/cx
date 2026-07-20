@@ -17,6 +17,7 @@
 #include "buffer/buffer_sink.hpp"
 #include "buffer/buffer_view.hpp"
 #include "buffer/dir_buffer.hpp"
+#include "buffer/grep_buffer.hpp"
 #include "clipboard.hpp"
 #include "panel_layout.hpp"
 #include "paste_ring.hpp"
@@ -25,6 +26,7 @@
 #include "types.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -194,6 +196,8 @@ private:
   void openSaveAsPrompt();
   void openSwitchBufferPrompt();
   void openFindPrompt(bool backward);
+  /** @brief Prompt for a pattern, then run a find-in-files search. */
+  void openGrepPrompt();
   /**
    * @brief Two-step replace flow: prompt for pattern, then replacement,
    *        then iterate forward with a y/n/!/q confirmation per match.
@@ -286,6 +290,31 @@ private:
    * working directory. Used by all subprocess callers.
    */
   std::string bufferWorkDir() const;
+
+  /**
+   * @brief Directory a find-in-files search starts from.
+   *
+   * The browsed directory when the current buffer is a DirBuffer (which
+   * has no path of its own, so bufferWorkDir() would answer with the
+   * process cwd), else the current file's parent, else the process cwd.
+   */
+  std::filesystem::path searchStartDir() const;
+
+  /**
+   * @brief Run a find-in-files search for @p pattern and show the results.
+   *
+   * Uses `git grep` from the repository root when the start directory is
+   * inside a work tree, else `grep -r` from the start directory itself.
+   */
+  void runGrep(std::string const& pattern);
+
+  /**
+   * @brief Open the file behind a grep result at its matching line.
+   *
+   * Shows it in the other panel, splitting vertically first when only one
+   * panel is open, so the result listing stays visible while you walk it.
+   */
+  void openGrepHit(GrepHit const& hit);
 
   /** @brief Result of a runPipeCommand() invocation. */
   struct PipeResult {

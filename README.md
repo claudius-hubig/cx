@@ -40,6 +40,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
 - **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter (highlight visible for ~3 s); Ctrl-F again advances to the next match while re-prompting for a new search string. Inside the prompt Ctrl-F / Ctrl-R also advance the previous search forward/backward without leaving the prompt. An empty prompt re-uses the last pattern (shown as a dim hint).
 - **Find and replace** — `Esc-%` prompts for a pattern and replacement, then walks forward through matches asking `y`/`n`/`!`/`q` per hit. `!` finishes the rest without prompting. Matching is exact (case-sensitive, no fuzzy skipping) — unlike Find, which uses smart matching for navigation.
+- **Find in files** — `Esc-g` searches a whole tree and lists the hits in a read-only `*grep*` buffer as `path:line: text`. Inside a git work tree it runs `git grep` from the repository root, so `.gitignore` is honoured and build output stays out of the results (matches are limited to tracked files); otherwise it runs `grep -r` from the current buffer's directory, or from the browsed directory when a directory buffer is open. `Enter` on a result opens that file at that line in the other panel — splitting vertically first if only one panel is open — so the result list stays visible while you walk the matches. Searches over 10 s offer the same "Kill? y/n" prompt as other external commands.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Case conversion** — `Esc-U` / `Esc-L` / `Esc-C` uppercase / lowercase / capitalize the active region, or the word at (or next to the right of) the cursor when no mark is set. ASCII-only: non-ASCII letters are left unchanged, and the edit never splits a multi-byte UTF-8 character.
 - **System clipboard integration (X11)** — Cut and Copy publish the region to the X11 CLIPBOARD selection (via `xclip` or `xsel` if installed); Paste reads the CLIPBOARD when it differs from the top of the internal ring, so external Ctrl-C from other apps becomes pasteable. The active mark region is also mirrored to the PRIMARY selection after every keystroke (so other apps can middle-click-paste it), and middle-click inside the editor pastes the PRIMARY selection back at the cursor. All X11 integration is silently a no-op when no graphical session is available.
@@ -94,7 +95,7 @@ the history badge appear on every panel.
 
 - **`notes.md`** — the buffer's display name: the bare filename when that is unambiguous, otherwise the full path.
   Built-in buffers use a `*name*` form: `*1*` (the scratch buffer cx opens with), `*stdin*`, `*help*`, `*buffers*`,
-  and `*paste ring*`.
+  `*paste ring*`, and `*grep*`.
 - **`[md]`** — the buffer mode, one of `[txt]` `[c]` `[md]` `[jsn]` `[dif]` `[sh]` `[yml]` `[py]`. It drives syntax
   highlighting, auto-indent, and formatting, and is changed with `Esc-m`.
 - **`+`** — unsaved changes. Blank means the buffer matches what is on disk.
@@ -102,8 +103,8 @@ the history badge appear on every panel.
 - **`I` / `O`** — insert or overwrite mode, toggled with the `Insert` key. The terminal cursor shape follows it too:
   a block for insert, a bar for overwrite.
 
-Read-only buffers — help, the directory browser, the buffer list, the paste ring, and any buffer being browsed in
-history mode — show the name alone. The mode, cursor count and `I`/`O` are all omitted, since none of them apply to a
+Read-only buffers — help, the directory browser, the buffer list, the paste ring, the grep results, and any buffer
+being browsed in history mode — show the name alone. The mode, cursor count and `I`/`O` are all omitted, since none of them apply to a
 buffer you cannot type into.
 
 The count and `@` occupy a fixed-width field, so the `I`/`O` never changes column as cursors come and go:
@@ -177,6 +178,7 @@ Two nearby cues are easy to mistake for part of it:
 | Esc-%           | Find and replace                                           |
 | Esc-X           | Regex find forward (ECMAScript / `std::regex` syntax)      |
 | Esc-Y           | Regex find and replace (`$0..$9`/`$&` back-references)     |
+| Esc-g           | Find in files (grep)                                       |
 | Arrows          | Move cursor                                                |
 | Ctrl-Left/Right | Move by word                                               |
 | Ctrl-Up/Down    | Move by paragraph                                          |
