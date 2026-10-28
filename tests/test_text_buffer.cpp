@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE(revert_bumps_docversion_and_clamps_view) {
   BOOST_CHECK(buf.point() > (BufferPoint{0, 0}));
 
   auto v0 = buf.docVersion();
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK(buf.docVersion() != v0);
   // Point remains valid after revert (clamped if needed).
   BOOST_CHECK(buf.point().line < buf.lineCount());
@@ -180,7 +180,7 @@ BOOST_AUTO_TEST_CASE(revert_clears_modified) {
   buf.insert('X');
   BOOST_CHECK(buf.modified());
 
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK(!buf.modified());
 }
 
@@ -194,7 +194,7 @@ BOOST_AUTO_TEST_CASE(revert_picks_up_external_changes) {
     f << "changed content";
   }
 
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   // Buffer should now contain "changed content".
   buf.moveEnd();
   auto [line, col] = buf.lineCol();
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(revert_multiline) {
 
   // Modify and revert.
   buf.insert('X');
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK_EQUAL(buf.lineCount(), 4u);
   BOOST_CHECK(!buf.modified());
 }
@@ -500,7 +500,7 @@ BOOST_AUTO_TEST_CASE(revert_redetects_line_endings) {
     std::ofstream f(tmp.path(), std::ios::binary);
     f << "hi\r\n";
   }
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK(buf.lineEndingStyle() == LineEndingStyle::Crlf);
 }
 
@@ -542,6 +542,6 @@ BOOST_AUTO_TEST_CASE(loadFromFile_resets_hasConflicts_on_empty_revert) {
   {
     std::ofstream f(tmp.path(), std::ios::binary);
   }
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK(!buf.hasConflicts());
 }

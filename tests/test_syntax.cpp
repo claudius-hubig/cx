@@ -1511,7 +1511,7 @@ BOOST_AUTO_TEST_CASE(conflict_detected_on_revert) {
     std::ofstream f(tmp.path(), std::ios::binary);
     f << "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n";
   }
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK(buf.hasConflicts());
 }
 

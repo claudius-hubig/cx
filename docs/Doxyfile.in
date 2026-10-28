@@ -24,6 +24,9 @@ INPUT                  = @DOXYGEN_INPUT_DIR@/src \
 FILE_PATTERNS          = *.hpp *.cpp *.md
 RECURSIVE              = YES
 USE_MDFILE_AS_MAINPAGE = @DOXYGEN_INPUT_DIR@/README.md
+# Generate heading anchors the way GitHub does, so README links such as
+# (#the-modeline) resolve in both renderings.
+MARKDOWN_ID_STYLE      = GITHUB
 
 QUIET                  = YES
 WARN_IF_UNDOCUMENTED   = NO

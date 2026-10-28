@@ -11,11 +11,6 @@
  * Full snapshots are taken when line count changes or delta chain limit is reached.
  *
  * Automatically prunes old snapshots if the history exceeds kMaxVersions.
- *
- * @param currentLines The current line vector from the buffer.
- * @param cursor The cursor position at the time of capture.
- * @param dirtyFrom The first modified line (SIZE_MAX if unknown/force full snapshot).
- * @param lineShift Net change in line count (non-zero forces full snapshot).
  */
 void VersionHistory::capture(std::vector<LinePtr> const& currentLines, BufferPoint cursor,
                              std::size_t dirtyFrom, int lineShift) {

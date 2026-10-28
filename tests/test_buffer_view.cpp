@@ -594,7 +594,7 @@ BOOST_AUTO_TEST_CASE(save_preserves_history) {
   BufferView view(buf);
   view.insert('X');
   auto sizeBefore = buf.history().size();
-  buf.save();
+  BOOST_CHECK(buf.save());
   BOOST_CHECK_EQUAL(buf.history().size(), sizeBefore);
 }
 
@@ -604,7 +604,7 @@ BOOST_AUTO_TEST_CASE(revert_adds_history_entry) {
   BufferView view(buf);
   view.insert('X');
   auto sizeBefore = buf.history().size();
-  buf.revert();
+  BOOST_CHECK(buf.revert());
   BOOST_CHECK_EQUAL(buf.history().size(), sizeBefore + 1);
 }
 
@@ -631,7 +631,7 @@ BOOST_AUTO_TEST_CASE(apply_snapshot_sets_modified) {
   TextBuffer buf(f.path().string(), f.path());
   BufferView view(buf);
   view.insert('X');
-  buf.save();
+  BOOST_CHECK(buf.save());
   BOOST_CHECK(!buf.modified());
   // Step back in history — applySnapshot should mark modified.
   view.enterHistoryMode();

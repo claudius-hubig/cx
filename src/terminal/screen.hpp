@@ -152,6 +152,7 @@ private:
    * Handles the mark, cut/copy/paste/paste-cycle (through the shared
    * paste ring and X11 CLIPBOARD) and chunk deletion; other actions are
    * ignored while a prompt is open.
+   * @param action The action the key resolved to in the shortcut table.
    * @param lastPaste The paste made by the previous key, if any, which a
    *        PasteCycle replaces.
    */

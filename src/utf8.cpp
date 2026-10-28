@@ -29,7 +29,7 @@ std::size_t visualWidth(std::string_view s) {
  * @brief Replace non-printable bytes in a string with visible escape sequences.
  *
  * Converts control characters (< 0x20, DEL), DEL (0x7F), and invalid
- * UTF-8 lead bytes (>= 0x80 with len==1 from decodeUtf8) to \xHH format.
+ * UTF-8 lead bytes (>= 0x80 with len==1 from decodeUtf8) to "\\xHH" format.
  * Valid UTF-8 sequences pass through unchanged.
  *
  * The escaped bytes are styled with CtrlColor/DefaultFg for visibility.

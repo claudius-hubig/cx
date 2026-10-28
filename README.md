@@ -67,7 +67,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 ## The Modeline
 
 The bottom row of every panel is its modeline, drawn in reverse video — bold on the focused panel, dim on the others
-(the [screenshot](#cx) above shows three of them). It has a left segment that tracks what you are doing, and a
+(the screenshot above shows three of them). It has a left segment that tracks what you are doing, and a
 right-aligned segment that describes the buffer:
 
 ```
