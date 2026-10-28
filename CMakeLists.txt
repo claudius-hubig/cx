@@ -78,11 +78,13 @@ target_link_options(cx PRIVATE -static-libstdc++ -static-libgcc)
 #                                        cx still builds normally.
 #
 # find_package is QUIET (not REQUIRED) so a missing Boost downgrades
-# gracefully instead of failing configuration.
+# gracefully instead of failing configuration. CONFIG uses the package
+# files Boost installs itself (Boost >= 1.70) rather than CMake's
+# FindBoost module, which CMake 3.30 deprecated (policy CMP0167).
 option(CX_BUILD_TESTS "Build the test suite (requires Boost.Test)" ON)
 
 if(CX_BUILD_TESTS)
-    find_package(Boost QUIET COMPONENTS unit_test_framework)
+    find_package(Boost CONFIG QUIET COMPONENTS unit_test_framework)
 endif()
 
 if(CX_BUILD_TESTS AND Boost_FOUND)
