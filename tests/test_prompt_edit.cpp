@@ -114,3 +114,53 @@ BOOST_AUTO_TEST_CASE(home_end) {
   p.moveEnd();
   BOOST_CHECK(p.cursorAtEnd());
 }
+
+// --- mark / region ---
+
+BOOST_AUTO_TEST_CASE(region_spans_mark_and_cursor_in_either_order) {
+  auto p = withInput("hello world", 6);
+  BOOST_CHECK(!p.region());
+  BOOST_CHECK(p.toggleMark());
+  p.moveEnd();
+  BOOST_CHECK(p.region() == std::pair(std::size_t{6}, std::size_t{11}));
+  p.moveHome();
+  BOOST_CHECK(p.region() == std::pair(std::size_t{0}, std::size_t{6}));
+  BOOST_CHECK(!p.toggleMark());
+  BOOST_CHECK(!p.region());
+}
+
+BOOST_AUTO_TEST_CASE(insert_before_mark_shifts_it) {
+  auto p = withInput("abc", 2);
+  p.toggleMark();
+  p.moveHome();
+  p.insert("xy");
+  BOOST_CHECK_EQUAL(*p.mark, 4u);
+  BOOST_CHECK(p.region() == std::pair(std::size_t{2}, std::size_t{4}));
+}
+
+BOOST_AUTO_TEST_CASE(erase_around_mark_collapses_it_to_erase_start) {
+  auto p = withInput("abcdef", 3);
+  p.toggleMark();
+  p.erase(1, 5);
+  BOOST_CHECK_EQUAL(p.input, "af");
+  BOOST_CHECK_EQUAL(*p.mark, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(delete_region_erases_and_drops_mark) {
+  auto p = withInput("foo bar baz", 4);
+  p.toggleMark();
+  p.moveWordRight();
+  BOOST_CHECK(p.deleteRegion());
+  BOOST_CHECK_EQUAL(p.input, "foo  baz");
+  BOOST_CHECK_EQUAL(p.cursorPos(), 4u);
+  BOOST_CHECK(!p.mark);
+}
+
+BOOST_AUTO_TEST_CASE(input_replaced_drops_mark_and_moves_to_end) {
+  auto p = withInput("abc", 1);
+  p.toggleMark();
+  p.input = "completed/path";
+  p.inputReplaced();
+  BOOST_CHECK(!p.mark);
+  BOOST_CHECK(p.cursorAtEnd());
+}

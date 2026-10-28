@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -384,6 +385,9 @@ std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
       status_vwidth = visualWidth(status);
       // The cell under the prompt cursor is drawn in normal video against
       // the reverse-video bar; a confirm prompt shows it after the label.
+      // The selected region is inverted against the bar just as the
+      // buffer's is against the text, and underlined so the cursor cell
+      // at either end stays distinguishable from it.
       //
       // Escape at the display site: the typed-input path filters
       // control bytes, but completion-accept (Tab / Right-arrow) and
@@ -392,30 +396,55 @@ std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
       // the modeline. The raw value is kept for onResult/path lookup.
       std::string_view in = _prompt->showInput ? std::string_view(_prompt->input) : "";
       auto pos = std::min(_prompt->cursorPos(), in.size());
-      auto cellLen = pos < in.size() ? charInfoAt(in.data() + pos, in.size() - pos).len : 0;
-      auto cell = cellLen ? escapeNonPrintable(in.substr(pos, cellLen)) : std::string(" ");
-      auto cellWidth = visualWidth(cell);
-      auto before = in.substr(0, pos);
-      auto escBefore = escapeNonPrintable(before);
-      if (status_vwidth + visualWidth(escBefore) + cellWidth > pc.value &&
+      auto cellEnd = pos < in.size() ? pos + charInfoAt(in.data() + pos, in.size() - pos).len : pos;
+      auto widthOf = [&](std::size_t from, std::size_t to) {
+        return visualWidth(escapeNonPrintable(in.substr(from, to - from)));
+      };
+      auto cellWidth = cellEnd > pos ? widthOf(pos, cellEnd) : 1;
+      // Keep the cursor on screen: drop input from the front, behind an
+      // ellipsis, until the cursor cell fits.
+      std::size_t start = 0;
+      std::string_view ellipsis;
+      if (status_vwidth + widthOf(0, pos) + cellWidth > pc.value &&
           status_vwidth + 1 + cellWidth <= pc.value) {
-        // Keep the cursor on screen: drop input from the front, behind
-        // an ellipsis, until the cursor cell fits.
         std::size_t avail = pc.value - status_vwidth - cellWidth - 1;
         do
-          before.remove_prefix(charInfoAt(before.data(), before.size()).len);
-        while (visualWidth(escapeNonPrintable(before)) > avail);
-        escBefore = "\xe2\x80\xa6" + escapeNonPrintable(before);
+          start += charInfoAt(in.data() + start, in.size() - start).len;
+        while (widthOf(start, pos) > avail);
+        ellipsis = "\xe2\x80\xa6";
       }
-      auto cursorCol = status_vwidth + visualWidth(escBefore);
+      auto cursorCol = status_vwidth + (ellipsis.empty() ? 0 : 1) + widthOf(start, pos);
       if (cursorCol + cellWidth <= pc.value)
         promptCursorCol = rect.col + cursorCol;
-      status += escBefore;
-      status += ansi::ReverseVideoOff;
-      status += cell;
-      status += ansi::ReverseVideo;
-      if (cellLen)
-        status += escapeNonPrintable(in.substr(pos + cellLen));
+      status += ellipsis;
+
+      auto [regionStart, regionEnd] = _prompt->region().value_or(std::pair{pos, pos});
+      // Every region and cursor-cell boundary is a cut, so each piece
+      // between two cuts is wholly plain, selected, or the cursor cell.
+      std::array cuts{start, regionStart, regionEnd, pos, cellEnd, in.size()};
+      std::ranges::sort(cuts);
+      for (std::size_t i = 0; i + 1 < cuts.size(); ++i) {
+        auto from = cuts[i], to = cuts[i + 1];
+        if (from < start || from == to)
+          continue;
+        bool inCell = from >= pos && to <= cellEnd;
+        bool selected = !inCell && from >= regionStart && to <= regionEnd;
+        if (inCell || selected)
+          status += ansi::ReverseVideoOff;
+        if (selected)
+          status += ansi::Underline;
+        status += escapeNonPrintable(in.substr(from, to - from));
+        if (selected)
+          status += ansi::UnderlineOff;
+        if (inCell || selected)
+          status += ansi::ReverseVideo;
+      }
+      if (cellEnd == pos) {
+        // Cursor past the end of the input: a blank cursor cell.
+        status += ansi::ReverseVideoOff;
+        status += ' ';
+        status += ansi::ReverseVideo;
+      }
       status_vwidth = visualWidth(status);
       status += _prompt->display.rendered;
       status_vwidth += _prompt->display.visualWidth;
@@ -653,7 +682,24 @@ void Screen::loop() {
   }
 }
 
+void Screen::pullExternalClipboard() {
+  // Prefer X11 CLIPBOARD when it differs from the top of the internal
+  // ring — that way external Ctrl-C from other apps becomes pasteable.
+  // The fetched text is pushed onto the ring so PasteCycle and the
+  // paste-ring buffer view see it.
+  auto external = _clipboard.getClipboard();
+  if (external && (_pasteRing.empty() || *external != _pasteRing.at(0)))
+    _pasteRing.push(*external);
+}
+
 void Screen::syncPrimarySelection() {
+  // An open prompt owns the keyboard, so its selection is the one to
+  // publish; the buffer's mark is left alone until the prompt closes.
+  if (_prompt) {
+    if (auto r = _prompt->region(); r && r->first != r->second && _prompt->showInput)
+      _clipboard.setPrimary(_prompt->input.substr(r->first, r->second - r->first));
+    return;
+  }
   if (!_buf || !_view)
     return;
   auto mark = _view->mark();
@@ -689,6 +735,8 @@ static bool readCsi(std::string& params, char& final) {
 
 void Screen::handlePromptInput(char c) {
   auto& p = *_prompt;
+  // Only a paste-cycle immediately after a paste may replace it.
+  auto lastPaste = std::exchange(p.lastPaste, std::nullopt);
   if (c == key::Enter || c == key::Newline) {
     if (!p.showInput)
       return; // Enter is ignored on confirm prompts
@@ -708,19 +756,14 @@ void Screen::handlePromptInput(char c) {
       char next;
       if (!readByte(next))
         return;
-      if (next == key::Backspace) {
-        // Esc-Backspace: delete chunk before cursor, as in the buffer.
-        if (p.showInput && p.deleteChunkBefore()) {
-          p.historyIdx.reset();
-          runAutocomplete();
-        }
-        return;
-      }
       std::string params;
       char final;
-      if (next == ansi::CsiIntro && readCsi(params, final))
-        handlePromptCsi(params, final);
-      // Other Esc chords: ignored in prompt mode.
+      if (next == ansi::CsiIntro) {
+        if (readCsi(params, final))
+          handlePromptCsi(params, final);
+      } else if (auto action = handleShortcut(shortcutFromEscChar(next))) {
+        handlePromptAction(*action, lastPaste);
+      }
     } else {
       // Bare Esc: cancel prompt.
       auto abortFn = std::move(p.onAbort);
@@ -730,18 +773,14 @@ void Screen::handlePromptInput(char c) {
     }
   } else if (c == key::Tab && p.onTab) {
     p.display = p.onTab(p.input);
-    p.moveEnd();
+    p.inputReplaced();
     p.historyIdx.reset();
   } else if (c == key::Backspace) {
+    // With a mark set, Backspace deletes the region, as in the buffer.
     // Swallow the byte when there is nothing to delete — otherwise it
     // would fall into the printable branch below (Backspace is 0x7F,
     // which is >= PrintableMin) and silently end up in the prompt input.
-    if (!p.deleteBefore())
-      return;
-    p.historyIdx.reset();
-    runAutocomplete();
-  } else if (c == key::CtrlH && p.showInput) {
-    if (!p.deleteChunkBefore())
+    if (!(p.mark ? p.deleteRegion() : p.deleteBefore()))
       return;
     p.historyIdx.reset();
     runAutocomplete();
@@ -755,11 +794,66 @@ void Screen::handlePromptInput(char c) {
     p.insert(ch);
     p.historyIdx.reset();
     runAutocomplete();
-  } else if (p.onSpecialKey) {
-    if (p.onSpecialKey(c, p.input)) {
-      p.moveEnd();
-      runAutocomplete();
+  } else if (p.onSpecialKey && p.onSpecialKey(c, p.input)) {
+    p.inputReplaced();
+    runAutocomplete();
+  } else if (auto action = handleShortcut(shortcutFromCtrlChar(c))) {
+    handlePromptAction(*action, lastPaste);
+  }
+}
+
+/** @brief The text of @p s up to its first line break; prompt input is single-line. */
+static std::string_view firstLine(std::string const& s) {
+  return std::string_view(s).substr(0, s.find_first_of("\r\n"));
+}
+
+void Screen::handlePromptAction(Action action, std::optional<Prompt::Paste> lastPaste) {
+  auto& p = *_prompt;
+  if (!p.showInput)
+    return;
+  bool edited = false;
+  switch (action) {
+  case Action::ToggleMark:
+    p.toggleMark();
+    break;
+  case Action::Cut:
+  case Action::Copy:
+    if (auto r = p.region(); r && r->first != r->second) {
+      auto text = p.input.substr(r->first, r->second - r->first);
+      _clipboard.setClipboard(text);
+      _pasteRing.push(std::move(text));
+      if (action == Action::Cut)
+        edited = p.deleteRegion();
     }
+    p.mark.reset();
+    break;
+  case Action::Paste:
+    pullExternalClipboard();
+    if (!_pasteRing.empty()) {
+      auto start = p.cursorPos();
+      p.insert(firstLine(_pasteRing.at(0)));
+      p.lastPaste = Prompt::Paste{start, p.cursorPos(), 0};
+      edited = true;
+    }
+    break;
+  case Action::PasteCycle:
+    if (lastPaste && !_pasteRing.empty()) {
+      auto idx = (lastPaste->ringIdx + 1) % _pasteRing.size();
+      p.erase(lastPaste->start, lastPaste->end);
+      p.insert(firstLine(_pasteRing.at(idx)));
+      p.lastPaste = Prompt::Paste{lastPaste->start, p.cursorPos(), idx};
+      edited = true;
+    }
+    break;
+  case Action::DeleteChunkBefore:
+    edited = p.deleteChunkBefore();
+    break;
+  default:
+    break; // Other bindings have no meaning inside a prompt.
+  }
+  if (edited) {
+    p.historyIdx.reset();
+    runAutocomplete();
   }
 }
 
@@ -784,7 +878,7 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
       ++*p.historyIdx;
       p.input = (*hist)[*p.historyIdx];
     }
-    p.moveEnd();
+    p.inputReplaced();
     runAutocomplete();
     return;
   }
@@ -799,7 +893,7 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
       if (auto* hist = _promptHistory.get(p.label))
         p.input = (*hist)[*p.historyIdx];
     }
-    p.moveEnd();
+    p.inputReplaced();
     runAutocomplete();
     return;
   }
@@ -819,7 +913,7 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
     else if (plain && p.onRightArrow) {
       // Right at the end of the input accepts the completion instead.
       p.display = p.onRightArrow(p.input);
-      p.moveEnd();
+      p.inputReplaced();
     }
     break;
   case ansi::LeftArrow:
@@ -838,7 +932,7 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
     break;
   case ansi::Terminator:
     if (params == "3")
-      edited = p.deleteAt();
+      edited = p.mark ? p.deleteRegion() : p.deleteAt();
     else if (params == "3;5")
       edited = p.deleteChunkAt();
     break;
@@ -3316,14 +3410,7 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::Paste:
     if (_buf && !_buf->readonly()) {
-      // Prefer X11 CLIPBOARD when it differs from the top of the
-      // internal ring — that way external Ctrl-C from other apps
-      // becomes pasteable. The fetched text is also pushed onto the
-      // ring so PasteCycle and the paste-ring buffer view see it.
-      auto external = _clipboard.getClipboard();
-      bool useExternal = external && (_pasteRing.empty() || *external != _pasteRing.at(0));
-      if (useExternal)
-        _pasteRing.push(*external);
+      pullExternalClipboard();
       if (!_pasteRing.empty()) {
         auto start = _view->point();
         auto end = _view->insertText(_pasteRing.at(0));

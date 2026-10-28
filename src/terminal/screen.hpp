@@ -146,6 +146,18 @@ private:
    *        active prompt: history, cursor movement, and forward deletion.
    */
   void handlePromptCsi(std::string_view params, char final);
+  /**
+   * @brief Apply a shortcut-table action to the active prompt's input.
+   *
+   * Handles the mark, cut/copy/paste/paste-cycle (through the shared
+   * paste ring and X11 CLIPBOARD) and chunk deletion; other actions are
+   * ignored while a prompt is open.
+   * @param lastPaste The paste made by the previous key, if any, which a
+   *        PasteCycle replaces.
+   */
+  void handlePromptAction(Action action, std::optional<Prompt::Paste> lastPaste);
+  /** @brief Push X11 CLIPBOARD onto the paste ring if it differs from the top entry. */
+  void pullExternalClipboard();
   void handleEscapeInput(std::optional<char>& pendingChar);
   /**
    * @brief Bare Esc-Esc: dismiss a read-only overlay if active, otherwise

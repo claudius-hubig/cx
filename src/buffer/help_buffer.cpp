@@ -82,6 +82,7 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("Bksp/Delete", "Delete char (Ctrl: chunk)"));
     v.push_back(formatRawLine("\xe2\x86\x91/\xe2\x86\x93", "Previous/next input"));
     v.push_back(formatRawLine("Tab, \xe2\x86\x92 at end", "Cycle / accept completion"));
+    v.push_back(formatRawLine("Ctrl-Spc + move", "Select; Ctrl-W/Esc-w/Ctrl-Y/Esc-y"));
     return v;
   }();
   return lines;

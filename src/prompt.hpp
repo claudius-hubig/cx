@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -114,9 +115,45 @@ struct Prompt {
    */
   std::size_t cursor = std::string::npos;
 
+  /**
+   * @brief Selection anchor (byte offset into @c input), if set.
+   *
+   * The region spans the mark and the cursor. Like @c cursor it sits on a
+   * code-point boundary and is clamped to @c input.size() when read; the
+   * editing operations below keep it in place across inserts and deletes,
+   * as BufferView does for the buffer mark.
+   */
+  std::optional<std::size_t> mark;
+
+  /** @brief The span [start, end) of @c input inserted by the last paste. */
+  struct Paste {
+    std::size_t start;
+    std::size_t end;
+    std::size_t ringIdx; /**< Paste-ring index of the pasted entry. */
+  };
+  /** @brief Set by a paste so an immediately following paste-cycle can replace it. */
+  std::optional<Paste> lastPaste;
+
   /** @brief The edit point, clamped to @c input.size(). */
   std::size_t cursorPos() const { return std::min(cursor, input.size()); }
   bool cursorAtEnd() const { return cursorPos() == input.size(); }
+
+  /** @brief The selected span [first, second), or nullopt without a mark. */
+  std::optional<std::pair<std::size_t, std::size_t>> region() const {
+    if (!mark)
+      return std::nullopt;
+    auto m = std::min(*mark, input.size());
+    return std::pair{std::min(m, cursorPos()), std::max(m, cursorPos())};
+  }
+
+  /**
+   * @brief Note that a callback replaced @c input wholesale (completion,
+   *        history): the cursor goes to the end and the mark is dropped.
+   */
+  void inputReplaced() {
+    moveEnd();
+    mark.reset();
+  }
 
   /**
    * @name Line editing at the cursor
@@ -129,23 +166,48 @@ struct Prompt {
   void insert(std::string_view text) {
     auto pos = cursorPos();
     input.insert(pos, text);
+    if (mark && *mark > pos)
+      *mark += text.size();
     cursor = pos + text.size();
+  }
+  /**
+   * @brief Erase [@p from, @p to) and leave the cursor at @p from.
+   * @pre @p from <= @p to <= input.size(), both on code-point boundaries.
+   */
+  void erase(std::size_t from, std::size_t to) {
+    input.erase(from, to - from);
+    if (mark && *mark > from)
+      *mark = *mark >= to ? *mark - (to - from) : from;
+    cursor = from;
+  }
+  bool toggleMark() {
+    if (mark)
+      mark.reset();
+    else
+      mark = cursorPos();
+    return mark.has_value();
+  }
+  /** @brief Erase the region and drop the mark. */
+  bool deleteRegion() {
+    auto r = region();
+    mark.reset();
+    if (!r || r->first == r->second)
+      return false;
+    erase(r->first, r->second);
+    return true;
   }
   bool deleteBefore() {
     auto pos = cursorPos();
     if (pos == 0)
       return false;
-    auto from = prevCodePoint(pos);
-    input.erase(from, pos - from);
-    cursor = from;
+    erase(prevCodePoint(pos), pos);
     return true;
   }
   bool deleteAt() {
     auto pos = cursorPos();
     if (pos == input.size())
       return false;
-    input.erase(pos, nextCodePoint(pos) - pos);
-    cursor = pos;
+    erase(pos, nextCodePoint(pos));
     return true;
   }
   /** @brief Delete the run of blanks or non-blanks before the cursor. */
@@ -157,8 +219,7 @@ struct Prompt {
     auto from = pos;
     while (from > 0 && isWhitespace(input[prevCodePoint(from)]) == blank)
       from = prevCodePoint(from);
-    input.erase(from, pos - from);
-    cursor = from;
+    erase(from, pos);
     return true;
   }
   /** @brief Delete the run of blanks or non-blanks at the cursor. */
@@ -170,8 +231,7 @@ struct Prompt {
     auto to = pos;
     while (to < input.size() && isWhitespace(input[to]) == blank)
       to = nextCodePoint(to);
-    input.erase(pos, to - pos);
-    cursor = pos;
+    erase(pos, to);
     return true;
   }
   void moveLeft() { cursor = cursorPos() == 0 ? 0 : prevCodePoint(cursorPos()); }

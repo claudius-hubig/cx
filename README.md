@@ -88,7 +88,10 @@ cursors; the buffer is `notes.md` in Markdown mode with unsaved changes, and has
   The prompt cursor is drawn in normal video against the bar. Inside a prompt, `←`/`→` and `Home`/`End` move the
   cursor (`Ctrl-←`/`Ctrl-→` by word), `Bksp`/`Delete` delete a character (`Ctrl-Bksp`/`Esc-Bksp`/`Ctrl-Del` a chunk),
   and `↑`/`↓` recall earlier input. In prompts with completion, `Tab` cycles the matches and `→` at the end of the
-  input accepts the current one.
+  input accepts the current one. `Ctrl-Space` sets the mark and cursor movement extends the selection (shown
+  underlined); `Ctrl-W` / `Esc-w` cut / copy it and `Ctrl-Y` / `Esc-y` paste / cycle, all through the same paste ring
+  and X11 clipboard as the buffers. Only the first line of a multi-line entry is pasted. Since a bare `Esc` cancels the
+  prompt, the `Esc` chords need to be typed as `Alt-w` / `Alt-y` (or Esc pressed quickly before the key).
 - **`| Created 3 cursors`** — the most recent status message. It stays up until the next keypress redraws the
   modeline.
 

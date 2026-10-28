@@ -1860,3 +1860,54 @@ BOOST_AUTO_TEST_CASE(e2e_prompt_cursor_movement_and_display) {
   session.waitExit();
   std::filesystem::remove(wantPath);
 }
+
+BOOST_AUTO_TEST_CASE(e2e_prompt_selection_cut_copy_paste) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 120, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("x");
+  session.readUntil("x", std::chrono::milliseconds{1000});
+
+  auto dir = std::filesystem::temp_directory_path();
+  auto stem = "cx_e2e_prompt_select_" + std::to_string(::getpid()) + "_";
+  auto wantPath = dir / (stem + "abab");
+  std::filesystem::remove(wantPath);
+
+  constexpr std::string_view ctrlSpace{"\0", 1};
+  session.send("\x13"); // Ctrl-S
+  session.readUntil("Save as", std::chrono::milliseconds{1000});
+  session.send((dir / (stem + "ab.txt")).string());
+
+  // Select "ab" (mark before ".txt", two Lefts); the region is drawn
+  // underlined in normal video.
+  session.send("\x1b[D\x1b[D\x1b[D\x1b[D");
+  session.send(ctrlSpace);
+  session.send("\x1b[D\x1b[D");
+  auto selOut = session.readOutput(std::chrono::milliseconds{300});
+  BOOST_CHECK(selOut.find("\x1b[4m") != std::string::npos);
+
+  // Esc-w copies "ab"; then select ".txt" and cut it with Ctrl-W.
+  session.send("\x1bw");
+  session.send("\x1b[F");
+  session.send(ctrlSpace);
+  session.send("\x1b[D\x1b[D\x1b[D\x1b[D");
+  session.send("\x17");
+  // Ctrl-Y pastes the newest entry (".txt"), Esc-y cycles it to "ab".
+  session.send("\x19");
+  session.send("\x1by");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  session.send("\r");
+  session.readUntil("Saved to", std::chrono::milliseconds{1000});
+  BOOST_CHECK(std::filesystem::exists(wantPath));
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+  std::filesystem::remove(wantPath);
+}

@@ -28,7 +28,6 @@ constexpr char Enter = '\r';
 constexpr char Newline = '\n';
 constexpr char Escape = '\x1b';
 constexpr char CtrlF = '\x06'; /**< Find */
-constexpr char CtrlH = '\x08'; /**< Ctrl-Backspace in most terminals */
 constexpr char CtrlR = '\x12'; /**< Reverse find */
 constexpr char CtrlX = '\x18'; /**< Prefix for the C-x chord */
 /** @} */
@@ -95,6 +94,8 @@ constexpr std::string_view Dim = "\x1b[2m";
 constexpr std::string_view DimOff = "\x1b[22m";
 constexpr std::string_view ReverseVideo = "\x1b[7m";
 constexpr std::string_view ReverseVideoOff = "\x1b[27m";
+constexpr std::string_view Underline = "\x1b[4m";
+constexpr std::string_view UnderlineOff = "\x1b[24m";
 constexpr std::string_view DefaultFg = "\x1b[39m";
 /**
  * @brief Foreground used by Buffer::render for escaped control bytes and
