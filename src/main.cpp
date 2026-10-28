@@ -1,8 +1,10 @@
 #include "buffer/buffer_manager.hpp"
+#include "cli.hpp"
 #include "error_log.hpp"
 #include "file_arg.hpp"
 #include "terminal/screen.hpp"
 #include "terminal/setup_terminal.hpp"
+#include "version.hpp"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -15,6 +17,9 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <variant>
+#include <vector>
 
 /**
  * @brief Drain all bytes from fd 0 into a string.
@@ -40,6 +45,23 @@ static std::string drainStdin() {
 }
 
 int main(int argc, char* argv[]) {
+  // Options first: --help / --version must not touch stdin or the terminal.
+  auto command = cli::parse(std::vector<std::string_view>(argv + 1, argv + argc));
+  if (!command) {
+    std::fprintf(stderr, "cx: %s\nTry 'cx --help' for more information.\n",
+                 command.error().c_str());
+    return 2;
+  }
+  if (std::holds_alternative<cli::ShowHelp>(*command)) {
+    std::fputs(cli::usage(argc > 0 ? argv[0] : "cx").c_str(), stdout);
+    return 0;
+  }
+  if (std::holds_alternative<cli::ShowVersion>(*command)) {
+    std::fputs(versionText().c_str(), stdout);
+    return 0;
+  }
+  auto const& files = std::get<cli::OpenFiles>(*command).args;
+
   // If stdin is a pipe (no terminal attached), drain it before raw mode
   // takes over. Then dup /dev/tty over fd 0 so SetupTerminal's tcgetattr
   // and the input loop see a real terminal. If /dev/tty cannot be
@@ -67,13 +89,13 @@ int main(int argc, char* argv[]) {
     BufferManager bufferManager(screen);
     screen.setBufferManager(bufferManager);
 
-    if (argc > 1) {
+    if (!files.empty()) {
       Buffer* last = nullptr;
       // The line number to jump to in the last-opened buffer (if any
       // arg used `path:LINE` syntax — only the final value is honoured).
       std::optional<std::size_t> jumpTo;
-      for (int i = 1; i < argc; ++i) {
-        auto [path, line] = parseFileArg(argv[i]);
+      for (auto const& arg : files) {
+        auto [path, line] = parseFileArg(arg);
         std::error_code ec;
         if (std::filesystem::is_directory(path, ec))
           last = &bufferManager.openDir(path);
@@ -84,7 +106,8 @@ int main(int argc, char* argv[]) {
       screen.setBuffer(*last);
       if (jumpTo)
         screen.gotoLine(*jumpTo);
-      screen.setStatus("Opened " + std::to_string(argc - 1) + (argc - 1 == 1 ? " file" : " files"));
+      screen.setStatus("Opened " + std::to_string(files.size()) +
+                       (files.size() == 1 ? " file" : " files"));
       screen.draw();
     } else if (stdinPiped && !pipedStdin.empty()) {
       Buffer& buf = bufferManager.create("*stdin*");

@@ -85,6 +85,8 @@ src/
   clipboard.hpp/.cpp               X11 PRIMARY/CLIPBOARD integration via xclip/xsel
   error_log.hpp/.cpp               Diagnostic logging to ~/.cx-errors
   file_arg.hpp                     parseFileArg — split `path:LINE` command-line argument
+  cli.hpp                          cli::parse — -h/--help, --version, `--`, file arguments
+  version.hpp/.cpp                 versionText() for --version (cx only; uses generated build_info.hpp)
   mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)
   replace.hpp                      Find-and-replace helpers (findNextMatchInBuffer, replaceAllForward)
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
@@ -130,6 +132,7 @@ tests/
   test_char_width.cpp              UTF-8 / character width tests
   test_shortcut.cpp                Shortcut table tests
   test_prompt_history.cpp          PromptHistory tests
+  test_cli.cpp                     Command-line option parsing tests
   test_prompt_edit.cpp             Prompt line-editing (cursor, word moves) tests
   test_syntax.cpp                  Syntax highlighting tests
   test_e2e.cpp                     End-to-end tests (via PTY)

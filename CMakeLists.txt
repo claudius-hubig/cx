@@ -3,11 +3,18 @@ project(cx)
 
 set(CMAKE_CXX_STANDARD 23)
 
-# Build everything optimized. The shared editor layer is compiled
-# exactly once into the cx_core static library below (see note), so
-# -O2 costs little build time while keeping the bench_* targets — and
-# the CLAUDE.md performance gate — meaningful.
-add_compile_options(-O2)
+# Every build type is optimized and carries debug info: Release at -O3,
+# Debug at -O2, which keeps the bench_* targets — and the CLAUDE.md
+# performance gate — meaningful in either. The shared editor layer is
+# compiled exactly once into the cx_core static library below (see
+# note), so the optimization costs little build time. Without an
+# explicit build type, single-config generators default to Release
+# rather than CMake's unoptimized empty type.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+set(CMAKE_CXX_FLAGS_RELEASE "-g -O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O2")
 
 # Per-mode syntax tokenizers, listed once.
 set(SYNTAX_SOURCES
@@ -55,8 +62,40 @@ add_executable(cx
     src/main.cpp
     src/clipboard.cpp
     src/error_log.cpp
+    src/version.cpp
 )
 target_link_libraries(cx cx_core)
+
+# Build information for `cx --version`. The compiler and flags are known
+# at configure time and handed to cmake/build_info.cmake through
+# build_flags.cmake; bracket arguments keep any quotes in the flags
+# intact. The script itself runs on every build (git state can change
+# without a reconfigure) and rewrites build_info.hpp only on a change.
+# Only cx depends on it, never cx_core or the tests.
+set(CX_GENERATED_DIR ${CMAKE_BINARY_DIR}/generated)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" CX_BUILD_TYPE_UPPER)
+get_directory_property(CX_COMPILE_OPTIONS COMPILE_OPTIONS)
+string(REPLACE ";" " " CX_COMPILE_OPTIONS "${CX_COMPILE_OPTIONS}")
+if(DEFINED CMAKE_CXX_EXTENSIONS AND NOT CMAKE_CXX_EXTENSIONS)
+    set(CX_STD_OPTION "${CMAKE_CXX${CMAKE_CXX_STANDARD}_STANDARD_COMPILE_OPTION}")
+else()
+    set(CX_STD_OPTION "${CMAKE_CXX${CMAKE_CXX_STANDARD}_EXTENSION_COMPILE_OPTION}")
+endif()
+string(STRIP "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CX_BUILD_TYPE_UPPER}} ${CX_COMPILE_OPTIONS} ${CX_STD_OPTION}"
+       CX_BUILD_FLAGS)
+string(REGEX REPLACE "  +" " " CX_BUILD_FLAGS "${CX_BUILD_FLAGS}")
+file(WRITE ${CX_GENERATED_DIR}/build_flags.cmake
+     "set(CX_COMPILER [==[${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}]==])\n"
+     "set(CX_BUILD_TYPE [==[${CMAKE_BUILD_TYPE}]==])\n"
+     "set(CX_BUILD_FLAGS [==[${CX_BUILD_FLAGS}]==])\n")
+add_custom_target(cx_build_info
+    COMMAND ${CMAKE_COMMAND} -DSRC_DIR=${CMAKE_SOURCE_DIR} -DGEN_DIR=${CX_GENERATED_DIR}
+            -P ${CMAKE_SOURCE_DIR}/cmake/build_info.cmake
+    BYPRODUCTS ${CX_GENERATED_DIR}/build_info.hpp
+    COMMENT "Updating build information"
+    VERBATIM)
+add_dependencies(cx cx_build_info)
+target_include_directories(cx PRIVATE ${CX_GENERATED_DIR})
 
 # Statically link the C++ and GCC runtimes into cx so the binary is portable
 # across systems with different libstdc++ versions. glibc itself is left
@@ -128,6 +167,16 @@ if(CX_BUILD_TESTS AND Boost_FOUND)
     cx_test(panel_layout)
     cx_test(bookmarks)
     cx_test(multi_cursor)
+    cx_test(cli)
+
+    # Smoke-test the real binary's informational options (no PTY needed).
+    add_test(NAME cli_version COMMAND cx --version)
+    set_tests_properties(cli_version PROPERTIES
+        PASS_REGULAR_EXPRESSION "^cx [^\n]+\nbuilt [0-9]+-[0-9]+-[0-9]+ with [^\n]+\n.*flags: ")
+    add_test(NAME cli_help COMMAND cx --help)
+    set_tests_properties(cli_help PROPERTIES PASS_REGULAR_EXPRESSION "--version")
+    add_test(NAME cli_bad_option COMMAND cx --bogus)
+    set_tests_properties(cli_bad_option PROPERTIES WILL_FAIL TRUE)
 
     # test_e2e drives a real PTY, so it also needs libutil.
     add_executable(test_e2e tests/test_e2e.cpp)

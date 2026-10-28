@@ -24,8 +24,12 @@ cmake --build build --target docs   # output in build/docs/html
 ## Usage
 
 ```sh
-./build/cx [file|directory ...]
+./build/cx [OPTION]... [file[:LINE]|directory ...]
 ```
+
+Options: `-h`/`--help` prints a short usage summary; `--version` prints the git commit (with `-dirty` for uncommitted
+changes), build date, compiler, build type and compile flags. `--` ends option parsing, so `cx -- -notes.txt` opens a
+file whose name starts with `-`; any other unrecognised option is an error.
 
 Open one or more files for editing, or directories for browsing. With no arguments, cx starts with an empty scratch buffer.
 

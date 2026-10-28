@@ -25,8 +25,12 @@ main()
 
 ### `main` (`src/main.cpp`)
 
-Entry point. Constructs `SetupTerminal`, `Screen`, and `BufferManager` in
-the correct order, opens any files given on the command line, then calls
+Entry point. Parses the command line with `cli::parse()`
+(`src/cli.hpp`) into a `cli::Command` — `ShowHelp`, `ShowVersion`, or
+`OpenFiles` — before touching stdin or the terminal, and handles the
+first two by printing `cli::usage()` or `versionText()`
+(`src/version.hpp/.cpp`) and exiting. Otherwise it constructs
+`SetupTerminal`, `Screen`, and `BufferManager` in the correct order, opens any files given on the command line, then calls
 `Screen::loop()` to run the editor. Each path argument is parsed via
 `parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
 `:LINE` suffix (e.g. `cx src/foo.cpp:42`). If stdin is a pipe, `main`
@@ -782,6 +786,8 @@ token vector allocation.
 | `src/replace.hpp`                      | Find-and-replace helpers (`findNextMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt`                  |
 | `src/regex_search.hpp`                 | Regex search/replace helpers (`compileRegex`, `findFirstRegex`, `findNextRegexInBuffer`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y |
 | `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
+| `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`); `cli::usage` help text            |
+| `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |
 | `src/file_arg.hpp`                     | `parseFileArg` — split a `path:LINE` command-line argument into a path and an optional line number                          |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
