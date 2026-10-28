@@ -111,7 +111,9 @@ Key responsibilities:
 - **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH, and
   dispatches to sub-handlers:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
-    text entry, history navigation, autocomplete, and confirmation
+    text entry, history navigation, autocomplete, and confirmation;
+    `handlePromptCsi` reads whole CSI sequences so unhandled ones never
+    leak their tail bytes into the input
   - `handleEscapeInput` — CSI escape sequences (arrows, page keys),
     Esc-prefix chords, and SGR mouse payloads routed to `handleMouseEvent`
   - `handleNormalInput` — printable characters and control keys in normal
@@ -188,7 +190,14 @@ read, so the same buffer is only flagged once per load.
 
 Prompts are represented by the `Prompt` struct (`src/prompt.hpp`), which
 carries a label, callbacks for autocomplete/result/abort/tab/special keys,
-and cached display state. Each prompt type is constructed by an
+cached display state, and a UTF-8-aware edit cursor with single-line
+editing operations (insert, character/chunk deletion, character/word/
+Home/End movement). Callbacks that replace `input` wholesale (Tab,
+Right-arrow completion, history, special keys) leave the cursor at the
+end. `drawModeline()` draws the cell under the cursor in normal video
+against the reverse-video bar and returns its column; `draw()` parks the
+terminal cursor there hidden, since on top of that cell it would invert
+it back into the bar's colours. Each prompt type is constructed by an
 `openXxxPrompt()` helper (e.g. `openGoToLinePrompt()`,
 `openSwitchBufferPrompt()`, `openConfirmPrompt()`). `PromptHistory`
 (also in `prompt.hpp`) records per-label input history, navigable with
@@ -760,7 +769,7 @@ token vector allocation.
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `contentWidth()`, `BufferPoint`, `ByteOffset`, `VisualCol`, `ViewFrom`                                   |
 | `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
 | `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
-| `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache), `PromptDisplay`, `PromptHistory` (per-label input history)                 |
+| `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache, edit cursor), `PromptDisplay`, `PromptHistory` (per-label input history)    |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
 | `src/bookmarks.hpp`                    | `Bookmarks` — session-wide named positions (`Bookmark{bufferName, point}`) keyed by a single char in `[0-9a-z]`; owned by `Screen` |
 | `src/clipboard.hpp/.cpp`               | X11 PRIMARY/CLIPBOARD integration via `xclip`/`xsel` subprocesses; lazy detection, async writes, sync reads                   |

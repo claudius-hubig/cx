@@ -13,10 +13,12 @@
 #include "byte_constants.hpp"
 #include "utf8.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -101,6 +103,116 @@ struct Prompt {
 
   std::optional<std::size_t> historyIdx; /**< Current history index, if browsing. */
   std::string savedInput;                /**< Input stashed before history navigation. */
+
+  /**
+   * @brief Byte offset of the edit point within @c input.
+   *
+   * Always on a UTF-8 code-point boundary. Values past the end (including
+   * the default @c npos) mean "end of input", so a prompt constructed with
+   * a pre-filled @c input starts with the cursor after it. Read it through
+   * cursorPos(), never directly.
+   */
+  std::size_t cursor = std::string::npos;
+
+  /** @brief The edit point, clamped to @c input.size(). */
+  std::size_t cursorPos() const { return std::min(cursor, input.size()); }
+  bool cursorAtEnd() const { return cursorPos() == input.size(); }
+
+  /**
+   * @name Line editing at the cursor
+   *
+   * Word boundaries are whitespace, matching BufferView's word movement
+   * and chunk deletion. The delete operations return true if @c input
+   * changed.
+   */
+  /** @{ */
+  void insert(std::string_view text) {
+    auto pos = cursorPos();
+    input.insert(pos, text);
+    cursor = pos + text.size();
+  }
+  bool deleteBefore() {
+    auto pos = cursorPos();
+    if (pos == 0)
+      return false;
+    auto from = prevCodePoint(pos);
+    input.erase(from, pos - from);
+    cursor = from;
+    return true;
+  }
+  bool deleteAt() {
+    auto pos = cursorPos();
+    if (pos == input.size())
+      return false;
+    input.erase(pos, nextCodePoint(pos) - pos);
+    cursor = pos;
+    return true;
+  }
+  /** @brief Delete the run of blanks or non-blanks before the cursor. */
+  bool deleteChunkBefore() {
+    auto pos = cursorPos();
+    if (pos == 0)
+      return false;
+    bool blank = isWhitespace(input[prevCodePoint(pos)]);
+    auto from = pos;
+    while (from > 0 && isWhitespace(input[prevCodePoint(from)]) == blank)
+      from = prevCodePoint(from);
+    input.erase(from, pos - from);
+    cursor = from;
+    return true;
+  }
+  /** @brief Delete the run of blanks or non-blanks at the cursor. */
+  bool deleteChunkAt() {
+    auto pos = cursorPos();
+    if (pos == input.size())
+      return false;
+    bool blank = isWhitespace(input[pos]);
+    auto to = pos;
+    while (to < input.size() && isWhitespace(input[to]) == blank)
+      to = nextCodePoint(to);
+    input.erase(pos, to - pos);
+    cursor = pos;
+    return true;
+  }
+  void moveLeft() { cursor = cursorPos() == 0 ? 0 : prevCodePoint(cursorPos()); }
+  void moveRight() { cursor = cursorAtEnd() ? input.size() : nextCodePoint(cursorPos()); }
+  /** @brief Move to the first byte of the word before the cursor. */
+  void moveWordLeft() {
+    auto pos = cursorPos();
+    while (pos > 0 && isWhitespace(input[prevCodePoint(pos)]))
+      pos = prevCodePoint(pos);
+    while (pos > 0 && !isWhitespace(input[prevCodePoint(pos)]))
+      pos = prevCodePoint(pos);
+    cursor = pos;
+  }
+  /** @brief Move past the end of the word at or after the cursor. */
+  void moveWordRight() {
+    auto pos = cursorPos();
+    while (pos < input.size() && isWhitespace(input[pos]))
+      pos = nextCodePoint(pos);
+    while (pos < input.size() && !isWhitespace(input[pos]))
+      pos = nextCodePoint(pos);
+    cursor = pos;
+  }
+  void moveHome() { cursor = 0; }
+  void moveEnd() { cursor = input.size(); }
+  /** @} */
+
+private:
+  /** @pre 0 < @p pos <= input.size(). */
+  std::size_t prevCodePoint(std::size_t pos) const {
+    do
+      --pos;
+    while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(input[pos])));
+    return pos;
+  }
+  /** @pre @p pos < input.size(). */
+  std::size_t nextCodePoint(std::size_t pos) const {
+    do
+      ++pos;
+    while (pos < input.size() && isUtf8Continuation(static_cast<unsigned char>(input[pos])));
+    return pos;
+  }
 };
 
 /** @brief Per-label history of completed prompt inputs. */

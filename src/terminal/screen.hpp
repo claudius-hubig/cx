@@ -108,8 +108,11 @@ private:
   /**
    * @brief Compose a panel's modeline (cursor row:col, history badge,
    *        prompt/status, buffer name + mode) into @c _renderBuf.
+   * @return The screen column of the prompt cursor cell when @p focused
+   *         and a prompt is active, unless the panel is too narrow to
+   *         show it; the cursor row is the modeline row.
    */
-  void drawModeline(Panel& panel, bool focused);
+  std::optional<std::size_t> drawModeline(Panel& panel, bool focused);
   /**
    * @brief Emit the small panel-id digit in the gutter's top-right cell
    *        when there are multiple panels.
@@ -138,6 +141,11 @@ private:
    */
   /** @{ */
   void handlePromptInput(char c);
+  /**
+   * @brief Handle a CSI sequence (ESC [ @p params @p final) typed into the
+   *        active prompt: history, cursor movement, and forward deletion.
+   */
+  void handlePromptCsi(std::string_view params, char final);
   void handleEscapeInput(std::optional<char>& pendingChar);
   /**
    * @brief Bare Esc-Esc: dismiss a read-only overlay if active, otherwise

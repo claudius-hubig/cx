@@ -344,7 +344,7 @@ bool Screen::requireNotInHistoryMode() {
   return false;
 }
 
-void Screen::drawModeline(Panel& panel, bool focused) {
+std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
   auto& view = panel.view();
   auto& pbuf = panel.buffer();
   auto rect = panel.rect();
@@ -377,16 +377,45 @@ void Screen::drawModeline(Panel& panel, bool focused) {
   }
 
   // Prompt and status messages only on the focused panel.
+  std::optional<std::size_t> promptCursorCol;
   if (focused) {
     if (_prompt) {
       status += " | " + _prompt->label;
-      if (_prompt->showInput)
-        // Escape at the display site: the typed-input path filters
-        // control bytes, but completion-accept (Tab / Right-arrow) and
-        // history replay copy raw filesystem names into `input`, which a
-        // crafted filename could use to inject terminal escapes through
-        // the modeline. The raw value is kept for onResult/path lookup.
-        status += escapeNonPrintable(_prompt->input);
+      status_vwidth = visualWidth(status);
+      // The cell under the prompt cursor is drawn in normal video against
+      // the reverse-video bar; a confirm prompt shows it after the label.
+      //
+      // Escape at the display site: the typed-input path filters
+      // control bytes, but completion-accept (Tab / Right-arrow) and
+      // history replay copy raw filesystem names into `input`, which a
+      // crafted filename could use to inject terminal escapes through
+      // the modeline. The raw value is kept for onResult/path lookup.
+      std::string_view in = _prompt->showInput ? std::string_view(_prompt->input) : "";
+      auto pos = std::min(_prompt->cursorPos(), in.size());
+      auto cellLen = pos < in.size() ? charInfoAt(in.data() + pos, in.size() - pos).len : 0;
+      auto cell = cellLen ? escapeNonPrintable(in.substr(pos, cellLen)) : std::string(" ");
+      auto cellWidth = visualWidth(cell);
+      auto before = in.substr(0, pos);
+      auto escBefore = escapeNonPrintable(before);
+      if (status_vwidth + visualWidth(escBefore) + cellWidth > pc.value &&
+          status_vwidth + 1 + cellWidth <= pc.value) {
+        // Keep the cursor on screen: drop input from the front, behind
+        // an ellipsis, until the cursor cell fits.
+        std::size_t avail = pc.value - status_vwidth - cellWidth - 1;
+        do
+          before.remove_prefix(charInfoAt(before.data(), before.size()).len);
+        while (visualWidth(escapeNonPrintable(before)) > avail);
+        escBefore = "\xe2\x80\xa6" + escapeNonPrintable(before);
+      }
+      auto cursorCol = status_vwidth + visualWidth(escBefore);
+      if (cursorCol + cellWidth <= pc.value)
+        promptCursorCol = rect.col + cursorCol;
+      status += escBefore;
+      status += ansi::ReverseVideoOff;
+      status += cell;
+      status += ansi::ReverseVideo;
+      if (cellLen)
+        status += escapeNonPrintable(in.substr(pos + cellLen));
       status_vwidth = visualWidth(status);
       status += _prompt->display.rendered;
       status_vwidth += _prompt->display.visualWidth;
@@ -478,6 +507,7 @@ void Screen::drawModeline(Panel& panel, bool focused) {
   _renderBuf += ansi::ReverseVideo;
   _renderBuf += status;
   _renderBuf += ansi::Reset;
+  return promptCursorCol;
 }
 
 void Screen::placePanelId(Panel const& panel, bool multiPanel) {
@@ -520,6 +550,7 @@ void Screen::draw() {
   RowIdx cur_row{0};
   ColIdx cur_col{0};
   bool focusedOverwrite = false;
+  bool cursorInPrompt = false;
 
   if (_layout) {
     bool multiPanel = _layout->count() > 1;
@@ -546,7 +577,11 @@ void Screen::draw() {
         focusedOverwrite = panel.buffer().overwriteMode();
       }
 
-      drawModeline(panel, focused);
+      if (auto col = drawModeline(panel, focused)) {
+        cur_row = RowIdx{rect.row + rect.rows - 1};
+        cur_col = ColIdx{*col};
+        cursorInPrompt = true;
+      }
       placePanelId(panel, multiPanel);
     });
   }
@@ -555,7 +590,10 @@ void Screen::draw() {
   // Cursor shape signals the edit mode: steady block for insert, steady bar
   // for overwrite.
   _renderBuf += focusedOverwrite ? ansi::CursorBar : ansi::CursorBlock;
-  _renderBuf += ansi::ShowCursor;
+  // In a prompt the cursor is drawn by drawModeline() as a normal-video
+  // cell; the terminal cursor on top of it would invert it back into the
+  // bar's colours, so it is parked there hidden.
+  _renderBuf += cursorInPrompt ? ansi::HideCursor : ansi::ShowCursor;
 
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
 }
@@ -627,14 +665,37 @@ void Screen::syncPrimarySelection() {
   _clipboard.setPrimary(_view->extractRegion(*mark, point));
 }
 
+/**
+ * @brief Read the remainder of a CSI sequence whose "ESC [" has already
+ *        been consumed.
+ *
+ * Collects the parameter/intermediate bytes into @p params and stores the
+ * final byte (0x40..0x7E) in @p final, so an unhandled sequence is
+ * swallowed whole rather than leaking its tail (e.g. ";5C") as input.
+ * @return False on EOF/error, or if the sequence is implausibly long.
+ */
+static bool readCsi(std::string& params, char& final) {
+  constexpr std::size_t kMaxCsiParams = 32;
+  while (readByte(final)) {
+    auto u = static_cast<unsigned char>(final);
+    if (u >= 0x40 && u <= 0x7E)
+      return true;
+    if (params.size() == kMaxCsiParams)
+      return false;
+    params += final;
+  }
+  return false;
+}
+
 void Screen::handlePromptInput(char c) {
+  auto& p = *_prompt;
   if (c == key::Enter || c == key::Newline) {
-    if (!_prompt->showInput)
+    if (!p.showInput)
       return; // Enter is ignored on confirm prompts
-    if (!_prompt->input.empty()) {
-      _promptHistory.push(_prompt->label, _prompt->input);
-      auto resultFn = std::move(_prompt->onResult);
-      auto value = std::move(_prompt->input);
+    if (!p.input.empty()) {
+      _promptHistory.push(p.label, p.input);
+      auto resultFn = std::move(p.onResult);
+      auto value = std::move(p.input);
       _prompt.reset();
       resultFn(value);
     } else {
@@ -644,74 +705,147 @@ void Screen::handlePromptInput(char c) {
     // Distinguish bare Esc (cancel) from escape sequences.
     struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
     if (poll(&pfd, 1, kEscDisambiguationMs) > 0) {
-      char seq[2];
-      if (readByte(seq[0]) && seq[0] == ansi::CsiIntro && readByte(seq[1])) {
-        if (seq[1] == ansi::UpArrow) {
-          // History: browse backward.
-          auto* hist = _promptHistory.get(_prompt->label);
-          if (hist) {
-            if (!_prompt->historyIdx) {
-              _prompt->savedInput = _prompt->input;
-              _prompt->historyIdx = 0;
-              _prompt->input = (*hist)[0];
-            } else if (*_prompt->historyIdx + 1 < hist->size()) {
-              ++*_prompt->historyIdx;
-              _prompt->input = (*hist)[*_prompt->historyIdx];
-            }
-            runAutocomplete();
-          }
-        } else if (seq[1] == ansi::DownArrow) {
-          // History: browse forward.
-          if (_prompt->historyIdx) {
-            if (*_prompt->historyIdx == 0) {
-              _prompt->input = _prompt->savedInput;
-              _prompt->historyIdx.reset();
-            } else {
-              --*_prompt->historyIdx;
-              auto* hist = _promptHistory.get(_prompt->label);
-              if (hist)
-                _prompt->input = (*hist)[*_prompt->historyIdx];
-            }
-            runAutocomplete();
-          }
-        } else if (seq[1] == ansi::RightArrow && _prompt->onRightArrow) {
-          _prompt->display = _prompt->onRightArrow(_prompt->input);
+      char next;
+      if (!readByte(next))
+        return;
+      if (next == key::Backspace) {
+        // Esc-Backspace: delete chunk before cursor, as in the buffer.
+        if (p.showInput && p.deleteChunkBefore()) {
+          p.historyIdx.reset();
+          runAutocomplete();
         }
-        // Other escape sequences: ignored in prompt mode.
+        return;
       }
+      std::string params;
+      char final;
+      if (next == ansi::CsiIntro && readCsi(params, final))
+        handlePromptCsi(params, final);
+      // Other Esc chords: ignored in prompt mode.
     } else {
       // Bare Esc: cancel prompt.
-      auto abortFn = std::move(_prompt->onAbort);
+      auto abortFn = std::move(p.onAbort);
       _prompt.reset();
       if (abortFn)
         abortFn();
     }
-  } else if (c == key::Tab && _prompt->onTab) {
-    _prompt->display = _prompt->onTab(_prompt->input);
-    _prompt->historyIdx.reset();
+  } else if (c == key::Tab && p.onTab) {
+    p.display = p.onTab(p.input);
+    p.moveEnd();
+    p.historyIdx.reset();
   } else if (c == key::Backspace) {
-    // Remove one full UTF-8 code point (walk back over continuation bytes).
-    // When input is already empty, swallow the byte — otherwise it would
-    // fall into the printable branch below (Backspace is 0x7F, which is
-    // >= PrintableMin) and silently end up in the prompt input.
-    if (_prompt->input.empty())
+    // Swallow the byte when there is nothing to delete — otherwise it
+    // would fall into the printable branch below (Backspace is 0x7F,
+    // which is >= PrintableMin) and silently end up in the prompt input.
+    if (!p.deleteBefore())
       return;
-    _prompt->input.pop_back();
-    while (!_prompt->input.empty() &&
-           isUtf8Continuation(static_cast<unsigned char>(_prompt->input.back())))
-      _prompt->input.pop_back();
-    _prompt->historyIdx.reset();
+    p.historyIdx.reset();
+    runAutocomplete();
+  } else if (c == key::CtrlH && p.showInput) {
+    if (!p.deleteChunkBefore())
+      return;
+    p.historyIdx.reset();
     runAutocomplete();
   } else if (static_cast<unsigned char>(c) >= key::PrintableMin) {
-    _prompt->input += c;
+    std::string ch(1, c);
     auto u = static_cast<unsigned char>(c);
     if (u >= 0x80)
-      readUtf8Tail(u, _prompt->input);
-    _prompt->historyIdx.reset();
+      readUtf8Tail(u, ch);
+    if (ch.empty())
+      return; // malformed UTF-8, dropped by readUtf8Tail
+    p.insert(ch);
+    p.historyIdx.reset();
     runAutocomplete();
-  } else if (_prompt->onSpecialKey) {
-    if (_prompt->onSpecialKey(c, _prompt->input))
+  } else if (p.onSpecialKey) {
+    if (p.onSpecialKey(c, p.input)) {
+      p.moveEnd();
       runAutocomplete();
+    }
+  }
+}
+
+void Screen::handlePromptCsi(std::string_view params, char final) {
+  auto& p = *_prompt;
+  // Unmodified keys carry no parameters; Ctrl-modified cursor keys arrive
+  // as ESC[1;5X, Delete as ESC[3~ and Ctrl-Delete as ESC[3;5~.
+  bool plain = params.empty();
+  bool ctrl = params == "1;5";
+
+  // Up/Down browse history (the input is a single line, so they have no
+  // cursor meaning). History replaces the input; the cursor goes to its end.
+  if (plain && final == ansi::UpArrow) {
+    auto* hist = _promptHistory.get(p.label);
+    if (!hist)
+      return;
+    if (!p.historyIdx) {
+      p.savedInput = p.input;
+      p.historyIdx = 0;
+      p.input = (*hist)[0];
+    } else if (*p.historyIdx + 1 < hist->size()) {
+      ++*p.historyIdx;
+      p.input = (*hist)[*p.historyIdx];
+    }
+    p.moveEnd();
+    runAutocomplete();
+    return;
+  }
+  if (plain && final == ansi::DownArrow) {
+    if (!p.historyIdx)
+      return;
+    if (*p.historyIdx == 0) {
+      p.input = p.savedInput;
+      p.historyIdx.reset();
+    } else {
+      --*p.historyIdx;
+      if (auto* hist = _promptHistory.get(p.label))
+        p.input = (*hist)[*p.historyIdx];
+    }
+    p.moveEnd();
+    runAutocomplete();
+    return;
+  }
+
+  // Line editing only applies to prompts that show their input: confirm
+  // prompts react to the last key typed, so their hidden input must stay
+  // append-only.
+  if (!p.showInput)
+    return;
+  bool edited = false;
+  switch (final) {
+  case ansi::RightArrow:
+    if (ctrl)
+      p.moveWordRight();
+    else if (plain && !p.cursorAtEnd())
+      p.moveRight();
+    else if (plain && p.onRightArrow) {
+      // Right at the end of the input accepts the completion instead.
+      p.display = p.onRightArrow(p.input);
+      p.moveEnd();
+    }
+    break;
+  case ansi::LeftArrow:
+    if (ctrl)
+      p.moveWordLeft();
+    else if (plain)
+      p.moveLeft();
+    break;
+  case ansi::Home:
+    if (plain || ctrl)
+      p.moveHome();
+    break;
+  case ansi::End:
+    if (plain || ctrl)
+      p.moveEnd();
+    break;
+  case ansi::Terminator:
+    if (params == "3")
+      edited = p.deleteAt();
+    else if (params == "3;5")
+      edited = p.deleteChunkAt();
+    break;
+  }
+  if (edited) {
+    p.historyIdx.reset();
+    runAutocomplete();
   }
 }
 

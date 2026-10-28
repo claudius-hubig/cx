@@ -130,6 +130,7 @@ tests/
   test_char_width.cpp              UTF-8 / character width tests
   test_shortcut.cpp                Shortcut table tests
   test_prompt_history.cpp          PromptHistory tests
+  test_prompt_edit.cpp             Prompt line-editing (cursor, word moves) tests
   test_syntax.cpp                  Syntax highlighting tests
   test_e2e.cpp                     End-to-end tests (via PTY)
   test_buffer_view.cpp             BufferView editing/movement tests

@@ -1817,3 +1817,46 @@ BOOST_AUTO_TEST_CASE(e2e_grep_hit_lands_mid_panel) {
                "c");
   session.waitExit();
 }
+
+BOOST_AUTO_TEST_CASE(e2e_prompt_cursor_movement_and_display) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  // Start pathless ("*1*") so Ctrl-S opens the Save As prompt directly.
+  PtySession session(24, 120, bin);
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("x");
+  session.readUntil("x", std::chrono::milliseconds{1000});
+
+  auto dir = std::filesystem::temp_directory_path();
+  auto stem = "cx_e2e_prompt_cursor_" + std::to_string(::getpid()) + "_";
+  auto wantPath = dir / (stem + "ab.txt");
+  std::filesystem::remove(wantPath);
+
+  session.send("\x13"); // Ctrl-S
+  session.readUntil("Save as", std::chrono::milliseconds{1000});
+  // Type the name without the 'a', walk back over "b.txt" and insert it.
+  // Ctrl-Left / Ctrl-Right / Home / End must be consumed whole — a leaked
+  // ";5D" tail would end up in the filename.
+  session.send((dir / (stem + "b.txt")).string());
+  session.send("\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D");
+  session.send("a");
+  session.send("\x1b[1;5D\x1b[1;5C\x1b[H\x1b[F");
+  auto out = session.readOutput(std::chrono::milliseconds{300});
+  // The cursor cell is drawn in normal video inside the reverse-video bar,
+  // with the terminal cursor hidden.
+  BOOST_CHECK(out.find("\x1b[27m") != std::string::npos);
+  BOOST_CHECK(out.find("\x1b[?25l") != std::string::npos);
+
+  session.send("\r");
+  session.readUntil("Saved to", std::chrono::milliseconds{1000});
+  BOOST_CHECK(std::filesystem::exists(wantPath));
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+  std::filesystem::remove(wantPath);
+}

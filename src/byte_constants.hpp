@@ -28,6 +28,7 @@ constexpr char Enter = '\r';
 constexpr char Newline = '\n';
 constexpr char Escape = '\x1b';
 constexpr char CtrlF = '\x06'; /**< Find */
+constexpr char CtrlH = '\x08'; /**< Ctrl-Backspace in most terminals */
 constexpr char CtrlR = '\x12'; /**< Reverse find */
 constexpr char CtrlX = '\x18'; /**< Prefix for the C-x chord */
 /** @} */
@@ -93,6 +94,7 @@ constexpr std::string_view Bold = "\x1b[1m";
 constexpr std::string_view Dim = "\x1b[2m";
 constexpr std::string_view DimOff = "\x1b[22m";
 constexpr std::string_view ReverseVideo = "\x1b[7m";
+constexpr std::string_view ReverseVideoOff = "\x1b[27m";
 constexpr std::string_view DefaultFg = "\x1b[39m";
 /**
  * @brief Foreground used by Buffer::render for escaped control bytes and
@@ -102,6 +104,7 @@ constexpr std::string_view DefaultFg = "\x1b[39m";
 constexpr std::string_view CtrlColor = "\x1b[38;2;204;120;50m";
 constexpr std::string_view EraseLine = "\x1b[K";
 constexpr std::string_view ShowCursor = "\x1b[?25h";
+constexpr std::string_view HideCursor = "\x1b[?25l";
 /** @brief DECSCUSR steady block cursor — used to signal insert mode. */
 constexpr std::string_view CursorBlock = "\x1b[2 q";
 /** @brief DECSCUSR steady bar cursor — used to signal overwrite mode. */

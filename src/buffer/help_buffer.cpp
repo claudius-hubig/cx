@@ -74,6 +74,14 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("]", "Step to newer version"));
     v.push_back(formatRawLine("Enter", "Commit selected version"));
     v.push_back(formatRawLine("Esc-Esc", "Cancel and return to latest"));
+    v.emplace_back("");
+    // Prompt line editing is handled by Screen::handlePromptInput, not the
+    // shortcut table.
+    v.emplace_back("Prompts:");
+    v.push_back(formatRawLine("\xe2\x86\x90/\xe2\x86\x92 Home/End", "Move cursor (Ctrl: by word)"));
+    v.push_back(formatRawLine("Bksp/Delete", "Delete char (Ctrl: chunk)"));
+    v.push_back(formatRawLine("\xe2\x86\x91/\xe2\x86\x93", "Previous/next input"));
+    v.push_back(formatRawLine("Tab, \xe2\x86\x92 at end", "Cycle / accept completion"));
     return v;
   }();
   return lines;

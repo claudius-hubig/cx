@@ -85,6 +85,10 @@ cursors; the buffer is `notes.md` in Markdown mode with unsaved changes, and has
 - **`| v 4/12  2026-07-19 15:04:22  [/] step  Ctrl-U commit`** — the history-mode badge: which version you are on out
   of how many, when it was captured, and the keys to step or commit.
 - **`| Find: rege`** — the active prompt and what you have typed so far, followed by any completion hint in dim text.
+  The prompt cursor is drawn in normal video against the bar. Inside a prompt, `←`/`→` and `Home`/`End` move the
+  cursor (`Ctrl-←`/`Ctrl-→` by word), `Bksp`/`Delete` delete a character (`Ctrl-Bksp`/`Esc-Bksp`/`Ctrl-Del` a chunk),
+  and `↑`/`↓` recall earlier input. In prompts with completion, `Tab` cycles the matches and `→` at the end of the
+  input accepts the current one.
 - **`| Created 3 cursors`** — the most recent status message. It stays up until the next keypress redraws the
   modeline.
 
