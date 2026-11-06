@@ -200,6 +200,8 @@ void TextBuffer::detectMode() {
     _mode = BufferMode::Sh;
   else if (ext == ".yml" || ext == ".yaml")
     _mode = BufferMode::Yml;
+  else if (ext == ".toml")
+    _mode = BufferMode::Tml;
   else if (ext == ".py" || ext == ".pyi" || ext == ".pyw")
     _mode = BufferMode::Py;
   else

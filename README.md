@@ -107,7 +107,7 @@ the history badge appear on every panel.
 - **`notes.md`** — the buffer's display name: the bare filename when that is unambiguous, otherwise the full path.
   Built-in buffers use a `*name*` form: `*1*` (the scratch buffer cx opens with), `*stdin*`, `*help*`, `*buffers*`,
   `*paste ring*`, and `*grep*`.
-- **`[md]`** — the buffer mode, one of `[txt]` `[c]` `[md]` `[jsn]` `[dif]` `[sh]` `[yml]` `[py]`. It drives syntax
+- **`[md]`** — the buffer mode, one of `[txt]` `[c]` `[md]` `[jsn]` `[dif]` `[sh]` `[yml]` `[tml]` `[py]`. It drives syntax
   highlighting, auto-indent, and formatting, and is changed with `Esc-m`.
 - **`+`** — unsaved changes. Blank means the buffer matches what is on disk.
 - **`3@`** — the cursor count, while multiple cursors are active. Blank with a single cursor; `***@` above 999.
@@ -251,7 +251,7 @@ in every mode:
   strings, character literals and comments are skipped.
 - **Jsn** (`.json`): matches `[]` and `{}`. Brackets inside strings are
   skipped.
-- **Md / Dif / Sh / Yml / Py / Txt** (and any buffer with no specific
+- **Md / Dif / Sh / Yml / Tml / Py / Txt** (and any buffer with no specific
   mode): matches `()[]{}` only. `<` and `>` are treated as ordinary
   characters.
 
@@ -284,7 +284,7 @@ These shortcuts are active when viewing a directory listing.
 | Esc-l | Toggle line wrap                                                                    |
 | Esc-_ | Toggle highlight on the cursor's line                                               |
 | Esc-# | Toggle line-number gutter                                                           |
-| Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`, `sh`/`shell`/`bash`, `yml`/`yaml`, `py`/`python`) |
+| Esc-m | Set buffer mode (accepts `txt`/`text`, `c`/`cpp`/`c++`, `md`/`markdown`, `jsn`/`json`, `dif`/`diff`/`patch`, `sh`/`shell`/`bash`, `yml`/`yaml`, `tml`/`toml`, `py`/`python`) |
 | Insert | Toggle insert/overwrite mode                                                       |
 
 ### Panels

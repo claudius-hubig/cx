@@ -288,7 +288,7 @@ Public API:
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.
 - **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`,
-  `Yml`, `Py`) determines syntax highlighting, auto-indent, and
+  `Yml`, `Tml`, `Py`) determines syntax highlighting, auto-indent, and
   formatting behaviour.
   Changed via `setMode()`, which invalidates the per-line syntax cache.
 - **Line-number gutter**: `RenderParams::leftGutter` (in screen columns)
@@ -442,7 +442,7 @@ and clear the mark. Exposes `setPath()` for the save-as rename
 workflow. `detectMode()` sets the `BufferMode` based on file extension
 (`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
 `.diff`, `.patch` → `Dif`; `.sh`, `.bash`, `.zsh`, `.ksh` → `Sh`;
-`.yml`, `.yaml` → `Yml`; `.py`, `.pyi`, `.pyw` → `Py`; otherwise
+`.yml`, `.yaml` → `Yml`; `.toml` → `Tml`; `.py`, `.pyi`, `.pyw` → `Py`; otherwise
 `Txt`). When the extension is unknown, a leading `#!` line is sniffed
 for an interpreter (`bash`/`zsh`/`ksh`/`dash`/`sh` → `Sh`, `python`
 → `Py`) as a fallback; only line 0 is inspected, so `detectMode()`
@@ -721,6 +721,18 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   holds the introducing line's indent; deeper-indented or blank lines
   are one `String` span until a non-blank line dedents back to it.
 
+- **TOML mode** (`modes/tml/syntax.hpp/.cpp`): Tokenizes `#` comments,
+  table headers `[a.b]`/`[[a]]` (names `Preprocessor`, brackets
+  `Bracket`), bare and dotted keys before `=` (`Keyword`; quoted key
+  parts `String`), basic/literal strings and their `"""`/`'''`
+  multi-line forms, and the value literals — booleans, integers
+  (`0x`/`0o`/`0b`, `_` groups), floats (`inf`/`nan`) and date/times —
+  as `Number`. Inside inline tables `{...}` keys are recognised after
+  `{` and `,`. Maintains multi-line state: `state.tomlTriple` holds
+  the open triple-quote char, `state.tomlDepth` counts `[`/`{` left
+  open by earlier lines so lines inside a multi-line array are parsed
+  as values (no header or key detection).
+
 - **Python mode** (`modes/py/syntax.hpp/.cpp`): Tokenizes `#`
   comments, strings with optional `r`/`b`/`f`/`u` prefixes
   (single/double and triple-quoted), the keyword set
@@ -739,7 +751,7 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 `BufferView::gotoMatchingBracket()` dispatches to the JSON matcher in
 JSON mode and to the C/C++ matcher in every other mode. Because the
 C/C++ matcher only treats `<>` as brackets when tagged `Angle`, plain
-text, Markdown, shell, YAML and Python buffers (where `<>` are
+text, Markdown, shell, YAML, TOML and Python buffers (where `<>` are
 `Operator`/`Normal`, never `Angle`) get a clean `()[]{}`-only
 fallback for free.
 

@@ -63,7 +63,8 @@ enum class MdLink : uint8_t { None, Label, Url };
  * true. Because a buffer has exactly one mode, the C/C++ fields and the
  * per-mode fields are never active simultaneously: a shell buffer only
  * sets @c heredocTag, a Python buffer only @c pyTriple, a YAML buffer only
- * @c yamlBlockCol, a Markdown buffer only @c mdLink.
+ * @c yamlBlockCol, a TOML buffer only @c tomlTriple/@c tomlDepth, a Markdown
+ * buffer only @c mdLink.
  */
 struct SyntaxState {
   bool inBlockComment = false;
@@ -93,6 +94,14 @@ struct SyntaxState {
    *        until indentation returns to <= this column); -1 = not in one.
    */
   int yamlBlockCol = -1;
+
+  /**
+   * @brief TOML multi-line string: 0 = not inside; '\'' or '"' = the open
+   *        '''/""" quote character.
+   */
+  char tomlTriple = 0;
+  /** @brief TOML `[`/`{` still open at the end of the line (multi-line arrays). */
+  int tomlDepth = 0;
 
   /** @brief Markdown cross-line link state (see MdLink). */
   MdLink mdLink = MdLink::None;

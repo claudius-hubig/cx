@@ -27,7 +27,7 @@
  * @brief Selects file-type-specific behaviour: syntax highlighting,
  *        auto-indent, and formatting.
  */
-enum class BufferMode { Txt, Cpp, Md, Jsn, Dif, Sh, Yml, Py };
+enum class BufferMode { Txt, Cpp, Md, Jsn, Dif, Sh, Yml, Tml, Py };
 
 /**
  * @brief True if @p line is a git merge-conflict marker (7 identical

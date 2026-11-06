@@ -351,6 +351,12 @@ BOOST_AUTO_TEST_CASE(yaml_extension_sets_yml_mode) {
   BOOST_CHECK(buf.mode() == BufferMode::Yml);
 }
 
+BOOST_AUTO_TEST_CASE(toml_extension_sets_tml_mode) {
+  TempFile tmp("a = 1\n", ".toml");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.mode() == BufferMode::Tml);
+}
+
 BOOST_AUTO_TEST_CASE(py_extension_sets_py_mode) {
   TempFile tmp("x = 1\n", ".py");
   TB<TextBuffer> buf(tmp.path().string(), tmp.path());

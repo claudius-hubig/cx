@@ -6,6 +6,7 @@
 #include "modes/md/syntax.hpp"
 #include "modes/py/syntax.hpp"
 #include "modes/sh/syntax.hpp"
+#include "modes/tml/syntax.hpp"
 #include "modes/yml/syntax.hpp"
 #include "utf8.hpp"
 
@@ -323,6 +324,8 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
       tokenizeShellLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Yml)
       tokenizeYamlLine(line, state, _synCache[i].tokens);
+    else if (_mode == BufferMode::Tml)
+      tokenizeTomlLine(line, state, _synCache[i].tokens);
     else if (_mode == BufferMode::Py)
       tokenizePythonLine(line, state, _synCache[i].tokens);
     else

@@ -7,6 +7,7 @@
 #include "buffer/modes/jsn/syntax.hpp"
 #include "buffer/modes/py/syntax.hpp"
 #include "buffer/modes/sh/syntax.hpp"
+#include "buffer/modes/tml/syntax.hpp"
 #include "buffer/modes/yml/syntax.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
@@ -1800,6 +1801,137 @@ BOOST_AUTO_TEST_CASE(yml_hash_inside_key_is_not_comment) {
   std::vector<SyntaxToken> toks;
   tokenizeYamlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::Keyword));
+}
+
+// ============================================================
+// TOML (tml) mode
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(tml_key_value_and_comment) {
+  auto line = mkline(R"(name = "cx" # editor)");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeTomlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));            // name
+  BOOST_CHECK(toks[5] == SyntaxToken::Operator);                       // '='
+  BOOST_CHECK(allTokens(toks, 7, 11, SyntaxToken::String));            // "cx"
+  BOOST_CHECK(allTokens(toks, 12, line.size(), SyntaxToken::Comment)); // # editor
+}
+
+BOOST_AUTO_TEST_CASE(tml_dotted_and_quoted_keys) {
+  auto line = mkline(R"(site."google.com".x = 1)");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeTomlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword)); // site
+  BOOST_CHECK(toks[4] == SyntaxToken::Operator);            // '.'
+  BOOST_CHECK(allTokens(toks, 5, 17, SyntaxToken::String)); // "google.com"
+  BOOST_CHECK(toks[18] == SyntaxToken::Keyword);            // x
+  BOOST_CHECK(toks[22] == SyntaxToken::Number);             // 1
+}
+
+BOOST_AUTO_TEST_CASE(tml_table_headers) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto t = mkline("[server.http] # main");
+  tokenizeTomlLine(t, st, toks);
+  BOOST_CHECK(toks[0] == SyntaxToken::Bracket);
+  BOOST_CHECK(allTokens(toks, 1, 7, SyntaxToken::Preprocessor)); // server
+  BOOST_CHECK(toks[7] == SyntaxToken::Operator);                 // '.'
+  BOOST_CHECK(toks[12] == SyntaxToken::Bracket);
+  BOOST_CHECK(allTokens(toks, 14, t.size(), SyntaxToken::Comment));
+  auto a = mkline("[[bin]]");
+  tokenizeTomlLine(a, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Bracket));
+  BOOST_CHECK(allTokens(toks, 2, 5, SyntaxToken::Preprocessor));
+  BOOST_CHECK(allTokens(toks, 5, 7, SyntaxToken::Bracket));
+  BOOST_CHECK(st.tomlDepth == 0);
+}
+
+BOOST_AUTO_TEST_CASE(tml_literal_values) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  for (auto const* v :
+       {"true", "false", "-17", "1_000", "0xDEAD_beef", "0o755", "0b1101", "+1.5e-3", "-inf", "nan",
+        "1979-05-27", "07:32:00", "1979-05-27T07:32:00Z", "1979-05-27 07:32:00.999-07:00"}) {
+    auto line = "k = " + std::string(v);
+    tokenizeTomlLine(line, st, toks);
+    BOOST_CHECK_MESSAGE(allTokens(toks, 4, line.size(), SyntaxToken::Number), v);
+  }
+  for (auto const* v : {"True", "0x", "1.", "abc", "1__x"}) {
+    auto line = "k = " + std::string(v);
+    tokenizeTomlLine(line, st, toks);
+    BOOST_CHECK_MESSAGE(toks[4] == SyntaxToken::Normal, v);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(tml_hash_inside_string_is_not_comment) {
+  auto line = mkline(R"(color = "#fff" # c)");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeTomlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 8, 14, SyntaxToken::String));
+  BOOST_CHECK(allTokens(toks, 15, line.size(), SyntaxToken::Comment));
+}
+
+BOOST_AUTO_TEST_CASE(tml_inline_table_keys) {
+  auto line = mkline("p = { x = 1, y.z = 'a' }");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeTomlLine(line, st, toks);
+  BOOST_CHECK(toks[4] == SyntaxToken::Brace);
+  BOOST_CHECK(toks[6] == SyntaxToken::Keyword);   // x
+  BOOST_CHECK(toks[10] == SyntaxToken::Number);   // 1
+  BOOST_CHECK(toks[11] == SyntaxToken::Operator); // ','
+  BOOST_CHECK(toks[13] == SyntaxToken::Keyword);  // y
+  BOOST_CHECK(toks[15] == SyntaxToken::Keyword);  // z
+  BOOST_CHECK(allTokens(toks, 19, 22, SyntaxToken::String));
+  BOOST_CHECK(toks[23] == SyntaxToken::Brace);
+  BOOST_CHECK(st.tomlDepth == 0);
+}
+
+BOOST_AUTO_TEST_CASE(tml_multiline_array_is_not_header) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline("data = [");
+  tokenizeTomlLine(l1, st, toks);
+  BOOST_CHECK(st.tomlDepth == 1);
+  auto l2 = mkline("  [1, 2], # pair");
+  tokenizeTomlLine(l2, st, toks);
+  BOOST_CHECK(toks[2] == SyntaxToken::Bracket);
+  BOOST_CHECK(toks[3] == SyntaxToken::Number); // value, not a header name
+  BOOST_CHECK(allTokens(toks, 10, l2.size(), SyntaxToken::Comment));
+  auto l3 = mkline("  a,");
+  tokenizeTomlLine(l3, st, toks);
+  BOOST_CHECK(toks[2] == SyntaxToken::Normal); // no key inside an array
+  auto l4 = mkline("]");
+  tokenizeTomlLine(l4, st, toks);
+  BOOST_CHECK(st.tomlDepth == 0);
+  auto l5 = mkline("next = 1");
+  tokenizeTomlLine(l5, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));
+}
+
+BOOST_AUTO_TEST_CASE(tml_multiline_strings) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto l1 = mkline(R"(s = """first)");
+  tokenizeTomlLine(l1, st, toks);
+  BOOST_CHECK(allTokens(toks, 4, l1.size(), SyntaxToken::String));
+  BOOST_CHECK(st.tomlTriple == '"');
+  auto l2 = mkline(R"(not = a key \""" still)");
+  tokenizeTomlLine(l2, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::String)); // escaped quote
+  BOOST_CHECK(st.tomlTriple == '"');
+  auto l3 = mkline(R"(end"""" # c)");
+  tokenizeTomlLine(l3, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::String)); // `end"` + delimiter
+  BOOST_CHECK(allTokens(toks, 8, l3.size(), SyntaxToken::Comment));
+  BOOST_CHECK(st.tomlTriple == 0);
+  auto l4 = mkline(R"(p = '''C:\x''' )");
+  tokenizeTomlLine(l4, st, toks);
+  BOOST_CHECK(allTokens(toks, 4, 14, SyntaxToken::String)); // literal: no escapes
+  BOOST_CHECK(st.tomlTriple == 0);
 }
 
 // ============================================================
