@@ -1778,6 +1778,30 @@ BOOST_AUTO_TEST_CASE(yml_colon_without_space_is_not_key) {
   BOOST_CHECK(toks[4] == SyntaxToken::Normal); // the ':' in http:
 }
 
+// Regression: a '#' directly after a flow indicator or closing quote used
+// to stop the plain-scalar scan without consuming anything, hanging the
+// tokenizer (and the editor) forever.
+BOOST_AUTO_TEST_CASE(yml_hash_without_preceding_space_terminates) {
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  for (auto const* s : {"colors: [#fff, #000]", R"(a: "x"#y)", "a: {k: v}#c", "a: b,#c"}) {
+    auto line = mkline(s);
+    tokenizeYamlLine(line, st, toks);
+    BOOST_CHECK_EQUAL(toks.size(), line.size());
+  }
+  auto line = mkline("colors: [#fff]");
+  tokenizeYamlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 9, 13, SyntaxToken::Normal)); // '#fff' is content
+}
+
+BOOST_AUTO_TEST_CASE(yml_hash_inside_key_is_not_comment) {
+  auto line = mkline("c#sharp: 1");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeYamlLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::Keyword));
+}
+
 // ============================================================
 // Python (py) mode
 // ============================================================

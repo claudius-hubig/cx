@@ -151,7 +151,8 @@ void tokenizeYamlLine(std::string const& line, SyntaxState& state,
       }
     } else {
       std::size_t e = i;
-      while (e < sz && line[e] != ':' && line[e] != '#')
+      while (e < sz && line[e] != ':' &&
+             !(line[e] == '#' && (e == i || line[e - 1] == ' ' || line[e - 1] == '\t')))
         ++e;
       if (e < sz && line[e] == ':' && (e + 1 == sz || line[e + 1] == ' ')) {
         std::size_t ke = e;
@@ -243,10 +244,12 @@ void tokenizeYamlLine(std::string const& line, SyntaxState& state,
       continue;
     }
     // Plain scalar word: booleans, null and numbers are all literal
-    // values and share the numeric-literal colour.
+    // values and share the numeric-literal colour. A `#` only starts a
+    // comment after whitespace (handled above), so inside a word it is
+    // content; stopping on it would make no progress when it directly
+    // follows a quote or flow indicator (e.g. `[#fff]`).
     std::size_t s = i;
-    while (i < sz && line[i] != ' ' && line[i] != ',' && line[i] != ']' && line[i] != '}' &&
-           line[i] != '#')
+    while (i < sz && line[i] != ' ' && line[i] != ',' && line[i] != ']' && line[i] != '}')
       ++i;
     std::string_view w(line.data() + s, i - s);
     if (isYamlConst(w) || isYamlNumber(w))
