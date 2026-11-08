@@ -608,3 +608,29 @@ BOOST_AUTO_TEST_CASE(snap_to_codepoint_bounded_on_stray_continuations) {
   std::string s(10, '\x80');
   BOOST_CHECK_EQUAL(snapToCodepoint(s, 8), 5u);
 }
+
+// --- Characters wider than the wrap width ---
+
+BOOST_AUTO_TEST_CASE(row_bounds_no_empty_rows_for_too_wide_chars) {
+  // At a row start a character wider than cols used to open a new row
+  // first, so cols=1 "中文字" gave 0 0 3 3 6 6 9.
+  std::string s = "\xe4\xb8\xad\xe6\x96\x87\xe5\xad\x97";
+  BOOST_CHECK(computeRowBounds(s, 1) == (std::vector<std::size_t>{0, 3, 6, 9}));
+  // Row bounds stay strictly increasing for any width.
+  for (std::size_t cols = 1; cols <= 4; ++cols) {
+    auto rb = computeRowBounds(s, cols);
+    for (std::size_t i = 1; i < rb.size(); ++i)
+      BOOST_CHECK_LT(rb[i - 1], rb[i]);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(visual_row_helpers_agree_with_row_bounds_for_wide_chars) {
+  std::string s = "a\xe4\xb8\xad"
+                  "b";
+  auto rb = computeRowBounds(s, 1);
+  BOOST_CHECK(rb == (std::vector<std::size_t>{0, 1, 4, 5}));
+  BOOST_CHECK_EQUAL(lastVisualRowStart(s, 1), rb.back());
+  auto info = findVisualRow(s, 1, 1);
+  BOOST_CHECK_EQUAL(info.curRowStart, 1u);
+  BOOST_CHECK_EQUAL(info.nextRowStart, 4u);
+}

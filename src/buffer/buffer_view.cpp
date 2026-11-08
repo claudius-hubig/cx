@@ -150,24 +150,7 @@ std::vector<std::size_t> const& BufferView::ensureRowBounds(std::size_t lineIdx,
 
   _rowBoundsCache.lineIdx = lineIdx;
   _rowBoundsCache.cols = cols;
-  _rowBoundsCache.rowStarts.clear();
-  _rowBoundsCache.rowStarts.push_back(0);
-
-  auto const& line = _buf.lineContent(lineIdx);
-  std::size_t col = 0;
-  for (std::size_t i = 0; i < line.size();) {
-    auto info = charInfoAt(line.data() + i, line.size() - i);
-    if (col + info.width > cols) {
-      _rowBoundsCache.rowStarts.push_back(i);
-      col = 0;
-    }
-    col += info.width;
-    if (col >= cols) {
-      _rowBoundsCache.rowStarts.push_back(i + info.len);
-      col = 0;
-    }
-    i += info.len;
-  }
+  _rowBoundsCache.rowStarts = computeRowBounds(_buf.lineContent(lineIdx), cols);
   return _rowBoundsCache.rowStarts;
 }
 

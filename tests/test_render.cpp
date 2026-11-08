@@ -91,6 +91,18 @@ BOOST_AUTO_TEST_CASE(render_wrap_basic) {
   BOOST_CHECK(grid[1].find("fgh") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(render_wrap_char_wider_than_panel_has_no_blank_rows) {
+  // cols=2 means cw=1: each 2-column character gets one row of its own,
+  // instead of a blank row before it.
+  TB<TextBuffer> buf("test");
+  insertString(buf, "\xe4\xb8\xad\xe6\x96\x87"); // 中文, point at end
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{8}, ColIdx{2}, renderParams(buf));
+  BOOST_CHECK_EQUAL(row.value, 2u);
+  BOOST_CHECK_EQUAL(col.value, 0u);
+  BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{2}, buf.point(), buf.viewFromRaw(), true), row.value);
+}
+
 BOOST_AUTO_TEST_CASE(render_wrap_exact_boundary) {
   // Regression test: cursor at end of a line whose width is exactly cw.
   // cols=6 means cw=5. "abcde" is exactly 5 chars = exactly cw.

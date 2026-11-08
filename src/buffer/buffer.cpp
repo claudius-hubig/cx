@@ -222,7 +222,7 @@ std::size_t Buffer::screenRow(ColIdx cols, BufferPoint point, ViewFrom viewFrom,
     std::size_t col = 0;
     for (std::size_t i = start; i < end && i < line.size();) {
       auto info = charInfoAt(line.data() + i, line.size() - i);
-      if (col + info.width > cw) {
+      if (col > 0 && col + info.width > cw) {
         ++row;
         col = 0;
       }
@@ -922,7 +922,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       auto info = charInfoAt(line.data() + i, line.size() - i);
 
       // Wrap if the representation doesn't fit on the current line.
-      if (col + info.width > cw || pendingWrap) {
+      if ((col > 0 && col + info.width > cw) || pendingWrap) {
         if (rs.bracketMatchActive) {
           out += ansi::DefaultFg;
           rs.bracketMatchActive = false;

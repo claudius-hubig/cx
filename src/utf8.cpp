@@ -216,7 +216,7 @@ VisualRowInfo findVisualRow(std::string const& line, std::size_t byteOff, std::s
 
   for (std::size_t i = 0; i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
-    if (col + info.width > cols) {
+    if (col > 0 && col + info.width > cols) {
       if (byteOff < i)
         return {prevStart, curStart, i};
       prevStart = curStart;
@@ -251,7 +251,7 @@ std::size_t lastVisualRowStart(std::string const& line, std::size_t cols) {
   std::size_t rowStart = 0, col = 0;
   for (std::size_t i = 0; i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
-    if (col + info.width > cols) {
+    if (col > 0 && col + info.width > cols) {
       rowStart = i;
       col = 0;
     }
@@ -311,7 +311,7 @@ std::vector<std::size_t> computeRowBounds(std::string const& line, std::size_t c
   std::size_t col = 0;
   for (std::size_t i = 0; i < line.size();) {
     auto info = charInfoAt(line.data() + i, line.size() - i);
-    if (col + info.width > cols) {
+    if (col > 0 && col + info.width > cols) {
       rowStarts.push_back(i);
       col = 0;
     }
