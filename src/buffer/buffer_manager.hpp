@@ -112,10 +112,14 @@ public:
   /**
    * @brief Change a buffer's path and re-key it in the map.
    *
-   * Silently returns if @p oldName is not found. Updates the MRU to
-   * reflect the new name.
+   * @p newPath is made absolute and symlink-resolved like open() does, so
+   * the new key matches what opening that file would produce. Updates the
+   * MRU to reflect the new name.
+   * @return false, leaving every buffer untouched, if @p oldName is not
+   *         found or another buffer is already registered under the new
+   *         path.
    */
-  void rename(std::string const& oldName, std::filesystem::path newPath);
+  [[nodiscard]] bool rename(std::string const& oldName, std::filesystem::path const& newPath);
 
   /**
    * @brief Remove the named buffer.

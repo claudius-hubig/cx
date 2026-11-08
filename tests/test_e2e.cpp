@@ -1258,6 +1258,46 @@ BOOST_AUTO_TEST_CASE(e2e_kill_buffer_repeatedly_survives) {
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
 
+BOOST_AUTO_TEST_CASE(e2e_save_as_onto_open_file_is_refused) {
+  // Save-as onto a path already open in another buffer used to destroy the
+  // focused buffer inside BufferManager::rename() (use-after-free).
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("on disk\n");
+  auto path = std::filesystem::weakly_canonical(tmp.path()).string();
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Open the file, switch back to the scratch buffer and type into it.
+  session.send("\x0f" + path + "\r");
+  session.readUntil("on disk", std::chrono::milliseconds{1000});
+  session.send("\x0f*1*\r");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("scratch text");
+  session.readUntil("scratch text", std::chrono::milliseconds{1000});
+
+  // Save-as onto the open file and confirm the overwrite.
+  session.send("\x13");
+  session.readUntil("Save as", std::chrono::milliseconds{1000});
+  session.send(path + "\r");
+  session.readUntil("Overwrite", std::chrono::milliseconds{1000});
+  session.send("y");
+  auto out = stripAnsi(session.readUntil("Already open", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Already open") != std::string::npos, "Expected refusal: " + out);
+
+  // The file on disk is untouched and the editor still works.
+  std::ifstream f(tmp.path());
+  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  BOOST_CHECK_EQUAL(content, "on disk\n");
+  session.send("!");
+  out = stripAnsi(session.readUntil("scratch text!", std::chrono::milliseconds{1000}));
+  BOOST_CHECK(out.find("scratch text!") != std::string::npos);
+}
+
 // --- Bookmarks (C-x b / C-x j) ---
 
 BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {

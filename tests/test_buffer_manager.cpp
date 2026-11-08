@@ -125,9 +125,46 @@ BOOST_AUTO_TEST_CASE(rename_rekeys_map) {
   NullBufferSink sink;
   BufferManager mgr(sink);
   mgr.create("old");
-  mgr.rename("old", std::filesystem::path("/tmp/new"));
+  TempDir dir;
+  auto target = std::filesystem::weakly_canonical(dir.path()) / "new";
+  BOOST_CHECK(mgr.rename("old", target));
   BOOST_CHECK(mgr.find("old") == nullptr);
-  BOOST_CHECK(mgr.find("/tmp/new") != nullptr);
+  BOOST_CHECK(mgr.find(target.string()) != nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(rename_canonicalizes_relative_path) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  mgr.create("old");
+  BOOST_CHECK(mgr.rename("old", std::filesystem::path("relative_name.txt")));
+  auto expected =
+      std::filesystem::weakly_canonical(std::filesystem::absolute("relative_name.txt")).string();
+  BOOST_CHECK(mgr.find(expected) != nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(rename_onto_open_buffer_is_refused) {
+  // Saving *1* as a file that is already open used to destroy the renamed
+  // buffer (emplace collided and dropped the moved-in unique_ptr) while
+  // the caller still pointed at it.
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempFile tmp("existing\n");
+  auto& existing = mgr.open(tmp.path());
+  auto& scratch = mgr.create("scratch");
+  BOOST_CHECK(!mgr.rename("scratch", tmp.path()));
+  BOOST_CHECK(mgr.find("scratch") == &scratch);
+  BOOST_CHECK_EQUAL(scratch.name(), "scratch");
+  BOOST_CHECK(mgr.find(existing.name()) == &existing);
+}
+
+BOOST_AUTO_TEST_CASE(rename_onto_own_path_is_allowed) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempFile tmp("existing\n");
+  auto& buf = mgr.open(tmp.path());
+  auto name = buf.name();
+  BOOST_CHECK(mgr.rename(name, tmp.path()));
+  BOOST_CHECK(mgr.find(name) == &buf);
 }
 
 // --- Touch / MRU ---

@@ -3,6 +3,24 @@
 
 #include <algorithm>
 
+namespace {
+/**
+ * @brief Absolute, symlink-resolved form of @p path, used as a buffer key.
+ *
+ * Never throws: when resolution fails (e.g. an untraversable directory),
+ * falls back to the absolute lexical path, or @p path itself; the
+ * subsequent load/save then reports the real error.
+ */
+std::filesystem::path canonicalPath(std::filesystem::path const& path) {
+  std::error_code ec;
+  auto abs = std::filesystem::absolute(path, ec);
+  if (ec)
+    return path;
+  auto canonical = std::filesystem::weakly_canonical(abs, ec);
+  return ec ? abs : canonical;
+}
+} // namespace
+
 BufferManager::BufferManager(BufferSink& sink)
     : _helpBuffer(std::make_unique<HelpBuffer>()), _sink(sink) {
   auto buf = std::make_unique<TextBuffer>("*1*");
@@ -226,19 +244,23 @@ BufferManager::completions(std::string const& prefix) const {
   return result;
 }
 
-void BufferManager::rename(std::string const& oldName, std::filesystem::path newPath) {
+bool BufferManager::rename(std::string const& oldName, std::filesystem::path const& newPath) {
   auto it = _buffers.find(oldName);
   if (it == _buffers.end())
-    return;
+    return false;
+  auto canonical = canonicalPath(newPath);
+  auto newName = canonical.string();
+  if (newName != oldName && (_buffers.contains(newName) || _dirBuffers.contains(newName)))
+    return false;
   auto buf = std::move(it->second);
   _buffers.erase(it);
-  buf->setPath(std::move(newPath));
-  auto newName = buf->name();
+  buf->setPath(std::move(canonical));
   _buffers.emplace(newName, std::move(buf));
   refreshDisplayNames();
   auto mi = std::find(_mru.begin(), _mru.end(), oldName);
   if (mi != _mru.end())
     *mi = newName;
+  return true;
 }
 
 Buffer& BufferManager::kill(std::string name) {

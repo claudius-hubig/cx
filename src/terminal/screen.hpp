@@ -265,8 +265,11 @@ private:
    *
    * Wraps every Save-As call site so none can rename a buffer without
    * keeping its bookmarks in sync.
+   * @return false if the rename was refused (the target path is already
+   *         open in another buffer); the status line says so and any
+   *         pending kill/exit is cancelled.
    */
-  void renameBufferAndRekeyBookmarks(std::string oldName, std::string const& newName);
+  bool renameBufferAndRekeyBookmarks(std::string oldName, std::string const& newName);
   /**
    * @brief Esc-x: prompt for an action by description, run it, then surface
    *        the action's primary shortcut as a status hint.

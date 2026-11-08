@@ -243,7 +243,8 @@ Key responsibilities:
 - `displayName()` — returns a short unambiguous name for status line and
   buffer-list display (filename only when unambiguous, full path otherwise)
 - `touch()` / `secondMRU()` — MRU management for default buffer switching
-- `rename()` — re-keys a buffer in the map after save-as
+- `rename()` — re-keys a buffer in the map after save-as; canonicalises the new
+  path like `open()` and refuses (returns false) if another buffer already has it
 
 ---
 

@@ -1043,10 +1043,8 @@ void Screen::openSaveAsPrompt() {
                   "Overwrite " + escapeNonPrintable(resolved) + "? y/n: ",
                   [this, savedName, resolved](std::string const& answer) {
                     if (answer == "y") {
-                      if (_buf && _bufMgr) {
-                        renameBufferAndRekeyBookmarks(savedName, resolved);
+                      if (_buf && _bufMgr && renameBufferAndRekeyBookmarks(savedName, resolved))
                         saveAndMaybeKill();
-                      }
                     } else {
                       _killPending = false;
                       _exitPending = false;
@@ -1058,8 +1056,8 @@ void Screen::openSaveAsPrompt() {
                   });
               return;
             }
-            renameBufferAndRekeyBookmarks(_buf->name(), resolved);
-            saveAndMaybeKill();
+            if (renameBufferAndRekeyBookmarks(_buf->name(), resolved))
+              saveAndMaybeKill();
           },
       // Abort also cancels any in-progress exit flow, so the loop does not
       // re-enter tryExit() and bounce the user back to the same prompt.
@@ -1773,21 +1771,27 @@ void Screen::jumpToBookmark(char slot) {
   _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
 }
 
-void Screen::renameBufferAndRekeyBookmarks(std::string oldName, std::string const& newName) {
+bool Screen::renameBufferAndRekeyBookmarks(std::string oldName, std::string const& newName) {
   // oldName must be a copy, not a reference into _buf->name(): rename()
   // mutates the buffer's name in place via setPath(), so a reference
   // would silently alias the new name by the time renameBuffer() below
   // reads it back.
   if (!_bufMgr)
-    return;
+    return false;
   Buffer* renamed = _bufMgr->find(oldName);
   if (!renamed)
-    return; // nothing registered under oldName; rename() would no-op too
-  _bufMgr->rename(oldName, newName);
+    return false; // nothing registered under oldName; rename() would no-op too
+  if (!_bufMgr->rename(oldName, newName)) {
+    setStatus("Already open in another buffer: " + escapeNonPrintable(newName));
+    _killPending = false;
+    _exitPending = false;
+    return false;
+  }
   // Read the post-rename name off the renamed buffer itself rather than
   // off _buf: rename() derives the new key internally via setPath(), and
   // the renamed buffer is not necessarily the focused one.
   _bookmarks.renameBuffer(oldName, renamed->name());
+  return true;
 }
 
 void Screen::openExecuteCommandPrompt() {
