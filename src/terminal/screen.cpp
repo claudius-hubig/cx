@@ -280,6 +280,10 @@ void Screen::setBuffer(Buffer& buf) {
     bool restoreState = (_layout->viewCountFor(buf) == 0);
     panel.setBuffer(buf, restoreState);
   }
+  finishBufferSwitch(buf);
+}
+
+void Screen::finishBufferSwitch(Buffer& buf) {
   updateFocusPointers();
   _pasteState.reset();
   if (_bufMgr && (!buf.readonly() || dynamic_cast<DirBuffer*>(&buf)))
@@ -1958,8 +1962,11 @@ void Screen::killBufferAndSwitchPanels(std::string const& name) {
     if (auto* panel = _layout->byId(id))
       panel->setBuffer(replacement, true);
   }
-  // Switch focused panel.
-  setBuffer(replacement);
+  // The focused view still references the destroyed buffer: replace it
+  // directly. setBuffer() would save view state into (and exit history
+  // mode on) the dead buffer.
+  _layout->focused().setBuffer(replacement, true);
+  finishBufferSwitch(replacement);
 }
 
 void Screen::saveAndMaybeKill() {

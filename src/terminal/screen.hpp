@@ -198,6 +198,13 @@ private:
   void updateFocusPointers();
 
   /**
+   * @brief Common tail of a buffer switch, after the focused panel already
+   *        shows @p buf: rebind focus pointers, reset paste state, touch MRU,
+   *        check line endings, redraw.
+   */
+  void finishBufferSwitch(Buffer& buf);
+
+  /**
    * @brief Inspect the buffer's detected line-ending style.
    *
    * Shows a status message for mixed endings, or prompts the user to

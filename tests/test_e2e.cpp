@@ -1221,6 +1221,43 @@ BOOST_AUTO_TEST_CASE(e2e_kill_buffer_blocked_in_history_mode) {
   session.waitExit();
 }
 
+BOOST_AUTO_TEST_CASE(e2e_kill_buffer_repeatedly_survives) {
+  // C-x k used to switch the focused panel via setBuffer(), which saved
+  // view state into the just-destroyed buffer (use-after-free). Silent in a
+  // plain build; glibc malloc perturbation makes the freed memory garbage
+  // and a sanitizer build reports it deterministically.
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile a("alpha file\n"), b("bravo file\n"), c("charlie file\n");
+  setenv("MALLOC_PERTURB_", "165", 1);
+  PtySession session(24, 80, bin, {a.path().string(), b.path().string(), c.path().string()});
+  unsetenv("MALLOC_PERTURB_");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Split so the killed buffer is also visible in another panel, then kill
+  // three buffers in a row.
+  session.send("\x18v");
+  session.readOutput(std::chrono::milliseconds{200});
+  for (int i = 0; i < 3; ++i) {
+    session.send("\x18k");
+    session.readOutput(std::chrono::milliseconds{200});
+  }
+  session.send("still alive");
+  auto out = stripAnsi(session.readUntil("still alive", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("still alive") != std::string::npos,
+                      "Editor did not respond: " + out);
+
+  session.send("\x1b"
+               "c");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("n");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
+
 // --- Bookmarks (C-x b / C-x j) ---
 
 BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {
