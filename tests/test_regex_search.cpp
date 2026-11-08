@@ -167,3 +167,61 @@ BOOST_AUTO_TEST_CASE(replace_all_caret_only_replaces_line_starts) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), "Xaa");
   BOOST_CHECK_EQUAL(buf.lineContent(1), "Xba");
 }
+
+// --- Zero-width matches must make progress ---
+
+namespace {
+std::size_t replaceAllIn(TextBuffer& buf, char const* pattern, char const* replacement) {
+  std::string err;
+  auto re = compileRegex(pattern, err);
+  BOOST_REQUIRE(re);
+  return replaceAllRegexForward(buf, {0, 0}, *re, replacement);
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(replace_all_empty_matches_with_empty_replacement_terminates) {
+  TextBuffer buf("t");
+  buf.insertText("abc\nbab", BufferPoint{0, 0});
+  // x* matches empty at each of the 4 + 4 positions.
+  BOOST_CHECK_EQUAL(replaceAllIn(buf, "x*", ""), 8u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "abc");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "bab");
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_word_boundary_inserts_once_per_boundary) {
+  TextBuffer buf("t");
+  buf.insertText("ab cd", BufferPoint{0, 0});
+  BOOST_CHECK_EQUAL(replaceAllIn(buf, "\\b", "|"), 4u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "|ab| |cd|");
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_line_anchors_terminate) {
+  TextBuffer buf("t");
+  buf.insertText("a\nb\n", BufferPoint{0, 0});
+  BOOST_CHECK_EQUAL(replaceAllIn(buf, "^", "> "), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "> a");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "> b");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "> ");
+  TextBuffer buf2("t");
+  buf2.insertText("a\nb", BufferPoint{0, 0});
+  BOOST_CHECK_EQUAL(replaceAllIn(buf2, "$", ";"), 2u);
+  BOOST_CHECK_EQUAL(buf2.lineContent(0), "a;");
+  BOOST_CHECK_EQUAL(buf2.lineContent(1), "b;");
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_empty_match_steps_whole_code_points) {
+  TextBuffer buf("t");
+  buf.insertText("\xc3\xa9\xe4\xb8\xad", BufferPoint{0, 0}); // "é中"
+  BOOST_CHECK_EQUAL(replaceAllIn(buf, "x*", "."), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), ".\xc3\xa9.\xe4\xb8\xad.");
+}
+
+BOOST_AUTO_TEST_CASE(step_past_empty_match_moves_forward) {
+  TextBuffer buf("t");
+  buf.insertText("\xc3\xa9x\nz", BufferPoint{0, 0});
+  BOOST_CHECK(stepPastEmptyMatch(buf, {0, 0}) == (BufferPoint{0, 2}));
+  BOOST_CHECK(stepPastEmptyMatch(buf, {0, 2}) == (BufferPoint{0, 3}));
+  BOOST_CHECK(stepPastEmptyMatch(buf, {0, 3}) == (BufferPoint{1, 0}));
+  BOOST_CHECK(stepPastEmptyMatch(buf, {1, 0}) == (BufferPoint{1, 1}));
+  BOOST_CHECK(!stepPastEmptyMatch(buf, {1, 1}).has_value());
+}

@@ -798,7 +798,7 @@ token vector allocation.
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
 | `src/replace.hpp`                      | Find-and-replace helpers (`findNextMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt`                  |
-| `src/regex_search.hpp`                 | Regex search/replace helpers (`compileRegex`, `findFirstRegex`, `findNextRegexInBuffer`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y |
+| `src/regex_search.hpp`                 | Regex search/replace helpers (`compileRegex`, `findFirstRegex`, `findNextRegexInBuffer`, `stepPastEmptyMatch`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y; mid-line searches keep the preceding text as context and scans step past empty matches |
 | `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
 | `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`); `cli::usage` help text            |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |

@@ -1480,7 +1480,16 @@ void Screen::regexFindNext() {
     if (count > 0 && li <= startLine)
       wrapped = true;
     std::size_t from = (count == 0) ? startOff : 0;
-    if (auto m = findFirstRegex(_buf->lineContent(li), from, *re)) {
+    auto const& line = _buf->lineContent(li);
+    auto m = findFirstRegex(line, from, *re);
+    // An empty match at the cursor is the one just found (onFindMatch puts
+    // the cursor at the match end): skip it, or find-next never advances.
+    if (m && count == 0 && m->first == m->second && m->first == startOff)
+      m = startOff < line.size()
+              ? findFirstRegex(
+                    line, startOff + utf8SeqLen(static_cast<unsigned char>(line[startOff])), *re)
+              : std::nullopt;
+    if (m) {
       onFindMatch(li, m->first, m->second, wrapped);
       return;
     }
@@ -1617,6 +1626,17 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
               ++newReplaced;
             } else {
               _view->setPoint(matchEnd.line, matchEnd.offset);
+            }
+            // Resume past an empty match, or the next search finds it again.
+            if (matchStart == matchEnd) {
+              auto next = stepPastEmptyMatch(*_buf, _view->point());
+              if (!next) {
+                _view->clearHighlight();
+                _highlightExpiry.reset();
+                setStatus("Replaced " + std::to_string(newReplaced) + " occurrence(s)");
+                return;
+              }
+              _view->setPoint(next->line, next->offset);
             }
             if (c == '!') {
               std::string err;

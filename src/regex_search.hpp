@@ -14,7 +14,9 @@
 
 #include "buffer/buffer.hpp"
 #include "types.hpp"
+#include "utf8.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <regex>
@@ -117,6 +119,26 @@ findNextRegexInBuffer(Buffer const& buf, BufferPoint start, std::regex const& re
 }
 
 /**
+ * @brief The position just past @p p for resuming a scan after an empty
+ *        (zero-width) match at @p p.
+ *
+ * Steps one code point forward, or to the start of the next line from a
+ * line end, so a scan that resumes there cannot find the same empty match
+ * again.
+ * @return The next position, or nullopt at the end of the buffer.
+ */
+inline std::optional<BufferPoint> stepPastEmptyMatch(Buffer const& buf, BufferPoint p) {
+  auto const& line = buf.lineContent(p.line);
+  if (p.offset < line.size()) {
+    auto len = utf8SeqLen(static_cast<unsigned char>(line[p.offset]));
+    return BufferPoint{p.line, std::min(p.offset + len, line.size())};
+  }
+  if (p.line + 1 < buf.lineCount())
+    return BufferPoint{p.line + 1, 0};
+  return std::nullopt;
+}
+
+/**
  * @brief Substitute a single match's region with @p replacement,
  *        honouring capture-group back-references ($0..$9, $&, $$).
  *
@@ -142,7 +164,9 @@ inline std::string substituteCaptures(std::string const& line, std::size_t from,
  *        back-references) to each match.
  *
  * The scan resumes after the inserted text so a replacement that itself
- * matches the pattern does not loop. A no-op on a read-only buffer.
+ * matches the pattern does not loop, and steps past every empty match so
+ * zero-width patterns (`x*`, `^`, `\b`, …) terminate. A no-op on a
+ * read-only buffer.
  *
  * @return The number of replacements performed.
  */
@@ -158,6 +182,12 @@ inline std::size_t replaceAllRegexForward(Buffer& buf, BufferPoint start, std::r
     buf.deleteRegion(m->first, m->second);
     cursor = buf.insertText(rendered, m->first);
     ++count;
+    if (m->first == m->second) {
+      auto next = stepPastEmptyMatch(buf, cursor);
+      if (!next)
+        break;
+      cursor = *next;
+    }
   }
   return count;
 }

@@ -1348,6 +1348,74 @@ BOOST_AUTO_TEST_CASE(e2e_filesystem_errors_do_not_end_session) {
   BOOST_CHECK_MESSAGE(out.find("Saved") != std::string::npos, "Expected save: " + out);
 }
 
+BOOST_AUTO_TEST_CASE(e2e_regex_find_next_advances_past_empty_match) {
+  // The cursor lands at the match end, which for an empty match is its
+  // start: the next search used to find the same match forever.
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("ab\ncd\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("ab", std::chrono::milliseconds{1000});
+
+  session.send("\x1bX");
+  session.readUntil("Regex find", std::chrono::milliseconds{1000});
+  session.send("x*\r");
+  auto out = stripAnsi(session.readUntil("1:2", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("1:2") != std::string::npos, "Expected 1:2 in: " + out);
+  session.send("\x1bX");
+  out = stripAnsi(session.readUntil("1:3", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("1:3") != std::string::npos, "Expected 1:3 in: " + out);
+}
+
+BOOST_AUTO_TEST_CASE(e2e_regex_replace_skip_and_all_with_empty_matches) {
+  // Skipping (n) an empty match re-prompted at the same spot forever, and
+  // replace-all (!) looped until memory ran out.
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("ab\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("ab", std::chrono::milliseconds{1000});
+
+  // Skip every empty match of x*: positions 1:1, 1:2, 1:3 and 2:1.
+  session.send("\x1bY");
+  session.readUntil("Regex pattern", std::chrono::milliseconds{1000});
+  session.send("x*\r");
+  session.readUntil("with", std::chrono::milliseconds{1000});
+  session.send("-\r");
+  session.readUntil("Replace this", std::chrono::milliseconds{1000});
+  for (int i = 0; i < 3; ++i) {
+    session.send("n");
+    session.readUntil("Replace this", std::chrono::milliseconds{1000});
+  }
+  session.send("n");
+  auto out = stripAnsi(session.readUntil("Replaced 0", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Replaced 0") != std::string::npos, "Expected end of scan: " + out);
+
+  // Replace all word boundaries (the scan starts at the cursor, so use a
+  // fresh session).
+  PtySession session2(24, 80, bin, {tmp.path().string()});
+  session2.readUntil("ab", std::chrono::milliseconds{1000});
+  session2.send("\x1bY");
+  session2.readUntil("Regex pattern", std::chrono::milliseconds{1000});
+  session2.send("\\b\r");
+  session2.readUntil("with", std::chrono::milliseconds{1000});
+  session2.send("xx\r");
+  session2.readUntil("Replace this", std::chrono::milliseconds{1000});
+  session2.send("!");
+  out = stripAnsi(session2.readUntil("Replaced 2", std::chrono::milliseconds{2000}));
+  BOOST_CHECK_MESSAGE(out.find("Replaced 2") != std::string::npos,
+                      "Expected 2 replacements: " + out);
+  BOOST_CHECK(out.find("xxabxx") != std::string::npos);
+}
+
 // --- Bookmarks (C-x b / C-x j) ---
 
 BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {
