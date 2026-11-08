@@ -201,6 +201,17 @@ Two nearby cues are easy to mistake for part of it:
 | Home / End      | Start / end of line                                        |
 | Ctrl-Home/End   | Start / end of file                                        |
 
+Regex search matches within a single line and treats the text before the
+cursor as context, so `^` only matches at a real line start. Patterns that
+can match empty text (`x*`, `^`, `$`, `\b`) work for find, skip and
+replace-all.
+
+**Known limitation:** `std::regex` backtracks, and a regex search cannot be
+interrupted. Nested quantifiers such as `(a*)*b`, or `.*x` on a very long
+line, can take exponential or quadratic time and freeze the editor, and
+the only way out is killing it (which loses unsaved changes). Save before
+running an untested pattern on a large file.
+
 ### Multiple cursors
 
 Several cursors edit in parallel: typing, Enter, Tab, Backspace, Delete,
