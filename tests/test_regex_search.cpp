@@ -104,3 +104,66 @@ BOOST_AUTO_TEST_CASE(replace_all_with_back_references) {
   BOOST_CHECK_EQUAL(count, 2u);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "foo:1, bar:2");
 }
+
+// --- Mid-line context: the text before `from` is not a line start ---
+
+BOOST_AUTO_TEST_CASE(find_first_caret_does_not_match_mid_line) {
+  std::string err;
+  auto re = compileRegex("^a", err);
+  BOOST_REQUIRE(re);
+  BOOST_CHECK(!findFirstRegex("ba", 1, *re).has_value());
+  auto m = findFirstRegex("ab", 0, *re);
+  BOOST_REQUIRE(m);
+  BOOST_CHECK_EQUAL(m->first, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(find_first_word_boundary_sees_previous_char) {
+  std::string err;
+  auto re = compileRegex("\\bb", err);
+  BOOST_REQUIRE(re);
+  BOOST_CHECK(!findFirstRegex("ab", 1, *re).has_value());
+  auto m = findFirstRegex("a b", 1, *re);
+  BOOST_REQUIRE(m);
+  BOOST_CHECK_EQUAL(m->first, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(find_last_caret_only_at_line_start) {
+  std::string err;
+  auto re = compileRegex("^a", err);
+  BOOST_REQUIRE(re);
+  auto m = findLastRegex("aaa", 0, 3, *re);
+  BOOST_REQUIRE(m);
+  BOOST_CHECK_EQUAL(m->first, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(substitute_captures_with_lookahead) {
+  std::string err;
+  auto re = compileRegex("(a)(?=b)", err);
+  BOOST_REQUIRE(re);
+  std::string line = "ab";
+  auto m = findFirstRegex(line, 0, *re);
+  BOOST_REQUIRE(m);
+  BOOST_CHECK_EQUAL(substituteCaptures(line, m->first, m->second, *re, "[$1]"), "[a]");
+}
+
+BOOST_AUTO_TEST_CASE(substitute_captures_with_word_boundary_mid_line) {
+  std::string err;
+  auto re = compileRegex("\\b(\\w)", err);
+  BOOST_REQUIRE(re);
+  std::string line = "xy zw";
+  auto m = findFirstRegex(line, 1, *re);
+  BOOST_REQUIRE(m);
+  BOOST_CHECK_EQUAL(m->first, 3u);
+  BOOST_CHECK_EQUAL(substituteCaptures(line, m->first, m->second, *re, "<$1>"), "<z>");
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_caret_only_replaces_line_starts) {
+  std::string err;
+  auto re = compileRegex("^a", err);
+  BOOST_REQUIRE(re);
+  TextBuffer buf("t");
+  buf.insertText("aaa\naba", BufferPoint{0, 0});
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "X"), 2u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "Xaa");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "Xba");
+}

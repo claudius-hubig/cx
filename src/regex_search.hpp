@@ -44,8 +44,21 @@ inline std::optional<std::regex> compileRegex(std::string const& pattern, std::s
 }
 
 /**
+ * @brief Match flags for a search that starts at byte @p from of a line.
+ *
+ * Mid-line, the text before @p from must still count as context so that
+ * `^` does not match and `\b` / lookbehind-like tests see the previous
+ * character.
+ */
+inline std::regex_constants::match_flag_type regexFlagsAt(std::size_t from) {
+  return from > 0 ? std::regex_constants::match_prev_avail : std::regex_constants::match_default;
+}
+
+/**
  * @brief Scan a line for the first regex match starting at or after
  *        @p from.
+ *
+ * The text before @p from is context (see regexFlagsAt()), not a line start.
  * @return {matchStart, matchEnd} byte offsets, or nullopt.
  */
 inline std::optional<std::pair<std::size_t, std::size_t>>
@@ -58,7 +71,7 @@ findFirstRegex(std::string const& line, std::size_t from, std::regex const& re) 
   // is the cheaper path for "first match only".
   auto begin = line.data() + from;
   auto end = line.data() + line.size();
-  if (!std::regex_search(begin, end, m, re))
+  if (!std::regex_search(begin, end, m, re, regexFlagsAt(from)))
     return std::nullopt;
   std::size_t s = static_cast<std::size_t>(m[0].first - line.data());
   std::size_t e = static_cast<std::size_t>(m[0].second - line.data());
@@ -112,11 +125,13 @@ findNextRegexInBuffer(Buffer const& buf, BufferPoint start, std::regex const& re
  */
 inline std::string substituteCaptures(std::string const& line, std::size_t from, std::size_t to,
                                       std::regex const& re, std::string const& replacement) {
-  // Run regex_match on the exact region so $1.. resolve correctly.
-  auto matchTextStart = line.data() + from;
-  auto matchTextEnd = line.data() + to;
+  // Re-run the search anchored at `from` with the whole line as context,
+  // so matches that depend on surrounding text (lookahead, \b, ^, $)
+  // reproduce and $1.. resolve correctly.
   std::cmatch m;
-  if (!std::regex_match(matchTextStart, matchTextEnd, m, re))
+  auto flags = regexFlagsAt(from) | std::regex_constants::match_continuous;
+  if (!std::regex_search(line.data() + from, line.data() + line.size(), m, re, flags) ||
+      m[0].second != line.data() + to)
     return replacement; // shouldn't happen, but fail safe
   return m.format(replacement, std::regex_constants::format_default);
 }
