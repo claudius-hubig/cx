@@ -18,15 +18,15 @@ static constexpr std::string_view kKeywords[] = {
     "case",
     "catch",
     "class",
+    "co_await",
+    "co_return",
+    "co_yield",
     "const",
     "const_cast",
     "consteval",
     "constexpr",
     "constinit",
     "continue",
-    "co_await",
-    "co_return",
-    "co_yield",
     "decltype",
     "default",
     "delete",
@@ -73,6 +73,7 @@ static constexpr std::string_view kKeywords[] = {
     "volatile",
     "while",
 };
+static_assert(std::ranges::is_sorted(kKeywords), "kKeywords must stay sorted for binary_search");
 
 /** @brief True if @p c may start an identifier (letter or underscore). */
 static bool isIdentStart(char c) {

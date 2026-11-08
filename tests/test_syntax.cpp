@@ -2028,3 +2028,78 @@ BOOST_AUTO_TEST_CASE(py_prefix_letter_word_is_not_a_string) {
   BOOST_CHECK(toks[0] == SyntaxToken::Normal);
   BOOST_CHECK(toks[13] == SyntaxToken::Number); // the 1
 }
+
+BOOST_AUTO_TEST_CASE(every_c_keyword_is_highlighted) {
+  // isKeyword() binary-searches the table; "continue" sorted before
+  // "co_await" hid const, constexpr, continue, co_await and friends.
+  static constexpr std::string_view kAll[] = {
+      "alignas",
+      "alignof",
+      "auto",
+      "break",
+      "case",
+      "catch",
+      "class",
+      "co_await",
+      "co_return",
+      "co_yield",
+      "const",
+      "const_cast",
+      "consteval",
+      "constexpr",
+      "constinit",
+      "continue",
+      "decltype",
+      "default",
+      "delete",
+      "do",
+      "dynamic_cast",
+      "else",
+      "enum",
+      "explicit",
+      "export",
+      "extern",
+      "for",
+      "friend",
+      "goto",
+      "if",
+      "inline",
+      "mutable",
+      "namespace",
+      "new",
+      "noexcept",
+      "operator",
+      "override",
+      "private",
+      "protected",
+      "public",
+      "reinterpret_cast",
+      "requires",
+      "return",
+      "sizeof",
+      "static",
+      "static_assert",
+      "static_cast",
+      "struct",
+      "switch",
+      "template",
+      "this",
+      "throw",
+      "try",
+      "typedef",
+      "typeid",
+      "typename",
+      "union",
+      "using",
+      "virtual",
+      "volatile",
+      "while",
+  };
+  for (auto kw : kAll) {
+    auto line = mkline(kw);
+    SyntaxState st;
+    std::vector<SyntaxToken> toks;
+    tokenizeLine(line, st, toks);
+    BOOST_CHECK_MESSAGE(allTokens(toks, 0, kw.size(), SyntaxToken::Keyword), kw);
+  }
+}
