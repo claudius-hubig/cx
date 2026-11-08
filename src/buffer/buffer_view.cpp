@@ -1210,6 +1210,17 @@ void BufferView::toggleComment(std::string_view prefix) {
   if (!anyNonBlank)
     return;
 
+  // Keep point and mark on the same text: positions at or after the
+  // insertion column move with it; positions inside a removed prefix
+  // collapse to its start.
+  auto shift = [&](BufferPoint& p, std::size_t li, std::size_t ws) {
+    if (p.line != li || p.offset < ws)
+      return;
+    if (allCommented)
+      p.offset -= std::min(prefix.size(), p.offset - ws);
+    else
+      p.offset += prefix.size();
+  };
   for (std::size_t li = fromLine; li <= toLine; ++li) {
     auto const& line = _buf.lineContent(li);
     auto ws = leadingWs(line);
@@ -1223,14 +1234,11 @@ void BufferView::toggleComment(std::string_view prefix) {
       // preserved and the prefix sits flush with the code.
       _buf.insertText(prefix, {li, ws});
     }
+    shift(_point, li, ws);
+    if (_mark)
+      shift(*_mark, li, ws);
   }
-  // Operating on whole lines may have moved the column-relative cursor;
-  // pick it up by clamping. Mark stays valid relative to the new content.
   _docVersion = _buf.docVersion();
-  if (_point.line >= _buf.lineCount())
-    _point.line = _buf.lineCount() - 1;
-  if (_point.offset > _buf.lineContent(_point.line).size())
-    _point.offset = _buf.lineContent(_point.line).size();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
   _buf.recordVersion(_point, fromLine, 0);

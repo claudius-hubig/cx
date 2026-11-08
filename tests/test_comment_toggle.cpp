@@ -109,3 +109,53 @@ BOOST_AUTO_TEST_CASE(toggle_readonly_is_noop) {
   b->view.toggleComment("// ");
   BOOST_CHECK_EQUAL(b->lineContent(0), "hello");
 }
+
+// --- Point and mark follow the text across the prefix edit ---
+
+BOOST_AUTO_TEST_CASE(toggle_comment_shifts_point_by_prefix) {
+  auto b = makeBuf({"  abc"});
+  b->view.setPoint(0, 3); // before 'b'
+  b->view.toggleComment("// ");
+  BOOST_CHECK_EQUAL(b->lineContent(0), "  // abc");
+  BOOST_CHECK_EQUAL(b->view.point().offset, 6u);
+  b->view.toggleComment("// ");
+  BOOST_CHECK_EQUAL(b->lineContent(0), "  abc");
+  BOOST_CHECK_EQUAL(b->view.point().offset, 3u);
+}
+
+BOOST_AUTO_TEST_CASE(toggle_comment_leaves_point_in_indent_alone) {
+  auto b = makeBuf({"    x"});
+  b->view.setPoint(0, 1);
+  b->view.toggleComment("# ");
+  BOOST_CHECK_EQUAL(b->view.point().offset, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(uncomment_moves_point_inside_prefix_to_its_start) {
+  auto b = makeBuf({"  // x"});
+  b->view.setPoint(0, 4); // between "//" and " "
+  b->view.toggleComment("// ");
+  BOOST_CHECK_EQUAL(b->lineContent(0), "  x");
+  BOOST_CHECK_EQUAL(b->view.point().offset, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(toggle_comment_keeps_point_on_code_point_boundary) {
+  // The cursor used to keep its byte offset, landing inside "é" so the next
+  // keystroke wrote invalid UTF-8.
+  auto b = makeBuf({"\xc3\xa9\xc3\xa9x"});
+  b->view.setPoint(0, 4); // after the second é
+  b->view.toggleComment("// ");
+  b->view.insert('Y');
+  BOOST_CHECK_EQUAL(b->lineContent(0), "// \xc3\xa9\xc3\xa9Yx");
+}
+
+BOOST_AUTO_TEST_CASE(toggle_comment_shifts_mark_on_every_line) {
+  auto b = makeBuf({"ab", "cd", "ef"});
+  b->view.setPoint(0, 1);
+  b->view.toggleMark();
+  b->view.setPoint(1, 1);
+  b->view.toggleComment("# ");
+  BOOST_CHECK_EQUAL(allLines(*b), "# ab\n# cd\nef");
+  BOOST_REQUIRE(b->view.mark());
+  BOOST_CHECK(*b->view.mark() == (BufferPoint{0, 3}));
+  BOOST_CHECK(b->view.point() == (BufferPoint{1, 3}));
+}
