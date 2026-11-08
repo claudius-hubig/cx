@@ -1,25 +1,8 @@
 #include "buffer_manager.hpp"
 #include "buffer/buffer_sink.hpp"
+#include "fs_path.hpp"
 
 #include <algorithm>
-
-namespace {
-/**
- * @brief Absolute, symlink-resolved form of @p path, used as a buffer key.
- *
- * Never throws: when resolution fails (e.g. an untraversable directory),
- * falls back to the absolute lexical path, or @p path itself; the
- * subsequent load/save then reports the real error.
- */
-std::filesystem::path canonicalPath(std::filesystem::path const& path) {
-  std::error_code ec;
-  auto abs = std::filesystem::absolute(path, ec);
-  if (ec)
-    return path;
-  auto canonical = std::filesystem::weakly_canonical(abs, ec);
-  return ec ? abs : canonical;
-}
-} // namespace
 
 BufferManager::BufferManager(BufferSink& sink)
     : _helpBuffer(std::make_unique<HelpBuffer>()), _sink(sink) {
@@ -32,7 +15,7 @@ BufferManager::BufferManager(BufferSink& sink)
 }
 
 Buffer& BufferManager::open(std::filesystem::path const& path) {
-  auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(path));
+  auto canonical = canonicalPath(path);
   auto key = canonical.string();
   auto it = _buffers.find(key);
   if (it != _buffers.end()) {
@@ -91,7 +74,7 @@ GrepBuffer& BufferManager::grepBuffer(std::string pattern, std::filesystem::path
 }
 
 DirBuffer& BufferManager::openDir(std::filesystem::path const& dir) {
-  auto canonical = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
+  auto canonical = canonicalPath(dir);
   auto key = canonical.string();
   auto it = _dirBuffers.find(key);
   if (it != _dirBuffers.end()) {
@@ -206,7 +189,7 @@ BufferManager::completions(std::string const& prefix) const {
       // weakly_canonical(absolute(dir)) does a stat() per path
       // component; recompute only on the cache-miss path so a typing
       // user does not pay it on every keystroke.
-      _dirCache.canonDir = std::filesystem::weakly_canonical(std::filesystem::absolute(dir));
+      _dirCache.canonDir = canonicalPath(dir);
       std::error_code ec;
       for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
         auto filename = entry.path().filename().string();

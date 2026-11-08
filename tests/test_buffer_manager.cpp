@@ -7,6 +7,7 @@
 #include "tests/test_helpers.hpp"
 
 #include <algorithm>
+#include <unistd.h>
 
 // --- Construction ---
 
@@ -289,4 +290,49 @@ BOOST_AUTO_TEST_CASE(bufferListBuffer_refresh_updates_saved_hint) {
   auto& blb = mgr.bufferListBuffer(); // refresh path
   BufferView view = BufferView::fromSavedState(blb);
   BOOST_CHECK_EQUAL(blb.selectedName(view.point()), "bbb");
+}
+
+// --- Unresolvable paths must not throw (a throw would end the session) ---
+
+namespace {
+// A directory with all permissions removed for the guard's lifetime.
+struct LockedDir {
+  std::filesystem::path path;
+  explicit LockedDir(std::filesystem::path p) : path(std::move(p)) {
+    std::filesystem::create_directory(path);
+    std::filesystem::permissions(path, std::filesystem::perms::none);
+  }
+  ~LockedDir() {
+    std::error_code ec;
+    std::filesystem::permissions(path, std::filesystem::perms::owner_all, ec);
+  }
+};
+} // namespace
+
+BOOST_AUTO_TEST_CASE(open_under_untraversable_dir_does_not_throw) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempDir dir;
+  LockedDir locked(dir.path() / "locked");
+  if (::access((locked.path / ".").c_str(), X_OK) == 0)
+    return; // running with privileges that bypass permissions
+  auto target = locked.path / "file.txt";
+  Buffer* buf = nullptr;
+  BOOST_CHECK_NO_THROW(buf = &mgr.open(target));
+  BOOST_REQUIRE(buf);
+  BOOST_CHECK_EQUAL(
+      buf->name(),
+      (std::filesystem::weakly_canonical(dir.path()) / "locked" / "file.txt").string());
+  BOOST_CHECK_NO_THROW(mgr.openDir(locked.path / "sub"));
+  BOOST_CHECK(mgr.rename(buf->name(), locked.path / "other.txt"));
+}
+
+BOOST_AUTO_TEST_CASE(open_symlink_loop_does_not_throw) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempDir dir;
+  auto loop = dir.path() / "loop";
+  std::filesystem::create_symlink(loop, loop);
+  BOOST_CHECK_NO_THROW(mgr.open(loop));
+  BOOST_CHECK_NO_THROW(mgr.openDir(loop));
 }

@@ -85,6 +85,7 @@ src/
   clipboard.hpp/.cpp               X11 PRIMARY/CLIPBOARD integration via xclip/xsel
   error_log.hpp/.cpp               Diagnostic logging to ~/.cx-errors
   file_arg.hpp                     parseFileArg — split `path:LINE` command-line argument
+  fs_path.hpp                      Non-throwing canonicalPath / currentDir for user paths
   cli.hpp                          cli::parse — -h/--help, --version, `--`, file arguments
   version.hpp/.cpp                 versionText() for --version (cx only; uses generated build_info.hpp)
   mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)

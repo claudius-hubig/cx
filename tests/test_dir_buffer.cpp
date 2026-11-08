@@ -84,6 +84,26 @@ BOOST_AUTO_TEST_CASE(navigate_changes_directory) {
   BOOST_CHECK_NE(buf.directory(), origDir);
 }
 
+BOOST_AUTO_TEST_CASE(navigate_into_untraversable_dir_does_not_throw) {
+  // weakly_canonical() used to throw "Permission denied" here, which ended
+  // the whole editor session.
+  TmpDir tmp;
+  tmp.createDir("locked");
+  tmp.createDir("locked/inner");
+  fs::permissions(tmp.path / "locked", fs::perms::none);
+  struct Restore {
+    fs::path p;
+    ~Restore() {
+      std::error_code ec;
+      fs::permissions(p, fs::perms::owner_all, ec);
+    }
+  } restore{tmp.path / "locked"};
+
+  BOOST_CHECK_NO_THROW(TB<DirBuffer>(tmp.path / "locked" / "inner"));
+  TB<DirBuffer> buf(tmp.path);
+  BOOST_CHECK_NO_THROW(buf.navigate(tmp.path / "locked" / "inner" / ".."));
+}
+
 BOOST_AUTO_TEST_CASE(hidden_files_filtered_by_default) {
   TmpDir tmp;
   tmp.createFile(".hidden");

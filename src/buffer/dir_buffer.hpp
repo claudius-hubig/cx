@@ -23,7 +23,7 @@
  */
 class DirBuffer : public Buffer {
 public:
-  explicit DirBuffer(std::filesystem::path dir);
+  explicit DirBuffer(std::filesystem::path const& dir);
 
   bool readonly() const override { return true; }
   bool supportsLineNumberGutter() const override { return false; }
@@ -41,7 +41,7 @@ public:
    * @brief Navigate to @p dir and rebuild the listing.
    * @return A ViewHint for the caller to position the cursor.
    */
-  ViewHint navigate(std::filesystem::path dir);
+  ViewHint navigate(std::filesystem::path const& dir);
 
   /**
    * @brief Toggle visibility of dotfiles.
@@ -60,9 +60,9 @@ public:
 
   /** @brief Outcome of executeDelete(). */
   struct DeleteResult {
-    std::size_t count;  /**< Number of entries removed. */
-    std::string error;  /**< Error message, empty on success. */
-    ViewHint hint;      /**< Cursor placement after the refresh. */
+    std::size_t count; /**< Number of entries removed. */
+    std::string error; /**< Error message, empty on success. */
+    ViewHint hint;     /**< Cursor placement after the refresh. */
   };
   /**
    * @brief Remove all marked entries from disk and refresh the listing.
@@ -72,9 +72,9 @@ public:
 
   /** @brief Outcome of renameEntry() / makeSubdir(). */
   struct ChangeResult {
-    bool ok;            /**< True on success. */
-    std::string error;  /**< Error message, populated when @c ok is false. */
-    ViewHint hint;      /**< Cursor placement after the refresh. */
+    bool ok;           /**< True on success. */
+    std::string error; /**< Error message, populated when @c ok is false. */
+    ViewHint hint;     /**< Cursor placement after the refresh. */
   };
 
   /**

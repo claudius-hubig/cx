@@ -5,6 +5,7 @@
 #include "buffer/text_buffer.hpp"
 #include "byte_constants.hpp"
 #include "error_log.hpp"
+#include "fs_path.hpp"
 #include "mouse.hpp"
 #include "regex_search.hpp"
 #include "replace.hpp"
@@ -250,7 +251,7 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
   // (incl. BEL 0x07 and ESC 0x1B), DEL, and C1 controls (incl. ST 0x9C)
   // with '?'. escapeNonPrintable is not usable here because it injects
   // ANSI SGR sequences whose ESC bytes would themselves break OSC.
-  auto rawCwd = std::filesystem::current_path().string();
+  auto rawCwd = currentDir().string();
   std::string cwd;
   cwd.reserve(rawCwd.size());
   for (unsigned char b : rawCwd) {
@@ -671,10 +672,17 @@ void Screen::loop() {
       }
     }
 
-    if (_prompt)
-      handlePromptInput(c);
-    else
-      handleNormalInput(c, pendingChar);
+    // Defence in depth: an exception escaping one action must not end the
+    // session (main() would exit and drop every unsaved buffer).
+    try {
+      if (_prompt)
+        handlePromptInput(c);
+      else
+        handleNormalInput(c, pendingChar);
+    } catch (std::exception const& e) {
+      logError(e.what());
+      setStatus(std::string("Error: ") + escapeNonPrintable(e.what()));
+    }
 
     // Process pending exit: walk modified buffers or break.
     if (_exitPending && !_prompt) {
@@ -1033,7 +1041,10 @@ void Screen::openSaveAsPrompt() {
               resolved.pop_back();
             if (resolved.empty())
               return;
-            if (std::filesystem::exists(resolved)) {
+            // An exists() error (e.g. untraversable parent) falls through to
+            // the save, which reports the real failure.
+            std::error_code existsEc;
+            if (std::filesystem::exists(resolved, existsEc)) {
               // Defer rename until the user confirms the overwrite.
               auto savedName = _buf->name();
               // Escape the path: tab-completion may have produced a
@@ -1243,11 +1254,12 @@ void Screen::openGrepPrompt() {
 std::filesystem::path Screen::searchStartDir() const {
   if (auto* db = dynamic_cast<DirBuffer*>(_buf))
     return db->directory();
-  if (_buf && _buf->hasPath())
-    return std::filesystem::path(_buf->name()).parent_path();
-  std::error_code ec;
-  auto cwd = std::filesystem::current_path(ec);
-  return ec ? std::filesystem::path(".") : cwd;
+  if (_buf && _buf->hasPath()) {
+    auto dir = std::filesystem::path(_buf->name()).parent_path();
+    if (!dir.empty())
+      return dir;
+  }
+  return currentDir();
 }
 
 void Screen::runGrep(std::string const& pattern) {
@@ -2042,9 +2054,12 @@ static void drainFd(int fd, std::string& out) {
 }
 
 std::string Screen::bufferWorkDir() const {
-  if (_buf && _buf->hasPath())
-    return std::filesystem::path(_buf->name()).parent_path().string();
-  return std::filesystem::current_path().string();
+  if (_buf && _buf->hasPath()) {
+    auto dir = std::filesystem::path(_buf->name()).parent_path();
+    if (!dir.empty())
+      return dir.string();
+  }
+  return currentDir().string();
 }
 
 std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string> const& args,
@@ -3350,7 +3365,11 @@ void Screen::dispatchAction(Action action) {
       break;
     if (_buf && !_buf->readonly()) {
       if (_buf->hasPath()) {
-        if (!std::filesystem::exists(_buf->name())) {
+        // Only ask when the file is known to be missing; an exists() error
+        // (e.g. the directory lost its x bit) goes straight to save(),
+        // which reports it.
+        std::error_code existsEc;
+        if (!std::filesystem::exists(_buf->name(), existsEc) && !existsEc) {
           openConfirmPrompt(
               "File " + escapeNonPrintable(_buf->name()) +
                   " doesn't exist. Really save there? y/n: ",

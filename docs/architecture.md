@@ -113,7 +113,8 @@ Key responsibilities:
   insert, steady bar (`ansi::CursorBar`) for overwrite — and reset to the
   terminal default when the alternate screen is torn down.
 - **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH, and
-  dispatches to sub-handlers:
+  dispatches to sub-handlers. Any `std::exception` escaping a handler is
+  logged and shown in the status line rather than ending the session:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
     text entry, history navigation, autocomplete, and confirmation;
     `handlePromptCsi` reads whole CSI sequences so unhandled ones never
@@ -802,6 +803,7 @@ token vector allocation.
 | `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`); `cli::usage` help text            |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |
 | `src/file_arg.hpp`                     | `parseFileArg` — split a `path:LINE` command-line argument into a path and an optional line number                          |
+| `src/fs_path.hpp`                      | Non-throwing path helpers for user-supplied paths: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir` |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
 ---

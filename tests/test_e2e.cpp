@@ -1298,6 +1298,56 @@ BOOST_AUTO_TEST_CASE(e2e_save_as_onto_open_file_is_refused) {
   BOOST_CHECK(out.find("scratch text!") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(e2e_filesystem_errors_do_not_end_session) {
+  // Throwing std::filesystem calls on untraversable paths used to unwind
+  // to main() and exit, dropping all unsaved work.
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir({"f.txt"});
+  auto locked = dir.path() / "locked";
+  std::filesystem::create_directory(locked);
+  struct Restore {
+    std::vector<std::filesystem::path> paths;
+    ~Restore() {
+      std::error_code ec;
+      for (auto& p : paths)
+        std::filesystem::permissions(p, std::filesystem::perms::owner_all, ec);
+    }
+  } restore{{locked, dir.path()}};
+  std::filesystem::permissions(locked, std::filesystem::perms::none);
+  if (::access((locked / ".").c_str(), X_OK) == 0)
+    return; // privileges bypass permissions; nothing to test
+
+  PtySession session(24, 80, bin, {(dir.path() / "f.txt").string()});
+  session.readUntil("f.txt", std::chrono::milliseconds{1000});
+  session.send("edited ");
+  session.readUntil("edited", std::chrono::milliseconds{1000});
+
+  // Open a file below the untraversable directory.
+  session.send("\x0f" + (locked / "x.txt").string() + "\r");
+  session.readOutput(std::chrono::milliseconds{300});
+  BOOST_CHECK_EQUAL(session.waitExit(std::chrono::milliseconds{100}), -1);
+
+  // Back to f.txt, then save after its directory lost its x bit.
+  session.send("\x0f" + (dir.path() / "f.txt").string() + "\r");
+  session.readUntil("edited", std::chrono::milliseconds{1000});
+  std::filesystem::permissions(dir.path(), std::filesystem::perms::owner_read |
+                                               std::filesystem::perms::owner_write);
+  session.send("\x13");
+  session.readOutput(std::chrono::milliseconds{300});
+  std::filesystem::permissions(dir.path(), std::filesystem::perms::owner_all);
+  BOOST_CHECK_EQUAL(session.waitExit(std::chrono::milliseconds{100}), -1);
+
+  // Still alive and editable; a second save now succeeds.
+  session.send("\x13");
+  auto out = stripAnsi(session.readUntil("Saved", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Saved") != std::string::npos, "Expected save: " + out);
+}
+
 // --- Bookmarks (C-x b / C-x j) ---
 
 BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {

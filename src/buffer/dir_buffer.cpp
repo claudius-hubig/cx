@@ -1,5 +1,6 @@
 #include "dir_buffer.hpp"
 #include "byte_constants.hpp"
+#include "fs_path.hpp"
 #include "utf8.hpp"
 
 #include <algorithm>
@@ -93,14 +94,13 @@ std::string sanitizeNssField(std::string s) {
 }
 } // namespace dir_buffer_detail
 
-DirBuffer::DirBuffer(std::filesystem::path dir)
-    : Buffer(std::filesystem::weakly_canonical(std::filesystem::absolute(dir)).string()),
-      _dir(std::filesystem::weakly_canonical(std::filesystem::absolute(std::move(dir)))) {
+DirBuffer::DirBuffer(std::filesystem::path const& dir)
+    : Buffer(canonicalPath(dir).string()), _dir(canonicalPath(dir)) {
   refresh();
 }
 
-ViewHint DirBuffer::navigate(std::filesystem::path dir) {
-  _dir = std::filesystem::weakly_canonical(std::filesystem::absolute(std::move(dir)));
+ViewHint DirBuffer::navigate(std::filesystem::path const& dir) {
+  _dir = canonicalPath(dir);
   _markedForDelete.clear();
   return refresh();
 }
