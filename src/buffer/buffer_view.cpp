@@ -1663,39 +1663,6 @@ bool isWordByte(char c) {
          (u >= 'A' && u <= 'Z');
 }
 
-/**
- * @brief Shift @p p to account for an insertion occupying [@p at, @p end).
- *
- * Positions before the insertion are untouched; the rest of the insertion
- * line trails after @p end, and later lines shift by the line delta.
- */
-BufferPoint shiftForInsert(BufferPoint p, BufferPoint at, BufferPoint end) {
-  if (p < at)
-    return p;
-  if (p.line == at.line)
-    return {end.line, end.offset + (p.offset - at.offset)};
-  p.line += end.line - at.line;
-  return p;
-}
-
-/**
- * @brief Shift @p p to account for the deletion of the half-open region
- *        [@p from, @p to).
- *
- * Positions inside the deleted region collapse onto @p from; the tail of
- * the last deleted line joins onto @p from, and later lines shift up.
- */
-BufferPoint shiftForDelete(BufferPoint p, BufferPoint from, BufferPoint to) {
-  if (p <= from)
-    return p;
-  if (p < to)
-    return from;
-  if (p.line == to.line)
-    return {from.line, from.offset + (p.offset - to.offset)};
-  p.line -= to.line - from.line;
-  return p;
-}
-
 } // namespace
 
 void BufferView::normalizeCursors() {
@@ -1859,7 +1826,22 @@ bool BufferView::blankBefore(BufferPoint p) const {
   return isWhitespace(line[pos]);
 }
 
+BufferPoint BufferView::BatchShift::apply(BufferPoint q) const {
+  if (q < anchor)
+    return target;
+  if (q.line == anchor.line)
+    return {target.line, target.offset + (q.offset - anchor.offset)};
+  return {q.line - anchor.line + target.line, q.offset};
+}
+
+BufferPoint BufferView::BatchShift::unapply(BufferPoint p) const {
+  if (p.line == target.line)
+    return {anchor.line, anchor.offset + (p.offset - target.offset)};
+  return {p.line - target.line + anchor.line, p.offset};
+}
+
 void BufferView::beginBatch() {
+  _batchShift = {};
   _batch.clear();
   _batch.reserve(_extraCursors.size() + 1);
   _batch.push_back(_point);
@@ -1895,18 +1877,26 @@ void BufferView::endBatch(std::size_t lineCountBefore, std::size_t versionBefore
   _buf.recordVersion(_point, SIZE_MAX, shift);
 }
 
+bool BufferView::batchVisit(std::size_t i) {
+  _batch[i] = _batchShift.apply(_batch[i]);
+  return i == 0 || _batch[i] != _batch[i - 1];
+}
+
+// Visited entries all sit at or before the edited cursor, so an insertion
+// or forward deletion there leaves them alone; only the unvisited tail
+// (via _batchShift) and entry i itself move.
 void BufferView::batchInsertChar(std::size_t i, uint32_t cp) {
   BufferPoint at = _batch[i];
   BufferPoint end = _buf.insertAt(cp, at);
-  for (auto& c : _batch)
-    c = shiftForInsert(c, at, end);
+  _batchShift.record(at, end);
+  _batch[i] = end;
 }
 
 void BufferView::batchInsertText(std::size_t i, std::string_view text) {
   BufferPoint at = _batch[i];
   BufferPoint end = _buf.insertText(text, at);
-  for (auto& c : _batch)
-    c = shiftForInsert(c, at, end);
+  _batchShift.record(at, end);
+  _batch[i] = end;
 }
 
 bool BufferView::batchDeleteForward(std::size_t i) {
@@ -1922,8 +1912,7 @@ bool BufferView::batchDeleteForward(std::size_t i) {
     return false; // end of buffer
   }
   _buf.deleteAt(from);
-  for (auto& c : _batch)
-    c = shiftForDelete(c, from, to);
+  _batchShift.record(to, from);
   return true;
 }
 
@@ -1934,8 +1923,12 @@ bool BufferView::batchDeleteBackward(std::size_t i) {
   // deleteBefore returns the start of what it removed, which is exactly
   // the region's `from`.
   BufferPoint from = _buf.deleteBefore(to);
-  for (auto& c : _batch)
-    c = shiftForDelete(c, from, to);
+  _batchShift.record(to, from);
+  _batch[i] = from;
+  // A backward (chunk) deletion can reach back over visited cursors; they
+  // collapse onto `from`. Usually this checks a single entry.
+  for (std::size_t k = i; k-- > 0 && _batch[k] > from;)
+    _batch[k] = from;
   return true;
 }
 
@@ -1944,7 +1937,7 @@ void BufferView::multiInsert(uint32_t cp) {
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
-    if (i > 0 && _batch[i] == _batch[i - 1])
+    if (!batchVisit(i))
       continue; // merged onto its predecessor: insert once, not twice
     // Overwrite mode replaces the character under each cursor, except for
     // newlines, which always insert (matching the single-cursor path).
@@ -1961,7 +1954,7 @@ void BufferView::multiInsertText(std::string_view text) {
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
-    if (i > 0 && _batch[i] == _batch[i - 1])
+    if (!batchVisit(i))
       continue;
     batchInsertText(i, text);
   }
@@ -1973,7 +1966,7 @@ void BufferView::multiDeleteForward() {
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
-    if (i > 0 && _batch[i] == _batch[i - 1])
+    if (!batchVisit(i))
       continue;
     batchDeleteForward(i);
   }
@@ -1985,7 +1978,7 @@ void BufferView::multiDeleteBackward() {
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
-    if (i > 0 && _batch[i] == _batch[i - 1])
+    if (!batchVisit(i))
       continue;
     batchDeleteBackward(i);
   }
@@ -1997,7 +1990,7 @@ void BufferView::multiDeleteChunkForward() {
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
-    if (i > 0 && _batch[i] == _batch[i - 1])
+    if (!batchVisit(i))
       continue;
     bool startBlank = blankAt(_batch[i]);
     do {
@@ -2013,7 +2006,7 @@ void BufferView::multiDeleteChunkBackward() {
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
-    if (i > 0 && _batch[i] == _batch[i - 1])
+    if (!batchVisit(i))
       continue;
     bool startBlank = blankBefore(_batch[i]);
     do {

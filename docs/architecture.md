@@ -405,10 +405,15 @@ All user-facing movement, editing, and render operations are methods on
   `collapseCursors()`.
   - *Editing*: `insert`, the deletes, the chunk deletes, and
     `insertText` route to `multi*` drivers. Each snapshots every cursor
-    into `_batch`, performs primitive edits through `Buffer`'s
-    position-explicit API, and shifts **all** batch entries by that
-    edit's `[from, to)` span — so cursors can be visited in any order
-    and merging falls out for free.
+    into `_batch` (sorted), visits the cursors in ascending order and
+    performs primitive edits through `Buffer`'s position-explicit API.
+    Since every edit happens at or after the visited cursor, the
+    unvisited tail is shifted lazily: `BatchShift` (an anchor pair: a
+    pre-batch position and where it is now) maps each cursor once, in
+    `batchVisit()`, which also detects cursors merged onto their
+    predecessor. Only a backward deletion can reach visited cursors; it
+    collapses them onto its start. A keystroke is O(N) in the cursor
+    count.
   - *History*: the batch ends with exactly one
     `recordVersion(point, SIZE_MAX, netShift)`, so one keystroke is one
     undo step regardless of cursor count. `SIZE_MAX` is load-bearing: a

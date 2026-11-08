@@ -472,11 +472,49 @@ private:
   void endBatch(std::size_t lineCountBefore, std::size_t versionBefore);
 
   /**
+   * @brief Pending shift for the not-yet-visited tail of @c _batch.
+   *
+   * Cursors are visited in ascending order and every edit happens at or
+   * after the visited cursor, so the edits so far move any later
+   * pre-batch position @c q >= @c anchor by the same offset delta on
+   * @c anchor's line and by a pure line delta below it. Positions before
+   * @c anchor were swallowed by a deletion and sit at @c target. Applying
+   * this lazily, once per cursor, keeps a keystroke O(N) in the cursor
+   * count instead of shifting every cursor after every edit.
+   */
+  struct BatchShift {
+    BufferPoint anchor; /**< A pre-batch position... */
+    BufferPoint target; /**< ...and where it is now. */
+    /** @brief Current position of pre-batch position @p q. */
+    BufferPoint apply(BufferPoint q) const;
+    /** @brief Pre-batch position of current position @p p (@p p >= target). */
+    BufferPoint unapply(BufferPoint p) const;
+    /** @brief Account for an edit whose region ended at @p end (current
+     *         coordinates, at or after the visited cursor) and now ends at
+     *         @p endAfter. */
+    void record(BufferPoint end, BufferPoint endAfter) {
+      anchor = unapply(end);
+      target = endAfter;
+    }
+  };
+
+  /**
+   * @brief Bring @c _batch[i] up to date with the edits made so far.
+   *
+   * Every batch loop calls this for each @p i in ascending order before
+   * using the entry.
+   * @return False if the cursor merged onto its predecessor and must be
+   *         skipped (editing there again would apply the keystroke twice).
+   */
+  bool batchVisit(std::size_t i);
+
+  /**
    * @name Batch primitives
    *
-   * Each performs one primitive edit at @c _batch[i] via Buffer's
-   * position-explicit API and shifts every entry of @c _batch (including
-   * entry @p i) to account for it, so cursors may be visited in any order.
+   * Each performs one primitive edit at @c _batch[i] (already visited) via
+   * Buffer's position-explicit API, updates entry @p i and earlier entries
+   * it swallowed, and records the shift for the unvisited tail in
+   * @c _batchShift.
    */
   /** @{ */
   void batchInsertChar(std::size_t i, uint32_t cp);
@@ -528,6 +566,8 @@ private:
   std::vector<BufferPoint> _batch;
   /** @brief Index of the primary cursor within @c _batch. */
   std::size_t _batchPrimary = 0;
+  /** @brief Shift still owed to the unvisited entries of @c _batch. */
+  BatchShift _batchShift;
   std::optional<BufferPoint> _mark;
   ViewFrom _viewFrom;
   /**

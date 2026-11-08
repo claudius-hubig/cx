@@ -5,6 +5,8 @@
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
 
+#include <algorithm>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -599,4 +601,176 @@ BOOST_AUTO_TEST_CASE(region_command_after_multi_cursor_edit_does_not_throw) {
   v.insert('\n');
   BOOST_CHECK(!v.mark().has_value());
   BOOST_CHECK_NO_THROW(v.convertCase(BufferView::CaseOp::Upper));
+}
+
+// --- Lazy batch shifting matches shifting every cursor after every edit ---
+
+namespace {
+
+// Reference model: the straightforward O(N^2) algorithm the batch code used
+// to run — after every primitive edit, shift every cursor. ASCII only.
+struct RefModel {
+  std::vector<std::string> lines;
+  std::vector<BufferPoint> cur; // sorted
+
+  static BufferPoint shiftIns(BufferPoint p, BufferPoint at, BufferPoint end) {
+    if (p < at)
+      return p;
+    if (p.line == at.line)
+      return {end.line, end.offset + (p.offset - at.offset)};
+    return {p.line + end.line - at.line, p.offset};
+  }
+  static BufferPoint shiftDel(BufferPoint p, BufferPoint from, BufferPoint to) {
+    if (p <= from)
+      return p;
+    if (p < to)
+      return from;
+    if (p.line == to.line)
+      return {from.line, from.offset + (p.offset - to.offset)};
+    return {p.line - (to.line - from.line), p.offset};
+  }
+  BufferPoint insertText(BufferPoint at, std::string const& text) {
+    auto tail = lines[at.line].substr(at.offset);
+    lines[at.line].resize(at.offset);
+    BufferPoint end = at;
+    for (char c : text) {
+      if (c == '\n') {
+        lines.insert(lines.begin() + static_cast<std::ptrdiff_t>(end.line) + 1, "");
+        end = {end.line + 1, 0};
+      } else {
+        lines[end.line] += c;
+        ++end.offset;
+      }
+    }
+    lines[end.line] += tail;
+    for (auto& c : cur)
+      c = shiftIns(c, at, end);
+    return end;
+  }
+  void erase(BufferPoint from, BufferPoint to) {
+    lines[from.line] = lines[from.line].substr(0, from.offset) + lines[to.line].substr(to.offset);
+    lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(from.line) + 1,
+                lines.begin() + static_cast<std::ptrdiff_t>(to.line) + 1);
+    for (auto& c : cur)
+      c = shiftDel(c, from, to);
+  }
+  bool delForward(std::size_t i) {
+    auto p = cur[i];
+    if (p.offset < lines[p.line].size())
+      erase(p, {p.line, p.offset + 1});
+    else if (p.line + 1 < lines.size())
+      erase(p, {p.line + 1, 0});
+    else
+      return false;
+    return true;
+  }
+  bool delBackward(std::size_t i) {
+    auto p = cur[i];
+    if (p.offset > 0)
+      erase({p.line, p.offset - 1}, p);
+    else if (p.line > 0)
+      erase({p.line - 1, lines[p.line - 1].size()}, p);
+    else
+      return false;
+    return true;
+  }
+  bool blankAt(BufferPoint p) const {
+    return p.offset >= lines[p.line].size() || lines[p.line][p.offset] == ' ';
+  }
+  bool blankBefore(BufferPoint p) const {
+    return p.offset == 0 || lines[p.line][p.offset - 1] == ' ';
+  }
+  template <typename F> void each(F f) {
+    for (std::size_t i = 0; i < cur.size(); ++i)
+      if (i == 0 || cur[i] != cur[i - 1])
+        f(i);
+  }
+  void op(int kind, std::string const& text) {
+    switch (kind) {
+    case 0:
+      each([&](std::size_t i) { insertText(cur[i], text); });
+      break;
+    case 1:
+      each([&](std::size_t i) { delForward(i); });
+      break;
+    case 2:
+      each([&](std::size_t i) { delBackward(i); });
+      break;
+    case 3:
+      each([&](std::size_t i) {
+        bool b = blankAt(cur[i]);
+        while (delForward(i) && blankAt(cur[i]) == b) {
+        }
+      });
+      break;
+    case 4:
+      each([&](std::size_t i) {
+        bool b = blankBefore(cur[i]);
+        while (delBackward(i) && blankBefore(cur[i]) == b) {
+        }
+      });
+      break;
+    }
+    std::sort(cur.begin(), cur.end());
+    cur.erase(std::unique(cur.begin(), cur.end()), cur.end());
+  }
+};
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(batch_edits_match_reference_model) {
+  std::mt19937 rng(12345);
+  auto R = [&](std::size_t n) { return static_cast<std::size_t>(rng() % n); };
+  char const* texts[] = {"x", "\n", "ab", "a\nb", " ", "\n\n"};
+  for (int round = 0; round < 300; ++round) {
+    std::string text;
+    for (std::size_t n = 1 + R(40); n; --n)
+      text += "ab \n"[R(4)];
+    TextBuffer buf("t");
+    buf.insertText(text, BufferPoint{0, 0});
+    RefModel ref;
+    for (std::size_t li = 0; li < buf.lineCount(); ++li)
+      ref.lines.push_back(buf.lineContent(li));
+
+    BufferView v(buf);
+    auto randomPoint = [&] {
+      std::size_t li = R(buf.lineCount());
+      return BufferPoint{li, R(buf.lineContent(li).size() + 1)};
+    };
+    v.setPoint(randomPoint().line, 0);
+    for (std::size_t n = 1 + R(8); n; --n)
+      v.addCursor(randomPoint());
+
+    for (int step = 0; step < 6 && v.multiCursor(); ++step) {
+      ref.cur = allCursors(v);
+      int kind = static_cast<int>(R(5));
+      std::string t = texts[R(std::size(texts))];
+      ref.op(kind, t);
+      switch (kind) {
+      case 0:
+        if (t.size() == 1)
+          v.insert(static_cast<unsigned char>(t[0]));
+        else
+          v.insertText(t);
+        break;
+      case 1:
+        v.deleteAtPoint();
+        break;
+      case 2:
+        v.deleteBeforePoint();
+        break;
+      case 3:
+        v.deleteChunkAtPoint();
+        break;
+      case 4:
+        v.deleteChunkBeforePoint();
+        break;
+      }
+      std::string expected;
+      for (std::size_t li = 0; li < ref.lines.size(); ++li)
+        expected += (li ? "\n" : "") + ref.lines[li];
+      BOOST_REQUIRE_EQUAL(contents(buf), expected);
+      BOOST_REQUIRE(allCursors(v) == ref.cur);
+    }
+  }
 }
