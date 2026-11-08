@@ -37,30 +37,12 @@ void BufferView::clampToBuffer() {
   assert(_buf.lineCount() > 0);
 
   _docVersion = _buf.docVersion();
-  // Clamp point.
-  if (_point.line >= _buf.lineCount())
-    _point.line = _buf.lineCount() - 1;
-  if (_point.offset > _buf.lineContent(_point.line).size())
-    _point.offset = _buf.lineContent(_point.line).size();
-  // Clamp mark.
-  if (_mark) {
-    if (_mark->line >= _buf.lineCount())
-      _mark->line = _buf.lineCount() - 1;
-    if (_mark->offset > _buf.lineContent(_mark->line).size())
-      _mark->offset = _buf.lineContent(_mark->line).size();
-  }
-  // Clamp viewport.
-  if (_viewFrom.line.value >= _buf.lineCount())
-    _viewFrom.line = RowIdx{_buf.lineCount() - 1};
-  // In wrap mode the viewport's sub-line ByteOffset can land mid-codepoint
-  // or past the new line size after another view shortens this line.
-  // VisualCol is purely a horizontal column (not a byte index) so it
-  // does not need clamping here.
-  if (auto* off = std::get_if<ByteOffset>(&_viewFrom.col)) {
-    std::size_t maxOff = _buf.lineContent(_viewFrom.line.value).size();
-    if (off->value > maxOff)
-      *off = ByteOffset{maxOff};
-  }
+  // Another view's edit can leave positions past the end of a line or
+  // inside a multi-byte character; typing there would split it.
+  clampPoint(_point);
+  if (_mark)
+    clampPoint(*_mark);
+  clampViewFrom();
   // Clamp extra cursors by the same rules as point and mark; merging and
   // re-sorting happens in normalizeCursors().
   normalizeCursors();
@@ -69,6 +51,32 @@ void BufferView::clampToBuffer() {
   _pointColCache.line = SIZE_MAX;
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _desiredCol.reset();
+}
+
+void BufferView::clampPoint(BufferPoint& p) const {
+  if (p.line >= _buf.lineCount())
+    p.line = _buf.lineCount() - 1;
+  auto const& line = _buf.lineContent(p.line);
+  p.offset = snapToCodepoint(line, std::min(p.offset, line.size()));
+}
+
+void BufferView::clampViewFrom() {
+  if (_viewFrom.line.value >= _buf.lineCount())
+    _viewFrom.line = RowIdx{_buf.lineCount() - 1};
+  // In wrap mode the viewport's sub-line ByteOffset can land mid-codepoint
+  // or past the line end once the line shrinks. VisualCol is purely a
+  // horizontal column (not a byte index) so it does not need clamping.
+  if (auto* off = std::get_if<ByteOffset>(&_viewFrom.col)) {
+    auto const& line = _buf.lineContent(_viewFrom.line.value);
+    *off = ByteOffset{snapToCodepoint(line, std::min(off->value, line.size()))};
+  }
+}
+
+void BufferView::syncAfterEdit() {
+  _docVersion = _buf.docVersion();
+  clampViewFrom();
+  _rowBoundsCache.lineIdx = SIZE_MAX;
+  _pointColCache.line = SIZE_MAX;
 }
 
 void BufferView::saveViewState() {
@@ -189,8 +197,8 @@ void BufferView::setPoint(std::size_t line, std::size_t offset) {
   // An absolute jump (goto-line, find, bookmark, mouse click) has no
   // meaning for a set of scattered cursors — collapse to the primary.
   collapseCursors();
-  _point.line = std::min(line, _buf.lineCount() - 1);
-  _point.offset = std::min(offset, _buf.lineContent(_point.line).size());
+  _point = {line, offset};
+  clampPoint(_point);
   _desiredCol.reset();
 }
 
@@ -925,9 +933,7 @@ void BufferView::insert(uint32_t cp) {
     if (insertOff < lineContent.size()) {
       // Delete the character(s) under the cursor
       _point = _buf.deleteAt(_point);
-      _docVersion = _buf.docVersion();
-      _rowBoundsCache.lineIdx = SIZE_MAX;
-      _pointColCache.line = SIZE_MAX;
+      syncAfterEdit();
       didOverwriteDelete = true;
       // Update line/offset after potential line join
       insertLine = _point.line;
@@ -937,9 +943,7 @@ void BufferView::insert(uint32_t cp) {
   }
 
   _point = _buf.insertAt(cp, _point);
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
 
   // Compute auto-indent amount for mark adjustment.
   std::size_t autoIndent = 0;
@@ -1006,9 +1010,7 @@ void BufferView::deleteAtPoint() {
   _point = _buf.deleteAt(_point);
   if (_buf.docVersion() == oldVer)
     return; // end-of-buffer: nothing changed
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
 
   // Adjust mark.
   if (_mark) {
@@ -1052,9 +1054,7 @@ void BufferView::deleteBeforePoint() {
   _point = _buf.deleteBefore(_point);
   if (_buf.docVersion() == oldVer)
     return; // start-of-buffer: nothing changed
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
 
   // Adjust mark.
   if (_mark) {
@@ -1238,9 +1238,7 @@ void BufferView::toggleComment(std::string_view prefix) {
     if (_mark)
       shift(*_mark, li, ws);
   }
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
   _buf.recordVersion(_point, fromLine, 0);
 }
 
@@ -1335,9 +1333,7 @@ void BufferView::convertCase(CaseOp op) {
     // line count are unchanged.
     _buf.deleteRegion(from, to);
     _buf.insertText(converted, from);
-    _docVersion = _buf.docVersion();
-    _rowBoundsCache.lineIdx = SIZE_MAX;
-    _pointColCache.line = SIZE_MAX;
+    syncAfterEdit();
     _buf.recordVersion(hadMark ? _point : to, from.line, 0);
   }
 
@@ -1586,11 +1582,9 @@ void BufferView::reflowParagraph(std::size_t targetWidth) {
   auto lineCountBefore = _buf.lineCount();
   _buf.deleteRegion(regionStart, regionEnd);
   auto after = _buf.insertText(replacement, regionStart);
-  _docVersion = _buf.docVersion();
+  syncAfterEdit();
   _point = after;
   _mark.reset();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
   _desiredCol.reset();
   int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
   _buf.recordVersion(_point, fromLine, shift);
@@ -1632,9 +1626,7 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   if (_point.offset > _buf.lineContent(_point.line).size())
     _point.offset = _buf.lineContent(_point.line).size();
   _mark.reset();
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
   _desiredCol.reset();
 
   int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
@@ -1655,9 +1647,7 @@ BufferPoint BufferView::insertText(std::string_view text) {
   auto startOff = _point.offset;
   auto lineCountBefore = _buf.lineCount();
   _point = _buf.insertText(text, _point);
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
 
   // Adjust mark.
   if (_mark) {
@@ -1728,12 +1718,8 @@ BufferPoint shiftForDelete(BufferPoint p, BufferPoint from, BufferPoint to) {
 void BufferView::normalizeCursors() {
   if (_extraCursors.empty())
     return;
-  for (auto& c : _extraCursors) {
-    if (c.line >= _buf.lineCount())
-      c.line = _buf.lineCount() - 1;
-    if (c.offset > _buf.lineContent(c.line).size())
-      c.offset = _buf.lineContent(c.line).size();
-  }
+  for (auto& c : _extraCursors)
+    clampPoint(c);
   std::sort(_extraCursors.begin(), _extraCursors.end());
   _extraCursors.erase(std::unique(_extraCursors.begin(), _extraCursors.end()), _extraCursors.end());
   std::erase(_extraCursors, _point);
@@ -1906,9 +1892,7 @@ void BufferView::endBatch(std::size_t lineCountBefore, std::size_t versionBefore
     if (i != _batchPrimary)
       _extraCursors.push_back(_batch[i]);
 
-  _docVersion = _buf.docVersion();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
+  syncAfterEdit();
   _desiredCol.reset();
   normalizeCursors();
 
@@ -2083,15 +2067,10 @@ void BufferView::stepHistory(int delta) {
     return;
   _historyIndex = newIdx;
   _buf.applyVersionAt(newIdx, _point);
-  _docVersion = _buf.docVersion();
-  if (_point.line >= _buf.lineCount())
-    _point.line = _buf.lineCount() - 1;
-  if (_point.offset > _buf.lineContent(_point.line).size())
-    _point.offset = _buf.lineContent(_point.line).size();
+  syncAfterEdit();
+  clampPoint(_point);
   _mark.reset();
   _desiredCol.reset();
-  _rowBoundsCache.lineIdx = SIZE_MAX;
-  _pointColCache.line = SIZE_MAX;
 }
 
 void BufferView::exitHistoryModeCommit() {

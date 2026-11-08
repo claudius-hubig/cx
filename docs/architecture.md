@@ -427,7 +427,11 @@ All user-facing movement, editing, and render operations are methods on
 - **Consistency**: `clampToBuffer()` re-clamps point, mark, extra
   cursors, and viewport to valid positions after the underlying buffer
   changed (e.g. via another view or `revert()`). Called automatically
-  when the view notices a `docVersion` mismatch.
+  when the view notices a `docVersion` mismatch. Every clamped byte
+  offset (and `setPoint()`) is snapped back to a code-point boundary via
+  `snapToCodepoint()` (`utf8.hpp`), so a stale position can never split a
+  multi-byte character. The view's own edits adopt the new version via
+  `syncAfterEdit()`, which also keeps the viewport in range.
 
 ---
 

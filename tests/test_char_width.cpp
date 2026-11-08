@@ -590,3 +590,21 @@ BOOST_AUTO_TEST_CASE(appendUtf8Tail_ascii_lead_is_noop) {
   BOOST_CHECK_EQUAL(dest, "A");
   BOOST_CHECK_EQUAL(src.pos, 0u);
 }
+
+// --- snapToCodepoint ---
+
+BOOST_AUTO_TEST_CASE(snap_to_codepoint_backs_up_to_lead_byte) {
+  std::string s = "a\xe4\xb8\xad"
+                  "b"; // a 中 b
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 0), 0u);
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 1), 1u);
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 2), 1u);
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 3), 1u);
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 4), 4u);
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 5), 5u); // end of string
+}
+
+BOOST_AUTO_TEST_CASE(snap_to_codepoint_bounded_on_stray_continuations) {
+  std::string s(10, '\x80');
+  BOOST_CHECK_EQUAL(snapToCodepoint(s, 8), 5u);
+}

@@ -486,6 +486,25 @@ private:
   void multiInsertText(std::string_view text);
   /** @} */
 
+  /**
+   * @name Clamping after edits
+   */
+  /** @{ */
+  /** @brief Clamp @p p into the buffer and snap it back to a code-point
+   *         boundary. */
+  void clampPoint(BufferPoint& p) const;
+  /** @brief Clamp @c _viewFrom (line and wrap-mode byte offset) the same way. */
+  void clampViewFrom();
+  /**
+   * @brief Bookkeeping after this view edited the buffer: adopt the new
+   *        docVersion, keep the viewport in range, invalidate caches.
+   *
+   * Adopting the version skips the lazy clampToBuffer(), so anything this
+   * edit can invalidate must be repaired here or by the caller.
+   */
+  void syncAfterEdit();
+  /** @} */
+
   Buffer& _buf;
   BufferPoint _point;
   /**

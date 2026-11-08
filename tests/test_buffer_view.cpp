@@ -1154,3 +1154,75 @@ BOOST_AUTO_TEST_CASE(case_readonly_buffer_is_noop) {
   view.convertCase(BufferView::CaseOp::Upper);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "hello");
 }
+
+// --- Stale positions are clamped onto code-point boundaries ---
+
+BOOST_AUTO_TEST_CASE(other_view_edit_does_not_leave_cursor_mid_codepoint) {
+  // Panel 2's cursor after 'a'; panel 1 inserts a 3-byte character at the
+  // line start. Typing in panel 2 used to split that character.
+  TextBuffer buf("t");
+  buf.insertText("abcd", BufferPoint{0, 0});
+  BufferView v1(buf), v2(buf);
+  v2.setPoint(0, 1);
+  v1.setPoint(0, 0);
+  insertString(v1, "\xe4\xb8\xad"); // 中
+  v2.insert('Y');
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "Y\xe4\xb8\xad"
+                                        "abcd");
+}
+
+BOOST_AUTO_TEST_CASE(set_point_snaps_to_codepoint) {
+  // Bookmarks restore raw byte offsets through setPoint().
+  TextBuffer buf("t");
+  buf.insertText("\xe4\xb8\xad\xe4\xb8\xad", BufferPoint{0, 0});
+  BufferView v(buf);
+  v.setPoint(0, 4);
+  BOOST_CHECK_EQUAL(v.point().offset, 3u);
+  v.setPoint(0, 99);
+  BOOST_CHECK_EQUAL(v.point().offset, 6u);
+}
+
+BOOST_AUTO_TEST_CASE(clamp_snaps_mark) {
+  TextBuffer buf("t");
+  buf.insertText("abcd\nabcd", BufferPoint{0, 0});
+  BufferView v(buf), other(buf);
+  v.setPoint(0, 1);
+  v.toggleMark(); // mark at (0,1)
+  v.setPoint(0, 2);
+  other.setPoint(0, 0);
+  insertString(other, "\xc3\xa9"); // é at bytes 0-1: the mark is now inside it
+  v.clampToBuffer();
+  BOOST_REQUIRE(v.mark());
+  BOOST_CHECK_EQUAL(v.mark()->offset, 0u);
+  BOOST_CHECK_EQUAL(v.point().offset, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(clamp_snaps_extra_cursors) {
+  TextBuffer buf("t");
+  buf.insertText("abcd\nabcd", BufferPoint{0, 0});
+  BufferView v(buf), other(buf);
+  v.setPoint(0, 1);
+  v.addCursorDown(); // extra cursor at (1,1)
+  other.setPoint(1, 0);
+  insertString(other, "\xc3\xa9");
+  v.clampToBuffer();
+  BOOST_REQUIRE_EQUAL(v.extraCursors().size(), 1u);
+  BOOST_CHECK(v.extraCursors()[0] == (BufferPoint{1, 0}));
+}
+
+BOOST_AUTO_TEST_CASE(own_edit_keeps_viewport_in_range) {
+  // An edit adopts the new docVersion, which skips the lazy clamp; a
+  // viewport past the shrunken buffer used to stay there until the next
+  // draw.
+  std::string text;
+  for (int i = 0; i < 30; ++i)
+    text += "line\n";
+  TextBuffer buf("t");
+  buf.insertText(text, BufferPoint{0, 0});
+  BufferView v(buf);
+  v.setPoint(30, 0);
+  v.ensureVisible(RowIdx{5}, ColIdx{80}, true);
+  BOOST_REQUIRE_GT(v.viewFromRaw().line.value, 20u);
+  v.deleteRegion({1, 0}, {30, 0});
+  BOOST_CHECK_LT(v.viewFromRaw().line.value, buf.lineCount());
+}

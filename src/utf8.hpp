@@ -28,6 +28,21 @@
 inline constexpr bool isUtf8Continuation(unsigned char b) { return (b & 0xC0) == 0x80; }
 
 /**
+ * @brief Largest code-point boundary <= @p off in @p s.
+ *
+ * Steps back over at most three continuation bytes (the longest valid
+ * tail), so a run of stray continuation bytes in invalid UTF-8 costs O(1).
+ * @pre @p off <= s.size().
+ */
+inline constexpr std::size_t snapToCodepoint(std::string_view s, std::size_t off) {
+  for (int k = 0;
+       k < 3 && off > 0 && off < s.size() && isUtf8Continuation(static_cast<unsigned char>(s[off]));
+       ++k)
+    --off;
+  return off;
+}
+
+/**
  * @brief The low six payload bits a UTF-8 continuation byte carries.
  *
  * Also the per-byte group emitted when encoding.
