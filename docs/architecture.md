@@ -420,7 +420,9 @@ All user-facing movement, editing, and render operations are methods on
     Commands that jump somewhere unrelated — `setPoint` (and so find,
     bookmarks, mouse clicks), `gotoLine`, paging, paragraph moves,
     bracket match — collapse to the primary first, as do setting the
-    mark, region edits, and entering history mode.
+    mark, region edits, and entering history mode. Conversely, adding a
+    cursor clears the mark (selections are not per-cursor), and so does
+    every batch edit, since batch edits never shift it.
   - Extra cursors are deliberately **not** persisted in
     `Buffer::SavedViewState`: a buffer switch or panel close collapses
     to the primary cursor.

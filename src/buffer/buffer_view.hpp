@@ -165,7 +165,8 @@ public:
    * @brief Add a secondary cursor at @p p.
    *
    * A no-op if @p p coincides with the primary or an existing extra
-   * cursor; @p p is clamped to a valid buffer position.
+   * cursor; @p p is clamped to a valid buffer position. Clears the mark:
+   * selections are not per-cursor.
    */
   void addCursor(BufferPoint p);
 

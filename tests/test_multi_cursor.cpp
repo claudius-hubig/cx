@@ -573,3 +573,30 @@ BOOST_AUTO_TEST_CASE(a_partly_no_op_multi_cursor_edit_still_records_once) {
   BOOST_CHECK_EQUAL(contents(buf), "b");
   BOOST_CHECK_EQUAL(buf.versionHistoryInfo().size, before + 1);
 }
+
+// --- The mark does not survive adding cursors ---
+
+BOOST_AUTO_TEST_CASE(add_cursor_clears_mark) {
+  TextBuffer buf("t");
+  buf.insertText("short\nlonger line", BufferPoint{0, 0});
+  BufferView v(buf);
+  v.setPoint(1, 11);
+  v.toggleMark();
+  BOOST_REQUIRE(v.addCursorUp());
+  BOOST_CHECK(!v.mark().has_value());
+}
+
+BOOST_AUTO_TEST_CASE(region_command_after_multi_cursor_edit_does_not_throw) {
+  // Mark at (1,11), add a cursor above, Enter at both cursors: the mark was
+  // left at (1,11) on what is now an empty line, and Esc-U then threw
+  // std::out_of_range from Buffer::extractRegion(), ending the session.
+  TextBuffer buf("t");
+  buf.insertText("short\nlonger line", BufferPoint{0, 0});
+  BufferView v(buf);
+  v.setPoint(1, 11);
+  v.toggleMark();
+  BOOST_REQUIRE(v.addCursorUp());
+  v.insert('\n');
+  BOOST_CHECK(!v.mark().has_value());
+  BOOST_CHECK_NO_THROW(v.convertCase(BufferView::CaseOp::Upper));
+}

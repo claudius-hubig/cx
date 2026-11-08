@@ -1762,6 +1762,9 @@ void BufferView::moveExtras(void (BufferView::*fn)(ColIdx), ColIdx cols) {
 void BufferView::addCursor(BufferPoint p) {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
+  // Selections are not per-cursor (see toggleMark()), and batch edits do
+  // not shift the mark: keeping it would leave a stale region behind.
+  _mark.reset();
   _extraCursors.push_back(p);
   normalizeCursors();
 }
@@ -1894,6 +1897,9 @@ void BufferView::endBatch(std::size_t lineCountBefore, std::size_t versionBefore
 
   syncAfterEdit();
   _desiredCol.reset();
+  // Batch edits never shift the mark; drop it rather than leave a region
+  // pointing at text that moved (or no longer exists).
+  _mark.reset();
   normalizeCursors();
 
   if (_buf.docVersion() == versionBefore)
