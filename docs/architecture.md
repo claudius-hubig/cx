@@ -393,7 +393,9 @@ All user-facing movement, editing, and render operations are methods on
   read-only via `setBrowsingHistory(true)`; stepping calls
   `applyVersionAt()` and updates the cursor; committing truncates any
   forward history beyond the selected version and re-enables editing.
-  `inHistoryMode()` / `historyIndex()` expose the current state to
+  Only one view per buffer may browse at a time: `enterHistoryMode()`
+  returns false while the buffer is already browsing, since the shown
+  snapshot is per buffer. `inHistoryMode()` / `historyIndex()` expose the current state to
   `Screen` for status-line rendering.
 - **Multiple cursors**: `_extraCursors` holds the secondary cursors,
   kept sorted, deduplicated, and never equal to `_point`;

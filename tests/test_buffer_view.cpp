@@ -554,6 +554,22 @@ BOOST_AUTO_TEST_CASE(enter_history_makes_readonly) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), before);
 }
 
+BOOST_AUTO_TEST_CASE(second_view_cannot_enter_history_while_browsed) {
+  // The displayed snapshot is per buffer: a second browser used to start
+  // at "latest" while showing the first view's older text, and committing
+  // there saved that older text as if it were current.
+  TempFile f("a\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView v1(buf), v2(buf);
+  insertString(v1, "123");
+  BOOST_REQUIRE(v1.enterHistoryMode());
+  v1.stepHistory(-2);
+  BOOST_CHECK(!v2.enterHistoryMode());
+  BOOST_CHECK(!v2.inHistoryMode());
+  v1.exitHistoryModeCommit();
+  BOOST_CHECK(v2.enterHistoryMode());
+}
+
 BOOST_AUTO_TEST_CASE(step_history_restores_content) {
   TempFile f("orig\n");
   TextBuffer buf(f.path().string(), f.path());

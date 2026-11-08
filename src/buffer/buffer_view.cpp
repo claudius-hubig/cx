@@ -2043,10 +2043,10 @@ void BufferView::multiDeleteChunkBackward() {
 
 // --- History mode ---
 
-void BufferView::enterHistoryMode() {
+bool BufferView::enterHistoryMode() {
   auto info = _buf.versionHistoryInfo();
-  if (info.empty)
-    return;
+  if (info.empty || _buf.browsingHistory())
+    return false;
   // History browsing walks a single point through time.
   collapseCursors();
   _buf.setBrowsingHistory(true);
@@ -2057,6 +2057,7 @@ void BufferView::enterHistoryMode() {
   _desiredCol.reset();
   _rowBoundsCache.lineIdx = SIZE_MAX;
   _pointColCache.line = SIZE_MAX;
+  return true;
 }
 
 void BufferView::stepHistory(int delta) {

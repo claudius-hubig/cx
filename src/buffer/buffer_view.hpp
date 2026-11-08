@@ -313,7 +313,15 @@ public:
   /** @{ */
   bool inHistoryMode() const { return _historyIndex.has_value(); }
   std::optional<std::size_t> historyIndex() const { return _historyIndex; }
-  void enterHistoryMode();
+  /**
+   * @brief Start browsing at the latest version.
+   *
+   * Refused while another view of the same buffer is browsing: the shown
+   * snapshot and the read-only flag are per buffer, so a second browser
+   * would start at "latest" while displaying the other view's older text.
+   * @return false if refused (no history, or browsed elsewhere).
+   */
+  bool enterHistoryMode();
   void stepHistory(int delta);
   void exitHistoryModeCommit();
   /** @} */

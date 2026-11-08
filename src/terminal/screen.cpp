@@ -3518,8 +3518,9 @@ void Screen::dispatchAction(Action action) {
       } else {
         if (_buf->versionHistoryInfo().empty) {
           setStatus("No history");
+        } else if (!_view->enterHistoryMode()) {
+          setStatus("History is being browsed in another panel");
         } else {
-          _view->enterHistoryMode();
           _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
         }
       }
