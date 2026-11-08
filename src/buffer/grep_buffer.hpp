@@ -34,12 +34,14 @@ struct GrepHit {
  *
  * Accepting either separator byte after the digits handles both without
  * the caller having to say which backend ran. The NUL after the filename
- * is what makes this unambiguous for paths that themselves contain ':'.
+ * is what makes this unambiguous for paths that themselves contain ':'
+ * or even '\\n': the path is everything up to the NUL, and only the text
+ * after the line number ends at '\\n'.
  *
- * Records that do not match the expected shape (no NUL, a non-numeric or
- * empty line number, a zero line number) are skipped rather than
- * reported: a backend that emits an unexpected diagnostic line should
- * cost the user one missing result, not the whole listing.
+ * Records whose line number is malformed (non-numeric, empty, zero) are
+ * skipped up to the next '\\n', and trailing output with no NUL is
+ * ignored: an unexpected diagnostic line on stdout (neither backend writes
+ * one with -I) costs at most the record it runs into, not the listing.
  *
  * @param out   Raw stdout of the search command.
  * @param root  Directory the command ran in; relative paths resolve

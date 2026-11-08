@@ -75,14 +75,29 @@ BOOST_AUTO_TEST_CASE(absolute_path_is_not_rerooted) {
 }
 
 BOOST_AUTO_TEST_CASE(malformed_records_are_skipped) {
-  // No NUL, non-numeric line, empty line number, zero line number — each
-  // dropped without taking the surrounding valid records with it.
-  auto out = std::string("no-nul-here\n") + std::string("a.cpp\0abc:t\n", 12) +
-             std::string("b.cpp\0:t\n", 9) + gitRecord("c.cpp", "0", "zero") +
-             gitRecord("good.cpp", "9", "kept");
+  // Non-numeric line, empty line number, zero line number, trailing output
+  // without a NUL — each dropped without taking the surrounding valid
+  // records with it.
+  auto out = std::string("a.cpp\0abc:t\n", 12) + std::string("b.cpp\0:t\n", 9) +
+             gitRecord("c.cpp", "0", "zero") + gitRecord("good.cpp", "9", "kept") + "no-nul-here\n";
   auto hits = parseGrepOutput(out, "/r");
   BOOST_REQUIRE_EQUAL(hits.size(), 1u);
   BOOST_CHECK_EQUAL(hits[0].displayPath, "good.cpp");
+}
+
+BOOST_AUTO_TEST_CASE(newline_in_path_stays_part_of_path) {
+  // Records used to be split on '\n' first, turning "sub/nl\nname.txt"
+  // into a hit in "name.txt".
+  auto out = gitRecord("a.cpp", "1", "one") + gitRecord("sub/nl\nname.txt", "2", "two") +
+             grepRecord("x\ny", "3", "three");
+  auto hits = parseGrepOutput(out, "/r");
+  BOOST_REQUIRE_EQUAL(hits.size(), 3u);
+  BOOST_CHECK_EQUAL(hits[0].displayPath, "a.cpp");
+  BOOST_CHECK_EQUAL(hits[1].displayPath, "sub/nl\nname.txt");
+  BOOST_CHECK_EQUAL(hits[1].line, 2u);
+  BOOST_CHECK_EQUAL(hits[1].text, "two");
+  BOOST_CHECK_EQUAL(hits[2].displayPath, "x\ny");
+  BOOST_CHECK_EQUAL(hits[2].text, "three");
 }
 
 BOOST_AUTO_TEST_CASE(empty_output_yields_no_hits) {

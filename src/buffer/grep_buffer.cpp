@@ -42,16 +42,16 @@ std::vector<GrepHit> parseGrepOutput(std::string_view out, std::filesystem::path
   std::vector<GrepHit> hits;
   std::size_t pos = 0;
   while (pos < out.size()) {
-    auto eol = out.find('\n', pos);
+    // The path runs up to the NUL, so a filename containing '\n' stays
+    // intact; only the text after the line number ends at '\n'.
+    auto nul = out.find('\0', pos);
+    if (nul == std::string_view::npos)
+      break;
+    auto eol = out.find('\n', nul);
     auto record =
         out.substr(pos, eol == std::string_view::npos ? std::string_view::npos : eol - pos);
     pos = (eol == std::string_view::npos) ? out.size() : eol + 1;
-    if (record.empty())
-      continue;
-
-    auto nul = record.find('\0');
-    if (nul == std::string_view::npos)
-      continue;
+    nul -= record.data() - out.data();
     auto pathPart = record.substr(0, nul);
     if (pathPart.empty())
       continue;

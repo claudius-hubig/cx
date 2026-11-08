@@ -526,7 +526,8 @@ file when the user presses Enter.
 The free function `parseGrepOutput()` turns the raw stdout of either
 backend into `GrepHit` values. Both are invoked with a NUL after the
 filename (`git grep -z`, `grep -Z`), which keeps paths containing `:`
-unambiguous; they differ in whether the line number is terminated by NUL
+or a newline unambiguous (the path is located by its NUL before the
+record's end-of-line is); they differ in whether the line number is terminated by NUL
 or `:`, and the parser accepts either. Malformed records are skipped
 rather than aborting the parse.
 
