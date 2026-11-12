@@ -829,6 +829,7 @@ token vector allocation.
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `contentWidth()`, `BufferPoint`, `ByteOffset`, `VisualCol`, `ViewFrom`                                   |
 | `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
 | `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`, `charInfoAt`), `visualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
+| `src/unicode_tables.hpp`               | Generated (`tools/gen_unicode_tables.py`, Unicode 15.1 as in xfce4-terminal) sorted range tables `kWideRanges`, `kCombiningRanges`, `kFormatRanges` and their lookup `inRanges()` |
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache, edit cursor, mark), `PromptDisplay`, `PromptHistory` (per-label input history)    |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
 | `src/bookmarks.hpp`                    | `Bookmarks` — session-wide named positions (`Bookmark{bufferName, point}`) keyed by a single char in `[0-9a-z]`; owned by `Screen` |

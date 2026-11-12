@@ -11,6 +11,8 @@
  * Buffer::render draws it, so cursor, scroll, and wrap math stay in sync.
  */
 
+#include "unicode_tables.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -177,89 +179,17 @@ inline constexpr std::size_t charWidth(char ch) {
   return 1;
 }
 
-/** @brief Inclusive code point range [first, last]. */
-struct CodepointRange {
-  uint32_t first;
-  uint32_t last;
-};
-
 /**
- * @brief Emoji that terminals draw two columns wide: the East Asian
- *        Width W ranges of the symbol and emoji blocks (Unicode 16.0).
+ * @brief Display width of a Unicode code point: 2 for East Asian Width W/F
+ *        (kWideRanges, Unicode 15.1 as in xfce4-terminal), else 1.
  *
- * Sorted and non-overlapping. Deliberately left out: the non-emoji W
- * symbols U+2329..232A, U+2630..2637 and U+268A..268F, which many
- * terminals still draw one column wide.
- */
-inline constexpr auto kWideEmoji = std::to_array<CodepointRange>({
-    {0x231A, 0x231B},   {0x23E9, 0x23EC},   {0x23F0, 0x23F0},   {0x23F3, 0x23F3},
-    {0x25FD, 0x25FE},   {0x2614, 0x2615},   {0x2648, 0x2653},   {0x267F, 0x267F},
-    {0x2693, 0x2693},   {0x26A1, 0x26A1},   {0x26AA, 0x26AB},   {0x26BD, 0x26BE},
-    {0x26C4, 0x26C5},   {0x26CE, 0x26CE},   {0x26D4, 0x26D4},   {0x26EA, 0x26EA},
-    {0x26F2, 0x26F3},   {0x26F5, 0x26F5},   {0x26FA, 0x26FA},   {0x26FD, 0x26FD},
-    {0x2705, 0x2705},   {0x270A, 0x270B},   {0x2728, 0x2728},   {0x274C, 0x274C},
-    {0x274E, 0x274E},   {0x2753, 0x2755},   {0x2757, 0x2757},   {0x2795, 0x2797},
-    {0x27B0, 0x27B0},   {0x27BF, 0x27BF},   {0x2B1B, 0x2B1C},   {0x2B50, 0x2B50},
-    {0x2B55, 0x2B55},   {0x1F004, 0x1F004}, {0x1F0CF, 0x1F0CF}, {0x1F18E, 0x1F18E},
-    {0x1F191, 0x1F19A}, {0x1F200, 0x1F202}, {0x1F210, 0x1F23B}, {0x1F240, 0x1F248},
-    {0x1F250, 0x1F251}, {0x1F260, 0x1F265}, {0x1F300, 0x1F320}, {0x1F32D, 0x1F335},
-    {0x1F337, 0x1F37C}, {0x1F37E, 0x1F393}, {0x1F3A0, 0x1F3CA}, {0x1F3CF, 0x1F3D3},
-    {0x1F3E0, 0x1F3F0}, {0x1F3F4, 0x1F3F4}, {0x1F3F8, 0x1F43E}, {0x1F440, 0x1F440},
-    {0x1F442, 0x1F4FC}, {0x1F4FF, 0x1F53D}, {0x1F54B, 0x1F54E}, {0x1F550, 0x1F567},
-    {0x1F57A, 0x1F57A}, {0x1F595, 0x1F596}, {0x1F5A4, 0x1F5A4}, {0x1F5FB, 0x1F64F},
-    {0x1F680, 0x1F6C5}, {0x1F6CC, 0x1F6CC}, {0x1F6D0, 0x1F6D2}, {0x1F6D5, 0x1F6D7},
-    {0x1F6DC, 0x1F6DF}, {0x1F6EB, 0x1F6EC}, {0x1F6F4, 0x1F6FC}, {0x1F7E0, 0x1F7EB},
-    {0x1F7F0, 0x1F7F0}, {0x1F90C, 0x1F93A}, {0x1F93C, 0x1F945}, {0x1F947, 0x1F9FF},
-    {0x1FA70, 0x1FA7C}, {0x1FA80, 0x1FA89}, {0x1FA8F, 0x1FAC6}, {0x1FACE, 0x1FADC},
-    {0x1FADF, 0x1FAE9}, {0x1FAF0, 0x1FAF8},
-});
-
-/**
- * @brief Display width of a Unicode code point.
- *
- * Returns 2 for CJK / wide ranges (Hangul Jamo, CJK radicals,
- * Hiragana/Katakana, CJK unified, Yi, Hangul syllables, fullwidth forms,
- * CJK extensions B-G) and wide emoji (kWideEmoji), and 1 otherwise.
- * Does not handle combining marks or zero-width characters (variation
- * selectors, ZWJ), so an emoji sequence measures as the sum of its parts.
+ * Measures the code point on its own; zero-width marks and format
+ * characters are handled by charInfoAt().
  */
 inline constexpr std::size_t codepointWidth(uint32_t cp) {
   if (cp < 0x1100)
-    return 1; // fast path: Latin, Greek, Cyrillic, ...
-  if (cp >= 0x1100 && cp <= 0x115F)
-    return 2; // Hangul Jamo
-  if (cp >= 0x2E80 && cp <= 0x303E)
-    return 2; // CJK Radicals, Kangxi
-  if (cp >= 0x3040 && cp <= 0x33BF)
-    return 2; // Hiragana, Katakana
-  if (cp >= 0x3400 && cp <= 0x4DBF)
-    return 2; // CJK Extension A
-  if (cp >= 0x4E00 && cp <= 0x9FFF)
-    return 2; // CJK Unified Ideographs
-  if (cp >= 0xA000 && cp <= 0xA4CF)
-    return 2; // Yi
-  if (cp >= 0xAC00 && cp <= 0xD7AF)
-    return 2; // Hangul Syllables
-  if (cp >= 0xF900 && cp <= 0xFAFF)
-    return 2; // CJK Compat. Ideographs
-  if (cp >= 0xFE30 && cp <= 0xFE6F)
-    return 2; // CJK Compat. Forms
-  if (cp >= 0xFF01 && cp <= 0xFF60)
-    return 2; // Fullwidth Forms
-  if (cp >= 0xFFE0 && cp <= 0xFFE6)
-    return 2; // Fullwidth Signs
-  if (cp >= 0x20000 && cp <= 0x3134F)
-    return 2; // CJK Extensions B-G
-  // Binary search for the last range starting at or before cp.
-  std::size_t lo = 0, hi = kWideEmoji.size();
-  while (lo < hi) {
-    auto mid = (lo + hi) / 2;
-    if (kWideEmoji[mid].first <= cp)
-      lo = mid + 1;
-    else
-      hi = mid;
-  }
-  return lo > 0 && cp <= kWideEmoji[lo - 1].last ? 2 : 1;
+    return 1; // fast path: nothing below U+1100 is wide
+  return inRanges(kWideRanges, cp) ? 2 : 1;
 }
 
 /** @brief Width and byte length of the character at @c data[0..avail). */

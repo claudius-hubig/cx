@@ -79,6 +79,7 @@ src/
   types.hpp                        RowIdx, ColIdx, BufferPoint, ViewFrom
   byte_constants.hpp               Named constants for terminal bytes (key::, ansi::)
   utf8.hpp/.cpp                    UTF-8 decode/encode, char width, visual width
+  unicode_tables.hpp               Generated Unicode 15.1 width classes (tools/gen_unicode_tables.py)
   shortcut.hpp/.cpp                Action enum, Shortcut struct, binding table
   prompt.hpp                       Prompt struct, PromptDisplay, PromptHistory
   paste_ring.hpp                   Fixed-capacity ring buffer for cut/copy

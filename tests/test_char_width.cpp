@@ -270,34 +270,50 @@ BOOST_AUTO_TEST_CASE(codepointWidth_latin_supplement) {
   BOOST_CHECK_EQUAL(codepointWidth(0x00E9), 1u); // é
 }
 
+// Expected widths below were measured in xfce4-terminal (VTE 0.84), the
+// reference terminal, by querying the cursor position after each one.
+
 BOOST_AUTO_TEST_CASE(codepointWidth_emoji_is_wide) {
   BOOST_CHECK_EQUAL(codepointWidth(0x1F600), 2u); // 😀
   BOOST_CHECK_EQUAL(codepointWidth(0x1F44B), 2u); // 👋
   BOOST_CHECK_EQUAL(codepointWidth(0x1F680), 2u); // 🚀
-  BOOST_CHECK_EQUAL(codepointWidth(0x1F9E0), 2u); // 🧠
   BOOST_CHECK_EQUAL(codepointWidth(0x2705), 2u);  // ✅
-  BOOST_CHECK_EQUAL(codepointWidth(0x231A), 2u);  // ⌚ (first range)
-  BOOST_CHECK_EQUAL(codepointWidth(0x1FAF8), 2u); // last range
+  BOOST_CHECK_EQUAL(codepointWidth(0x1F3FD), 2u); // skin tone modifier on its own
+  BOOST_CHECK_EQUAL(codepointWidth(0x1F972), 2u); // Unicode 13
+  BOOST_CHECK_EQUAL(codepointWidth(0x1FAE0), 2u); // Unicode 14
+  BOOST_CHECK_EQUAL(codepointWidth(0x1FAE8), 2u); // Unicode 15
   BOOST_CHECK_EQUAL(visualWidth("a\xF0\x9F\x91\x8B\xF0\x9F\x99\x82"
                                 "b"),
                     6u); // a👋🙂b
 }
 
-BOOST_AUTO_TEST_CASE(codepointWidth_text_symbols_stay_narrow) {
-  BOOST_CHECK_EQUAL(codepointWidth(0x2764), 1u); // ❤ (text presentation by default)
-  BOOST_CHECK_EQUAL(codepointWidth(0x2719), 1u); // ✙
-  BOOST_CHECK_EQUAL(codepointWidth(0x2630), 1u); // ☰ (W since Unicode 16, narrow in most terminals)
-  BOOST_CHECK_EQUAL(codepointWidth(0x2329), 1u); // 〈
-  BOOST_CHECK_EQUAL(codepointWidth(0x1F1E6), 1u); // regional indicator: a flag pair is 2
-  BOOST_CHECK_EQUAL(codepointWidth(0x1F321), 1u); // 🌡 (gap between ranges)
-  BOOST_CHECK_EQUAL(codepointWidth(0x1FAF9), 1u); // just past the last range
+BOOST_AUTO_TEST_CASE(codepointWidth_follows_unicode_15_1) {
+  BOOST_CHECK_EQUAL(codepointWidth(0x2329), 2u);  // 〈
+  BOOST_CHECK_EQUAL(codepointWidth(0x33C0), 2u);  // ㏀ CJK compatibility
+  BOOST_CHECK_EQUAL(codepointWidth(0x1B000), 2u); // 𛀀 Kana Supplement
+  // Wide only since Unicode 16.0: narrow in the reference terminal.
+  BOOST_CHECK_EQUAL(codepointWidth(0x1FAE9), 1u);
+  BOOST_CHECK_EQUAL(codepointWidth(0x2630), 1u); // ☰
+  BOOST_CHECK_EQUAL(codepointWidth(0x268A), 1u);
 }
 
-BOOST_AUTO_TEST_CASE(wide_emoji_table_is_sorted_and_disjoint) {
-  for (std::size_t i = 0; i < kWideEmoji.size(); ++i) {
-    BOOST_CHECK_LE(kWideEmoji[i].first, kWideEmoji[i].last);
-    if (i > 0)
-      BOOST_CHECK_LT(kWideEmoji[i - 1].last, kWideEmoji[i].first);
+BOOST_AUTO_TEST_CASE(codepointWidth_text_symbols_stay_narrow) {
+  BOOST_CHECK_EQUAL(codepointWidth(0x2764), 1u);  // ❤ (text presentation by default)
+  BOOST_CHECK_EQUAL(codepointWidth(0x263A), 1u);  // ☺
+  BOOST_CHECK_EQUAL(codepointWidth(0x1F321), 1u); // 🌡
+  BOOST_CHECK_EQUAL(codepointWidth(0x1F1E9), 1u); // regional indicator: a flag pair is 2
+  BOOST_CHECK_EQUAL(codepointWidth(0x2460), 1u);  // ① East Asian ambiguous
+}
+
+BOOST_AUTO_TEST_CASE(unicode_tables_are_sorted_and_disjoint) {
+  for (std::span<CodepointRange const> t : {std::span<CodepointRange const>(kWideRanges),
+                                            std::span<CodepointRange const>(kCombiningRanges),
+                                            std::span<CodepointRange const>(kFormatRanges)}) {
+    for (std::size_t i = 0; i < t.size(); ++i) {
+      BOOST_CHECK_LE(t[i].first, t[i].last);
+      if (i > 0)
+        BOOST_CHECK_LT(t[i - 1].last + 1, t[i].first); // also merged
+    }
   }
 }
 
