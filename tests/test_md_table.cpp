@@ -243,6 +243,14 @@ BOOST_AUTO_TEST_CASE(formatting_is_idempotent) {
   }
 }
 
+BOOST_AUTO_TEST_CASE(emoji_count_as_two_columns) {
+  BOOST_CHECK_EQUAL(format("| Lang | Greeting |\n|---|---|\n| emoji | 👋🙂 |\n| en | hello |", -1),
+                    "| Lang  | Greeting |\n"
+                    "| ----- | -------- |\n"
+                    "| emoji | 👋🙂     |\n"
+                    "| en    | hello    |");
+}
+
 BOOST_AUTO_TEST_CASE(rejects_non_tables) {
   std::vector<std::string> noDelimiter{"| a | b |", "| c | d |"};
   BOOST_CHECK(!formatMarkdownTable(noDelimiter, std::nullopt, 80));

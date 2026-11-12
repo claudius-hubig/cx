@@ -39,7 +39,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 
 ## Features
 
-- **UTF-8 support** — full Unicode text editing and display, including CJK wide characters
+- **UTF-8 support** — full Unicode text editing and display, including CJK wide characters and emoji (drawn two columns wide)
 - **Multiple buffers** — open, switch between, and kill buffers; MRU-ordered buffer switching with tab completion and filesystem path completion. The Ctrl-o switch prompt defaults to the previous buffer; typing `*name*` creates (or finds) a scratch buffer of that name.
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
 - **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter (highlight visible for ~3 s); Ctrl-F again advances to the next match while re-prompting for a new search string. Inside the prompt Ctrl-F / Ctrl-R also advance the previous search forward/backward without leaving the prompt. An empty prompt re-uses the last pattern (shown as a dim hint).
