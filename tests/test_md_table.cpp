@@ -1,0 +1,422 @@
+#define BOOST_TEST_MODULE MdTable
+#include <boost/test/unit_test.hpp>
+
+#include "buffer/buffer_view.hpp"
+#include "buffer/modes/md/table.hpp"
+#include "buffer/text_buffer.hpp"
+#include "test_helpers.hpp"
+
+#include <ranges>
+
+namespace {
+
+std::vector<std::string> splitLines(std::string_view s) {
+  std::vector<std::string> out;
+  for (auto part : std::views::split(s, '\n'))
+    out.emplace_back(std::string_view(part));
+  return out;
+}
+
+std::string joinLines(std::vector<std::string> const& lines) {
+  std::string out;
+  for (auto const& l : lines)
+    out += (out.empty() ? "" : "\n") + l;
+  return out;
+}
+
+std::string contents(Buffer const& buf) {
+  std::vector<std::string> lines;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i)
+    lines.push_back(buf.lineContent(i));
+  return joinLines(lines);
+}
+
+/** @brief Cursor on the first character of column @p col's header text. */
+BufferPoint headerCell(std::string const& header, std::size_t col) {
+  std::size_t off = header.find('|');
+  for (std::size_t c = 0; c < col; ++c)
+    off = header.find('|', off + 1);
+  return {0, header.find_first_not_of(' ', off + 1)};
+}
+
+/** @brief Format @p table, wrapping column @p col (negative: align only). */
+std::string format(std::string_view table, int col) {
+  auto lines = splitLines(table);
+  std::optional<BufferPoint> cursor;
+  if (col >= 0)
+    cursor = headerCell(lines[0], static_cast<std::size_t>(col));
+  auto result = formatMarkdownTable(lines, cursor, 80);
+  BOOST_REQUIRE(result);
+  return joinLines(result->lines);
+}
+
+struct Example {
+  char const* name;
+  int column; // column to wrap; -1 aligns only
+  char const* input;
+  char const* expected;
+};
+
+// The examples from the design discussion; expected output was produced
+// by an independent prototype of the same algorithm.
+Example const kExamples[] = {
+    {"Align only (cursor in first column)", -1,
+     R"(| Key | Action |
+|---|---|
+| Alt-q | Reflow paragraph |
+| C-x C-s | Save |
+| C-g | Cancel |)",
+     R"(| Key     | Action           |
+| ------- | ---------------- |
+| Alt-q   | Reflow paragraph |
+| C-x C-s | Save             |
+| C-g     | Cancel           |)"},
+    {"Alignment markers are honoured", -1,
+     R"(| Item | Qty | Price | Note |
+|:--|:-:|--:|---|
+| Apple | 3 | 1.20 | fresh |
+| Watermelon | 12 | 15.00 | |
+| Fig | 100 | 0.5 | dried, imported |)",
+     R"(| Item       | Qty | Price | Note            |
+| :--------- | :-: | ----: | --------------- |
+| Apple      |  3  |  1.20 | fresh           |
+| Watermelon | 12  | 15.00 |                 |
+| Fig        | 100 |   0.5 | dried, imported |)"},
+    {"Wrap the last column", 2,
+     R"(| Option | Default | Description |
+|---|---|---|
+| `--lines N` | 50000 | Number of lines in the synthetic document that the benchmark builds before it starts timing any of the inserts. |
+| `--inserts N` | 200 | How many single-character inserts to time. |
+| `--direct` | off | Call BufferView directly instead of going through Screen, which removes rendering from the measurement entirely. |)",
+     R"(| Option        | Default | Description                                        |
+| ------------- | ------- | -------------------------------------------------- |
+| `--lines N`   | 50000   | Number of lines in the synthetic document that the |
+|               |         | benchmark builds before it starts timing any of    |
+|               |         | the inserts.                                       |
+| `--inserts N` | 200     | How many single-character inserts to time.         |
+| `--direct`    | off     | Call BufferView directly instead of going through  |
+|               |         | Screen, which removes rendering from the           |
+|               |         | measurement entirely.                              |)"},
+    {"Wrap a middle column", 1,
+     R"(| Mode | Detection rule | Tokenizer |
+|---|---|---|
+| md | File extension is `.md` or `.markdown`, or the first line starts with a `#` heading followed by a blank line. | md/syntax.cpp |
+| py | Extension `.py`, or a shebang mentioning python. | py/syntax.cpp |)",
+     R"(| Mode | Detection rule                                       | Tokenizer     |
+| ---- | ---------------------------------------------------- | ------------- |
+| md   | File extension is `.md` or `.markdown`, or the first | md/syntax.cpp |
+|      | line starts with a `#` heading followed by a blank   |               |
+|      | line.                                                |               |
+| py   | Extension `.py`, or a shebang mentioning python.     | py/syntax.cpp |)"},
+    {"Re-wrap after editing an already-wrapped cell", 1,
+     R"(| Option | Description |
+|--------|---------------------------------------------------------------------|
+| `-n`   | Do not create the file if it does not exist yet; instead report an error and exit with status 2 |
+|        | so that scripts can tell the two cases apart.                       |
+| `-v`   | Verbose.                                                            |)",
+     R"(| Option | Description                                                         |
+| ------ | ------------------------------------------------------------------- |
+| `-n`   | Do not create the file if it does not exist yet; instead report an  |
+|        | error and exit with status 2 so that scripts can tell the two cases |
+|        | apart.                                                              |
+| `-v`   | Verbose.                                                            |)"},
+    {"Unwrap when the content fits again", 1,
+     R"(| Flag | Meaning |
+|------|----------------------------------------|
+| `-q` | Quiet mode: suppress   |
+|      | all output.                            |)",
+     R"(| Flag | Meaning                          |
+| ---- | -------------------------------- |
+| `-q` | Quiet mode: suppress all output. |)"},
+    {"Two wrapped columns in one logical row", 2,
+     R"(| Case | Before | After |
+|---|---|---|
+| 1 | old behaviour: wraps the | The whole table is merged into a single paragraph and every pipe ends up on one very long line, which destroys the table completely. |
+|   | whole table | |
+| 2 | ok | ok |)",
+     R"(| Case | Before                   | After                                    |
+| ---- | ------------------------ | ---------------------------------------- |
+| 1    | old behaviour: wraps the | The whole table is merged into a single  |
+|      | whole table              | paragraph and every pipe ends up on one  |
+|      |                          | very long line, which destroys the table |
+|      |                          | completely.                              |
+| 2    | ok                       | ok                                       |)"},
+    {"Table without outer pipes", -1,
+     R"(Name | Value
+--- | ---:
+alpha | 1
+beta | 22)",
+     R"(| Name  | Value |
+| ----- | ----: |
+| alpha |     1 |
+| beta  |    22 |)"},
+    {"Ragged rows and escaped pipes", -1,
+     R"(| Op | Syntax |
+|---|---|
+| or | `a \| b` |
+| not |
+| xor | `a ^ b` | extra |)",
+     R"(| Op  | Syntax   |       |
+| --- | -------- | ----- |
+| or  | `a \| b` |       |
+| not |          |       |
+| xor | `a ^ b`  | extra |)"},
+    {"Wide characters", -1,
+     R"(| Lang | Greeting |
+|---|---|
+| ja | こんにちは |
+| en | hello |
+| ko | 안녕하세요 |)",
+     R"(| Lang | Greeting   |
+| ---- | ---------- |
+| ja   | こんにちは |
+| en   | hello      |
+| ko   | 안녕하세요 |)"},
+    {"Atomic inline spans", 1,
+     R"(| Step | Command |
+|---|---|
+| build | Run `cmake -B build -DCMAKE_BUILD_TYPE=Release` once, then `cmake --build build -j12` for every rebuild; see [the build docs](docs/architecture.md). |)",
+     R"(| Step  | Command                                                    |
+| ----- | ---------------------------------------------------------- |
+| build | Run `cmake -B build -DCMAKE_BUILD_TYPE=Release` once, then |
+|       | `cmake --build build -j12` for every rebuild; see          |
+|       | [the build docs](docs/architecture.md).                    |)"},
+    {"Unbreakable word wider than the budget", 1,
+     R"(| Ref | Link |
+|---|---|
+| GFM tables spec | See https://github.github.com/gfm/#tables-extension-and-the-surrounding-sections-on-inlines for details. |)",
+     R"(| Ref             | Link                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------- |
+| GFM tables spec | See                                                                                     |
+|                 | https://github.github.com/gfm/#tables-extension-and-the-surrounding-sections-on-inlines |
+|                 | for details.                                                                            |)"},
+    {"Indented table (inside a list item)", 1,
+     R"(    | Run | Notes |
+    |---|---|
+    | a | Fast path taken for every input because the cache was warm after the first iteration of the loop. |)",
+     R"(    | Run | Notes                                                            |
+    | --- | ---------------------------------------------------------------- |
+    | a   | Fast path taken for every input because the cache was warm after |
+    |     | the first iteration of the loop.                                 |)"},
+    {"Header cell is never wrapped", 1,
+     R"(| Id | A rather long column heading that names the column |
+|---|---|
+| 1 | short |
+| 2 | This body cell is long enough that it has to wrap onto more than one physical line at eighty. |)",
+     R"(| Id  | A rather long column heading that names the column                   |
+| --- | -------------------------------------------------------------------- |
+| 1   | short                                                                |
+| 2   | This body cell is long enough that it has to wrap onto more than one |
+|     | physical line at eighty.                                             |)"},
+    {"Other columns already exceed 80", 2,
+     R"(| Name | Path | Description |
+|---|---|---|
+| core | src/buffer/modes/md/really/deeply/nested/directory/structure/table.cpp | Table reflow logic and alignment. |)",
+     R"(| Name | Path                                                                   | Description        |
+| ---- | ---------------------------------------------------------------------- | ------------------ |
+| core | src/buffer/modes/md/really/deeply/nested/directory/structure/table.cpp | Table reflow logic |
+|      |                                                                        | and alignment.     |)"},
+    {"Limitation: an empty first cell means continuation", 2,
+     R"(| Group | Member | Notes |
+|---|---|---|
+| A | x | first |
+| | y | second |
+| | z | third |)",
+     R"(| Group | Member | Notes              |
+| ----- | ------ | ------------------ |
+| A     | x      | first second third |
+|       | y      |                    |
+|       | z      |                    |)"},
+};
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(examples) {
+  for (auto const& ex : kExamples) {
+    BOOST_TEST_CONTEXT(ex.name) { BOOST_CHECK_EQUAL(format(ex.input, ex.column), ex.expected); }
+  }
+}
+
+BOOST_AUTO_TEST_CASE(formatting_is_idempotent) {
+  for (auto const& ex : kExamples) {
+    BOOST_TEST_CONTEXT(ex.name) { BOOST_CHECK_EQUAL(format(ex.expected, ex.column), ex.expected); }
+  }
+}
+
+BOOST_AUTO_TEST_CASE(rejects_non_tables) {
+  std::vector<std::string> noDelimiter{"| a | b |", "| c | d |"};
+  BOOST_CHECK(!formatMarkdownTable(noDelimiter, std::nullopt, 80));
+  std::vector<std::string> oneLine{"| a | b |"};
+  BOOST_CHECK(!formatMarkdownTable(oneLine, std::nullopt, 80));
+}
+
+BOOST_AUTO_TEST_CASE(find_table_bounds) {
+  auto lines = toLinePtrs({
+      "Prose with a | pipe", // 0: directly above, not part of the table
+      "| a | b |",           // 1: header
+      "|---|---|",           // 2
+      "| 1 | 2 |",           // 3
+      "",                    // 4
+      "| x | y |",           // 5: no delimiter row
+      "| z | w |",           // 6
+      "| p | q |",           // 7: delimiter cell count differs
+      "|---|",               // 8
+      "plain text",          // 9
+  });
+  for (std::size_t l : {1u, 2u, 3u}) {
+    auto t = findMarkdownTable(lines, l);
+    BOOST_REQUIRE(t);
+    BOOST_CHECK_EQUAL(t->first, 1u);
+    BOOST_CHECK_EQUAL(t->last, 3u);
+  }
+  for (std::size_t l : {0u, 4u, 5u, 6u, 7u, 8u, 9u})
+    BOOST_CHECK(!findMarkdownTable(lines, l));
+}
+
+BOOST_AUTO_TEST_CASE(cursor_follows_text_through_rewrap) {
+  // Cursor just before "jumps" in a cell that gets wrapped.
+  std::vector<std::string> lines{
+      "| k | v |",
+      "|---|---|",
+      "| a | the quick brown fox jumps over the lazy dog and keeps on running for a while longer |",
+  };
+  auto off = lines[2].find("jumps");
+  auto result = formatMarkdownTable(lines, BufferPoint{2, off}, 40);
+  BOOST_REQUIRE(result && result->cursor);
+  auto const& line = result->lines[result->cursor->line];
+  // Placed after the same non-blank text, i.e. right after "fox".
+  BOOST_CHECK_EQUAL(line.substr(result->cursor->offset - 3, 3), "fox");
+}
+
+BOOST_AUTO_TEST_CASE(cursor_in_continuation_row) {
+  std::vector<std::string> lines{
+      "| k | v           |",
+      "|---|-------------|",
+      "| a | alpha beta  |",
+      "|   | gamma delta |",
+  };
+  auto off = lines[3].find("delta");
+  auto result = formatMarkdownTable(lines, BufferPoint{3, off}, 80);
+  BOOST_REQUIRE(result && result->cursor);
+  BOOST_CHECK_EQUAL(joinLines(result->lines), "| k   | v                      |\n"
+                                              "| --- | ---------------------- |\n"
+                                              "| a   | alpha beta gamma delta |");
+  BOOST_CHECK_EQUAL(result->cursor->line, 2u);
+  BOOST_CHECK_EQUAL(result->cursor->offset, result->lines[2].find("delta") - 1);
+}
+
+BOOST_AUTO_TEST_CASE(cursor_on_delimiter_row_stays_there) {
+  std::vector<std::string> lines{"| k | v |", "|:-|--:|", "| a | b |"};
+  auto result = formatMarkdownTable(lines, BufferPoint{1, 5}, 80);
+  BOOST_REQUIRE(result && result->cursor);
+  BOOST_CHECK_EQUAL(result->cursor->line, 1u);
+  BOOST_CHECK_EQUAL(result->lines[1].substr(result->cursor->offset), "--: |");
+}
+
+// --- BufferView integration ---
+
+namespace {
+
+constexpr char const* kDoc = "Some intro text\n"
+                             "on two lines.\n"
+                             "| k | v |\n"
+                             "|---|---|\n"
+                             "| a | b |\n"
+                             "\n"
+                             "Another\n"
+                             "paragraph.\n";
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(view_formats_table_under_cursor_as_one_undo_step) {
+  TempFile f(kDoc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  auto original = contents(buf);
+  view.setPoint(4, 6); // on "b"
+  auto before = buf.versionHistoryInfo().size;
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK_EQUAL(contents(buf), "Some intro text\n"
+                                   "on two lines.\n"
+                                   "| k   | v   |\n"
+                                   "| --- | --- |\n"
+                                   "| a   | b   |\n"
+                                   "\n"
+                                   "Another\n"
+                                   "paragraph.\n");
+  BOOST_CHECK_EQUAL(view.point().line, 4u);
+  BOOST_CHECK_EQUAL(view.point().offset, 8u);
+  BOOST_CHECK_EQUAL(buf.versionHistoryInfo().size, before + 1);
+
+  BufferPoint cursor;
+  buf.applyVersionAt(before - 1, cursor);
+  BOOST_CHECK_EQUAL(contents(buf), original);
+}
+
+BOOST_AUTO_TEST_CASE(view_paragraph_reflow_stops_at_adjacent_table) {
+  TempFile f(kDoc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK_EQUAL(contents(buf), "Some intro text on two lines.\n"
+                                   "| k | v |\n"
+                                   "|---|---|\n"
+                                   "| a | b |\n"
+                                   "\n"
+                                   "Another\n"
+                                   "paragraph.\n");
+}
+
+BOOST_AUTO_TEST_CASE(view_region_formats_touched_tables_entirely) {
+  TempFile f(kDoc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.setMark({0, 0});
+  view.setPoint(3, 1); // region ends inside the table
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK_EQUAL(contents(buf), "Some intro text on two lines.\n"
+                                   "| k   | v   |\n"
+                                   "| --- | --- |\n"
+                                   "| a   | b   |\n"
+                                   "\n"
+                                   "Another\n"
+                                   "paragraph.\n");
+}
+
+BOOST_AUTO_TEST_CASE(view_region_keeps_blank_lines) {
+  TempFile f(kDoc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 0});
+  view.setPoint(8, 0);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK_EQUAL(contents(buf), "Some intro text on two lines.\n"
+                                   "| k   | v   |\n"
+                                   "| --- | --- |\n"
+                                   "| a   | b   |\n"
+                                   "\n"
+                                   "Another paragraph.\n");
+}
+
+BOOST_AUTO_TEST_CASE(view_ignores_tables_outside_markdown) {
+  TempFile f(kDoc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(4, 0);
+  view.reflowParagraph(80);
+  BOOST_CHECK_EQUAL(buf.lineContent(0),
+                    "Some intro text on two lines. | k | v | |---|---| | a | b |");
+}
+
+BOOST_AUTO_TEST_CASE(view_formatted_table_leaves_buffer_unmodified) {
+  TempFile f("| k   | v   |\n| --- | --- |\n| a   | b   |\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(2, 2);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK(!buf.modified());
+  BOOST_CHECK_EQUAL(view.point().line, 2u);
+  BOOST_CHECK_EQUAL(view.point().offset, 2u);
+}

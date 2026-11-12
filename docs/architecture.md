@@ -375,6 +375,15 @@ All user-facing movement, editing, and render operations are methods on
   active region, or the word at/after the cursor when no mark is set. The
   transform is byte-wise ASCII (UTF-8-safe and length-preserving), applied
   as a single `deleteRegion`+`insertText` edit.
+- **Reflow**: `reflowParagraph(width, ReflowTables)` refills the paragraph
+  at the cursor, or every paragraph in the region, keeping list bullets,
+  common indentation and blank lines. With `ReflowTables::Markdown` (passed
+  by `Screen` for `md` buffers) GFM tables are formatted through
+  `modes/md/table.hpp` instead. The cursor's table is aligned and the
+  cursor's column wrapped. Paragraphs stop at adjacent tables. A region
+  widens to cover whole tables, which are aligned only. The result is one
+  `deleteRegion`+`insertText` edit (one undo step), skipped when the text
+  is unchanged.
 - **Mark and region**: `toggleMark`, `setMark`, `clearMark`,
   `extractRegion`.
 - **Viewport management**: `ensureVisible`, `scrollUp/Down`,
@@ -702,6 +711,21 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   skipped so markup inside them is not tokenised — most importantly a
   stray `[` cannot open a link, which prevents an unbalanced bracket in
   code from carrying link highlighting onto the following lines.
+
+- **Markdown tables** (`modes/md/table.hpp/.cpp`): Pure functions
+  with no buffer or view dependency. `findMarkdownTable()` finds the
+  line range of the GFM pipe table around a line: a header, then a
+  delimiter row with the same cell count, then body rows, every line
+  holding an unescaped `|`. `formatMarkdownTable()` pads every cell to its
+  column's `visualWidth` and resizes delimiter rows, keeping their `:`
+  alignment markers. Given a cursor, it also wraps the cursor's column
+  into the width left of the target by the other columns. That width is
+  no narrower than the longest word, the header, or min(20, the widest
+  cell). Code spans and links are never split. A GFM row is one line, so
+  a wrapped cell continues in body rows whose first cell is empty.
+  Column 1 and the header are never wrapped. The returned cursor keeps
+  its logical cell and its non-blank-byte offset within that cell's
+  text.
 
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file

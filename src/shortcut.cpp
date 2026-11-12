@@ -66,7 +66,7 @@ static constexpr auto kBindings = std::array<Binding, 58>{{
     {{.cx = true, .key = 'j'}, Action::JumpBookmark, "Jump to bookmark"},
     {{.esc = true, .key = '_'}, Action::ToggleCurrentLine, "Highlight current line"},
     {{.esc = true, .key = 'x'}, Action::ExecuteCommand, "Execute command by name"},
-    {{.esc = true, .key = 'q'}, Action::Reflow, "Reflow paragraph (80 cols)"},
+    {{.esc = true, .key = 'q'}, Action::Reflow, "Reflow paragraph / md table (80 cols)"},
     {{.esc = true, .key = 'X'}, Action::RegexFind, "Regex find forward"},
     {{.esc = true, .key = 'Y'}, Action::RegexReplace, "Regex find and replace"},
     {{.esc = true, .key = '#'}, Action::ToggleLineNumbers, "Toggle line-number gutter"},

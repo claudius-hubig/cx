@@ -2,11 +2,13 @@
 
 #include "modes/c/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
+#include "modes/md/table.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
 
 #include <algorithm>
 #include <cassert>
+#include <iterator>
 #include <variant>
 
 BufferView::BufferView(Buffer& buf) : _buf(buf), _docVersion(buf.docVersion()) {}
@@ -1328,16 +1330,71 @@ void BufferView::convertCase(CaseOp op) {
   }
 }
 
-void BufferView::reflowParagraph(std::size_t targetWidth) {
+void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
   if (_buf.readonly() || targetWidth == 0)
     return;
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   collapseCursors();
 
+  auto tableAt = [&](std::size_t line) -> std::optional<TableLines> {
+    if (tables != ReflowTables::Markdown)
+      return std::nullopt;
+    return findMarkdownTable(_buf.lines(), line);
+  };
+  auto formatTable = [&](TableLines t, std::optional<BufferPoint> cursor) {
+    std::vector<std::string> lines;
+    for (auto l = t.first; l <= t.last; ++l)
+      lines.push_back(_buf.lineContent(l));
+    // findMarkdownTable() only returns well-formed tables.
+    return *formatMarkdownTable(lines, cursor, targetWidth);
+  };
+
+  // Replace lines [fromLine, toLine] with `lines` as a single edit so
+  // undo restores it in one step, and place the cursor at `cursor`
+  // (default: the end of the replacement). Identical text is left alone
+  // so the buffer doesn't turn modified.
+  auto commit = [&](std::size_t fromLine, std::size_t toLine, std::vector<std::string> const& lines,
+                    std::optional<BufferPoint> cursor) {
+    _mark.reset();
+    _desiredCol.reset();
+    bool unchanged = lines.size() == toLine - fromLine + 1;
+    for (std::size_t k = 0; unchanged && k < lines.size(); ++k)
+      unchanged = lines[k] == _buf.lineContent(fromLine + k);
+    if (unchanged) {
+      _point = cursor.value_or(BufferPoint{toLine, _buf.lineContent(toLine).size()});
+      return;
+    }
+    std::string replacement;
+    for (std::size_t k = 0; k < lines.size(); ++k) {
+      if (k > 0)
+        replacement += '\n';
+      replacement += lines[k];
+    }
+    BufferPoint regionStart{fromLine, 0};
+    BufferPoint regionEnd{toLine, _buf.lineContent(toLine).size()};
+    auto lineCountBefore = _buf.lineCount();
+    _buf.deleteRegion(regionStart, regionEnd);
+    auto after = _buf.insertText(replacement, regionStart);
+    syncAfterEdit();
+    _point = cursor.value_or(after);
+    int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+    _buf.recordVersion(_point, fromLine, shift);
+  };
+
+  // No region, cursor in a table: align it and wrap the cursor's column.
+  if (!_mark) {
+    if (auto t = tableAt(_point.line)) {
+      auto f = formatTable(*t, BufferPoint{_point.line - t->first, _point.offset});
+      commit(t->first, t->last, f.lines, BufferPoint{t->first + f.cursor->line, f.cursor->offset});
+      return;
+    }
+  }
+
   // Determine line range. With an active mark, use the lines spanned by
-  // the region (whole lines, matching toggleComment's convention). Else
-  // grow outward from the cursor to the surrounding non-blank block.
+  // the region (whole lines, matching toggleComment's convention),
+  // widened to whole tables. Else grow outward from the cursor to the
+  // surrounding non-blank block, stopping at tables.
   std::size_t fromLine, toLine;
   if (_mark) {
     auto a = std::min(*_mark, _point);
@@ -1346,44 +1403,28 @@ void BufferView::reflowParagraph(std::size_t targetWidth) {
     toLine = b.line;
     if (toLine > fromLine && b.offset == 0)
       --toLine;
+    if (auto t = tableAt(fromLine))
+      fromLine = t->first;
+    if (auto t = tableAt(toLine))
+      toLine = t->last;
   } else {
     if (_buf.isBlankLine(_point.line))
       return;
     fromLine = _point.line;
-    while (fromLine > 0 && !_buf.isBlankLine(fromLine - 1))
+    while (fromLine > 0 && !_buf.isBlankLine(fromLine - 1) && !tableAt(fromLine - 1))
       --fromLine;
     toLine = _point.line;
-    while (toLine + 1 < _buf.lineCount() && !_buf.isBlankLine(toLine + 1))
+    while (toLine + 1 < _buf.lineCount() && !_buf.isBlankLine(toLine + 1) && !tableAt(toLine + 1))
       ++toLine;
   }
   if (fromLine > toLine)
     return;
 
-  // Collect non-blank lines in the range. Blank lines inside an
-  // explicit selection are preserved as paragraph breaks: we reflow
-  // each contiguous non-blank run independently and re-emit blanks
-  // between them. For the no-mark case there are no internal blanks
-  // by construction.
+  // A run of non-blank, non-table lines; reflowed as one paragraph.
   struct Block {
     std::size_t firstLine;
     std::vector<std::string> lines;
   };
-  std::vector<Block> blocks;
-  std::size_t i = fromLine;
-  while (i <= toLine) {
-    while (i <= toLine && _buf.isBlankLine(i))
-      ++i;
-    if (i > toLine)
-      break;
-    Block b{i, {}};
-    while (i <= toLine && !_buf.isBlankLine(i)) {
-      b.lines.emplace_back(_buf.lineContent(i));
-      ++i;
-    }
-    blocks.push_back(std::move(b));
-  }
-  if (blocks.empty())
-    return;
 
   auto leadingWs = [](std::string const& s) -> std::size_t {
     std::size_t k = 0;
@@ -1539,38 +1580,29 @@ void BufferView::reflowParagraph(std::size_t targetWidth) {
     return subs;
   };
 
-  // Build the replacement text for [fromLine, toLine] inclusive.
-  // Blank lines separate paragraph-level blocks; list items inside a
-  // block are emitted back-to-back with no blank between them.
-  std::string replacement;
-  for (std::size_t bi = 0; bi < blocks.size(); ++bi) {
-    if (bi > 0)
-      replacement += '\n';
-    auto subs = splitListItems(blocks[bi]);
-    for (std::size_t si = 0; si < subs.size(); ++si) {
-      if (si > 0)
-        replacement += '\n';
-      auto outLines = reflowBlock(subs[si]);
-      for (std::size_t k = 0; k < outLines.size(); ++k) {
-        if (k > 0)
-          replacement += '\n';
-        replacement += outLines[k];
-      }
+  // Build the replacement lines for [fromLine, toLine] inclusive. Blank
+  // lines are kept as they are, tables are aligned, and each paragraph
+  // block reflows with its list items back-to-back.
+  std::vector<std::string> out;
+  std::size_t i = fromLine;
+  while (i <= toLine) {
+    if (_buf.isBlankLine(i)) {
+      out.push_back(_buf.lineContent(i));
+      ++i;
+    } else if (auto t = tableAt(i)) {
+      std::ranges::move(formatTable(*t, std::nullopt).lines, std::back_inserter(out));
+      i = t->last + 1;
+    } else {
+      Block b{i, {}};
+      do {
+        b.lines.push_back(_buf.lineContent(i));
+        ++i;
+      } while (i <= toLine && !_buf.isBlankLine(i) && !tableAt(i));
+      for (auto const& sub : splitListItems(b))
+        std::ranges::move(reflowBlock(sub), std::back_inserter(out));
     }
   }
-
-  // Apply the rewrite as a single edit so undo restores in one step.
-  BufferPoint regionStart{fromLine, 0};
-  BufferPoint regionEnd{toLine, _buf.lineContent(toLine).size()};
-  auto lineCountBefore = _buf.lineCount();
-  _buf.deleteRegion(regionStart, regionEnd);
-  auto after = _buf.insertText(replacement, regionStart);
-  syncAfterEdit();
-  _point = after;
-  _mark.reset();
-  _desiredCol.reset();
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, fromLine, shift);
+  commit(fromLine, toLine, out, std::nullopt);
 }
 
 void BufferView::adjustCursorToIndent() {

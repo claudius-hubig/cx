@@ -39,6 +39,7 @@ set(SYNTAX_SOURCES
 add_library(cx_core STATIC
     src/utf8.cpp
     ${SYNTAX_SOURCES}
+    src/buffer/modes/md/table.cpp
     src/shortcut.cpp
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
@@ -154,6 +155,7 @@ if(CX_BUILD_TESTS AND Boost_FOUND)
     cx_test(prompt_history)
     cx_test(prompt_edit)
     cx_test(syntax)
+    cx_test(md_table)
     cx_test(dir_buffer)
     cx_test(grep_buffer)
     cx_test(buffer_view)

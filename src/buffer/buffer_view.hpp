@@ -266,9 +266,22 @@ public:
    * (`- `, `* `, `+ `, `1. `, `1) `) is preserved and continuation lines
    * are indented under it so list structure round-trips. Words split on
    * whitespace; UTF-8 widths follow the renderer's visualWidth rules.
-   * A no-op on a blank cursor line with no active region.
+   * A no-op on a blank cursor line with no active region. Blank lines
+   * inside the region are kept as they are.
+   *
+   * With ReflowTables::Markdown, GFM tables are formatted instead of
+   * being reflowed as text (see formatMarkdownTable()): with no active
+   * region and the cursor in a table, that table is aligned and the
+   * cursor's column wrapped to @p targetWidth, keeping the cursor in its
+   * cell; a paragraph next to a table stops at it; a region is widened to
+   * cover every table it touches, and those tables are aligned only. The
+   * buffer is not modified when the result equals the original text.
    */
-  void reflowParagraph(std::size_t targetWidth);
+  enum class ReflowTables {
+    Ignore,   /**< Lines with pipes are ordinary text. */
+    Markdown, /**< GFM pipe tables are aligned / column-wrapped. */
+  };
+  void reflowParagraph(std::size_t targetWidth, ReflowTables tables = ReflowTables::Ignore);
 
   /** @brief Case transform applied by convertCase(). */
   enum class CaseOp {

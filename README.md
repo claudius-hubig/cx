@@ -47,6 +47,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Find in files** — `Esc-g` searches a whole tree and lists the hits in a read-only `*grep*` buffer as `path:line: text`. Inside a git work tree it runs `git grep` from the repository root, so `.gitignore` is honoured and build output stays out of the results (matches are limited to tracked files); otherwise it runs `grep -r` from the current buffer's directory, or from the browsed directory when a directory buffer is open. `Enter` on a result opens that file at that line in the other panel — splitting vertically first if only one panel is open — so the result list stays visible while you walk the matches. Searches over 10 s offer the same "Kill? y/n" prompt as other external commands.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Case conversion** — `Esc-U` / `Esc-L` / `Esc-C` uppercase / lowercase / capitalize the active region, or the word at (or next to the right of) the cursor when no mark is set. ASCII-only: non-ASCII letters are left unchanged, and the edit never splits a multi-byte UTF-8 character.
+- **Reflow** — `Esc-q` refills the paragraph (or every paragraph in the region) to 80 columns, keeping list bullets and indentation. In Markdown buffers it formats GFM pipe tables instead: every column separator is aligned (honouring `:--` / `:-:` / `--:` alignment), and the column under the cursor is wrapped so the table fits in 80 columns. A wrapped cell continues in rows whose first cell is empty, so the first column and the header row are never wrapped. A wrapped column is at least 20 columns wide when its text needs that much. Code spans and links are never split. With a region active, every table it touches is aligned as a whole.
 - **System clipboard integration (X11)** — Cut and Copy publish the region to the X11 CLIPBOARD selection (via `xclip` or `xsel` if installed); Paste reads the CLIPBOARD when it differs from the top of the internal ring, so external Ctrl-C from other apps becomes pasteable. The active mark region is also mirrored to the PRIMARY selection after every keystroke (so other apps can middle-click-paste it), and middle-click inside the editor pastes the PRIMARY selection back at the cursor. All X11 integration is silently a no-op when no graphical session is available.
 - **Word and paragraph navigation** — move by word, paragraph, or go to a specific line (the prompt also accepts `last` to jump to end of buffer)
 - **Block navigation** — `Ctrl-N` / `Ctrl-B` jump between blocks: hunk headers (`@@ ... @@`) in diff buffers, and conflict regions (`<<<<<<<`/`=======`/`>>>>>>>`) in any buffer that contains them.
@@ -162,23 +163,23 @@ Two nearby cues are easy to mistake for part of it:
 
 ### Regions & Edit
 
-| Key        | Action                       |
-|------------|------------------------------|
-| Ctrl-Space | Set / clear mark             |
-| Esc-Esc    | Clear mark                   |
-| Ctrl-w     | Cut region                   |
-| Esc-w      | Copy region                  |
-| Ctrl-y     | Paste                        |
-| Esc-y      | Paste cycle                  |
-| Esc-p      | Paste ring                   |
-| Esc-f      | Format buffer/region (C/C++) |
-| Ctrl-p     | Pipe region through command  |
-| Esc-;      | Toggle line comment (C/C++)  |
-| Esc-q      | Reflow paragraph (80 cols)   |
-| Esc-U      | Uppercase region/word        |
-| Esc-L      | Lowercase region/word        |
-| Esc-C      | Capitalize region/word       |
-| Tab        | Format line (C/C++)          |
+| Key        | Action                                |
+|------------|---------------------------------------|
+| Ctrl-Space | Set / clear mark                      |
+| Esc-Esc    | Clear mark                            |
+| Ctrl-w     | Cut region                            |
+| Esc-w      | Copy region                           |
+| Ctrl-y     | Paste                                 |
+| Esc-y      | Paste cycle                           |
+| Esc-p      | Paste ring                            |
+| Esc-f      | Format buffer/region (C/C++)          |
+| Ctrl-p     | Pipe region through command           |
+| Esc-;      | Toggle line comment (C/C++)           |
+| Esc-q      | Reflow paragraph / md table (80 cols) |
+| Esc-U      | Uppercase region/word                 |
+| Esc-L      | Lowercase region/word                 |
+| Esc-C      | Capitalize region/word                |
+| Tab        | Format line (C/C++)                   |
 
 ### Search & Movement
 

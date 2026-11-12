@@ -3631,7 +3631,8 @@ void Screen::dispatchAction(Action action) {
     break;
   case Action::Reflow:
     if (!requireNotInHistoryMode() && _buf && !_buf->readonly()) {
-      _view->reflowParagraph(80);
+      _view->reflowParagraph(80, _buf->mode() == BufferMode::Md ? BufferView::ReflowTables::Markdown
+                                                                : BufferView::ReflowTables::Ignore);
       _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
       _pasteState.reset();
     }

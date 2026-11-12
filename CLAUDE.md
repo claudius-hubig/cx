@@ -113,6 +113,7 @@ src/
       c/syntax.hpp/.cpp            C/C++ tokenizer, bracket matching
       dif/syntax.hpp/.cpp          Diff/patch tokenizer (add, remove, meta, hunk)
       md/syntax.hpp/.cpp           Markdown tokenizer (headings, bold, links)
+      md/table.hpp/.cpp            GFM table detection, alignment, column wrapping (Alt-q)
       jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
       sh/syntax.hpp/.cpp           Shell tokenizer (comments, strings, heredocs, $VAR, keywords)
       yml/syntax.hpp/.cpp          YAML tokenizer (keys, strings, constants, block scalars)
@@ -137,6 +138,7 @@ tests/
   test_cli.cpp                     Command-line option parsing tests
   test_prompt_edit.cpp             Prompt line-editing (cursor, word moves) tests
   test_syntax.cpp                  Syntax highlighting tests
+  test_md_table.cpp                Markdown table align/wrap tests
   test_e2e.cpp                     End-to-end tests (via PTY)
   test_buffer_view.cpp             BufferView editing/movement tests
   test_panel_layout.cpp            PanelLayout split/close/focus tests

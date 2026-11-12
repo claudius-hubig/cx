@@ -904,6 +904,19 @@ BOOST_AUTO_TEST_CASE(reflow_blank_line_is_noop) {
   BOOST_CHECK_EQUAL(buf.lineContent(2), "beta");
 }
 
+BOOST_AUTO_TEST_CASE(reflow_region_keeps_blank_lines) {
+  TempFile f("alpha\nbeta\n\ngamma\ndelta\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 0});
+  view.setPoint(5, 0);
+  view.reflowParagraph(80);
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 4u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "alpha beta");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "gamma delta");
+}
+
 BOOST_AUTO_TEST_CASE(line_numbers_off_gutter_width_is_zero) {
   TempFile f("a\nb\nc\n");
   TextBuffer buf(f.path().string(), f.path());
