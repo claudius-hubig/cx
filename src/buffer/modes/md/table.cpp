@@ -183,29 +183,27 @@ std::size_t offsetAfterNonBlank(std::string_view s, std::size_t n) {
 
 } // namespace
 
-std::optional<TableLines> findMarkdownTable(std::vector<LinePtr> const& lines, std::size_t line) {
+std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_t line) {
   auto pipe = [&](std::size_t i) { return hasPipe(*lines[i]); };
   if (!pipe(line))
     return std::nullopt;
-  std::size_t first = line;
-  while (first > 0 && pipe(first - 1))
-    --first;
-  std::size_t last = line;
-  while (last + 1 < lines.size() && pipe(last + 1))
-    ++last;
-
-  // The table starts at the first line followed by a delimiter row with
-  // the same cell count; lines above it (prose that happens to contain a
-  // pipe) aren't part of it.
-  for (std::size_t h = first; h < last; ++h) {
+  PipeRun run{line, line, std::nullopt};
+  while (run.first > 0 && pipe(run.first - 1))
+    --run.first;
+  while (run.last + 1 < lines.size() && pipe(run.last + 1))
+    ++run.last;
+  for (std::size_t h = run.first; h < run.last && !run.header; ++h)
     if (isDelimiterRow(*lines[h + 1]) &&
-        splitRow(*lines[h + 1]).size() == splitRow(*lines[h]).size()) {
-      if (line < h)
-        return std::nullopt;
-      return TableLines{h, last};
-    }
-  }
-  return std::nullopt;
+        splitRow(*lines[h + 1]).size() == splitRow(*lines[h]).size())
+      run.header = h;
+  return run;
+}
+
+std::optional<TableLines> findMarkdownTable(std::vector<LinePtr> const& lines, std::size_t line) {
+  auto run = findPipeRun(lines, line);
+  if (!run || !run->header || line < *run->header)
+    return std::nullopt;
+  return TableLines{*run->header, run->last};
 }
 
 std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> lines,

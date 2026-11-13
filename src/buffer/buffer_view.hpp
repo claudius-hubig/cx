@@ -274,12 +274,14 @@ public:
    * region and the cursor in a table, that table is aligned and the
    * cursor's column wrapped to @p targetWidth, keeping the cursor in its
    * cell; a paragraph next to a table stops at it; a region is widened to
-   * cover every table it touches, and those tables are aligned only. The
+   * cover every table it touches, and those tables are aligned only.
+   * Lines of fenced code blocks are kept exactly as they are and end a
+   * paragraph like blank lines do, so Alt-q inside one is a no-op. The
    * buffer is not modified when the result equals the original text.
    */
   enum class ReflowTables {
     Ignore,   /**< Lines with pipes are ordinary text. */
-    Markdown, /**< GFM pipe tables are aligned / column-wrapped. */
+    Markdown, /**< GFM pipe tables are aligned / column-wrapped; fenced code is left alone. */
   };
   void reflowParagraph(std::size_t targetWidth, ReflowTables tables = ReflowTables::Ignore);
 

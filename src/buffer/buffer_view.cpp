@@ -2,6 +2,7 @@
 
 #include "modes/c/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
+#include "modes/md/fence.hpp"
 #include "modes/md/table.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
@@ -1309,10 +1310,24 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     clampToBuffer();
   collapseCursors();
 
+  bool const markdown = tables == ReflowTables::Markdown;
+  // Lines of fenced code blocks are never reflowed or taken for tables.
+  auto const fenced = markdown ? markdownFencedLines(_buf.lines()) : std::vector<bool>{};
+  // A line that is kept exactly as it is and ends a paragraph.
+  auto kept = [&](std::size_t line) {
+    return _buf.isBlankLine(line) || (markdown && fenced[line]);
+  };
+  // The table containing `line`. The last pipe run is remembered, so a
+  // long run of pipe lines is scanned once, not once per line.
+  std::optional<PipeRun> run;
   auto tableAt = [&](std::size_t line) -> std::optional<TableLines> {
-    if (tables != ReflowTables::Markdown)
+    if (!markdown || fenced[line])
       return std::nullopt;
-    return findMarkdownTable(_buf.lines(), line);
+    if (!run || line < run->first || line > run->last)
+      run = findPipeRun(_buf.lines(), line);
+    if (!run || !run->header || line < *run->header)
+      return std::nullopt;
+    return TableLines{*run->header, run->last};
   };
   auto formatTable = [&](TableLines t, std::optional<BufferPoint> cursor) {
     std::vector<std::string> lines;
@@ -1366,7 +1381,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
   // Determine line range. With an active mark, use the lines spanned by
   // the region (whole lines, matching toggleComment's convention),
   // widened to whole tables. Else grow outward from the cursor to the
-  // surrounding non-blank block, stopping at tables.
+  // surrounding block, stopping at blank lines, fenced code and tables.
   std::size_t fromLine, toLine;
   if (_mark) {
     auto a = std::min(*_mark, _point);
@@ -1380,13 +1395,13 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     if (auto t = tableAt(toLine))
       toLine = t->last;
   } else {
-    if (_buf.isBlankLine(_point.line))
+    if (kept(_point.line))
       return;
     fromLine = _point.line;
-    while (fromLine > 0 && !_buf.isBlankLine(fromLine - 1) && !tableAt(fromLine - 1))
+    while (fromLine > 0 && !kept(fromLine - 1) && !tableAt(fromLine - 1))
       --fromLine;
     toLine = _point.line;
-    while (toLine + 1 < _buf.lineCount() && !_buf.isBlankLine(toLine + 1) && !tableAt(toLine + 1))
+    while (toLine + 1 < _buf.lineCount() && !kept(toLine + 1) && !tableAt(toLine + 1))
       ++toLine;
   }
   if (fromLine > toLine)
@@ -1558,7 +1573,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
   std::vector<std::string> out;
   std::size_t i = fromLine;
   while (i <= toLine) {
-    if (_buf.isBlankLine(i)) {
+    if (kept(i)) {
       out.push_back(_buf.lineContent(i));
       ++i;
     } else if (auto t = tableAt(i)) {
@@ -1569,7 +1584,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
       do {
         b.lines.push_back(_buf.lineContent(i));
         ++i;
-      } while (i <= toLine && !_buf.isBlankLine(i) && !tableAt(i));
+      } while (i <= toLine && !kept(i) && !tableAt(i));
       for (auto const& sub : splitListItems(b))
         std::ranges::move(reflowBlock(sub), std::back_inserter(out));
     }

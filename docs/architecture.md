@@ -379,7 +379,8 @@ All user-facing movement, editing, and render operations are methods on
   at the cursor, or every paragraph in the region, keeping list bullets,
   common indentation and blank lines. With `ReflowTables::Markdown` (passed
   by `Screen` for `md` buffers) GFM tables are formatted through
-  `modes/md/table.hpp` instead. The cursor's table is aligned and the
+  `modes/md/table.hpp` instead, and fenced code blocks
+  (`modes/md/fence.hpp`) are left untouched. The cursor's table is aligned and the
   cursor's column wrapped. Paragraphs stop at adjacent tables. A region
   widens to cover whole tables, which are aligned only. The result is one
   `deleteRegion`+`insertText` edit (one undo step), skipped when the text
@@ -713,7 +714,10 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   code from carrying link highlighting onto the following lines.
 
 - **Markdown tables** (`modes/md/table.hpp/.cpp`): Pure functions
-  with no buffer or view dependency. `findMarkdownTable()` finds the
+  with no buffer or view dependency. `findPipeRun()` returns the run of
+  lines containing a `|` around a line and the table header inside it
+  (callers reuse it for every line of the run, keeping detection linear);
+  `findMarkdownTable()` narrows that to the
   line range of the GFM pipe table around a line: a header, then a
   delimiter row with the same cell count, then body rows, every line
   holding an unescaped `|`. `formatMarkdownTable()` pads every cell to its
@@ -726,6 +730,11 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   Column 1 and the header are never wrapped. The returned cursor keeps
   its logical cell and its non-blank-byte offset within that cell's
   text.
+
+- **Markdown fences** (`modes/md/fence.hpp/.cpp`):
+  `markdownFencedLines()` marks every line inside a fenced code block
+  (``` or ~~~, closing run at least as long). Reflow leaves those lines
+  untouched.
 
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file

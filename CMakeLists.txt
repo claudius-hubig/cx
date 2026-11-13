@@ -39,6 +39,7 @@ set(SYNTAX_SOURCES
 add_library(cx_core STATIC
     src/utf8.cpp
     ${SYNTAX_SOURCES}
+    src/buffer/modes/md/fence.cpp
     src/buffer/modes/md/table.cpp
     src/shortcut.cpp
     src/buffer/buffer.cpp

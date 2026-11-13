@@ -27,13 +27,34 @@ struct TableLines {
 };
 
 /**
- * @brief Find the GFM table that contains line @p line.
+ * @brief A maximal run [first, last] of lines that each contain an
+ *        unescaped `|`, and the GFM table inside it, if any.
  *
- * A table is a header row followed by a delimiter row (`|---|:-:|`,
- * with the same cell count as the header) and any number of body rows;
- * every row contains at least one unescaped `|`, and the table ends at
- * the first line that doesn't. Returns std::nullopt when @p line is not
- * part of such a table.
+ * The table starts at @c header — the first line of the run followed by
+ * a delimiter row (`|---|:-:|`) with the same cell count — and extends
+ * to @c last. Lines of the run above the header (prose that happens to
+ * contain a pipe) are not part of it.
+ */
+struct PipeRun {
+  std::size_t first;
+  std::size_t last;
+  std::optional<std::size_t> header;
+};
+
+/**
+ * @brief The pipe run containing line @p line; std::nullopt if the line
+ *        has no unescaped `|`.
+ *
+ * Costs one scan of the run, so callers asking about many lines should
+ * reuse the result for every line in [first, last].
+ * @pre @p line < @p lines.size().
+ */
+std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_t line);
+
+/**
+ * @brief Find the GFM table that contains line @p line: findPipeRun()
+ *        narrowed to the table. Returns std::nullopt when @p line is not
+ *        part of a table.
  *
  * @pre @p line < @p lines.size().
  */

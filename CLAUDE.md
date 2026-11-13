@@ -114,6 +114,7 @@ src/
       c/syntax.hpp/.cpp            C/C++ tokenizer, bracket matching
       dif/syntax.hpp/.cpp          Diff/patch tokenizer (add, remove, meta, hunk)
       md/syntax.hpp/.cpp           Markdown tokenizer (headings, bold, links)
+      md/fence.hpp/.cpp            Fenced code block detection (lines Alt-q leaves alone)
       md/table.hpp/.cpp            GFM table detection, alignment, column wrapping (Alt-q)
       jsn/syntax.hpp/.cpp          JSON tokenizer (strings, keywords, numbers), bracket matching
       sh/syntax.hpp/.cpp           Shell tokenizer (comments, strings, heredocs, $VAR, keywords)

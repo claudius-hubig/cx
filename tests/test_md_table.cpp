@@ -2,10 +2,12 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/buffer_view.hpp"
+#include "buffer/modes/md/fence.hpp"
 #include "buffer/modes/md/table.hpp"
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
 
+#include <chrono>
 #include <ranges>
 
 namespace {
@@ -427,4 +429,86 @@ BOOST_AUTO_TEST_CASE(view_formatted_table_leaves_buffer_unmodified) {
   BOOST_CHECK(!buf.modified());
   BOOST_CHECK_EQUAL(view.point().line, 2u);
   BOOST_CHECK_EQUAL(view.point().offset, 2u);
+}
+
+// --- Fenced code blocks ---
+
+BOOST_AUTO_TEST_CASE(fenced_lines) {
+  auto lines = toLinePtrs({
+      "text",    // 0
+      "```sh",   // 1 open
+      "a | b",   // 2
+      "~~~",     // 3 other fence char: content
+      "``",      // 4 too short to close
+      "````",    // 5 close (longer is fine)
+      "text",    // 6
+      "  ~~~~",  // 7 open, indented
+      "~~~",     // 8 shorter: content
+      "~~~~ x",  // 9 trailing text: content
+      "~~~~~  ", // 10 close
+      "``` a`b", // 11 backtick in info string: not a fence
+      "```",     // 12 open, never closed
+      "| a |",   // 13
+  });
+  std::vector<bool> expected{false, true, true, true, true,  true, false,
+                             true,  true, true, true, false, true, true};
+  BOOST_CHECK(markdownFencedLines(lines) == expected);
+}
+
+BOOST_AUTO_TEST_CASE(view_leaves_fenced_code_alone) {
+  std::string doc = "intro\n"
+                    "text\n"
+                    "```\n"
+                    "$ ls | wc\n"
+                    "-- | --\n"
+                    "foo | bar\n"
+                    "long   spaced   line\n"
+                    "```\n"
+                    "after\n"
+                    "text\n";
+  {
+    TempFile f(doc);
+    TextBuffer buf(f.path().string(), f.path());
+    BufferView view(buf);
+    view.setPoint(5, 0); // inside the fence: no-op
+    view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+    BOOST_CHECK_EQUAL(contents(buf), doc);
+    BOOST_CHECK(!buf.modified());
+  }
+  {
+    TempFile f(doc);
+    TextBuffer buf(f.path().string(), f.path());
+    BufferView view(buf);
+    view.setMark({0, 0}); // region over everything: only the prose reflows
+    view.setPoint(10, 0);
+    view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+    BOOST_CHECK_EQUAL(contents(buf), "intro text\n"
+                                     "```\n"
+                                     "$ ls | wc\n"
+                                     "-- | --\n"
+                                     "foo | bar\n"
+                                     "long   spaced   line\n"
+                                     "```\n"
+                                     "after text\n");
+  }
+}
+
+BOOST_AUTO_TEST_CASE(long_pipe_run_without_table_is_linear) {
+  // 20,000 lines with a pipe but no delimiter row. Scanning the run once
+  // per line took about 40 s here; once per run takes milliseconds.
+  std::string doc = "intro\ntext\n";
+  for (int i = 0; i < 20000; ++i)
+    doc += "a | b | c\n";
+  TempFile f(doc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  auto start = std::chrono::steady_clock::now();
+  view.setPoint(0, 0);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown); // paragraph next to the run
+  view.setMark({0, 0});
+  view.setPoint(20002, 0);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown); // region over the run
+  BOOST_CHECK_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(3));
+  // No delimiter row, so the run is prose and joins the paragraph.
+  BOOST_CHECK(buf.lineContent(0).starts_with("intro text a | b | c a | b"));
 }
