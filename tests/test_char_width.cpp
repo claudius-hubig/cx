@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE CharWidth
 #include <boost/test/unit_test.hpp>
 
+#include "byte_constants.hpp"
 #include "utf8.hpp"
 
 // --- charWidth ---
@@ -315,6 +316,140 @@ BOOST_AUTO_TEST_CASE(unicode_tables_are_sorted_and_disjoint) {
         BOOST_CHECK_LT(t[i - 1].last + 1, t[i].first); // also merged
     }
   }
+}
+
+// --- Clusters, zero-width marks and format characters ---
+
+namespace {
+
+struct MeasuredCase {
+  char const* name;
+  char const* text;
+  std::size_t terminalWidth; // cursor advance measured in xfce4-terminal
+  std::size_t cxWidth;       // differs only where cx escapes a format character
+};
+
+MeasuredCase const kMeasured[] = {
+    {"ASCII A", "A", 1, 1},
+    {"e-acute precomposed", "\xC3\xA9", 1, 1},
+    {"e + combining acute", "e\xCC\x81", 1, 1},
+    {"a + 3 combining marks", "a\xCC\x81\xCC\x88\xCC\xA3", 1, 1},
+    {"CJK", "\xE4\xB8\xAD", 2, 2},
+    {"grinning face 1F600", "\xF0\x9F\x98\x80", 2, 2},
+    {"waving hand 1F44B", "\xF0\x9F\x91\x8B", 2, 2},
+    {"rocket 1F680", "\xF0\x9F\x9A\x80", 2, 2},
+    {"check 2705", "\xE2\x9C\x85", 2, 2},
+    {"heart 2764 (text default)", "\xE2\x9D\xA4", 1, 1},
+    {"heart + VS16 FE0F", "\xE2\x9D\xA4\xEF\xB8\x8F", 1, 1},
+    {"smiley 263A", "\xE2\x98\xBA", 1, 1},
+    {"smiley 263A + VS16", "\xE2\x98\xBA\xEF\xB8\x8F", 1, 1},
+    {"grinning + VS15 FE0E", "\xF0\x9F\x98\x80\xEF\xB8\x8E", 2, 2},
+    {"trigram 2630 (U16 wide)", "\xE2\x98\xB0", 1, 1},
+    {"monogram 268A (U16 wide)", "\xE2\x9A\x8A", 1, 1},
+    {"angle bracket 2329", "\xE2\x8C\xA9", 2, 2},
+    {"hand + skin tone 1F3FD", "\xF0\x9F\x91\x8B\xF0\x9F\x8F\xBD", 4, 4},
+    {"skin tone alone 1F3FD", "\xF0\x9F\x8F\xBD", 2, 2},
+    {"family ZWJ sequence",
+     "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7", 6, 18},
+    {"rainbow flag ZWJ", "\xF0\x9F\x8F\xB3\xEF\xB8\x8F\xE2\x80\x8D\xF0\x9F\x8C\x88", 3, 9},
+    {"flag DE (2 regional ind.)", "\xF0\x9F\x87\xA9\xF0\x9F\x87\xAA", 2, 2},
+    {"regional indicator alone", "\xF0\x9F\x87\xA9", 1, 1},
+    {"keycap 1 FE0F 20E3", "1\xEF\xB8\x8F\xE2\x83\xA3", 1, 1},
+    {"ZWSP 200B between x", "x\xE2\x80\x8Bx", 2, 8},
+    {"ZWNJ 200C between x", "x\xE2\x80\x8Cx", 2, 8},
+    {"ZWJ 200D between x", "x\xE2\x80\x8Dx", 2, 8},
+    {"word joiner 2060 betw x", "x\xE2\x81\xA0x", 2, 8},
+    {"BOM FEFF between x", "x\xEF\xBB\xBFx", 2, 8},
+    {"soft hyphen 00AD betw x", "x\xC2\xADx", 3, 8},
+    {"LRM 200E between x", "x\xE2\x80\x8Ex", 2, 8},
+    {"Hangul jamo L+V 1100 1161", "\xE1\x84\x80\xE1\x85\xA1", 2, 2},
+    {"Thai ko + sara i", "\xE0\xB8\x81\xE0\xB8\xB4", 1, 1},
+    {"Devanagari namaste",
+     "\xE0\xA4\xA8\xE0\xA4\xAE\xE0\xA4\xB8\xE0\xA5\x8D\xE0\xA4\xA4\xE0\xA5\x87", 4, 4},
+    {"Hebrew with point", "\xD7\xA9\xD7\x81", 1, 1},
+    {"emoji 13 1F972", "\xF0\x9F\xA5\xB2", 2, 2},
+    {"emoji 14 1FAE0", "\xF0\x9F\xAB\xA0", 2, 2},
+    {"emoji 15 1FAE8", "\xF0\x9F\xAB\xA8", 2, 2},
+    {"emoji 16 1FAE9", "\xF0\x9F\xAB\xA9", 1, 1},
+    {"thermometer 1F321", "\xF0\x9F\x8C\xA1", 1, 1},
+    {"thermometer + VS16", "\xF0\x9F\x8C\xA1\xEF\xB8\x8F", 1, 1},
+    {"circled 1 2460 (ambig.)", "\xE2\x91\xA0", 1, 1},
+};
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(visualWidth_matches_reference_terminal) {
+  for (auto const& c : kMeasured) {
+    BOOST_TEST_CONTEXT(c.name) { BOOST_CHECK_EQUAL(visualWidth(c.text), c.cxWidth); }
+  }
+}
+
+BOOST_AUTO_TEST_CASE(charInfoAt_absorbs_combining_marks) {
+  std::string_view s = "e\xCC\x81x"; // e + U+0301, x
+  auto info = charInfoAt(s.data(), s.size());
+  BOOST_CHECK_EQUAL(info.width, 1u);
+  BOOST_CHECK_EQUAL(info.len, 3u);
+
+  std::string_view heart = "\xE2\x9D\xA4\xEF\xB8\x8F"; // U+2764 U+FE0F
+  info = charInfoAt(heart.data(), heart.size());
+  BOOST_CHECK_EQUAL(info.width, 1u);
+  BOOST_CHECK_EQUAL(info.len, 6u);
+
+  std::string_view hand = "\xF0\x9F\x91\x8B\xF0\x9F\x8F\xBD"; // 👋 + skin tone: two clusters
+  info = charInfoAt(hand.data(), hand.size());
+  BOOST_CHECK_EQUAL(info.width, 2u);
+  BOOST_CHECK_EQUAL(info.len, 4u);
+}
+
+BOOST_AUTO_TEST_CASE(charInfoAt_orphan_marks_are_one_column) {
+  std::string_view s = "\xCC\x81\xCC\x88"
+                       "a"; // two marks at line start
+  auto info = charInfoAt(s.data(), s.size());
+  BOOST_CHECK_EQUAL(info.width, 1u);
+  BOOST_CHECK_EQUAL(info.len, 4u);
+
+  std::string_view tab = "\t\xCC\x81"; // a tab doesn't take marks
+  info = charInfoAt(tab.data(), tab.size());
+  BOOST_CHECK_EQUAL(info.len, 1u);
+  BOOST_CHECK_EQUAL(visualWidth(tab), 3u);
+}
+
+BOOST_AUTO_TEST_CASE(charInfoAt_format_chars_are_escapes) {
+  std::string_view zwsp = "\xE2\x80\x8B\xCC\x81"; // ZWSP, then an (orphan) mark
+  auto info = charInfoAt(zwsp.data(), zwsp.size());
+  BOOST_CHECK_EQUAL(info.width, 6u);
+  BOOST_CHECK_EQUAL(info.len, 3u);
+  BOOST_CHECK_EQUAL(visualWidth("\xF3\xA0\x80\x81"), 9u); // U+E0001 "\u{e0001}"
+  BOOST_CHECK_EQUAL(formatCharEscape(0x200B), "\\u200b");
+  BOOST_CHECK_EQUAL(formatCharEscape(0xAD), "\\u00ad");
+  BOOST_CHECK_EQUAL(formatCharEscape(0xE0001), "\\u{e0001}");
+}
+
+BOOST_AUTO_TEST_CASE(cluster_boundaries) {
+  std::string_view s = "ae\xCC\x81\xCC\x88"
+                       "b"; // a, e+2 marks (bytes 1..5), b at 6
+  BOOST_CHECK_EQUAL(clusterStart(s, 0), 0u);
+  BOOST_CHECK_EQUAL(clusterStart(s, 1), 1u);
+  BOOST_CHECK_EQUAL(clusterStart(s, 3), 1u); // on the first mark
+  BOOST_CHECK_EQUAL(clusterStart(s, 4), 1u); // mid-codepoint inside the second mark
+  BOOST_CHECK_EQUAL(clusterStart(s, 6), 6u);
+  BOOST_CHECK_EQUAL(clusterStart(s, 7), 7u); // end of string
+  BOOST_CHECK_EQUAL(prevClusterStart(s, 6), 1u);
+  BOOST_CHECK_EQUAL(prevClusterStart(s, 1), 0u);
+
+  std::string_view orphan = "\t\xCC\x81\xCC\x88x"; // tab, two orphan marks, x
+  BOOST_CHECK_EQUAL(clusterStart(orphan, 3), 1u);
+  BOOST_CHECK_EQUAL(prevClusterStart(orphan, 5), 1u);
+  BOOST_CHECK_EQUAL(prevClusterStart(orphan, 1), 0u);
+}
+
+BOOST_AUTO_TEST_CASE(escapeNonPrintable_format_and_orphan) {
+  BOOST_CHECK_EQUAL(escapeNonPrintable("a\xE2\x80\x8B"
+                                       "b"),
+                    std::string("a") + std::string(ansi::CtrlColor) + "\\u200b" +
+                        std::string(ansi::DefaultFg) + "b");
+  BOOST_CHECK_EQUAL(escapeNonPrintable("\xCC\x81"), "\xE2\x97\x8C\xCC\x81");
+  BOOST_CHECK_EQUAL(escapeNonPrintable("e\xCC\x81"), "e\xCC\x81");
 }
 
 // --- charInfoAt ---

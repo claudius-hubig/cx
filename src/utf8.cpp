@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <format>
 #include <unistd.h>
 
 /**
@@ -38,6 +39,10 @@ std::size_t visualWidth(std::string_view s) {
  * @param s The input string that may contain non-printable bytes.
  * @return A new string with non-printable bytes replaced by visible escapes.
  */
+std::string formatCharEscape(uint32_t cp) {
+  return cp <= 0xFFFF ? std::format("\\u{:04x}", cp) : std::format("\\u{{{:x}}}", cp);
+}
+
 std::string escapeNonPrintable(std::string_view s) {
   std::string out;
   out.reserve(s.size());
@@ -71,30 +76,28 @@ std::string escapeNonPrintable(std::string_view s) {
     out += kHex[u >> 4];
     out += kHex[u & 0xf];
   };
+  // Walk clusters so the result agrees with charInfoAt(), and therefore
+  // with visualWidth(): format characters become "\\u200b" escapes and
+  // a combining mark with nothing to sit on is drawn on a dotted circle.
   std::size_t i = 0;
   while (i < s.size()) {
     auto u = static_cast<unsigned char>(s[i]);
-    if (u < 0x20 || u == 0x7f) {
+    auto info = charInfoAt(s.data() + i, s.size() - i);
+    // Control bytes, and bytes that do not start a valid UTF-8 sequence
+    // (len == 1 above ASCII), are shown as hex so broken bytes do not
+    // paint as garbage glyphs.
+    if (u < 0x20 || u == 0x7f || (u >= 0x80 && info.len == 1)) {
       appendHex(u);
-      ++i;
-    } else if (u >= 0x80) {
-      // decodeUtf8 returns len == 1 for any byte that does not start a
-      // valid UTF-8 sequence — render those as hex too so broken bytes
-      // do not paint as garbage glyphs.
-      auto [_, len] = decodeUtf8(s.data() + i, s.size() - i);
-      if (len == 1) {
-        appendHex(u);
-        ++i;
-      } else {
-        closeStyle();
-        out.append(s.data() + i, len);
-        i += len;
-      }
+    } else if (auto cp = decodeUtf8(s.data() + i, s.size() - i).first; isFormatChar(cp)) {
+      openStyle();
+      out += formatCharEscape(cp);
     } else {
       closeStyle();
-      out += s[i];
-      ++i;
+      if (isCombiningMark(cp))
+        out += kOrphanMarkBase;
+      out.append(s.data() + i, info.len);
     }
+    i += info.len;
   }
   closeStyle();
   return out;

@@ -199,13 +199,56 @@ struct CharInfo {
 };
 
 /**
- * @brief Combined decode + width for the character at @c data[0..avail).
+ * @brief True for a combining mark: zero width, drawn onto the preceding
+ *        character (Mn, Me, Hangul medial/final jamo, variation selectors).
+ */
+inline constexpr bool isCombiningMark(uint32_t cp) {
+  return cp >= 0x300 && inRanges(kCombiningRanges, cp);
+}
+
+/**
+ * @brief True for an invisible format character (Cf: zero-width space,
+ *        ZWJ/ZWNJ, BOM, direction marks and bidi controls, soft hyphen,
+ *        ...). cx shows these as escapes rather than hiding them.
+ */
+inline constexpr bool isFormatChar(uint32_t cp) {
+  return cp >= 0xAD && inRanges(kFormatRanges, cp);
+}
+
+/**
+ * @brief Width of the escape formatCharEscape() writes for @p cp:
+ *        "\\u200b" (6) for the BMP, "\\u{e0001}" (9 or 10) above it.
+ */
+inline constexpr std::size_t formatCharEscapeWidth(uint32_t cp) {
+  if (cp <= 0xFFFF)
+    return 6;
+  return cp <= 0xFFFFF ? 9 : 10;
+}
+
+/** @brief The escape text for format character @p cp, e.g. "\\u200b". */
+std::string formatCharEscape(uint32_t cp);
+
+/** @brief Display text of a combining mark with no character to sit on. */
+inline constexpr std::string_view kOrphanMarkBase = "\xe2\x97\x8c"; // ◌ U+25CC
+
+/**
+ * @brief Width and byte length of the cluster at @c data[0..avail): one
+ *        character plus the combining marks that follow it.
  *
- * Measures a byte exactly as Buffer::render's emitChar draws it: ASCII
- * applies charWidth() rules (tab and control bytes — ESC included — are
- * width 2, rendered "^X"/"^["; printable is 1); a valid multi-byte UTF-8
- * sequence decodes to codepointWidth(); an invalid byte (>= 0x80 with
- * len == 1 from decodeUtf8) gets width 4 for "\\xHH".
+ * Measures exactly what Buffer::render's emitChar draws, and is the one
+ * place that decides where a cluster ends, so rendering, wrapping,
+ * cursor columns and movement never split a character from its marks.
+ *
+ * - Printable ASCII and valid multi-byte characters take codepointWidth()
+ *   and absorb the combining marks after them (which add no width, as in
+ *   xfce4-terminal).
+ * - Tab and control bytes (ESC included) are width 2, drawn "^X"; an
+ *   invalid byte (len == 1 from decodeUtf8) is width 4, drawn "\\xHH"; a
+ *   format character is drawn as formatCharEscape(). None of these
+ *   absorb marks.
+ * - Combining marks with nothing to attach to (line start, or after one
+ *   of the above) form their own cluster, drawn on kOrphanMarkBase:
+ *   width 1.
  *
  * A raw ESC is treated as an ordinary content control byte (the renderer
  * never passes a content ESC through to the terminal). To measure a
@@ -216,13 +259,58 @@ struct CharInfo {
  * @pre @p avail > 0.
  */
 inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
+  CharInfo info{1, 1};
   auto u = static_cast<unsigned char>(data[0]);
-  if (u < 0x80)
-    return {charWidth(static_cast<char>(u)), 1};
-  auto [cp, len] = decodeUtf8(data, avail);
-  if (len == 1)
-    return {4, 1}; // invalid byte — displayed as "\xHH"
-  return {codepointWidth(cp), len};
+  if (u < 0x80) {
+    info.width = charWidth(static_cast<char>(u));
+    if (info.width != 1)
+      return info; // tab or control byte
+  } else {
+    auto [cp, len] = decodeUtf8(data, avail);
+    if (len == 1)
+      return {4, 1}; // invalid byte — displayed as "\xHH"
+    if (isFormatChar(cp))
+      return {formatCharEscapeWidth(cp), len};
+    info = {isCombiningMark(cp) ? 1 : codepointWidth(cp), len};
+  }
+  // Absorb trailing marks. Nothing below U+0300 (lead byte 0xCC) is one.
+  while (info.len < avail && static_cast<unsigned char>(data[info.len]) >= 0xCC) {
+    auto [cp, len] = decodeUtf8(data + info.len, avail - info.len);
+    if (len == 1 || !isCombiningMark(cp))
+      break;
+    info.len += len;
+  }
+  return info;
+}
+
+/**
+ * @brief Start of the cluster (see charInfoAt()) containing byte @p off.
+ *
+ * Steps back over combining marks to their base, then forward cluster by
+ * cluster, so the answer always agrees with charInfoAt().
+ * @pre @p off <= s.size(); returns s.size() for @p off == s.size().
+ */
+inline constexpr std::size_t clusterStart(std::string_view s, std::size_t off) {
+  off = snapToCodepoint(s, off);
+  if (off >= s.size())
+    return off;
+  std::size_t base = off;
+  while (base > 0 && isCombiningMark(decodeUtf8(s.data() + base, s.size() - base).first))
+    base = snapToCodepoint(s, base - 1);
+  for (;;) {
+    auto len = charInfoAt(s.data() + base, s.size() - base).len;
+    if (base + len > off)
+      return base;
+    base += len;
+  }
+}
+
+/**
+ * @brief Start of the cluster just before byte @p off.
+ * @pre 0 < @p off <= s.size().
+ */
+inline constexpr std::size_t prevClusterStart(std::string_view s, std::size_t off) {
+  return clusterStart(s, off - 1);
 }
 
 /**
@@ -265,8 +353,10 @@ std::size_t visualWidth(std::string_view s);
  *
  * Bytes rendered as escapes are: ASCII control characters (< 0x20,
  * including TAB and newline), DEL (0x7F), and any high byte (>= 0x80) that
- * does not start a valid UTF-8 sequence. Printable ASCII and valid
- * multi-byte UTF-8 pass through unchanged. Intended for filenames and
+ * does not start a valid UTF-8 sequence. Invisible format characters
+ * become formatCharEscape() escapes and a combining mark with nothing to
+ * sit on gets kOrphanMarkBase, matching charInfoAt(). Other printable
+ * ASCII and valid multi-byte UTF-8 pass through unchanged. Intended for filenames and
  * other short user-visible strings from outside the editor; not for
  * buffer text content, which the buffer renderer styles separately.
  * Defined in utf8.cpp.

@@ -659,3 +659,62 @@ BOOST_AUTO_TEST_CASE(render_extra_cursor_at_end_of_line_gets_a_space) {
   // A reverse-video space stands in for the missing character cell.
   BOOST_CHECK(out.find("\x1b[7m ") != std::string::npos);
 }
+
+// --- Combining marks and format characters ---
+
+BOOST_AUTO_TEST_CASE(render_combining_mark_stays_with_its_base) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "e\xcc\x81x"); // e + U+0301, x; point at end
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{3}, ColIdx{20}, renderParams(buf));
+  BOOST_CHECK(out.find("e\xcc\x81x") != std::string::npos);
+  BOOST_CHECK_EQUAL(row.value, 0u);
+  BOOST_CHECK_EQUAL(col.value, 2u); // the mark takes no column
+}
+
+BOOST_AUTO_TEST_CASE(render_format_char_as_escape) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "a\xe2\x80\x8b"
+                    "b"); // a, ZWSP, b
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{3}, ColIdx{20}, renderParams(buf));
+  BOOST_CHECK(stripAnsi(out).find("a\\u200bb") != std::string::npos);
+  BOOST_CHECK(out.find("\xe2\x80\x8b") == std::string::npos); // never sent raw
+  BOOST_CHECK_EQUAL(col.value, 8u);
+}
+
+BOOST_AUTO_TEST_CASE(render_orphan_mark_on_dotted_circle) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "\xcc\x81x"); // U+0301 at line start
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{3}, ColIdx{20}, renderParams(buf));
+  BOOST_CHECK(out.find("\xe2\x97\x8c\xcc\x81x") != std::string::npos);
+  BOOST_CHECK_EQUAL(col.value, 2u);
+}
+
+BOOST_AUTO_TEST_CASE(render_wrap_never_splits_a_cluster) {
+  // cols=6 means cw=5: "abcd" + e+U+0301 fills the first row exactly, so
+  // the mark must stay on it rather than start the second row.
+  std::string line = "abcde\xcc\x81"
+                     "f";
+  BOOST_CHECK(computeRowBounds(line, 5) == (std::vector<std::size_t>{0, 7}));
+  TB<TextBuffer> buf("test");
+  insertString(buf, line);
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{4}, ColIdx{6}, renderParams(buf));
+  auto mark = out.find("e\xcc\x81");
+  BOOST_REQUIRE(mark != std::string::npos);
+  BOOST_CHECK_LT(mark, out.find("\xe2\x86\xb5")); // emitted before the wrap arrow ↵
+  BOOST_CHECK_EQUAL(row.value, 1u);
+  BOOST_CHECK_EQUAL(col.value, 1u);
+}
+
+BOOST_AUTO_TEST_CASE(point_snaps_to_cluster_start) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "ae\xcc\x81\xcc\x88"
+                    "b");
+  buf.setPoint(0, 3); // on the first mark of e+marks (bytes 1..5)
+  BOOST_CHECK_EQUAL(buf.point().offset, 1u);
+  buf.setPoint(0, 6);
+  BOOST_CHECK_EQUAL(buf.point().offset, 6u);
+}

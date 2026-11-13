@@ -277,6 +277,12 @@ inline std::vector<std::string> renderToGrid(std::string_view s, std::size_t row
             // Since grid cells are single chars, store the first byte and
             // advance curCol by the display width.
             auto [cp, cpLen] = decodeUtf8(s.data() + i, s.size() - i);
+            if (isCombiningMark(cp) || isFormatChar(cp)) {
+              // Zero width, like xfce4-terminal: joins the previous cell.
+              grid[curRow].insert(curCol, mb);
+              i += len;
+              continue;
+            }
             std::size_t w = codepointWidth(cp);
             // Overwrite grid position(s).
             // We'll use a simpler approach: put the full string in the

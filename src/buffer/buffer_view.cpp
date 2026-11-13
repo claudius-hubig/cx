@@ -59,18 +59,18 @@ void BufferView::clampPoint(BufferPoint& p) const {
   if (p.line >= _buf.lineCount())
     p.line = _buf.lineCount() - 1;
   auto const& line = _buf.lineContent(p.line);
-  p.offset = snapToCodepoint(line, std::min(p.offset, line.size()));
+  p.offset = clusterStart(line, std::min(p.offset, line.size()));
 }
 
 void BufferView::clampViewFrom() {
   if (_viewFrom.line.value >= _buf.lineCount())
     _viewFrom.line = RowIdx{_buf.lineCount() - 1};
-  // In wrap mode the viewport's sub-line ByteOffset can land mid-codepoint
+  // In wrap mode the viewport's sub-line ByteOffset can land mid-cluster
   // or past the line end once the line shrinks. VisualCol is purely a
   // horizontal column (not a byte index) so it does not need clamping.
   if (auto* off = std::get_if<ByteOffset>(&_viewFrom.col)) {
     auto const& line = _buf.lineContent(_viewFrom.line.value);
-    *off = ByteOffset{snapToCodepoint(line, std::min(off->value, line.size()))};
+    *off = ByteOffset{clusterStart(line, std::min(off->value, line.size()))};
   }
 }
 

@@ -490,7 +490,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         if (curLineBg)
           out += curLineBg;
       } else {
-        out += *data;
+        out.append(data, info.len); // printable, with any combining marks
       }
     } else if (info.len == 1) {
       // Invalid or lone continuation byte: render as "\xHH" so a broken
@@ -505,7 +505,19 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       rs = {};
       if (curLineBg)
         out += curLineBg;
+    } else if (auto cp = decodeUtf8(data, info.len).first; isFormatChar(cp)) {
+      // Invisible format character (ZWSP, ZWJ, BOM, bidi control, ...):
+      // show it as "\\u200b" so it can't hide in the text.
+      out += kCtrlColor;
+      out += formatCharEscape(cp);
+      out += ansi::Reset;
+      rs = {};
+      if (curLineBg)
+        out += curLineBg;
     } else {
+      // A cluster starting with a mark has nothing to draw it onto.
+      if (isCombiningMark(cp))
+        out += kOrphanMarkBase;
       out.append(data, info.len);
     }
   };
@@ -841,7 +853,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       for (std::size_t i = 0; i < line.size();) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
 
-        if (lineIdx == point.line && i == point.offset && !pointFound) {
+        if (lineIdx == point.line && i <= point.offset && point.offset < i + info.len &&
+            !pointFound) {
           cur_row = row;
           cur_col = leftGutter + (vcol >= hScroll ? vcol - hScroll : 0);
           pointFound = true;
@@ -955,7 +968,8 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           out += curLineBg;
       }
 
-      if (lineIdx == point.line && i == point.offset && !pointFound) {
+      if (lineIdx == point.line && i <= point.offset && point.offset < i + info.len &&
+          !pointFound) {
         cur_row = row;
         cur_col = leftGutter + col;
         pointFound = true;
