@@ -904,6 +904,64 @@ BOOST_AUTO_TEST_CASE(reflow_blank_line_is_noop) {
   BOOST_CHECK_EQUAL(buf.lineContent(2), "beta");
 }
 
+// --- Combining marks: one character with its base ---
+
+BOOST_AUTO_TEST_CASE(cursor_moves_over_combining_marks_in_one_step) {
+  TempFile f("ae\xcc\x81\xcc\x88"
+             "b\n"); // a, e+2 marks (bytes 1..5), b
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 1);
+  view.moveRight();
+  BOOST_CHECK_EQUAL(view.point().offset, 6u);
+  view.moveLeft();
+  BOOST_CHECK_EQUAL(view.point().offset, 1u);
+  view.setPoint(0, 0);
+  view.moveWordRight();
+  BOOST_CHECK_EQUAL(view.point().offset, 7u);
+  view.moveWordLeft();
+  BOOST_CHECK_EQUAL(view.point().offset, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(delete_and_backspace_remove_whole_cluster) {
+  TempFile f("ae\xcc\x81"
+             "b\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 4);
+  view.deleteBeforePoint();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "ab");
+  BOOST_CHECK_EQUAL(view.point().offset, 1u);
+
+  TempFile g("ae\xcc\x81"
+             "b\n");
+  TextBuffer buf2(g.path().string(), g.path());
+  BufferView view2(buf2);
+  view2.setPoint(0, 1);
+  view2.deleteAtPoint();
+  BOOST_CHECK_EQUAL(buf2.lineContent(0), "ab");
+}
+
+BOOST_AUTO_TEST_CASE(orphan_marks_delete_as_one) {
+  TempFile f("\t\xcc\x81\xcc\x88x\n"); // tab, two marks with no base, x
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 5);
+  view.deleteBeforePoint();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "\tx");
+}
+
+BOOST_AUTO_TEST_CASE(multi_cursor_delete_removes_whole_clusters) {
+  TempFile f("e\xcc\x81x\ne\xcc\x81y\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(0, 0);
+  view.addCursor({1, 0});
+  view.deleteAtPoint();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "x");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "y");
+}
+
 BOOST_AUTO_TEST_CASE(reflow_region_keeps_blank_lines) {
   TempFile f("alpha\nbeta\n\ngamma\ndelta\n");
   TextBuffer buf(f.path().string(), f.path());

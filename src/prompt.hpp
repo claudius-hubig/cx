@@ -200,14 +200,14 @@ struct Prompt {
     auto pos = cursorPos();
     if (pos == 0)
       return false;
-    erase(prevCodePoint(pos), pos);
+    erase(prevCharStart(pos), pos);
     return true;
   }
   bool deleteAt() {
     auto pos = cursorPos();
     if (pos == input.size())
       return false;
-    erase(pos, nextCodePoint(pos));
+    erase(pos, nextCharStart(pos));
     return true;
   }
   /** @brief Delete the run of blanks or non-blanks before the cursor. */
@@ -215,10 +215,10 @@ struct Prompt {
     auto pos = cursorPos();
     if (pos == 0)
       return false;
-    bool blank = isWhitespace(input[prevCodePoint(pos)]);
+    bool blank = isWhitespace(input[prevCharStart(pos)]);
     auto from = pos;
-    while (from > 0 && isWhitespace(input[prevCodePoint(from)]) == blank)
-      from = prevCodePoint(from);
+    while (from > 0 && isWhitespace(input[prevCharStart(from)]) == blank)
+      from = prevCharStart(from);
     erase(from, pos);
     return true;
   }
@@ -230,28 +230,28 @@ struct Prompt {
     bool blank = isWhitespace(input[pos]);
     auto to = pos;
     while (to < input.size() && isWhitespace(input[to]) == blank)
-      to = nextCodePoint(to);
+      to = nextCharStart(to);
     erase(pos, to);
     return true;
   }
-  void moveLeft() { cursor = cursorPos() == 0 ? 0 : prevCodePoint(cursorPos()); }
-  void moveRight() { cursor = cursorAtEnd() ? input.size() : nextCodePoint(cursorPos()); }
+  void moveLeft() { cursor = cursorPos() == 0 ? 0 : prevCharStart(cursorPos()); }
+  void moveRight() { cursor = cursorAtEnd() ? input.size() : nextCharStart(cursorPos()); }
   /** @brief Move to the first byte of the word before the cursor. */
   void moveWordLeft() {
     auto pos = cursorPos();
-    while (pos > 0 && isWhitespace(input[prevCodePoint(pos)]))
-      pos = prevCodePoint(pos);
-    while (pos > 0 && !isWhitespace(input[prevCodePoint(pos)]))
-      pos = prevCodePoint(pos);
+    while (pos > 0 && isWhitespace(input[prevCharStart(pos)]))
+      pos = prevCharStart(pos);
+    while (pos > 0 && !isWhitespace(input[prevCharStart(pos)]))
+      pos = prevCharStart(pos);
     cursor = pos;
   }
   /** @brief Move past the end of the word at or after the cursor. */
   void moveWordRight() {
     auto pos = cursorPos();
     while (pos < input.size() && isWhitespace(input[pos]))
-      pos = nextCodePoint(pos);
+      pos = nextCharStart(pos);
     while (pos < input.size() && !isWhitespace(input[pos]))
-      pos = nextCodePoint(pos);
+      pos = nextCharStart(pos);
     cursor = pos;
   }
   void moveHome() { cursor = 0; }
@@ -259,20 +259,11 @@ struct Prompt {
   /** @} */
 
 private:
-  /** @pre 0 < @p pos <= input.size(). */
-  std::size_t prevCodePoint(std::size_t pos) const {
-    do
-      --pos;
-    while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(input[pos])));
-    return pos;
-  }
-  /** @pre @p pos < input.size(). */
-  std::size_t nextCodePoint(std::size_t pos) const {
-    do
-      ++pos;
-    while (pos < input.size() && isUtf8Continuation(static_cast<unsigned char>(input[pos])));
-    return pos;
-  }
+  /** @brief Previous character start (a character with its combining marks).
+   *  @pre 0 < @p pos <= input.size(). */
+  std::size_t prevCharStart(std::size_t pos) const { return prevClusterStart(input, pos); }
+  /** @brief Next character start. @pre @p pos < input.size(). */
+  std::size_t nextCharStart(std::size_t pos) const { return nextClusterStart(input, pos); }
 };
 
 /** @brief Per-label history of completed prompt inputs. */

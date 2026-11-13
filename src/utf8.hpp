@@ -314,6 +314,14 @@ inline constexpr std::size_t prevClusterStart(std::string_view s, std::size_t of
 }
 
 /**
+ * @brief Start of the cluster after the one at byte @p off.
+ * @pre @p off < s.size() and is a cluster start.
+ */
+inline constexpr std::size_t nextClusterStart(std::string_view s, std::size_t off) {
+  return off + charInfoAt(s.data() + off, s.size() - off).len;
+}
+
+/**
  * @brief Like charInfoAt(), but recognises an editor-emitted ANSI CSI
  *        escape (ESC '[' … final-byte 0x40..0x7E) as a single zero-width,
  *        full-length pass-through.

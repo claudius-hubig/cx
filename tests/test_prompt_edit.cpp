@@ -163,3 +163,23 @@ BOOST_AUTO_TEST_CASE(input_replaced_drops_mark_and_moves_to_end) {
   BOOST_CHECK(!p.mark);
   BOOST_CHECK(p.cursorAtEnd());
 }
+
+// --- combining marks ---
+
+BOOST_AUTO_TEST_CASE(combining_mark_moves_and_deletes_with_its_base) {
+  auto p = withInput("ae\xcc\x81"
+                     "b"); // a, e+U+0301 (bytes 1..3), b
+  p.moveLeft();
+  BOOST_CHECK_EQUAL(p.cursorPos(), 4u);
+  p.moveLeft(); // over e+mark in one step
+  BOOST_CHECK_EQUAL(p.cursorPos(), 1u);
+  p.moveRight();
+  BOOST_CHECK_EQUAL(p.cursorPos(), 4u);
+  BOOST_CHECK(p.deleteBefore());
+  BOOST_CHECK_EQUAL(p.input, "ab");
+  auto q = withInput("ae\xcc\x81"
+                     "b",
+                     1);
+  BOOST_CHECK(q.deleteAt());
+  BOOST_CHECK_EQUAL(q.input, "ab");
+}

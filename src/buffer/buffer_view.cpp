@@ -267,10 +267,7 @@ void BufferView::moveLeftImpl() {
   if (_docVersion != _buf.docVersion())
     clampToBuffer();
   if (_point.offset > 0) {
-    auto const& line = _buf.lineContent(_point.line);
-    --_point.offset;
-    while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
-      --_point.offset;
+    _point.offset = prevClusterStart(_buf.lineContent(_point.line), _point.offset);
   } else if (_point.line > 0) {
     --_point.line;
     _point.offset = _buf.lineContent(_point.line).size();
@@ -283,8 +280,7 @@ void BufferView::moveRightImpl() {
     clampToBuffer();
   auto const& line = _buf.lineContent(_point.line);
   if (_point.offset < line.size()) {
-    auto len = utf8SeqLen(static_cast<unsigned char>(line[_point.offset]));
-    _point.offset = std::min(_point.offset + len, line.size());
+    _point.offset = nextClusterStart(line, _point.offset);
   } else if (_point.line + 1 < _buf.lineCount()) {
     ++_point.line;
     _point.offset = 0;
@@ -451,11 +447,9 @@ void BufferView::moveWordRightImpl() {
 
   auto isSep = isWhitespace;
 
-  // Step forward one code point (or cross to next line).
-  if (_point.offset < line.size()) {
-    auto len = utf8SeqLen(static_cast<unsigned char>(line[_point.offset]));
-    _point.offset = std::min(_point.offset + len, line.size());
-  }
+  // Step forward one character (or cross to next line).
+  if (_point.offset < line.size())
+    _point.offset = nextClusterStart(line, _point.offset);
   // If at end of line, cross to next.
   if (_point.offset >= _buf.lineContent(_point.line).size() && _point.line + 1 < _buf.lineCount()) {
     ++_point.line;
@@ -483,10 +477,8 @@ void BufferView::moveWordRightImpl() {
   // its target word, so this is the symmetric convention.
   {
     auto const& cur = _buf.lineContent(_point.line);
-    while (_point.offset < cur.size() && !isSep(cur[_point.offset])) {
-      auto len = utf8SeqLen(static_cast<unsigned char>(cur[_point.offset]));
-      _point.offset = std::min(_point.offset + len, cur.size());
-    }
+    while (_point.offset < cur.size() && !isSep(cur[_point.offset]))
+      _point.offset = nextClusterStart(cur, _point.offset);
   }
   _desiredCol.reset();
 }
@@ -501,23 +493,15 @@ void BufferView::moveWordLeftImpl() {
 
   auto isSep = isWhitespace;
 
-  // Step back one code point (or cross to previous line).
+  // Step back one character (or cross to previous line).
   if (_point.offset > 0) {
-    auto const& line = _buf.lineContent(_point.line);
-    --_point.offset;
-    while (_point.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
-      --_point.offset;
+    _point.offset = prevClusterStart(_buf.lineContent(_point.line), _point.offset);
   } else if (_point.line > 0) {
     --_point.line;
     _point.offset = _buf.lineContent(_point.line).size();
     // We're now at the "newline" position. Step back once more if possible.
-    if (_point.offset > 0) {
-      auto const& line = _buf.lineContent(_point.line);
-      --_point.offset;
-      while (_point.offset > 0 &&
-             isUtf8Continuation(static_cast<unsigned char>(line[_point.offset])))
-        --_point.offset;
-    }
+    if (_point.offset > 0)
+      _point.offset = prevClusterStart(_buf.lineContent(_point.line), _point.offset);
   }
 
   // Skip separators and line boundaries backward.
@@ -528,9 +512,7 @@ void BufferView::moveWordLeftImpl() {
     // Skip seps backward within line.
     bool foundNonSep = false;
     while (_point.offset > 0) {
-      std::size_t prev = _point.offset - 1;
-      while (prev > 0 && isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
-        --prev;
+      std::size_t prev = prevClusterStart(cur, _point.offset);
       if (!isSep(cur[prev])) {
         _point.offset = prev;
         foundNonSep = true;
@@ -550,12 +532,8 @@ void BufferView::moveWordLeftImpl() {
       --_point.line;
       auto const& prev = _buf.lineContent(_point.line);
       _point.offset = prev.size();
-      if (_point.offset > 0) {
-        --_point.offset;
-        while (_point.offset > 0 &&
-               isUtf8Continuation(static_cast<unsigned char>(prev[_point.offset])))
-          --_point.offset;
-      }
+      if (_point.offset > 0)
+        _point.offset = prevClusterStart(prev, _point.offset);
     } else {
       break;
     }
@@ -574,9 +552,7 @@ void BufferView::moveWordLeftImpl() {
   {
     auto const& cur = _buf.lineContent(_point.line);
     while (_point.offset > 0) {
-      std::size_t prev = _point.offset - 1;
-      while (prev > 0 && isUtf8Continuation(static_cast<unsigned char>(cur[prev])))
-        --prev;
+      std::size_t prev = prevClusterStart(cur, _point.offset);
       if (isSep(cur[prev]))
         break;
       _point.offset = prev;
@@ -986,8 +962,7 @@ void BufferView::deleteAtPoint() {
   std::size_t lineLen = lineContent.size();
   std::size_t delBytes = 0;
   if (withinLine) {
-    auto len = utf8SeqLen(static_cast<unsigned char>(lineContent[delOff]));
-    delBytes = std::min(delOff + len, lineLen) - delOff;
+    delBytes = nextClusterStart(lineContent, delOff) - delOff;
   }
 
   auto lineCountBefore = _buf.lineCount();
@@ -1105,10 +1080,7 @@ void BufferView::deleteChunkBeforePoint() {
   auto prevIsBlank = [&]() -> bool {
     if (_point.offset > 0) {
       auto const& line = _buf.lineContent(_point.line);
-      std::size_t pos = _point.offset - 1;
-      while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(line[pos])))
-        --pos;
-      return isWhitespace(line[pos]);
+      return isWhitespace(line[prevClusterStart(line, _point.offset)]);
     }
     return true;
   };
@@ -1852,10 +1824,7 @@ bool BufferView::blankBefore(BufferPoint p) const {
   if (p.offset == 0)
     return true;
   auto const& line = _buf.lineContent(p.line);
-  std::size_t pos = p.offset - 1;
-  while (pos > 0 && isUtf8Continuation(static_cast<unsigned char>(line[pos])))
-    --pos;
-  return isWhitespace(line[pos]);
+  return isWhitespace(line[prevClusterStart(line, p.offset)]);
 }
 
 BufferPoint BufferView::BatchShift::apply(BufferPoint q) const {
@@ -1936,8 +1905,7 @@ bool BufferView::batchDeleteForward(std::size_t i) {
   auto const& line = _buf.lineContent(from.line);
   BufferPoint to;
   if (from.offset < line.size()) {
-    auto len = utf8SeqLen(static_cast<unsigned char>(line[from.offset]));
-    to = {from.line, std::min(from.offset + len, line.size())};
+    to = {from.line, nextClusterStart(line, from.offset)};
   } else if (from.line + 1 < _buf.lineCount()) {
     to = {from.line + 1, 0}; // joins the next line
   } else {

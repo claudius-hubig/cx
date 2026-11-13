@@ -58,8 +58,7 @@ BufferPoint Buffer::deleteAt(BufferPoint at) {
   if (at.offset < lineSz) {
     invalidateSynCache(at.line);
     auto& line = mutLine(at.line);
-    auto len = utf8SeqLen(static_cast<unsigned char>(line[at.offset]));
-    auto end = std::min(at.offset + len, line.size());
+    auto end = nextClusterStart(line, at.offset); // a character with its marks
     line.erase(line.begin() + at.offset, line.begin() + end);
     _modified = true;
     ++_docVersion;
@@ -82,9 +81,7 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
     invalidateSynCache(at.line);
     auto& line = mutLine(at.line);
     auto end = at.offset;
-    --at.offset;
-    while (at.offset > 0 && isUtf8Continuation(static_cast<unsigned char>(line[at.offset])))
-      --at.offset;
+    at.offset = prevClusterStart(line, at.offset); // a character with its marks
     line.erase(line.begin() + at.offset, line.begin() + end);
     _modified = true;
     ++_docVersion;
