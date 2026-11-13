@@ -383,8 +383,9 @@ All user-facing movement, editing, and render operations are methods on
   (`modes/md/fence.hpp`) are left untouched. The cursor's table is aligned and the
   cursor's column wrapped. Paragraphs stop at adjacent tables. A region
   widens to cover whole tables, which are aligned only. The result is one
-  `deleteRegion`+`insertText` edit (one undo step), skipped when the text
-  is unchanged.
+  `deleteRegion`+`insertText` edit (one undo step) over just the span of
+  lines that differ, so unchanged lines keep their storage (shared with
+  earlier history snapshots); it is skipped when the text is unchanged.
 - **Mark and region**: `toggleMark`, `setMark`, `clearMark`,
   `extractRegion`.
 - **Viewport management**: `ensureVisible`, `scrollUp/Down`,

@@ -586,3 +586,66 @@ BOOST_AUTO_TEST_CASE(long_pipe_run_without_table_is_linear) {
   // No delimiter row, so the run is prose and joins the paragraph.
   BOOST_CHECK(buf.lineContent(0).starts_with("intro text a | b | c a | b"));
 }
+
+// --- Only the changed span is rewritten ---
+
+BOOST_AUTO_TEST_CASE(view_rewrites_only_changed_lines) {
+  std::string doc = "| k   | v   |\n"
+                    "| --- | --- |\n"
+                    "| a   | 1   |\n"
+                    "| b | 2 |\n" // the only misaligned row
+                    "| c   | 3   |\n";
+  TempFile f(doc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  std::vector<LinePtr> before = buf.lines();
+  view.setPoint(0, 2);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK_EQUAL(buf.lineContent(3), "| b   | 2   |");
+  for (std::size_t i : {0u, 1u, 2u, 4u})
+    BOOST_CHECK(buf.lines()[i] == before[i]); // same storage, not just same text
+  BOOST_CHECK(buf.lines()[3] != before[3]);
+  // One changed line, same line count: undo still restores it.
+  BufferPoint cursor;
+  buf.applyVersionAt(buf.versionHistoryInfo().size - 2, cursor);
+  BOOST_CHECK_EQUAL(contents(buf), doc);
+}
+
+BOOST_AUTO_TEST_CASE(view_rewrite_that_only_adds_or_removes_lines) {
+  // Wrapping adds continuation rows after an unchanged row ...
+  std::string wide =
+      "| k   | v                                                                        |\n"
+      "| --- | ------------------------------------------------------------------------ |\n"
+      "| a   | one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+      "fifteen sixteen |\n";
+  TempFile f(wide);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setPoint(2, 8);
+  view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  BOOST_CHECK_EQUAL(buf.lineCount(), 5u); // header, delimiter, 2 rows, trailing empty line
+  for (std::size_t i = 0; i + 1 < buf.lineCount(); ++i)
+    BOOST_CHECK_LE(visualWidth(buf.lineContent(i)), 80u);
+  // ... and a paragraph whose tail joins the previous line only removes one.
+  TempFile g("aaa bbb\nccc\n\nkeep\n");
+  TextBuffer buf2(g.path().string(), g.path());
+  BufferView view2(buf2);
+  view2.setPoint(0, 0);
+  view2.reflowParagraph(80);
+  BOOST_CHECK_EQUAL(contents(buf2), "aaa bbb ccc\n\nkeep\n");
+  BOOST_CHECK_EQUAL(view2.point().line, 0u);
+  BOOST_CHECK_EQUAL(view2.point().offset, 11u);
+  // Region reflow where only blank-separated paragraphs in the middle change.
+  TempFile h("same\n\nx\ny\n\nsame\n");
+  TextBuffer buf3(h.path().string(), h.path());
+  BufferView view3(buf3);
+  view3.setMark({0, 0});
+  view3.setPoint(6, 0);
+  view3.reflowParagraph(80);
+  BOOST_CHECK_EQUAL(contents(buf3), "same\n\nx y\n\nsame\n");
+  BOOST_CHECK_EQUAL(view3.point().line, 4u);
+  BOOST_CHECK_EQUAL(view3.point().offset, 4u);
+  BufferPoint cursor;
+  buf3.applyVersionAt(buf3.versionHistoryInfo().size - 1, cursor);
+  BOOST_CHECK_EQUAL(contents(buf3), "same\n\nx y\n\nsame\n");
+}
