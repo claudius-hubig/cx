@@ -39,7 +39,7 @@ std::size_t visualWidth(std::string_view s) {
  * @param s The input string that may contain non-printable bytes.
  * @return A new string with non-printable bytes replaced by visible escapes.
  */
-std::string formatCharEscape(uint32_t cp) {
+std::string codepointEscape(uint32_t cp) {
   return cp <= 0xFFFF ? std::format("\\u{:04x}", cp) : std::format("\\u{{{:x}}}", cp);
 }
 
@@ -77,7 +77,7 @@ std::string escapeNonPrintable(std::string_view s) {
     out += kHex[u & 0xf];
   };
   // Walk clusters so the result agrees with charInfoAt(), and therefore
-  // with visualWidth(): format characters become "\\u200b" escapes and
+  // with visualWidth(): escaped characters become "\\u200b" escapes and
   // a combining mark with nothing to sit on is drawn on a dotted circle.
   std::size_t i = 0;
   while (i < s.size()) {
@@ -88,9 +88,9 @@ std::string escapeNonPrintable(std::string_view s) {
     // paint as garbage glyphs.
     if (u < 0x20 || u == 0x7f || (u >= 0x80 && info.len == 1)) {
       appendHex(u);
-    } else if (auto cp = decodeUtf8(s.data() + i, s.size() - i).first; isFormatChar(cp)) {
+    } else if (auto cp = decodeUtf8(s.data() + i, s.size() - i).first; isEscapedCodepoint(cp)) {
       openStyle();
-      out += formatCharEscape(cp);
+      out += codepointEscape(cp);
     } else {
       closeStyle();
       if (isCombiningMark(cp))

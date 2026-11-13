@@ -306,16 +306,44 @@ BOOST_AUTO_TEST_CASE(codepointWidth_text_symbols_stay_narrow) {
   BOOST_CHECK_EQUAL(codepointWidth(0x2460), 1u);  // ① East Asian ambiguous
 }
 
-BOOST_AUTO_TEST_CASE(unicode_tables_are_sorted_and_disjoint) {
-  for (std::span<CodepointRange const> t : {std::span<CodepointRange const>(kWideRanges),
-                                            std::span<CodepointRange const>(kCombiningRanges),
-                                            std::span<CodepointRange const>(kFormatRanges)}) {
-    for (std::size_t i = 0; i < t.size(); ++i) {
-      BOOST_CHECK_LE(t[i].first, t[i].last);
-      if (i > 0)
-        BOOST_CHECK_LT(t[i - 1].last + 1, t[i].first); // also merged
-    }
+BOOST_AUTO_TEST_CASE(unicode_table_is_sorted_and_disjoint) {
+  auto const& t = kCodepointClasses;
+  for (std::size_t i = 0; i < t.size(); ++i) {
+    BOOST_CHECK_LE(t[i].first, t[i].last);
+    BOOST_CHECK(t[i].cls != CodepointClass::Normal);
+    if (i > 0)
+      BOOST_CHECK_LT(t[i - 1].last, t[i].first);
   }
+}
+
+BOOST_AUTO_TEST_CASE(codepointClass_fast_paths_agree_with_table) {
+  // Walk the table alongside every code point and compare.
+  std::size_t k = 0, mismatches = 0;
+  for (uint32_t cp = 0; cp <= kMaxCodepoint; ++cp) {
+    while (k < kCodepointClasses.size() && kCodepointClasses[k].last < cp)
+      ++k;
+    auto expected = k < kCodepointClasses.size() && kCodepointClasses[k].first <= cp
+                        ? kCodepointClasses[k].cls
+                        : CodepointClass::Normal;
+    mismatches += codepointClass(cp) != expected;
+  }
+  BOOST_CHECK_EQUAL(mismatches, 0u);
+}
+
+BOOST_AUTO_TEST_CASE(c1_controls_and_separators_are_escaped) {
+  // U+009B is CSI to a terminal: it must never be sent raw.
+  std::string_view csi = "\xC2\x9B"
+                         "31m";
+  auto info = charInfoAt(csi.data(), csi.size());
+  BOOST_CHECK_EQUAL(info.width, 6u);
+  BOOST_CHECK_EQUAL(info.len, 2u);
+  BOOST_CHECK(escapeNonPrintable(csi).find("\xC2\x9B") == std::string::npos);
+  BOOST_CHECK(escapeNonPrintable(csi).find("\\u009b") != std::string::npos);
+  BOOST_CHECK_EQUAL(visualWidth("\xC2\x80"), 6u);     // U+0080
+  BOOST_CHECK_EQUAL(visualWidth("\xC2\x9F"), 6u);     // U+009F
+  BOOST_CHECK_EQUAL(visualWidth("\xC2\xA0"), 1u);     // NBSP stays a character
+  BOOST_CHECK_EQUAL(visualWidth("\xE2\x80\xA8"), 6u); // U+2028 line separator
+  BOOST_CHECK_EQUAL(visualWidth("\xE2\x80\xA9"), 6u); // U+2029 paragraph separator
 }
 
 // --- Clusters, zero-width marks and format characters ---
@@ -420,9 +448,9 @@ BOOST_AUTO_TEST_CASE(charInfoAt_format_chars_are_escapes) {
   BOOST_CHECK_EQUAL(info.width, 6u);
   BOOST_CHECK_EQUAL(info.len, 3u);
   BOOST_CHECK_EQUAL(visualWidth("\xF3\xA0\x80\x81"), 9u); // U+E0001 "\u{e0001}"
-  BOOST_CHECK_EQUAL(formatCharEscape(0x200B), "\\u200b");
-  BOOST_CHECK_EQUAL(formatCharEscape(0xAD), "\\u00ad");
-  BOOST_CHECK_EQUAL(formatCharEscape(0xE0001), "\\u{e0001}");
+  BOOST_CHECK_EQUAL(codepointEscape(0x200B), "\\u200b");
+  BOOST_CHECK_EQUAL(codepointEscape(0xAD), "\\u00ad");
+  BOOST_CHECK_EQUAL(codepointEscape(0xE0001), "\\u{e0001}");
 }
 
 BOOST_AUTO_TEST_CASE(cluster_boundaries) {

@@ -179,17 +179,55 @@ inline constexpr std::size_t charWidth(char ch) {
   return 1;
 }
 
+/** @brief kBlockClass value for a 64-code-point block of mixed classes. */
+inline constexpr uint8_t kMixedBlock = 0xFF;
+
 /**
- * @brief Display width of a Unicode code point: 2 for East Asian Width W/F
- *        (kWideRanges, Unicode 15.1 as in xfce4-terminal), else 1.
+ * @brief Per block of 64 code points (index cp >> 6): the CodepointClass
+ *        all of them share, or kMixedBlock. Derived from kCodepointClasses
+ *        at compile time, so the two can't disagree; it lets the common
+ *        alphabets and ideographs skip the binary search.
+ */
+inline constexpr auto kBlockClass = [] {
+  std::array<uint8_t, (kMaxCodepoint >> 6) + 1> blocks{}; // 0 == Normal
+  for (auto const& r : kCodepointClasses)
+    for (uint32_t b = r.first >> 6; b <= r.last >> 6; ++b) {
+      bool whole = r.first <= (b << 6) && r.last >= (b << 6) + 63;
+      blocks[b] = whole ? static_cast<uint8_t>(r.cls) : kMixedBlock;
+    }
+  return blocks;
+}();
+static_assert(static_cast<uint8_t>(CodepointClass::Normal) == 0);
+
+/**
+ * @brief Display class of a code point (Unicode 15.1, as xfce4-terminal
+ *        measures it). Code points above kMaxCodepoint are Normal.
+ */
+inline constexpr CodepointClass codepointClass(uint32_t cp) {
+  if (cp > kMaxCodepoint)
+    return CodepointClass::Normal;
+  if (auto block = kBlockClass[cp >> 6]; block != kMixedBlock)
+    return static_cast<CodepointClass>(block);
+  std::size_t lo = 0, hi = kCodepointClasses.size();
+  while (lo < hi) {
+    auto mid = (lo + hi) / 2;
+    if (kCodepointClasses[mid].first <= cp)
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo > 0 && cp <= kCodepointClasses[lo - 1].last ? kCodepointClasses[lo - 1].cls
+                                                        : CodepointClass::Normal;
+}
+
+/**
+ * @brief Display width of a code point on its own: 2 for
+ *        CodepointClass::Wide, else 1.
  *
- * Measures the code point on its own; zero-width marks and format
- * characters are handled by charInfoAt().
+ * Zero-width marks and escaped characters are handled by charInfoAt().
  */
 inline constexpr std::size_t codepointWidth(uint32_t cp) {
-  if (cp < 0x1100)
-    return 1; // fast path: nothing below U+1100 is wide
-  return inRanges(kWideRanges, cp) ? 2 : 1;
+  return codepointClass(cp) == CodepointClass::Wide ? 2 : 1;
 }
 
 /** @brief Width and byte length of the character at @c data[0..avail). */
@@ -203,30 +241,32 @@ struct CharInfo {
  *        character (Mn, Me, Hangul medial/final jamo, variation selectors).
  */
 inline constexpr bool isCombiningMark(uint32_t cp) {
-  return cp >= 0x300 && inRanges(kCombiningRanges, cp);
+  return codepointClass(cp) == CodepointClass::Combining;
 }
 
 /**
- * @brief True for an invisible format character (Cf: zero-width space,
+ * @brief True for a character cx shows as an escape instead of sending it
+ *        to the terminal: invisible format characters (zero-width space,
  *        ZWJ/ZWNJ, BOM, direction marks and bidi controls, soft hyphen,
- *        ...). cx shows these as escapes rather than hiding them.
+ *        ...), the line and paragraph separators, and the C1 controls
+ *        (which a terminal may act on).
  */
-inline constexpr bool isFormatChar(uint32_t cp) {
-  return cp >= 0xAD && inRanges(kFormatRanges, cp);
+inline constexpr bool isEscapedCodepoint(uint32_t cp) {
+  return codepointClass(cp) == CodepointClass::Escaped;
 }
 
 /**
- * @brief Width of the escape formatCharEscape() writes for @p cp:
+ * @brief Width of the escape codepointEscape() writes for @p cp:
  *        "\\u200b" (6) for the BMP, "\\u{e0001}" (9 or 10) above it.
  */
-inline constexpr std::size_t formatCharEscapeWidth(uint32_t cp) {
+inline constexpr std::size_t codepointEscapeWidth(uint32_t cp) {
   if (cp <= 0xFFFF)
     return 6;
   return cp <= 0xFFFFF ? 9 : 10;
 }
 
-/** @brief The escape text for format character @p cp, e.g. "\\u200b". */
-std::string formatCharEscape(uint32_t cp);
+/** @brief The escape text for @p cp, e.g. "\\u200b". */
+std::string codepointEscape(uint32_t cp);
 
 /** @brief Display text of a combining mark with no character to sit on. */
 inline constexpr std::string_view kOrphanMarkBase = "\xe2\x97\x8c"; // ◌ U+25CC
@@ -244,7 +284,7 @@ inline constexpr std::string_view kOrphanMarkBase = "\xe2\x97\x8c"; // ◌ U+25C
  *   xfce4-terminal).
  * - Tab and control bytes (ESC included) are width 2, drawn "^X"; an
  *   invalid byte (len == 1 from decodeUtf8) is width 4, drawn "\\xHH"; a
- *   format character is drawn as formatCharEscape(). None of these
+ *   escaped character is drawn as codepointEscape(). None of these
  *   absorb marks.
  * - Combining marks with nothing to attach to (line start, or after one
  *   of the above) form their own cluster, drawn on kOrphanMarkBase:
@@ -269,9 +309,17 @@ inline constexpr CharInfo charInfoAt(char const* data, std::size_t avail) {
     auto [cp, len] = decodeUtf8(data, avail);
     if (len == 1)
       return {4, 1}; // invalid byte — displayed as "\xHH"
-    if (isFormatChar(cp))
-      return {formatCharEscapeWidth(cp), len};
-    info = {isCombiningMark(cp) ? 1 : codepointWidth(cp), len};
+    switch (codepointClass(cp)) {
+    case CodepointClass::Escaped:
+      return {codepointEscapeWidth(cp), len};
+    case CodepointClass::Wide:
+      info = {2, len};
+      break;
+    case CodepointClass::Normal:
+    case CodepointClass::Combining: // nothing to sit on: drawn on kOrphanMarkBase
+      info = {1, len};
+      break;
+    }
   }
   // Absorb trailing marks. Nothing below U+0300 (lead byte 0xCC) is one.
   while (info.len < avail && static_cast<unsigned char>(data[info.len]) >= 0xCC) {
@@ -361,8 +409,8 @@ std::size_t visualWidth(std::string_view s);
  *
  * Bytes rendered as escapes are: ASCII control characters (< 0x20,
  * including TAB and newline), DEL (0x7F), and any high byte (>= 0x80) that
- * does not start a valid UTF-8 sequence. Invisible format characters
- * become formatCharEscape() escapes and a combining mark with nothing to
+ * does not start a valid UTF-8 sequence. Escaped characters (see
+ * isEscapedCodepoint()) become codepointEscape() escapes and a combining mark with nothing to
  * sit on gets kOrphanMarkBase, matching charInfoAt(). Other printable
  * ASCII and valid multi-byte UTF-8 pass through unchanged. Intended for filenames and
  * other short user-visible strings from outside the editor; not for

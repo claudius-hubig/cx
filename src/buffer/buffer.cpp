@@ -460,6 +460,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         out += kSpaceStyle;
         out += kWsFg;
         out += "\xc2\xb7";
+        out.append(data + 1, info.len - 1); // combining marks on the space
         out += ansi::Reset;
         rs = {};
         if (curLineBg)
@@ -502,11 +503,12 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       rs = {};
       if (curLineBg)
         out += curLineBg;
-    } else if (auto cp = decodeUtf8(data, info.len).first; isFormatChar(cp)) {
-      // Invisible format character (ZWSP, ZWJ, BOM, bidi control, ...):
-      // show it as "\\u200b" so it can't hide in the text.
+    } else if (auto cp = decodeUtf8(data, info.len).first; isEscapedCodepoint(cp)) {
+      // Invisible format character (ZWSP, ZWJ, BOM, bidi control, ...),
+      // line/paragraph separator or C1 control: show it as "\\u200b" so
+      // it can't hide in the text or reach the terminal as a control.
       out += kCtrlColor;
-      out += formatCharEscape(cp);
+      out += codepointEscape(cp);
       out += ansi::Reset;
       rs = {};
       if (curLineBg)

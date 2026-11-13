@@ -683,6 +683,26 @@ BOOST_AUTO_TEST_CASE(render_format_char_as_escape) {
   BOOST_CHECK_EQUAL(col.value, 8u);
 }
 
+BOOST_AUTO_TEST_CASE(render_c1_control_as_escape) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "x\xc2\x9b"
+                    "31my"); // U+009B would start a CSI sequence
+  std::string out;
+  buf.render(out, RowIdx{3}, ColIdx{20}, renderParams(buf));
+  BOOST_CHECK(out.find("\xc2\x9b") == std::string::npos);
+  BOOST_CHECK(stripAnsi(out).find("x\\u009b31my") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_mark_on_space_survives_whitespace_display) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "a \xcc\x81"
+                    "b");
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{3}, ColIdx{20}, renderParams(buf, true));
+  BOOST_CHECK(stripAnsi(out).find("\xc2\xb7\xcc\x81") != std::string::npos); // ·+mark
+  BOOST_CHECK_EQUAL(col.value, 3u);
+}
+
 BOOST_AUTO_TEST_CASE(render_orphan_mark_on_dotted_circle) {
   TB<TextBuffer> buf("test");
   insertString(buf, "\xcc\x81x"); // U+0301 at line start
