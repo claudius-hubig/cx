@@ -904,6 +904,54 @@ BOOST_AUTO_TEST_CASE(reflow_blank_line_is_noop) {
   BOOST_CHECK_EQUAL(buf.lineContent(2), "beta");
 }
 
+// --- Version history after multi-line edits that keep the line count ---
+
+namespace {
+
+// The newest history version must reproduce the buffer exactly. A
+// single-line delta recorded for an edit that changed several lines
+// silently drops all but the first.
+template <typename Edit> void checkHistoryMatchesBuffer(std::string const& doc, Edit edit) {
+  TempFile f(doc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  edit(view);
+  auto text = [&] {
+    std::string s;
+    for (std::size_t i = 0; i < buf.lineCount(); ++i)
+      s += buf.lineContent(i) + "\n";
+    return s;
+  };
+  auto expected = text();
+  BOOST_REQUIRE_NE(expected, doc + "\n"); // the edit did something
+  BufferPoint cursor;
+  buf.applyVersionAt(buf.versionHistoryInfo().size - 1, cursor);
+  BOOST_CHECK_EQUAL(text(), expected);
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(history_records_every_line_of_a_same_count_edit) {
+  checkHistoryMatchesBuffer("aaaa bbbb cccc\nd\n", [](BufferView& v) {
+    v.setPoint(0, 0);
+    v.reflowParagraph(10); // two lines before and after, both changed
+  });
+  checkHistoryMatchesBuffer("| a | b |\n|---|---|\n| long cell | 2 |\n", [](BufferView& v) {
+    v.setPoint(0, 2);
+    v.reflowParagraph(80, BufferView::ReflowTables::Markdown);
+  });
+  checkHistoryMatchesBuffer("a\nb\nc\n", [](BufferView& v) {
+    v.setMark({0, 0});
+    v.setPoint(2, 1);
+    v.toggleComment("// ");
+  });
+  checkHistoryMatchesBuffer("a\nb\nc\n", [](BufferView& v) {
+    v.setMark({0, 0});
+    v.setPoint(2, 1);
+    v.convertCase(BufferView::CaseOp::Upper);
+  });
+}
+
 // --- Combining marks: one character with its base ---
 
 BOOST_AUTO_TEST_CASE(cursor_moves_over_combining_marks_in_one_step) {

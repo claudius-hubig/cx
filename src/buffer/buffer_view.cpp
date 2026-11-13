@@ -1197,7 +1197,8 @@ void BufferView::toggleComment(std::string_view prefix) {
       shift(*_mark, li, ws);
   }
   syncAfterEdit();
-  _buf.recordVersion(_point, fromLine, 0);
+  // The single-line delta only holds when one line changed.
+  _buf.recordVersion(_point, fromLine == toLine ? fromLine : SIZE_MAX, 0);
 }
 
 namespace {
@@ -1292,7 +1293,8 @@ void BufferView::convertCase(CaseOp op) {
     _buf.deleteRegion(from, to);
     _buf.insertText(converted, from);
     syncAfterEdit();
-    _buf.recordVersion(hadMark ? _point : to, from.line, 0);
+    // The single-line delta only holds when one line changed.
+    _buf.recordVersion(hadMark ? _point : to, from.line == to.line ? from.line : SIZE_MAX, 0);
   }
 
   // A word operation advances the cursor past the word (even when the
@@ -1366,7 +1368,8 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     syncAfterEdit();
     _point = cursor.value_or(after);
     int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-    _buf.recordVersion(_point, fromLine, shift);
+    // The single-line delta only holds when one line changed.
+    _buf.recordVersion(_point, fromLine == toLine && shift == 0 ? fromLine : SIZE_MAX, shift);
   };
 
   // No region, cursor in a table: align it and wrap the cursor's column.
