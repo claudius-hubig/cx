@@ -431,6 +431,80 @@ BOOST_AUTO_TEST_CASE(view_formatted_table_leaves_buffer_unmodified) {
   BOOST_CHECK_EQUAL(view.point().offset, 2u);
 }
 
+// --- Prefixes, spacer rows, awkward cells ---
+
+BOOST_AUTO_TEST_CASE(block_quoted_table) {
+  auto lines = toLinePtrs({"> | a | b |", "> |---|---|", "> | long cell | 2 |", "text"});
+  auto t = findMarkdownTable(lines, 2);
+  BOOST_REQUIRE(t);
+  BOOST_CHECK_EQUAL(t->first, 0u);
+  BOOST_CHECK_EQUAL(t->last, 2u);
+  BOOST_CHECK_EQUAL(format("> | a | b |\n> |---|---|\n>| long cell | 2 |", -1),
+                    "> | a         | b   |\n"
+                    "> | --------- | --- |\n"
+                    "> | long cell | 2   |");
+  // Nested quote, continuation rows get the prefix too, and it counts
+  // toward the width.
+  auto out = format("> > | k | v |\n> > |---|---|\n> > | a | one two three four five six seven "
+                    "eight nine ten eleven twelve thirteen fourteen fifteen sixteen |",
+                    1);
+  for (auto const& l : splitLines(out)) {
+    BOOST_CHECK(l.starts_with("> > | "));
+    BOOST_CHECK_LE(visualWidth(l), 80u);
+  }
+  BOOST_CHECK_GE(splitLines(out).size(), 4u);
+}
+
+BOOST_AUTO_TEST_CASE(table_after_byte_order_mark) {
+  std::vector<std::string> lines{"\xef\xbb\xbf| a | b |", "|---|---|", "| 1 | 22 |"};
+  BOOST_CHECK(findMarkdownTable(toLinePtrs(lines), 0));
+  auto r = formatMarkdownTable(lines, BufferPoint{2, 2}, 80);
+  BOOST_REQUIRE(r);
+  BOOST_CHECK_EQUAL(joinLines(r->lines), "\xef\xbb\xbf| a   | b   |\n"
+                                         "| --- | --- |\n"
+                                         "| 1   | 22  |");
+  // Only a header carries a BOM as prefix; elsewhere it is cell text.
+  std::vector<std::string> body{"| a | b |", "|---|---|", "\xef\xbb\xbf| 1 | 2 |"};
+  auto r2 = formatMarkdownTable(body, std::nullopt, 80);
+  BOOST_REQUIRE(r2);
+  BOOST_CHECK(joinLines(r2->lines).find("\xef\xbb\xbf") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(spacer_rows_are_kept) {
+  std::string table = "| k   | v   |\n"
+                      "| --- | --- |\n"
+                      "| a   | 1   |\n"
+                      "|     |     |\n"
+                      "|     | 2   |\n"
+                      "| b   | 3   |";
+  BOOST_CHECK_EQUAL(format(table, -1), table);
+  // Wrapping column v doesn't pull "2" up into row a across the spacer.
+  BOOST_CHECK_EQUAL(format(table, 1), table);
+}
+
+BOOST_AUTO_TEST_CASE(cell_starting_with_combining_mark_stays_aligned) {
+  std::vector<std::string> lines{"| a | b |", "|---|---|", "| \xcc\x81x | y |", "| zz | w |"};
+  auto off = lines[2].find("\xcc\x81");
+  auto r = formatMarkdownTable(lines, BufferPoint{2, off}, 80);
+  BOOST_REQUIRE(r && r->cursor);
+  for (auto const& l : r->lines)
+    BOOST_CHECK_EQUAL(visualWidth(l), visualWidth(r->lines[0]));
+  // The mark joins the padding space, so the cursor sits before that space.
+  auto const& line = r->lines[r->cursor->line];
+  BOOST_CHECK_EQUAL(clusterStart(line, r->cursor->offset), r->cursor->offset);
+  BOOST_CHECK(std::string_view(line).substr(r->cursor->offset).starts_with(" \xcc\x81x"));
+}
+
+BOOST_AUTO_TEST_CASE(cell_ending_in_backslash_blank_is_stable) {
+  std::vector<std::string> lines{"| k | v |", "|---|---|", "| a | word\\ \t |", "| b | x\\ y |"};
+  auto r1 = formatMarkdownTable(lines, BufferPoint{2, 6}, 80);
+  BOOST_REQUIRE(r1);
+  auto r2 = formatMarkdownTable(r1->lines, r1->cursor, 80);
+  BOOST_REQUIRE(r2);
+  BOOST_CHECK(r1->lines == r2->lines);
+  BOOST_CHECK_EQUAL(r1->lines[2], "| a   | word\\ |");
+}
+
 // --- Fenced code blocks ---
 
 BOOST_AUTO_TEST_CASE(fenced_lines) {

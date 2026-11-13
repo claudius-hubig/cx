@@ -9,7 +9,12 @@
  * represented by *continuation rows*: a body row whose first cell is
  * empty continues the logical row above it, and the wrapped text lives in
  * the same column of those rows. Consequently the first column is never
- * wrapped, and the header (always a single line) is never wrapped.
+ * wrapped, and the header (always a single line) is never wrapped. A
+ * body row that is empty altogether is a spacer: it is kept, and the row
+ * after it starts a new logical row.
+ *
+ * Rows may carry a prefix of indentation and block-quote markers (`> `),
+ * and the header (the first line of a file) a byte-order mark before it.
  */
 
 #include "types.hpp"
@@ -72,8 +77,9 @@ struct FormattedTable {
  * Every cell is padded to its column's width (visual width, minimum 3)
  * so all separators line up; delimiter rows are resized and keep their
  * `:` alignment markers, which also decide whether cells are padded
- * left, right or centred. Outer pipes are always emitted; the first
- * line's indentation is kept on every line; short rows get empty cells.
+ * left, right or centred. Outer pipes are always emitted; the header's
+ * prefix (indentation, block-quote markers) is put on every line and
+ * counts toward @p targetWidth; short rows get empty cells.
  *
  * With a @p cursor outside the first column, every cell of the cursor's
  * column is refilled to whatever is left of @p targetWidth after the

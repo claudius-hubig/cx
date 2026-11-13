@@ -24,6 +24,36 @@ std::size_t nonBlankBytes(std::string_view s) {
   return static_cast<std::size_t>(std::ranges::count_if(s, [](char c) { return !isBlank(c); }));
 }
 
+constexpr std::string_view kBom = "\xef\xbb\xbf";
+
+/**
+ * @brief Length of what precedes the row proper: indentation and
+ *        block-quote markers (`> `). With @p allowBom, a byte-order mark
+ *        at the very start counts too; only a header can carry one (the
+ *        first line of a file), so other rows keep it as cell text.
+ */
+std::size_t prefixLen(std::string_view line, bool allowBom) {
+  std::size_t i = allowBom && line.starts_with(kBom) ? kBom.size() : 0;
+  for (;;) {
+    while (i < line.size() && isBlank(line[i]))
+      ++i;
+    if (i == line.size() || line[i] != '>')
+      return i;
+    ++i;
+  }
+}
+
+/**
+ * @brief Width of cell text as drawn in a row, where a space always
+ *        precedes it: a leading combining mark sits on that space rather
+ *        than on a dotted circle of its own.
+ */
+std::size_t cellWidth(std::string_view text) {
+  auto w = visualWidth(text);
+  bool leadingMark = !text.empty() && isCombiningMark(decodeUtf8(text.data(), text.size()).first);
+  return leadingMark ? w - 1 : w;
+}
+
 /** @brief Untrimmed byte range [begin, end) of one cell within a row line. */
 struct CellSpan {
   std::size_t begin;
@@ -32,14 +62,15 @@ struct CellSpan {
 
 /**
  * @brief Split a row on unescaped pipes (a backslash escapes the next
- *        byte). Optional leading and trailing pipes don't produce empty
- *        outer cells.
+ *        byte), after its prefix (see prefixLen()). Optional leading and
+ *        trailing pipes don't produce empty outer cells.
  */
-std::vector<CellSpan> splitRow(std::string_view line) {
+std::vector<CellSpan> splitRow(std::string_view line, bool allowBom = false) {
   std::vector<CellSpan> spans;
-  std::size_t start = 0;
+  std::size_t start = prefixLen(line, allowBom);
+  std::size_t const first = start; // prefixLen() skipped the blanks
   std::size_t lastPipe = std::string_view::npos;
-  for (std::size_t i = 0; i < line.size(); ++i) {
+  for (std::size_t i = start; i < line.size(); ++i) {
     if (line[i] == '\\') {
       ++i;
     } else if (line[i] == '|') {
@@ -50,9 +81,8 @@ std::vector<CellSpan> splitRow(std::string_view line) {
   }
   spans.push_back({start, line.size()});
 
-  auto first = line.find_first_not_of(" \t");
   auto last = line.find_last_not_of(" \t");
-  if (first != std::string_view::npos && line[first] == '|')
+  if (first < line.size() && line[first] == '|')
     spans.erase(spans.begin());
   if (last != std::string_view::npos && last == lastPipe && !spans.empty())
     spans.pop_back();
@@ -69,9 +99,9 @@ bool hasPipe(std::string_view line) {
   return false;
 }
 
-std::vector<std::string> cellsOf(std::string_view line) {
+std::vector<std::string> cellsOf(std::string_view line, bool allowBom = false) {
   std::vector<std::string> cells;
-  for (auto [b, e] : splitRow(line))
+  for (auto [b, e] : splitRow(line, allowBom))
     cells.emplace_back(trim(line.substr(b, e - b)));
   return cells;
 }
@@ -118,8 +148,8 @@ void appendWords(std::string_view s, std::vector<std::string>& out) {
       continue;
     }
     std::size_t len = 1;
-    if (c == '\\' && i + 1 < s.size()) {
-      len = 2;
+    if (c == '\\' && i + 1 < s.size() && !isBlank(s[i + 1])) {
+      len = 2; // an escaped character stays with its backslash
     } else if (c == '`') {
       // A code span closes at the next backtick run of the same length.
       auto runEnd = [&](std::size_t from) {
@@ -194,7 +224,7 @@ std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_
     ++run.last;
   for (std::size_t h = run.first; h < run.last && !run.header; ++h)
     if (isDelimiterRow(*lines[h + 1]) &&
-        splitRow(*lines[h + 1]).size() == splitRow(*lines[h]).size())
+        splitRow(*lines[h + 1]).size() == splitRow(*lines[h], true).size())
       run.header = h;
   return run;
 }
@@ -212,12 +242,15 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
   if (lines.size() < 2 || !isDelimiterRow(lines[1]))
     return std::nullopt;
 
-  std::string const indent = lines[0].substr(0, lines[0].find_first_not_of(" \t"));
+  // Every output row gets the header's prefix (indentation, block-quote
+  // markers); a byte-order mark stays on the header only.
+  std::string const headPrefix = lines[0].substr(0, prefixLen(lines[0], true));
+  std::string const prefix = headPrefix.substr(headPrefix.starts_with(kBom) ? kBom.size() : 0);
 
   std::vector<std::vector<std::string>> rows;
   std::size_t ncols = 1;
-  for (auto const& l : lines) {
-    rows.push_back(cellsOf(l));
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    rows.push_back(cellsOf(lines[i], i == 0));
     ncols = std::max(ncols, rows.back().size());
   }
   for (auto& r : rows)
@@ -230,12 +263,16 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
   // Logical rows, each a [column][physical line] grid. Index 0 is the
   // header and index 1 the delimiter row (its text is regenerated, so it
   // stays empty here); a body row with an empty first cell continues the
-  // logical row above it.
+  // logical row above it. A row that is empty altogether is a spacer
+  // (wrapping never produces one, so it must be the user's): it stands
+  // alone, and the row after it starts afresh.
   using Cell = std::vector<std::string>;
   std::vector<std::vector<Cell>> logical;
   std::vector<std::size_t> logicalOf;
+  bool afterSpacer = false;
   for (std::size_t i = 0; i < rows.size(); ++i) {
-    if (i > 2 && rows[i][0].empty()) {
+    bool spacer = std::ranges::all_of(rows[i], &std::string::empty);
+    if (i > 2 && rows[i][0].empty() && !spacer && !afterSpacer) {
       for (std::size_t c = 0; c < ncols; ++c)
         logical.back()[c].push_back(rows[i][c]);
     } else {
@@ -243,6 +280,7 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
       for (std::size_t c = 0; c < ncols; ++c)
         logical.back()[c].push_back(i == 1 ? std::string{} : rows[i][c]);
     }
+    afterSpacer = i > 1 && spacer;
     logicalOf.push_back(logical.size() - 1);
   }
 
@@ -251,7 +289,7 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
   std::size_t curRow = 0, curCol = 0, curBytes = 0;
   if (cursor) {
     auto const& line = lines[cursor->line];
-    auto spans = splitRow(line);
+    auto spans = splitRow(line, cursor->line == 0);
     while (curCol + 1 < spans.size() && spans[curCol].end < cursor->offset)
       ++curCol;
     curRow = logicalOf[cursor->line];
@@ -269,12 +307,12 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
     std::size_t w = kMinColumnWidth;
     for (auto const& lr : logical)
       for (auto const& s : lr[c])
-        w = std::max(w, visualWidth(s));
+        w = std::max(w, cellWidth(s));
     return w;
   };
 
   if (cursor && curCol > 0) {
-    std::size_t used = visualWidth(indent) + 1 + 3;
+    std::size_t used = visualWidth(prefix) + 1 + 3;
     for (std::size_t c = 0; c < ncols; ++c)
       if (c != curCol)
         used += columnWidth(c) + 3;
@@ -325,7 +363,7 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
   std::vector<std::size_t> widths(ncols, kMinColumnWidth);
   for (auto const& row : out)
     for (std::size_t c = 0; c < ncols; ++c)
-      widths[c] = std::max(widths[c], visualWidth(row.cells[c]));
+      widths[c] = std::max(widths[c], cellWidth(row.cells[c]));
 
   FormattedTable result;
   struct CursorCell {
@@ -335,10 +373,11 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
   };
   std::vector<CursorCell> cursorCells;
   for (auto const& row : out) {
-    std::string line = indent + "|";
+    std::string line = (result.lines.empty() ? headPrefix : prefix) + "|";
     for (std::size_t c = 0; c < ncols; ++c) {
       auto w = widths[c];
       std::string text = row.cells[c];
+      std::size_t textWidth = w; // a delimiter cell fills its column
       std::size_t left = 0;
       if (row.logical == 1) {
         text = align[c] == Align::Left     ? ":" + std::string(w - 1, '-')
@@ -346,7 +385,8 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
                : align[c] == Align::Center ? ":" + std::string(w - 2, '-') + ":"
                                            : std::string(w, '-');
       } else {
-        auto gap = w - visualWidth(text);
+        textWidth = cellWidth(text);
+        auto gap = w - textWidth;
         left = align[c] == Align::Right ? gap : align[c] == Align::Center ? gap / 2 : 0;
       }
       line += ' ';
@@ -354,7 +394,7 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
       if (cursor && row.logical == curRow && c == curCol)
         cursorCells.push_back({result.lines.size(), line.size(), row.cells[c]});
       line += text;
-      line.append(w - visualWidth(text) - left, ' ');
+      line.append(w - textWidth - left, ' ');
       line += " |";
     }
     result.lines.push_back(std::move(line));
@@ -366,7 +406,10 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
       auto const& cc = cursorCells[i];
       auto n = nonBlankBytes(cc.text);
       if (remaining <= n || i + 1 == cursorCells.size()) {
-        result.cursor = BufferPoint{cc.line, cc.start + offsetAfterNonBlank(cc.text, remaining)};
+        // Snapped, since a leading mark in the cell joins the space before it.
+        auto const& line = result.lines[cc.line];
+        result.cursor = BufferPoint{
+            cc.line, clusterStart(line, cc.start + offsetAfterNonBlank(cc.text, remaining))};
         break;
       }
       remaining -= n;

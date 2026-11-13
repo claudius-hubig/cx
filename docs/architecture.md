@@ -727,7 +727,10 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   no narrower than the longest word, the header, or min(20, the widest
   cell). Code spans and links are never split. A GFM row is one line, so
   a wrapped cell continues in body rows whose first cell is empty.
-  Column 1 and the header are never wrapped. The returned cursor keeps
+  Column 1 and the header are never wrapped. A fully empty body row is
+  a spacer and is kept. Rows may carry indentation and block-quote
+  markers (`> `), which every output row gets, and the header a
+  byte-order mark. The returned cursor keeps
   its logical cell and its non-blank-byte offset within that cell's
   text.
 
