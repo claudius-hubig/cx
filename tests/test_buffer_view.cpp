@@ -1125,6 +1125,43 @@ BOOST_AUTO_TEST_CASE(overwrite_replaces_char_under_cursor) {
   BOOST_CHECK_EQUAL(view.point().offset, 1u); // advanced past 'X'
 }
 
+// The mark shift used to assume the replaced character was one byte:
+// overwriting "x" with a three-byte character moved a mark at the cursor
+// two bytes into the new character, and replacing a wide character with
+// ASCII left marks behind it pointing two bytes too far.
+BOOST_AUTO_TEST_CASE(overwrite_keeps_mark_on_character_boundaries) {
+  TextBuffer buf("t");
+  buf.insertText("axb", BufferPoint{0, 0});
+  BufferView v(buf);
+  buf.setOverwriteMode(true);
+  v.setPoint(0, 1);
+  v.toggleMark();   // at the cursor, in front of "x"
+  v.insert(0x4E2D); // 中 replaces x
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "a\xe4\xb8\xad"
+                                        "b");
+  BOOST_CHECK(*v.mark() == (BufferPoint{0, 1}));
+
+  v.toggleMark();
+  v.setPoint(0, 4);
+  v.toggleMark(); // in front of "b"
+  v.setPoint(0, 1);
+  v.insert('y'); // y replaces 中
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "ayb");
+  BOOST_CHECK(*v.mark() == (BufferPoint{0, 2}));
+
+  // A character is replaced together with its combining marks.
+  TextBuffer buf2("t");
+  buf2.insertText("e\xcc\x81z", BufferPoint{0, 0});
+  BufferView v2(buf2);
+  buf2.setOverwriteMode(true);
+  v2.setPoint(0, 3);
+  v2.toggleMark();
+  v2.setPoint(0, 0);
+  v2.insert('o');
+  BOOST_CHECK_EQUAL(buf2.lineContent(0), "oz");
+  BOOST_CHECK(*v2.mark() == (BufferPoint{0, 1}));
+}
+
 BOOST_AUTO_TEST_CASE(overwrite_at_end_of_line_appends_without_joining) {
   TempFile f("ab\ncd\n");
   TextBuffer buf(f.path().string(), f.path());

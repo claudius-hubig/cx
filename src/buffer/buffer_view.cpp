@@ -889,18 +889,14 @@ void BufferView::insert(uint32_t cp) {
 
   // In overwrite mode: delete character under cursor before inserting (unless at end of line)
   // Exception: newline characters are always inserted (don't overwrite)
-  bool didOverwriteDelete = false;
+  std::size_t overwritten = 0; // bytes of the character replaced, if any
   if (_buf.overwriteMode() && cp != '\n') {
-    auto const& lineContent = _buf.lineContent(insertLine);
-    if (insertOff < lineContent.size()) {
-      // Delete the character(s) under the cursor
+    auto sizeBefore = _buf.lineContent(insertLine).size();
+    if (insertOff < sizeBefore) {
+      // Delete the character (with its combining marks) under the cursor.
       _point = _buf.deleteAt(_point);
       syncAfterEdit();
-      didOverwriteDelete = true;
-      // Update line/offset after potential line join
-      insertLine = _point.line;
-      insertOff = _point.offset;
-      lineCountBefore = _buf.lineCount();
+      overwritten = sizeBefore - _buf.lineContent(insertLine).size();
     }
   }
 
@@ -923,16 +919,20 @@ void BufferView::insert(uint32_t cp) {
         m.line++;
       }
     } else {
-      auto [n, enc] = encodeUtf8(cp);
-      // In overwrite mode with a delete, the mark was affected by both delete and insert.
-      // Net effect: if mark was at or after the cursor on the same line, it moved back 1
-      // from the delete, then forward n from the insert, so net change is n-1.
-      if (didOverwriteDelete && m.line == insertLine && m.offset >= insertOff) {
-        m.offset += n - 1;
-      } else if (m.line == insertLine && m.offset >= insertOff) {
-        // Normal insert mode: just add n
-        m.offset += n;
+      auto n = _point.offset - insertOff; // bytes inserted
+      if (m.line != insertLine) {
+        // Other lines are unaffected.
+      } else if (overwritten == 0) {
+        if (m.offset >= insertOff)
+          m.offset += n;
+      } else if (m.offset >= insertOff + overwritten) {
+        // Past the replaced character: follows the text it was on.
+        m.offset = m.offset - overwritten + n;
+      } else if (m.offset > insertOff) {
+        // Inside the replaced character (it can be several bytes).
+        m.offset = insertOff + n;
       }
+      // A mark at the cursor stays in front of the new character.
     }
   }
 
