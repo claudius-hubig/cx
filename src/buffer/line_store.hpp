@@ -65,7 +65,17 @@ inline LinePtr makeLine(char const* s) { return makeLine(std::string_view(s)); }
  */
 class LineStore {
 public:
-  /** @brief Default target chunk size T. */
+  /**
+   * @brief Default target chunk size T.
+   *
+   * A history snapshot costs one pointer per chunk (N/T), and the first
+   * edit of a chunk a snapshot shares clones it (T pointers), so T trades
+   * single-cursor against scattered multi-cursor edits. Measured with
+   * bench_suite (2026-11-14): on 1M–2M-line files a keystroke costs 3–7 µs
+   * at 512, 5–13 µs at 256 and 3–5 µs at 1024; 20 scattered cursors cost
+   * 15–22 µs at 512 and 27–32 µs at 1024, which also doubles the history
+   * memory of scattered edits. Scans and loads do not depend on T.
+   */
   static constexpr std::size_t kDefaultChunk = 512;
 
   /** @brief An empty store; @p chunk is the target chunk size T (>= 4). */
