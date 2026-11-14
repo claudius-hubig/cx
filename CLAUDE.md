@@ -111,6 +111,7 @@ src/
     buffer_view.hpp/.cpp           Per-view cursor, mark, viewport, editing operations
     buffer_sink.hpp                Abstract interface decoupling BufferManager from Screen
     buffer.hpp/.cpp                Abstract base: text storage, cursor, viewport, rendering
+    line_store.hpp/.cpp            Chunked copy-on-write line sequence (cheap snapshots)
     text_buffer.hpp/.cpp           Editable file-backed buffer
     help_buffer.hpp/.cpp           Readonly keybinding reference
     buffer_list_buffer.hpp/.cpp    Readonly trie-based open-buffer listing
@@ -144,6 +145,7 @@ tests/
   test_scroll.cpp                  Viewport scrolling tests
   test_chunk_delete.cpp            Word-level deletion tests
   test_char_width.cpp              UTF-8 / character width tests
+  test_line_store.cpp              LineStore model/COW tests
   test_shortcut.cpp                Shortcut table tests
   test_prompt_history.cpp          PromptHistory tests
   test_cli.cpp                     Command-line option parsing tests

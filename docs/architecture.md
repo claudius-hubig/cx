@@ -616,6 +616,27 @@ state.
 
 ---
 
+### `LineStore` (`src/buffer/line_store.hpp/.cpp`)
+
+An indexed sequence of `LinePtr`s kept in shared copy-on-write chunks of
+up to 2×T pointers (T = 512 by default, a constructor parameter so tests
+can use tiny chunks; every chunk but the last holds at least T/4).
+Copying a store copies one pointer per chunk, and the copies share every
+chunk; the first edit of a shared chunk clones it, and `mutableLine(i)`
+then also detaches a shared line string. Line `i` is found by binary
+search over the chunks' first line numbers, with a cached last chunk
+that makes sequential access O(1); edits cost O(T + N/T). Large inserts
+build whole chunks and large erases drop whole chunks. The free
+`makeLine()` helpers create line strings non-const behind the
+`string const` pointer, which makes `mutableLine()`'s in-place edit of an
+unshared line well-defined.
+
+Assumptions (stated in the header): single-threaded (the lookup cache and
+the `use_count()` sharing test), and references/iterators are valid only
+until the next mutation. Not yet used by `Buffer`.
+
+---
+
 ### `VersionHistory` (`src/buffer/version_history.hpp/.cpp`)
 
 Append-only history of buffer snapshots used by `TextBuffer` to

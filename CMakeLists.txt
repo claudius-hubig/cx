@@ -42,6 +42,7 @@ add_library(cx_core STATIC
     src/buffer/modes/md/fence.cpp
     src/buffer/modes/md/table.cpp
     src/shortcut.cpp
+    src/buffer/line_store.cpp
     src/buffer/buffer.cpp
     src/buffer/buffer_view.cpp
     src/buffer/text_buffer.cpp
@@ -142,6 +143,7 @@ if(CX_BUILD_TESTS AND Boost_FOUND)
     endfunction()
 
     cx_test(char_width)
+    cx_test(line_store)
     cx_test(buffer)
     cx_test(text_buffer)
     cx_test(help_buffer)
