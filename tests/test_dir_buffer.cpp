@@ -443,6 +443,25 @@ BOOST_AUTO_TEST_CASE(rename_rejects_collision) {
   BOOST_CHECK(fs::exists(tmp.path / "a.txt"));
 }
 
+// A refused rename re-lists the directory and keeps the cursor on the
+// entry. The entry's name used to be passed to refresh() by reference to
+// the very list refresh() rebuilds (a read of freed memory), so the
+// cursor could land anywhere.
+BOOST_AUTO_TEST_CASE(refused_rename_keeps_cursor_on_entry) {
+  TmpDir tmp;
+  for (char c = 'a'; c <= 'h'; ++c)
+    tmp.createFile(std::string(40, c) + ".txt"); // long names: heap-allocated strings
+  TB<DirBuffer> buf(tmp.path);
+  std::size_t idx = buf.entries().size() - 2;
+  auto name = buf.entries()[idx].name;
+  for (auto const& bad : std::vector<std::string>{"", "sub/x", std::string(40, 'a') + ".txt"}) {
+    auto r = buf.renameEntry({idx, 0}, bad);
+    BOOST_CHECK(!r.ok);
+    BOOST_CHECK_EQUAL(r.hint.point.line, idx);
+    BOOST_CHECK_EQUAL(buf.entries()[idx].name, name);
+  }
+}
+
 BOOST_AUTO_TEST_CASE(rename_rejects_slash_in_name) {
   TmpDir tmp;
   tmp.createFile("a.txt");

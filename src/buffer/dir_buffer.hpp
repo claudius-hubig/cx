@@ -125,9 +125,10 @@ private:
   /**
    * @brief Rebuild the entry list and display lines.
    * @param prevName When non-empty, tries to place the returned cursor on
-   *        the entry with that name.
+   *        the entry with that name. Taken by value: callers pass names
+   *        of entries, which this function destroys.
    */
-  ViewHint refresh(std::string const& prevName = {});
+  ViewHint refresh(std::string prevName = {});
 
   std::filesystem::path _dir;
   bool _showHidden = false;

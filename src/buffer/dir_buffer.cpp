@@ -167,7 +167,8 @@ DirBuffer::DeleteResult DirBuffer::executeDelete() {
 DirBuffer::ChangeResult DirBuffer::renameEntry(BufferPoint p, std::string const& newName) {
   if (p.line >= _entries.size())
     return {false, "no entry selected", refresh()};
-  auto const& entry = _entries[p.line];
+  // A copy: every refresh() below rebuilds _entries.
+  auto const entry = _entries[p.line];
   if (entry.name == "." || entry.name == "..")
     return {false, "cannot rename . or ..", refresh(entry.name)};
   if (newName.empty() || newName == "." || newName == "..")
@@ -211,7 +212,7 @@ bool DirBuffer::selectedIsDir(BufferPoint p) const {
   return false;
 }
 
-ViewHint DirBuffer::refresh(std::string const& prevName) {
+ViewHint DirBuffer::refresh(std::string prevName) {
   _entries.clear();
   _displayLines.clear();
 
