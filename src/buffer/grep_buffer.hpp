@@ -10,17 +10,32 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-/** @brief One match produced by a find-in-files search. */
-struct GrepHit {
+/** @brief A file a find-in-files search matched; shared by all of its hits. */
+struct GrepFile {
   std::filesystem::path path; /**< Absolute path, resolved against the search root. */
   std::string displayPath;    /**< Path exactly as the backend emitted it (root-relative). */
-  std::size_t line = 0;       /**< 1-based line number of the match. */
-  std::string text;           /**< Content of the matching line, leading whitespace trimmed. */
+};
+
+/**
+ * @brief One match produced by a find-in-files search.
+ *
+ * The file is shared because one search can return millions of hits in a
+ * few files, and a std::filesystem::path with its components costs several
+ * hundred bytes: a copy per hit once took 3.4 GB for 4M hits.
+ */
+struct GrepHit {
+  std::shared_ptr<GrepFile const> file; /**< The matched file; never null. */
+  std::size_t line = 0;                 /**< 1-based line number of the match. */
+  std::string text; /**< Content of the matching line, leading whitespace trimmed. */
+
+  std::filesystem::path const& path() const { return file->path; }
+  std::string const& displayPath() const { return file->displayPath; }
 };
 
 /**
@@ -46,7 +61,8 @@ struct GrepHit {
  * @param out   Raw stdout of the search command.
  * @param root  Directory the command ran in; relative paths resolve
  *              against it.
- * @return The parsed hits, in backend order.
+ * @return The parsed hits, in backend order. Consecutive hits in the same
+ *         file share one GrepFile (both backends list a file's hits together).
  */
 std::vector<GrepHit> parseGrepOutput(std::string_view out, std::filesystem::path const& root);
 
@@ -86,7 +102,7 @@ public:
   std::size_t headerLines() const { return kHeaderLines; }
 
 private:
-  /** @brief Rebuild display lines and base-class line storage. */
+  /** @brief Rebuild the display lines (the base-class _lines). */
   ViewHint rebuild();
 
   /** @brief Lines occupied by the header before the first result. */
@@ -95,7 +111,6 @@ private:
   std::string _pattern;
   std::filesystem::path _root;
   std::vector<GrepHit> _hits;
-  std::vector<std::string> _displayLines;
-  /** @brief Byte length of the `path:line:` prefix of each display line. */
+  /** @brief Byte length of the `path:line:` prefix of each line of _lines. */
   std::vector<std::size_t> _prefixLens;
 };

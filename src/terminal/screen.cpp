@@ -1345,7 +1345,7 @@ void Screen::openGrepHit(GrepHit const& hit) {
   if (!_bufMgr || !_layout)
     return;
 
-  Buffer& target = _bufMgr->open(hit.path);
+  Buffer& target = _bufMgr->open(hit.path());
 
   // Show the hit beside the results rather than on top of them, so the
   // listing survives walking several matches. A split that does not fit

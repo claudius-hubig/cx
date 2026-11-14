@@ -23,9 +23,9 @@ BOOST_AUTO_TEST_CASE(parses_git_grep_format) {
   auto out = gitRecord("src/a.cpp", "10", "  int x = 1;");
   auto hits = parseGrepOutput(out, "/repo");
   BOOST_REQUIRE_EQUAL(hits.size(), 1u);
-  BOOST_CHECK_EQUAL(hits[0].displayPath, "src/a.cpp");
+  BOOST_CHECK_EQUAL(hits[0].displayPath(), "src/a.cpp");
   BOOST_CHECK_EQUAL(hits[0].line, 10u);
-  BOOST_CHECK_EQUAL(hits[0].path.string(), "/repo/src/a.cpp");
+  BOOST_CHECK_EQUAL(hits[0].path().string(), "/repo/src/a.cpp");
   // Leading whitespace is trimmed so deep indentation stays readable.
   BOOST_CHECK_EQUAL(hits[0].text, "int x = 1;");
 }
@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(parses_multiple_records) {
   BOOST_CHECK_EQUAL(hits[0].line, 1u);
   BOOST_CHECK_EQUAL(hits[1].line, 22u);
   BOOST_CHECK_EQUAL(hits[2].line, 333u);
-  BOOST_CHECK_EQUAL(hits[2].displayPath, "c.cpp");
+  BOOST_CHECK_EQUAL(hits[2].displayPath(), "c.cpp");
 }
 
 BOOST_AUTO_TEST_CASE(colon_in_path_is_not_a_separator) {
@@ -55,7 +55,7 @@ BOOST_AUTO_TEST_CASE(colon_in_path_is_not_a_separator) {
   auto out = gitRecord("odd:name.cpp", "7", "hit");
   auto hits = parseGrepOutput(out, "/r");
   BOOST_REQUIRE_EQUAL(hits.size(), 1u);
-  BOOST_CHECK_EQUAL(hits[0].displayPath, "odd:name.cpp");
+  BOOST_CHECK_EQUAL(hits[0].displayPath(), "odd:name.cpp");
   BOOST_CHECK_EQUAL(hits[0].line, 7u);
 }
 
@@ -70,7 +70,19 @@ BOOST_AUTO_TEST_CASE(absolute_path_is_not_rerooted) {
   auto out = gitRecord("/abs/x.cpp", "2", "t");
   auto hits = parseGrepOutput(out, "/repo");
   BOOST_REQUIRE_EQUAL(hits.size(), 1u);
-  BOOST_CHECK_EQUAL(hits[0].path.string(), "/abs/x.cpp");
+  BOOST_CHECK_EQUAL(hits[0].path().string(), "/abs/x.cpp");
+}
+
+BOOST_AUTO_TEST_CASE(consecutive_hits_share_their_file) {
+  // A path per hit took 3.4 GB for 4M hits in one file.
+  auto out =
+      grepRecord("a.cpp", "1", "x") + grepRecord("a.cpp", "2", "y") + grepRecord("b.cpp", "3", "z");
+  auto hits = parseGrepOutput(out, "/r");
+  BOOST_REQUIRE_EQUAL(hits.size(), 3u);
+  BOOST_CHECK(hits[0].file == hits[1].file);
+  BOOST_CHECK(hits[1].file != hits[2].file);
+  BOOST_CHECK_EQUAL(hits[1].path().string(), "/r/a.cpp");
+  BOOST_CHECK_EQUAL(hits[2].path().string(), "/r/b.cpp");
 }
 
 BOOST_AUTO_TEST_CASE(malformed_records_are_skipped) {
@@ -81,7 +93,7 @@ BOOST_AUTO_TEST_CASE(malformed_records_are_skipped) {
              gitRecord("c.cpp", "0", "zero") + gitRecord("good.cpp", "9", "kept") + "no-nul-here\n";
   auto hits = parseGrepOutput(out, "/r");
   BOOST_REQUIRE_EQUAL(hits.size(), 1u);
-  BOOST_CHECK_EQUAL(hits[0].displayPath, "good.cpp");
+  BOOST_CHECK_EQUAL(hits[0].displayPath(), "good.cpp");
 }
 
 BOOST_AUTO_TEST_CASE(newline_in_path_stays_part_of_path) {
@@ -91,11 +103,11 @@ BOOST_AUTO_TEST_CASE(newline_in_path_stays_part_of_path) {
              grepRecord("x\ny", "3", "three");
   auto hits = parseGrepOutput(out, "/r");
   BOOST_REQUIRE_EQUAL(hits.size(), 3u);
-  BOOST_CHECK_EQUAL(hits[0].displayPath, "a.cpp");
-  BOOST_CHECK_EQUAL(hits[1].displayPath, "sub/nl\nname.txt");
+  BOOST_CHECK_EQUAL(hits[0].displayPath(), "a.cpp");
+  BOOST_CHECK_EQUAL(hits[1].displayPath(), "sub/nl\nname.txt");
   BOOST_CHECK_EQUAL(hits[1].line, 2u);
   BOOST_CHECK_EQUAL(hits[1].text, "two");
-  BOOST_CHECK_EQUAL(hits[2].displayPath, "x\ny");
+  BOOST_CHECK_EQUAL(hits[2].displayPath(), "x\ny");
   BOOST_CHECK_EQUAL(hits[2].text, "three");
 }
 
@@ -158,7 +170,7 @@ BOOST_AUTO_TEST_CASE(selected_hit_maps_cursor_line_past_header) {
   auto first = buf.selectedHit({1, 0});
   BOOST_REQUIRE(first.has_value());
   BOOST_CHECK_EQUAL(first->line, 11u);
-  BOOST_CHECK_EQUAL(first->path.string(), "/repo/a.cpp");
+  BOOST_CHECK_EQUAL(first->path().string(), "/repo/a.cpp");
 
   auto second = buf.selectedHit({2, 0});
   BOOST_REQUIRE(second.has_value());

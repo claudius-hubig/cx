@@ -552,7 +552,10 @@ filename (`git grep -z`, `grep -Z`), which keeps paths containing `:`
 or a newline unambiguous (the path is located by its NUL before the
 record's end-of-line is); they differ in whether the line number is terminated by NUL
 or `:`, and the parser accepts either. Malformed records are skipped
-rather than aborting the parse.
+rather than aborting the parse. Consecutive hits in one file share a
+`GrepFile` (absolute and display path): a `std::filesystem::path` per
+hit cost ~800 bytes, 3.4 GB for 4M hits. The display rows are built
+once, straight into the base-class `LineStore`.
 
 Backend selection, argument construction, and opening a hit live in
 `Screen` (`runGrep()`, `searchStartDir()`, `openGrepHit()`), not here, so

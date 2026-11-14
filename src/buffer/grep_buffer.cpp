@@ -40,6 +40,7 @@ std::string_view trimLeadingWhitespace(std::string_view s) {
 
 std::vector<GrepHit> parseGrepOutput(std::string_view out, std::filesystem::path const& root) {
   std::vector<GrepHit> hits;
+  std::shared_ptr<GrepFile const> file;
   std::size_t pos = 0;
   while (pos < out.size()) {
     // The path runs up to the NUL, so a filename containing '\n' stays
@@ -79,13 +80,12 @@ std::vector<GrepHit> parseGrepOutput(std::string_view out, std::filesystem::path
       continue;
     ++i;
 
-    GrepHit hit;
-    hit.displayPath = std::string(pathPart);
-    std::filesystem::path p(hit.displayPath);
-    hit.path = p.is_absolute() ? p : root / p;
-    hit.line = line;
-    hit.text = std::string(trimLeadingWhitespace(record.substr(i)));
-    hits.push_back(std::move(hit));
+    if (!file || file->displayPath != pathPart) {
+      std::filesystem::path p(pathPart);
+      file =
+          std::make_shared<GrepFile const>(p.is_absolute() ? p : root / p, std::string(pathPart));
+    }
+    hits.push_back({file, line, std::string(trimLeadingWhitespace(record.substr(i)))});
   }
   return hits;
 }
@@ -101,8 +101,11 @@ ViewHint GrepBuffer::refresh(std::string pattern, std::filesystem::path root,
 }
 
 ViewHint GrepBuffer::rebuild() {
-  _displayLines.clear();
+  // Built in a vector and moved into the store (see LineStore).
+  std::vector<LinePtr> lines;
+  lines.reserve(kHeaderLines + _hits.size());
   _prefixLens.clear();
+  _prefixLens.reserve(kHeaderLines + _hits.size());
 
   // Header: what was searched for, where, and how many hits came back.
   // Escaped because the pattern is arbitrary user input and the root can
@@ -114,28 +117,20 @@ ViewHint GrepBuffer::rebuild() {
     header = std::to_string(_hits.size()) + (_hits.size() == 1 ? " match" : " matches") +
              " for \"" + escapeNonPrintable(_pattern) + "\"";
   header += " in " + escapeNonPrintable(_root.string());
-  _displayLines.push_back(std::move(header));
+  lines.push_back(makeLine(std::move(header)));
   _prefixLens.push_back(0);
 
   for (auto const& h : _hits) {
-    auto prefix = escapeNonPrintable(h.displayPath) + ":" + std::to_string(h.line) + ":";
-    auto line = prefix + " " + escapeNonPrintable(h.text);
-    _prefixLens.push_back(prefix.size());
-    _displayLines.push_back(std::move(line));
+    auto line = escapeNonPrintable(h.displayPath()) + ":" + std::to_string(h.line) + ":";
+    _prefixLens.push_back(line.size());
+    line += ' ';
+    line += escapeNonPrintable(h.text);
+    lines.push_back(makeLine(std::move(line)));
   }
-
-  // Populate _lines for base-class cursor navigation.
-  _lines.clear();
-  for (auto& dl : _displayLines)
-    _lines.push_back(makeLine(dl));
-  if (_lines.empty())
-    _lines.push_back(makeLine());
+  _lines = LineStore(std::move(lines));
 
   // Land the cursor on the first result, not the header.
-  std::size_t newLine = _hits.empty() ? 0 : kHeaderLines;
-  if (newLine >= _lines.size())
-    newLine = _lines.size() - 1;
-  return ViewHint{{newLine, 0}, {}};
+  return ViewHint{{_hits.empty() ? 0 : kHeaderLines, 0}, {}};
 }
 
 std::optional<GrepHit> GrepBuffer::selectedHit(BufferPoint p) const {
@@ -158,7 +153,7 @@ std::tuple<RowIdx, ColIdx> GrepBuffer::render(std::string& out, RowIdx rows, Col
     std::size_t lineIdx = scrollLine + r;
     ansi::appendCursorTo(out, rowOffset + r, colOffset);
 
-    if (lineIdx < _displayLines.size()) {
+    if (lineIdx < _lines.size()) {
       bool highlight = (lineIdx == curLine);
       if (highlight)
         out += ansi::ReverseVideo;
@@ -166,7 +161,7 @@ std::tuple<RowIdx, ColIdx> GrepBuffer::render(std::string& out, RowIdx rows, Col
       // Clamp to the panel width, reserving the final column for the
       // gutter indicator, so a long path or match can't bleed past the
       // panel into a sibling pane.
-      std::string_view full = _displayLines[lineIdx];
+      std::string_view full = *_lines[lineIdx];
       std::size_t budget = cols.value > 1 ? cols.value - 1 : 0;
       std::string clipped = truncateDisplayToWidth(full, budget);
 
