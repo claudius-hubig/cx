@@ -1385,7 +1385,9 @@ void Screen::openReplacePrompt() {
             if (pattern.empty() || !_buf)
               return;
             _prompt = Prompt{
-                .label = "Replace '" + pattern + "' with: ",
+                // Escaped: the pattern may be pasted text holding control
+                // bytes, which the label would write to the terminal raw.
+                .label = "Replace '" + escapeNonPrintable(pattern) + "' with: ",
                 .onResult =
                     [this, pattern](std::string const& replacement) {
                       replacePump(pattern, replacement, 0);
@@ -1559,7 +1561,8 @@ void Screen::openRegexReplacePrompt() {
             }
             _lastRegex = pattern;
             _prompt = Prompt{
-                .label = "Replace /" + pattern + "/ with: ",
+                // Escaped for the same reason as in openReplacePrompt().
+                .label = "Replace /" + escapeNonPrintable(pattern) + "/ with: ",
                 .onResult =
                     [this, pattern](std::string const& replacement) {
                       regexReplacePump(pattern, replacement, 0);

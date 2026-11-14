@@ -2196,3 +2196,44 @@ BOOST_AUTO_TEST_CASE(e2e_long_paste_into_prompt_is_fast_and_scrolled) {
                "c");
   session.waitExit();
 }
+
+// The "Replace '<pattern>' with:" labels wrote a pasted pattern to the
+// terminal raw, so U+009B (C1 CSI) started an escape sequence and U+202E
+// reversed the rest of the modeline. Both must be shown as escapes.
+BOOST_AUTO_TEST_CASE(e2e_replace_label_escapes_control_characters) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("a\xc2\x9b"
+               "31mb\xe2\x80\xae"
+               "c\n");
+  for (std::string_view key : {"\x1b%", "\x1bY"}) {
+    PtySession session(24, 80, bin, {std::string(tmp.path())});
+    session.readOutput(std::chrono::milliseconds{300});
+    // Mark, End, copy the line; open the replace prompt; paste; Enter.
+    session.send(std::string_view("\x00\x1b[F\x1bw", 6));
+    session.readOutput(std::chrono::milliseconds{200});
+    session.send(key);
+    session.readOutput(std::chrono::milliseconds{200});
+    session.send("\x19\r");
+    auto output = session.readUntil("with:", std::chrono::milliseconds{1000});
+    output += session.readOutput(std::chrono::milliseconds{100});
+    auto at = output.rfind("Replace");
+    BOOST_REQUIRE_MESSAGE(at != std::string::npos, "no replace label: " + stripAnsi(output));
+    auto label = output.substr(at);
+    BOOST_CHECK_MESSAGE(label.find("\xc2\x9b") == std::string::npos, "raw U+009B: " + label);
+    BOOST_CHECK_MESSAGE(label.find("\xe2\x80\xae") == std::string::npos, "raw U+202E: " + label);
+    auto plain = stripAnsi(label);
+    BOOST_CHECK_MESSAGE(plain.find("a\\u009b31mb\\u202ec") != std::string::npos,
+                        "escaped label: " + plain);
+
+    session.send("\x1b");
+    session.readOutput(std::chrono::milliseconds{200});
+    session.send("\x1b"
+                 "c");
+    session.waitExit();
+  }
+}
