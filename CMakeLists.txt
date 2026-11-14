@@ -230,7 +230,7 @@ else()
 endif()
 
 # --- Benchmarks ---
-foreach(bench history editing open)
+foreach(bench history editing open suite)
     add_executable(bench_${bench} tests/bench_${bench}.cpp)
     target_link_libraries(bench_${bench} cx_core)
 endforeach()
