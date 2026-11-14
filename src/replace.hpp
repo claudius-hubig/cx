@@ -55,6 +55,9 @@ findNextMatchInBuffer(Buffer const& buf, BufferPoint start, std::string const& p
  * time linear in its length however many matches it has. A no-op on a
  * read-only buffer or an empty pattern.
  *
+ * The edits bypass BufferView, so this records the history version itself:
+ * one version, with the cursor at @p start, when anything was replaced.
+ *
  * @return The number of replacements performed.
  */
 inline std::size_t replaceAllForward(Buffer& buf, BufferPoint start, std::string const& pattern,
@@ -79,5 +82,7 @@ inline std::size_t replaceAllForward(Buffer& buf, BufferPoint start, std::string
     buf.deleteRegion({li, 0}, {li, line.size()});
     li = buf.insertText(out, {li, 0}).line; // a replacement may contain newlines
   }
+  if (count > 0)
+    buf.recordVersion(start);
   return count;
 }

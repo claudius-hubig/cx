@@ -174,6 +174,9 @@ inline std::string substituteCaptures(std::string const& line, std::size_t from,
  * empty one, which only matters for patterns such as `|a`.) A no-op on a
  * read-only buffer.
  *
+ * The edits bypass BufferView, so this records the history version itself:
+ * one version, with the cursor at @p start, when anything was replaced.
+ *
  * @return The number of replacements performed.
  */
 inline std::size_t replaceAllRegexForward(Buffer& buf, BufferPoint start, std::regex const& re,
@@ -206,5 +209,7 @@ inline std::size_t replaceAllRegexForward(Buffer& buf, BufferPoint start, std::r
     buf.deleteRegion({li, 0}, {li, line.size()});
     li = buf.insertText(out, {li, 0}).line; // a replacement may contain newlines
   }
+  if (count > 0)
+    buf.recordVersion(start);
   return count;
 }

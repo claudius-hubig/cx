@@ -105,6 +105,28 @@ BOOST_AUTO_TEST_CASE(replace_all_with_back_references) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), "foo:1, bar:2");
 }
 
+// Like replaceAllForward, the regex replace-all edits through Buffer and
+// must record its own version so later deltas build on the replaced text.
+BOOST_AUTO_TEST_CASE(replace_all_records_one_version) {
+  TempFile f("a\na\na\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('x');
+  std::string err;
+  auto re = compileRegex("a", err);
+  BOOST_REQUIRE(re.has_value());
+  auto before = buf.history().size();
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "b"), 3u);
+  BOOST_CHECK_EQUAL(buf.history().size(), before + 1);
+  view.clampToBuffer();
+  view.setPoint(2, 0);
+  view.insert('y');
+  auto latest = buf.history().linesAt(buf.history().size() - 1);
+  BOOST_REQUIRE_EQUAL(latest.size(), buf.lineCount());
+  for (std::size_t i = 0; i < latest.size(); ++i)
+    BOOST_CHECK_EQUAL(*latest[i], buf.lineContent(i));
+}
+
 // --- Mid-line context: the text before `from` is not a line start ---
 
 BOOST_AUTO_TEST_CASE(find_first_caret_does_not_match_mid_line) {

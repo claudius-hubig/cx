@@ -1,11 +1,14 @@
 #define BOOST_TEST_MODULE Replace
 #include <boost/test/unit_test.hpp>
 
+#include "buffer/buffer_view.hpp"
 #include "buffer/text_buffer.hpp"
 #include "replace.hpp"
+#include "test_helpers.hpp"
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -155,4 +158,35 @@ BOOST_AUTO_TEST_CASE(replaceAll_empty_pattern_no_op) {
   auto n = replaceAllForward(*bufPtr, {0, 0}, "", "bar");
   BOOST_CHECK_EQUAL(n, 0u);
   BOOST_CHECK_EQUAL(bufPtr->lineContent(0), "foo");
+}
+
+// Replace-all edits through Buffer, not BufferView, so it must record its
+// own version: otherwise the next single-line edit is stored as a delta
+// against a snapshot without the replacements, and that version rebuilds
+// to text that never existed.
+BOOST_AUTO_TEST_CASE(replaceAll_records_one_version) {
+  // Loaded from a file so the initial version holds the text (makeBuffer's
+  // direct Buffer edits record nothing).
+  TempFile f("a\na\na");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('x');
+  auto before = buf.history().size();
+  replaceAllForward(buf, {0, 0}, "a", "b");
+  BOOST_CHECK_EQUAL(buf.history().size(), before + 1);
+  view.clampToBuffer();
+  view.setPoint(2, 0);
+  view.insert('y');
+  std::vector<std::string> latest;
+  for (auto const& l : buf.history().linesAt(buf.history().size() - 1))
+    latest.push_back(*l);
+  BOOST_CHECK_EQUAL(allLines(buf), "xb\nb\nyb");
+  BOOST_CHECK(latest == (std::vector<std::string>{"xb", "b", "yb"}));
+}
+
+BOOST_AUTO_TEST_CASE(replaceAll_without_matches_records_nothing) {
+  auto bufPtr = makeBuffer({"a"});
+  auto before = bufPtr->history().size();
+  replaceAllForward(*bufPtr, {0, 0}, "zzz", "b");
+  BOOST_CHECK_EQUAL(bufPtr->history().size(), before);
 }
