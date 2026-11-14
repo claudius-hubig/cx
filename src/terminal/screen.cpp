@@ -413,9 +413,20 @@ std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
       if (status_vwidth + widthOf(0, pos) + cellWidth > pc.value &&
           status_vwidth + 1 + cellWidth <= pc.value) {
         std::size_t avail = pc.value - status_vwidth - cellWidth - 1;
-        do
-          start += charInfoAt(in.data() + start, in.size() - start).len;
-        while (widthOf(start, pos) > avail);
+        // Walk back from the cursor, character by character, while the
+        // text still fits. Measuring only what will be shown keeps a
+        // draw linear in the input; re-measuring the whole remainder for
+        // every dropped character froze the editor for seconds on a
+        // 50 KB paste into a prompt.
+        start = pos;
+        for (std::size_t shown = 0; start > 0;) {
+          auto prev = prevClusterStart(in, start);
+          auto w = widthOf(prev, start);
+          if (shown + w > avail)
+            break;
+          shown += w;
+          start = prev;
+        }
         ellipsis = "\xe2\x80\xa6";
       }
       auto cursorCol = status_vwidth + (ellipsis.empty() ? 0 : 1) + widthOf(start, pos);

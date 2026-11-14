@@ -2161,3 +2161,38 @@ BOOST_AUTO_TEST_CASE(e2e_pipe_command_with_closed_outputs_does_not_spin) {
     }
   }
 }
+
+// A prompt scrolls its input so the cursor stays visible. Finding where
+// to start used to re-measure the whole remainder for every character
+// dropped from the front: pasting a 50 KB line into a prompt froze the
+// editor for about ten seconds.
+BOOST_AUTO_TEST_CASE(e2e_long_paste_into_prompt_is_fast_and_scrolled) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp(std::string(200000, 'x') + "END");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Mark, End, copy the line; Go-to-line prompt; paste.
+  session.send(std::string_view("\x00\x1b[F\x1bw", 6));
+  session.readOutput(std::chrono::milliseconds{300});
+  auto before = cpuSeconds(session.childPid);
+  session.send("\x07\x19");
+  // The tail of the input is shown behind an ellipsis.
+  auto output = session.readUntil("\xe2\x80\xa6", std::chrono::milliseconds{5000});
+  output += session.readOutput(std::chrono::milliseconds{200});
+  auto used = cpuSeconds(session.childPid) - before;
+  BOOST_CHECK_LT(used, 1.0);
+  BOOST_CHECK(output.find("\xe2\x80\xa6") != std::string::npos);
+  BOOST_CHECK(stripAnsi(output).find("xxxxEND") != std::string::npos);
+
+  session.send("\x1b");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
