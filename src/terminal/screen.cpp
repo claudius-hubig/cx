@@ -2190,16 +2190,41 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
     return {std::move(stdoutData), std::move(stderrData), -1, true};
   };
 
-  // Poll set is rebuilt each iteration because stdinOpen and killPromptShowing can change.
+  // Poll set is rebuilt each iteration because stdinOpen, the pipes' EOF
+  // state and killPromptShowing can change. A pipe at EOF is left out: it
+  // stays readable (POLLHUP) forever, so polling it would spin without
+  // ever reaching the timeout that offers to kill a command which closed
+  // one of its outputs (`cmd 2>/dev/null`) and kept running.
   std::vector<pollfd> fds;
   fds.reserve(4);
+  bool outDone = false, errDone = false;
+  int status = 0;
+  bool reaped = false;
+  int childPollMs = 1;
 
   for (;;) {
+    // With every pipe closed only the child's exit is left to wait for,
+    // and no descriptor reports that. Check it between short polls
+    // (backing off to 50 ms) rather than in a blocking waitpid(), so a
+    // command that closed both outputs and kept running can be killed too.
+    bool onlyChild = outDone && errDone && !stdinOpen;
+    if (onlyChild) {
+      pid_t wp = waitpid(pid, &status, WNOHANG);
+      if (wp == pid) {
+        reaped = true;
+        break;
+      }
+      if (wp < 0 && errno != EINTR)
+        break;
+    }
+
     fds.clear();
     if (stdinOpen)
       fds.push_back({pipeIn[1], POLLOUT, 0});
-    fds.push_back({pipeOut[0], POLLIN, 0});
-    fds.push_back({pipeErr[0], POLLIN, 0});
+    if (!outDone)
+      fds.push_back({pipeOut[0], POLLIN, 0});
+    if (!errDone)
+      fds.push_back({pipeErr[0], POLLIN, 0});
     if (killPromptShowing)
       fds.push_back({STDIN_FILENO, POLLIN, 0});
 
@@ -2208,6 +2233,10 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
       auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
           deadline - std::chrono::steady_clock::now());
       timeoutMs = std::max(0, static_cast<int>(remaining.count()));
+    }
+    if (onlyChild) {
+      timeoutMs = timeoutMs < 0 ? childPollMs : std::min(timeoutMs, childPollMs);
+      childPollMs = std::min(childPollMs * 2, 50);
     }
 
     int rc = poll(fds.data(), fds.size(), timeoutMs);
@@ -2224,6 +2253,9 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
     }
 
     if (rc == 0) {
+      // Just a tick of the child-exit check?
+      if (killPromptShowing || std::chrono::steady_clock::now() < deadline)
+        continue;
       // Timeout: show kill prompt.
       setStatus("Command still running. Kill? y/n");
       draw();
@@ -2231,7 +2263,6 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
       continue;
     }
 
-    bool outDone = false, errDone = false;
     for (auto& pfd : fds) {
       if (pfd.fd == pipeIn[1] && (pfd.revents & (POLLOUT | POLLERR))) {
         if (written < input.size()) {
@@ -2268,7 +2299,10 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
               }
               if (wp > 0)
                 return killReturn();
-              pollfd drain[] = {{pipeOut[0], POLLIN, 0}, {pipeErr[0], POLLIN, 0}};
+              // A negative fd is ignored by poll(): skip pipes at EOF so
+              // the child really gets its 100 ms per round.
+              pollfd drain[] = {{outDone ? -1 : pipeOut[0], POLLIN, 0},
+                                {errDone ? -1 : pipeErr[0], POLLIN, 0}};
               int pr = poll(drain, 2, 100);
               if (pr < 0 && errno == EINTR) {
                 // SIGWINCH (or other) interrupted — surface a redraw and
@@ -2282,9 +2316,8 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
               }
               if (pr <= 0)
                 continue;
-              bool dummy = false;
-              readPipe(pipeOut[0], drain[0].revents, stdoutData, dummy);
-              readPipe(pipeErr[0], drain[1].revents, stderrData, dummy);
+              readPipe(pipeOut[0], drain[0].revents, stdoutData, outDone);
+              readPipe(pipeErr[0], drain[1].revents, stderrData, errDone);
             }
             kill(pid, SIGKILL);
             {
@@ -2310,9 +2343,6 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
       close(pipeIn[1]);
       stdinOpen = false;
     }
-
-    if (outDone && errDone && !stdinOpen)
-      break;
   }
 
   if (stdinOpen)
@@ -2323,8 +2353,9 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   close(pipeOut[0]);
   close(pipeErr[0]);
 
-  int status = 0;
-  while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+  if (!reaped) {
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
   }
   int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 

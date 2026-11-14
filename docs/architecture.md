@@ -149,7 +149,11 @@ Key responsibilities:
   and monitors the child with `poll()`. After 10 seconds of inactivity it
   displays a kill prompt; the user can press `y` to SIGTERM/SIGKILL the
   child or `n` to dismiss. SIGWINCH is handled during the poll loop so
-  the terminal redraws correctly while a command is running.
+  the terminal redraws correctly while a command is running. A pipe that
+  reaches EOF leaves the poll set, and once every pipe is closed the loop
+  polls for the child's exit instead of blocking in `waitpid()`, so a
+  command that closes its outputs and keeps running (`cmd 2>/dev/null`)
+  neither spins the editor nor escapes the kill prompt.
 
 `Screen` holds session-wide state that does not belong to any one
 buffer: the active prompt, find state, the paste ring, the X11

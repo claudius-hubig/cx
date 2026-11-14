@@ -12,6 +12,7 @@
 #include <poll.h>
 #include <pty.h>
 #include <signal.h>
+#include <sstream>
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -2104,4 +2105,59 @@ BOOST_AUTO_TEST_CASE(e2e_prompt_selection_cut_copy_paste) {
                "c");
   session.waitExit();
   std::filesystem::remove(wantPath);
+}
+
+// CPU seconds (user + system) the process has used, from /proc/<pid>/stat.
+static double cpuSeconds(pid_t pid) {
+  std::ifstream f("/proc/" + std::to_string(pid) + "/stat");
+  std::string stat((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  auto pos = stat.rfind(')'); // the command name may contain spaces
+  if (pos == std::string::npos)
+    return 0;
+  std::istringstream fields(stat.substr(pos + 1));
+  std::string skip;
+  for (int i = 0; i < 11; ++i) // state .. cmajflt
+    fields >> skip;
+  unsigned long utime = 0, stime = 0;
+  fields >> utime >> stime;
+  return static_cast<double>(utime + stime) / static_cast<double>(sysconf(_SC_CLK_TCK));
+}
+
+// A piped command that closes one of its outputs and keeps running
+// (`cmd 2>/dev/null`) left that pipe at EOF in the poll set: poll returned
+// at once every time, so the editor spun at 100% CPU and never reached
+// the timeout that offers to kill the command. With both outputs closed
+// the editor sat in a blocking waitpid() instead; now it polls for the
+// child's exit, which must not spin either.
+BOOST_AUTO_TEST_CASE(e2e_pipe_command_with_closed_outputs_does_not_spin) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  for (std::string command : {"exec sleep 3 2>/dev/null", "exec sleep 3 >/dev/null 2>&1"}) {
+    BOOST_TEST_CONTEXT(command) {
+      TempFile tmp("b\na\n");
+      PtySession session(24, 80, bin, {std::string(tmp.path())});
+      session.readOutput(std::chrono::milliseconds{300});
+
+      // Mark, two lines down, Ctrl-P, command.
+      session.send(std::string_view("\x00\x1b[B\x1b[B\x10", 8));
+      session.send(command + "\r");
+      session.readOutput(std::chrono::milliseconds{300});
+
+      auto before = cpuSeconds(session.childPid);
+      session.readOutput(std::chrono::milliseconds{1500});
+      auto used = cpuSeconds(session.childPid) - before;
+      BOOST_CHECK_LT(used, 0.5);
+
+      // The command finishes on its own and the editor is usable again.
+      session.readOutput(std::chrono::milliseconds{2000});
+      session.send("\x1b"
+                   "c"
+                   "n");
+      BOOST_CHECK_EQUAL(session.waitExit(), 0);
+    }
+  }
 }
