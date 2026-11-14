@@ -1053,17 +1053,19 @@ void BufferView::deleteChunkAtPoint() {
   if (atEnd())
     return;
 
-  auto curIsBlank = [&]() -> bool {
-    auto const& line = _buf.lineContent(_point.line);
-    if (_point.offset < line.size())
-      return isWhitespace(line[_point.offset]);
-    return true;
-  };
-
-  bool startBlank = curIsBlank();
+  // Walk to the end of the chunk first, then delete it as one edit: a
+  // single undo step, linear in the chunk's length.
+  BufferPoint last{_buf.lineCount() - 1, _buf.lineContent(_buf.lineCount() - 1).size()};
+  BufferPoint to = _point;
+  bool startBlank = blankAt(to);
   do {
-    deleteAtPoint();
-  } while (!atEnd() && curIsBlank() == startBlank);
+    auto const& line = _buf.lineContent(to.line);
+    if (to.offset < line.size())
+      to.offset = nextClusterStart(line, to.offset);
+    else
+      to = {to.line + 1, 0};
+  } while (to != last && blankAt(to) == startBlank);
+  deleteSpan(_point, to);
 }
 
 void BufferView::deleteChunkBeforePoint() {
@@ -1078,18 +1080,28 @@ void BufferView::deleteChunkBeforePoint() {
   if (_point.line == 0 && _point.offset == 0)
     return;
 
-  auto prevIsBlank = [&]() -> bool {
-    if (_point.offset > 0) {
-      auto const& line = _buf.lineContent(_point.line);
-      return isWhitespace(line[prevClusterStart(line, _point.offset)]);
-    }
-    return true;
-  };
-
-  bool startBlank = prevIsBlank();
+  // As in deleteChunkAtPoint(): find the chunk, then delete it in one edit.
+  BufferPoint from = _point;
+  bool startBlank = blankBefore(from);
   do {
-    deleteBeforePoint();
-  } while ((_point.line > 0 || _point.offset > 0) && prevIsBlank() == startBlank);
+    if (from.offset > 0)
+      from.offset = prevClusterStart(_buf.lineContent(from.line), from.offset);
+    else
+      from = {from.line - 1, _buf.lineContent(from.line - 1).size()};
+  } while (from != BufferPoint{0, 0} && blankBefore(from) == startBlank);
+  deleteSpan(from, _point);
+}
+
+void BufferView::deleteSpan(BufferPoint from, BufferPoint to) {
+  auto lineCountBefore = _buf.lineCount();
+  _buf.deleteRegion(from, to);
+  _point = from;
+  if (_mark && *_mark > from)
+    *_mark = BatchShift{to, from}.apply(*_mark);
+  syncAfterEdit();
+
+  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
+  _buf.recordVersion(_point, from.line, shift);
 }
 
 void BufferView::deleteLine() {

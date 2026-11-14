@@ -374,7 +374,9 @@ All user-facing movement, editing, and render operations are methods on
 - **Editing**: `insert`, `deleteAtPoint`, `deleteBeforePoint`,
   `deleteChunkAtPoint`, `deleteChunkBeforePoint`, `insertText`,
   `deleteRegion`. These call the position-explicit methods on `Buffer`
-  and apply the necessary mark-adjustment locally.
+  and apply the necessary mark-adjustment locally. A chunk delete finds
+  its span first and removes it as one edit (`deleteSpan`), so it is a
+  single history entry however long the chunk is.
 - **Case conversion**: `convertCase(CaseOp)` upper/lower/capitalizes the
   active region, or the word at/after the cursor when no mark is set. The
   transform is byte-wise ASCII (UTF-8-safe and length-preserving), applied

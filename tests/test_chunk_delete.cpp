@@ -123,3 +123,63 @@ BOOST_AUTO_TEST_CASE(chunkDeleteBefore_utf8) {
   // Actually the CJK chars and ASCII are all non-sep, so it deletes "abc中文".
   BOOST_CHECK(buf.point() == (BufferPoint{0, 0}));
 }
+
+// --- One undo step per chunk ---
+
+// A chunk used to be deleted one character at a time, each recorded as
+// its own version: a long word flooded the bounded history and evicted
+// everything older.
+BOOST_AUTO_TEST_CASE(chunkDelete_records_one_version) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, std::string(500, 'x') + " tail");
+  buf.moveHome();
+  auto versions = buf.history().size();
+  buf.deleteChunkAtPoint();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), " tail");
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 1);
+}
+
+BOOST_AUTO_TEST_CASE(chunkDeleteBefore_records_one_version) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "head " + std::string(500, 'x'));
+  auto versions = buf.history().size();
+  buf.deleteChunkBeforePoint();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "head ");
+  BOOST_CHECK(buf.point() == (BufferPoint{0, 5}));
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 1);
+}
+
+BOOST_AUTO_TEST_CASE(chunkDelete_blank_run_across_lines_is_one_version) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "a  \n\n  b");
+  buf.setPoint(0, 1);
+  auto versions = buf.history().size();
+  buf.deleteChunkAtPoint();
+  BOOST_CHECK_EQUAL(buf.lineCount(), 1u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "ab");
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 1);
+}
+
+BOOST_AUTO_TEST_CASE(chunkDelete_keeps_mark_on_its_text) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "one two\nthree four");
+  buf.setPoint(1, 6); // before "four"
+  buf.toggleMark();
+  buf.setPoint(0, 4);       // before "two"
+  buf.deleteChunkAtPoint(); // "two"
+  BOOST_REQUIRE(buf.mark().has_value());
+  BOOST_CHECK(*buf.mark() == (BufferPoint{1, 6}));
+  buf.deleteChunkAtPoint(); // the newline joins the lines
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "one three four");
+  BOOST_CHECK(*buf.mark() == (BufferPoint{0, 10}));
+  // A mark inside the deleted chunk collapses onto the point.
+  buf.setPoint(0, 4);
+  buf.toggleMark();
+  buf.toggleMark();
+  buf.setPoint(0, 6);
+  buf.toggleMark(); // mark inside "three"
+  buf.setPoint(0, 4);
+  buf.deleteChunkAtPoint();
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "one  four");
+  BOOST_CHECK(*buf.mark() == (BufferPoint{0, 4}));
+}

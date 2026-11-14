@@ -463,6 +463,14 @@ private:
   /** @brief Add a cursor on @p line at (approximately) visual column @p vcol. */
   void addCursorAtVisualCol(std::size_t line, std::size_t vcol);
 
+  /**
+   * @brief Delete [@p from, @p to) as one edit and one history entry,
+   *        leaving the point at @p from and the mark on the same text
+   *        (or at @p from if it was inside the span).
+   * @pre Single cursor, writable buffer, @p from < @p to, both valid.
+   */
+  void deleteSpan(BufferPoint from, BufferPoint to);
+
   /** @brief True if the byte at @p p is whitespace or ends the line. */
   bool blankAt(BufferPoint p) const;
   /** @brief True if the byte before @p p is whitespace or starts the line. */
