@@ -22,6 +22,15 @@ When changing `VersionHistory`, `BufferView` editing methods, or `recordVersion(
 
 Check that p95 stays under 1ms and that no individual insert spikes above 5ms (which would indicate prune-related stalls).
 
+When changing line storage (`Buffer`'s line container), `VersionHistory`, or editing/search paths that touch the whole buffer, also compare the broad benchmark suite against a run from before the change:
+
+```
+./build/bench_suite --csv before.csv          # on the old code
+./build/bench_suite --compare before.csv      # on the new code
+```
+
+It covers editing, 1–20 cursors, movement, search/replace, large paste/cut, history and rendering across seven file shapes (`--list`), and reports peak memory per group. `+` marks a median more than 10% slower; investigate those before committing. `--quick` (~10 s) runs only the small profiles; `--filter edit.,multi.` limits it to some operations.
+
 ## Input Handling
 
 When modifying keybindings or terminal input handling, verify there are no byte-level conflicts (e.g., Ctrl-? and Backspace both produce 0x7F, Esc prefix vs bare Esc). Document any conflicts found before implementing.
@@ -149,4 +158,6 @@ tests/
   test_clipboard.cpp               Clipboard PATH probe and detection tests
   test_search.cpp                  Smart-find matching logic tests
   test_multi_cursor.cpp            Multiple-cursor creation/edit/undo tests
+  bench_history.cpp                Version-history capture/prune latency (CLAUDE.md gate)
+  bench_suite.cpp                  Broad latency/memory suite across file shapes and cursor counts
 ```
