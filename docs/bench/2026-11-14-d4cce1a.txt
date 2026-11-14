@@ -1,0 +1,953 @@
+
+=== small: typical source file — 1000 lines, 0.1 MB ===
+  io.rss-after-open                                                             0.6 MB  base        0.5   1.15x 
+  io.bytes-per-line                                                           577.0 B  base      499.2   1.16x +
+  io.save                            x1  n=30   med       37.0  p95       53.4  max      117.5 us  base       37.8   0.98x 
+  io.open                            x1  n=30   med       50.4  p95      122.9  max      145.4 us  base       93.8   0.54x -
+  io.peak-growth                                                                0.6 MB  base        0.5   1.08x 
+  edit.type                          x1  n=300  med        1.4  p95        5.7  max       59.8 us  base        0.2   8.02x +
+  edit.backspace                     x1  n=300  med        1.4  p95        1.9  max       69.3 us  base        0.2   8.14x +
+  edit.enter                         x1  n=300  med        2.3  p95        6.3  max       55.5 us  base        4.6   0.51x -
+  edit.join                          x1  n=300  med        1.2  p95        2.1  max       62.9 us  base        4.1   0.30x -
+  edit.delete                        x1  n=300  med        0.8  p95        1.2  max       32.8 us  base        0.4   2.11x 
+  edit.word-delete                   x1  n=300  med        0.8  p95        1.1  max       26.1 us  base        0.4   2.25x 
+  edit.kill-line                     x1  n=245  med        1.5  p95        2.6  max       50.0 us  base        2.2   0.70x 
+  edit.peak-growth                                                              3.7 MB  base        2.9   1.28x 
+  region.comment-1k                  x1  n=60   med       34.7  p95       58.7  max       96.5 us  base       34.6   1.00x 
+  region.case-1k                     x1  n=60   med       49.3  p95       65.6  max      575.2 us  base       51.1   0.96x 
+  region.reflow-100                  x1  n=30   med       40.6  p95       49.9  max       55.5 us  base       40.3   1.01x 
+  region.peak-growth                                                            8.9 MB  base        9.5   0.93x 
+  move.right                         x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.left                          x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.word-right                    x1  n=600  med        0.0  p95        0.1  max        0.5 us  base        0.0   1.00x 
+  move.word-left                     x1  n=600  med        0.1  p95        0.1  max        0.2 us  base        0.1   1.20x 
+  move.down                          x1  n=600  med        0.3  p95        0.3  max        1.4 us  base        0.3   0.97x 
+  move.up                            x1  n=600  med        0.3  p95        0.3  max        0.8 us  base        0.3   1.00x 
+  move.end                           x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.home                          x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.page-down                     x1  n=600  med        3.3  p95        3.3  max        5.6 us  base        3.2   1.05x 
+  move.page-up                       x1  n=600  med        3.4  p95        3.4  max        8.1 us  base        3.3   1.03x 
+  move.para-down                     x1  n=600  med        0.0  p95        0.0  max        1.3 us  base        0.0   1.00x 
+  move.para-up                       x1  n=600  med        0.0  p95        0.0  max        1.5 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=600  med        0.3  p95        0.4  max        0.6 us  base        0.4   0.97x 
+  move.up-wrap                       x1  n=600  med        0.3  p95        0.5  max        0.7 us  base        0.3   1.00x 
+  move.page-down-wrap                x1  n=600  med        8.5  p95       12.1  max       16.7 us  base        8.4   1.01x 
+  move.click-wrap                    x1  n=600  med        4.1  p95        4.2  max        9.3 us  base        3.7   1.12x 
+  goto.random                        x1  n=600  med        0.0  p95        0.0  max        1.5 us  base        0.0   1.33x 
+  goto.far                           x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.peak-growth                                                              0.2 MB  base        0.2   0.95x 
+  search.smart.absent                x1  n=90   med       26.1  p95       26.1  max       53.8 us  base       25.1   1.04x 
+  search.exact.absent                x1  n=90   med        3.6  p95        3.6  max        5.2 us  base        3.4   1.06x 
+  search.regex.absent                x1  n=90   med     1125.0  p95     1144.3  max     1160.3 us  base     1110.8   1.01x 
+  search.smart.sparse-next           x1  n=300  med       29.8  p95       29.9  max       31.8 us  base       28.0   1.07x 
+  search.smart.dense-next            x1  n=300  med        0.1  p95        0.1  max        0.2 us  base        0.1   1.00x 
+  search.regex.sparse-next           x1  n=300  med      569.5  p95      575.4  max      590.9 us  base      562.2   1.01x 
+  search.peak-growth                                                            0.1 MB  base        0.1   1.03x 
+  multi.type.adjacent                x1  n=150  med        3.5  p95        5.7  max       50.9 us  base        0.2  21.86x +
+  multi.backspace.adjacent           x1  n=150  med        1.2  p95        1.4  max       46.6 us  base        0.1  12.92x +
+  multi.enter.adjacent               x1  n=150  med        2.3  p95        6.3  max       48.9 us  base        3.9   0.60x -
+  multi.join.adjacent                x1  n=150  med        1.0  p95        2.3  max       31.7 us  base        2.0   0.49x -
+  multi.paste-word.adjacent          x1  n=150  med        0.7  p95        1.5  max       25.2 us  base        0.9   0.76x 
+  multi.word-delete.adjacent         x1  n=150  med        0.7  p95        1.0  max       25.5 us  base        0.2   4.63x 
+  multi.right.adjacent               x1  n=150  med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=150  med        0.2  p95        0.3  max        2.0 us  base        0.2   1.20x 
+  multi.type.spread                  x1  n=150  med        1.2  p95        1.9  max       48.3 us  base        0.1  15.02x +
+  multi.backspace.spread             x1  n=150  med        1.2  p95        1.4  max       45.4 us  base        0.1  12.91x +
+  multi.enter.spread                 x1  n=150  med        1.2  p95        3.8  max       46.0 us  base        1.4   0.86x 
+  multi.join.spread                  x1  n=150  med        1.0  p95        1.8  max       31.8 us  base        2.0   0.48x -
+  multi.paste-word.spread            x1  n=150  med        0.7  p95        1.0  max       24.5 us  base        0.9   0.76x 
+  multi.word-delete.spread           x1  n=150  med        0.7  p95        1.0  max       25.7 us  base        0.1   5.92x 
+  multi.right.spread                 x1  n=150  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=150  med        0.2  p95        0.2  max        1.5 us  base        0.2   1.20x 
+  multi.type.adjacent                x5  n=150  med        1.4  p95        1.7  max       50.2 us  base        1.1   1.28x 
+  multi.backspace.adjacent           x5  n=150  med        1.5  p95        1.8  max       50.9 us  base        1.9   0.79x 
+  multi.enter.adjacent               x5  n=150  med        3.8  p95        9.4  max       72.7 us  base        3.4   1.11x 
+  multi.join.adjacent                x5  n=150  med        2.7  p95        4.1  max       80.5 us  base        3.6   0.76x 
+  multi.paste-word.adjacent          x5  n=150  med        1.7  p95        2.3  max       61.2 us  base        2.2   0.79x 
+  multi.word-delete.adjacent         x5  n=150  med        2.0  p95        2.8  max       64.6 us  base        2.2   0.92x 
+  multi.right.adjacent               x5  n=150  med        0.1  p95        0.1  max        0.3 us  base        0.1   1.33x 
+  multi.down.adjacent                x5  n=150  med        1.9  p95        5.1  max        6.4 us  base        1.5   1.23x 
+  multi.type.spread                  x5  n=150  med        1.5  p95        1.7  max       51.3 us  base        1.2   1.28x 
+  multi.backspace.spread             x5  n=150  med        1.5  p95        1.8  max       51.7 us  base        1.9   0.78x 
+  multi.enter.spread                 x5  n=150  med        3.2  p95        5.5  max       65.9 us  base        3.4   0.95x 
+  multi.join.spread                  x5  n=150  med        2.7  p95        3.9  max       75.0 us  base        3.6   0.76x 
+  multi.paste-word.spread            x5  n=150  med        1.7  p95        2.1  max       60.5 us  base        2.1   0.78x 
+  multi.word-delete.spread           x5  n=150  med        1.9  p95        2.6  max       64.0 us  base        2.2   0.86x 
+  multi.right.spread                 x5  n=150  med        0.1  p95        0.1  max        0.1 us  base        0.1   1.17x 
+  multi.down.spread                  x5  n=150  med        1.8  p95        2.0  max        6.5 us  base        1.5   1.23x 
+  multi.type.adjacent                x20 n=150  med        2.2  p95        2.5  max       63.5 us  base        1.9   1.19x 
+  multi.backspace.adjacent           x20 n=150  med        2.1  p95        2.5  max       64.7 us  base        2.8   0.77x 
+  multi.enter.adjacent               x20 n=150  med        7.7  p95       20.6  max      123.9 us  base       13.2   0.58x -
+  multi.join.adjacent                x20 n=150  med        5.4  p95        8.3  max      166.8 us  base       12.6   0.43x -
+  multi.paste-word.adjacent          x20 n=150  med        2.8  p95        3.5  max       97.3 us  base        3.7   0.76x 
+  multi.word-delete.adjacent         x20 n=150  med        3.8  p95        4.7  max      109.2 us  base        4.1   0.92x 
+  multi.right.adjacent               x20 n=150  med        0.3  p95        0.3  max        0.3 us  base        0.2   1.05x 
+  multi.down.adjacent                x20 n=150  med       10.7  p95       21.4  max       22.5 us  base        9.1   1.17x +
+  multi.type.spread                  x20 n=150  med        2.1  p95        2.4  max       60.1 us  base        1.9   1.13x 
+  multi.backspace.spread             x20 n=150  med        2.0  p95        2.4  max       62.2 us  base        2.8   0.73x 
+  multi.enter.spread                 x20 n=150  med        6.9  p95       20.5  max      137.9 us  base       11.6   0.60x -
+  multi.join.spread                  x20 n=150  med        6.0  p95       10.2  max      181.0 us  base       12.7   0.47x -
+  multi.paste-word.spread            x20 n=150  med        3.0  p95        3.8  max      112.4 us  base        3.7   0.79x 
+  multi.word-delete.spread           x20 n=150  med        3.9  p95        4.8  max      125.0 us  base        4.1   0.95x 
+  multi.right.spread                 x20 n=150  med        0.3  p95        0.3  max        0.6 us  base        0.2   1.05x 
+  multi.down.spread                  x20 n=150  med        6.3  p95       19.7  max       23.2 us  base        5.7   1.11x 
+  multi.peak-growth                                                             9.2 MB  base        8.7   1.05x 
+  clip.paste-1k-lines                x1  n=75   med       43.6  p95       66.7  max       95.0 us  base       42.1   1.03x 
+  clip.cut-1k-lines                  x1  n=75   med       12.6  p95       23.6  max      978.1 us  base       12.1   1.04x 
+  clip.paste-100k-lines              x1  n=30   med     3984.7  p95     4683.2  max     5038.9 us  base     4550.7   0.88x -
+  clip.cut-100k-lines                x1  n=30   med     1423.8  p95     1822.1  max    24275.0 us  base     1815.9   0.78x -
+  clip.paste-1MB-line                x1  n=30   med      178.9  p95      199.7  max      457.5 us  base      197.9   0.90x 
+  clip.cut-1MB-line                  x1  n=30   med       59.9  p95       75.4  max       94.6 us  base       78.4   0.76x -
+  clip.copy-half                     x1  n=30   med        2.0  p95        2.1  max       16.3 us  base        2.2   0.92x 
+  clip.cut-half                      x1  n=30   med        4.1  p95       34.1  max     5141.4 us  base        5.3   0.78x -
+  clip.paste-half                    x1  n=30   med       17.6  p95       37.0  max    12435.3 us  base       19.3   0.91x 
+  clip.cut-all                       x1  n=30   med        5.7  p95       17.4  max       33.4 us  base       15.2   0.37x -
+  clip.paste-all                     x1  n=30   med       28.5  p95       48.0  max     4076.1 us  base       39.2   0.73x -
+  clip.peak-growth                                                            323.8 MB  base      477.1   0.68x -
+  replace.all.sparse                 x1  n=30   med       18.8  p95       22.7  max       24.2 us  base       18.6   1.01x 
+  replace.all.dense                  x1  n=30   med       87.9  p95       90.5  max       96.7 us  base       80.6   1.09x 
+  replace.all.newline                x1  n=30   med       19.8  p95       20.2  max       28.4 us  base       18.9   1.04x 
+  replace.regex.sparse               x1  n=30   med      812.5  p95      826.1  max      829.5 us  base      878.2   0.93x 
+  replace.regex.dense                x1  n=30   med     1151.2  p95     1168.4  max     1171.9 us  base     1117.3   1.03x 
+  replace.step                       x1  n=300  med       10.6  p95       15.7  max       69.5 us  base        7.0   1.52x +
+  replace.peak-growth                                                           1.5 MB  base        0.3   5.60x +
+  render.80x24.top                   x1  n=300  med        8.9  p95        8.9  max       15.9 us  base        8.9   1.00x 
+  render.200x60.mid                  x1  n=300  med       21.7  p95       21.7  max       24.4 us  base       21.7   1.00x 
+  render.200x60.mid-wrap-gutter      x1  n=300  med       25.0  p95       25.1  max       27.4 us  base       25.0   1.00x 
+  render.200x60.end                  x1  n=300  med       21.2  p95       21.2  max       23.0 us  base       21.7   0.98x 
+  render.type+frame                  x1  n=300  med       23.6  p95       25.7  max       71.2 us  base       22.6   1.05x 
+  render.cold-goto-end               x1  n=30   med       11.6  p95       12.1  max       18.3 us  base       11.6   1.00x 
+  render.peak-growth                                                            1.5 MB  base        0.2   6.14x +
+  history.browse.enter               x1  n=1    med        0.2  p95        0.2  max        0.2 us  base        0.3   0.89x 
+  history.browse.back                x1  n=60   med        0.1  p95        0.1  max        0.9 us  base        2.1   0.03x -
+  history.browse.forward             x1  n=60   med        0.1  p95        0.1  max        0.1 us  base        1.7   0.03x -
+  history.browse.peak-growth                                                    1.5 MB  base        1.6   0.93x 
+  history.type.keystroke             x1  n=300  med        1.2  p95        3.5  max       49.9 us  base        0.1  12.80x +
+  history.type.rss-growth                                                       1.4 MB  base        0.1  10.18x +
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                      1.5 MB  base        0.2   6.57x +
+  history.enter.keystroke            x1  n=300  med        2.1  p95        4.5  max       39.2 us  base        2.6   0.79x 
+  history.enter.rss-growth                                                      2.7 MB  base        2.6   1.05x 
+  history.enter.versions                                                       76.0 count  base       76.0   1.00x 
+  history.enter.peak-growth                                                     2.8 MB  base        2.6   1.05x 
+  history.multi.keystroke            x20 n=300  med        2.9  p95        5.0  max       67.7 us  base        3.5   0.82x 
+  history.multi.rss-growth                                                      1.9 MB  base        2.3   0.82x 
+  history.multi.versions                                                       76.0 count  base       76.0   1.00x 
+  history.multi.peak-growth                                                     2.0 MB  base        2.4   0.82x 
+
+=== cpp: C++ source (syntax highlighting, brackets) — 20000 lines, 0.8 MB ===
+  io.rss-after-open                                                             4.0 MB  base        3.7   1.10x 
+  io.bytes-per-line                                                           211.3 B  base      192.1   1.10x +
+  io.save                            x1  n=20   med      655.8  p95     1107.9  max     1107.9 us  base      662.8   0.99x 
+  io.open                            x1  n=20   med      717.8  p95      747.0  max      747.0 us  base      793.9   0.90x 
+  io.peak-growth                                                                4.1 MB  base        3.8   1.07x 
+  edit.type                          x1  n=300  med        0.6  p95        1.3  max       22.1 us  base        0.1   6.31x 
+  edit.backspace                     x1  n=300  med        0.6  p95        0.8  max       21.1 us  base        0.1   5.26x 
+  edit.enter                         x1  n=300  med        2.2  p95        4.2  max       88.1 us  base       51.5   0.04x -
+  edit.join                          x1  n=300  med        0.9  p95        1.9  max       32.4 us  base       48.9   0.02x -
+  edit.delete                        x1  n=300  med        0.6  p95        1.2  max       24.3 us  base        0.2   2.52x 
+  edit.word-delete                   x1  n=300  med        0.6  p95        1.0  max       21.7 us  base        0.2   3.57x 
+  edit.kill-line                     x1  n=300  med        0.7  p95        1.4  max       63.9 us  base       49.5   0.01x -
+  edit.peak-growth                                                              5.7 MB  base       47.0   0.12x -
+  region.comment-1k                  x1  n=40   med       48.4  p95       64.4  max       68.5 us  base      115.8   0.42x -
+  region.case-1k                     x1  n=40   med       61.5  p95       96.3  max      116.0 us  base      128.4   0.48x -
+  region.reflow-100                  x1  n=20   med       31.6  p95       43.7  max       43.7 us  base       30.6   1.03x 
+  region.peak-growth                                                           14.3 MB  base       39.2   0.37x -
+  move.right                         x1  n=600  med        0.0  p95        0.0  max        0.2 us  base        0.0   1.00x 
+  move.left                          x1  n=600  med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  move.word-right                    x1  n=600  med        0.0  p95        0.0  max        0.4 us  base        0.0   1.00x 
+  move.word-left                     x1  n=600  med        0.0  p95        0.1  max        3.8 us  base        0.0   1.00x 
+  move.down                          x1  n=600  med        0.1  p95        0.1  max        0.9 us  base        0.1   1.00x 
+  move.up                            x1  n=600  med        0.1  p95        0.1  max        0.3 us  base        0.1   1.00x 
+  move.end                           x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.home                          x1  n=600  med        0.0  p95        0.0  max        0.0 us  base        0.0   1.00x 
+  move.page-down                     x1  n=600  med        0.2  p95        0.2  max        0.4 us  base        0.2   1.00x 
+  move.page-up                       x1  n=600  med        0.2  p95        0.3  max        0.6 us  base        0.2   1.09x 
+  move.para-down                     x1  n=600  med        0.0  p95        0.0  max       20.8 us  base        0.0   1.00x 
+  move.para-up                       x1  n=600  med        0.0  p95        0.0  max       24.6 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=600  med        0.1  p95        0.1  max        0.2 us  base        0.1   1.00x 
+  move.up-wrap                       x1  n=600  med        0.1  p95        0.1  max        0.2 us  base        0.1   1.09x 
+  move.page-down-wrap                x1  n=600  med        2.5  p95        2.5  max        2.7 us  base        2.5   1.02x 
+  move.click-wrap                    x1  n=600  med        2.2  p95        2.2  max        2.9 us  base        2.3   0.93x 
+  goto.random                        x1  n=600  med        0.1  p95        0.1  max        1.1 us  base        0.0   2.50x 
+  goto.far                           x1  n=600  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.50x 
+  move.bracket                       x1  n=600  med        0.3  p95        0.3  max     1016.7 us  base        0.2   1.04x 
+  move.peak-growth                                                              6.2 MB  base        6.9   0.90x 
+  search.smart.absent                x1  n=60   med      292.2  p95      335.7  max      381.3 us  base      267.6   1.09x 
+  search.exact.absent                x1  n=60   med       43.1  p95       43.4  max       44.8 us  base       38.5   1.12x +
+  search.regex.absent                x1  n=60   med    11552.8  p95    11623.4  max    11738.3 us  base    11714.7   0.99x 
+  search.smart.sparse-next           x1  n=300  med       17.7  p95       22.4  max       29.8 us  base       15.6   1.13x +
+  search.smart.dense-next            x1  n=300  med        0.0  p95        0.1  max        0.1 us  base        0.0   1.00x 
+  search.regex.sparse-next           x1  n=300  med      590.5  p95      614.8  max      643.4 us  base      590.1   1.00x 
+  search.peak-growth                                                            3.3 MB  base        3.3   0.99x 
+  multi.type.adjacent                x1  n=150  med        0.7  p95        2.6  max       25.1 us  base        0.1   7.41x 
+  multi.backspace.adjacent           x1  n=150  med        0.7  p95        0.8  max       22.7 us  base        0.1   5.92x 
+  multi.enter.adjacent               x1  n=150  med        1.2  p95        4.0  max       25.9 us  base       46.8   0.03x -
+  multi.join.adjacent                x1  n=150  med        0.8  p95        2.0  max       25.8 us  base       47.7   0.02x -
+  multi.paste-word.adjacent          x1  n=150  med        0.7  p95        0.9  max       22.9 us  base       21.6   0.03x -
+  multi.word-delete.adjacent         x1  n=150  med        0.7  p95        1.0  max       22.9 us  base        0.2   3.09x 
+  multi.right.adjacent               x1  n=150  med        0.0  p95        0.0  max        0.5 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=150  med        0.4  p95        0.4  max        2.5 us  base        0.3   1.00x 
+  multi.type.spread                  x1  n=150  med        0.7  p95        0.8  max       21.3 us  base        0.1   5.92x 
+  multi.backspace.spread             x1  n=150  med        0.6  p95        0.8  max       21.3 us  base        0.1   5.55x 
+  multi.enter.spread                 x1  n=150  med        1.0  p95        3.2  max       24.9 us  base       28.7   0.04x -
+  multi.join.spread                  x1  n=150  med        0.8  p95        1.5  max       25.6 us  base       47.1   0.02x -
+  multi.paste-word.spread            x1  n=150  med        0.7  p95        0.9  max       22.9 us  base       21.5   0.03x -
+  multi.word-delete.spread           x1  n=150  med        0.7  p95        0.9  max       22.9 us  base        0.2   3.00x 
+  multi.right.spread                 x1  n=150  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=150  med        0.4  p95        0.4  max        1.6 us  base        0.3   1.00x 
+  multi.type.adjacent                x5  n=150  med        0.9  p95        1.1  max       26.3 us  base       24.4   0.04x -
+  multi.backspace.adjacent           x5  n=150  med        0.9  p95        1.2  max       26.9 us  base       44.7   0.02x -
+  multi.enter.adjacent               x5  n=150  med        2.4  p95        3.4  max       40.0 us  base       61.6   0.04x -
+  multi.join.adjacent                x5  n=150  med        1.7  p95        2.6  max       50.0 us  base       53.6   0.03x -
+  multi.paste-word.adjacent          x5  n=150  med        1.0  p95        1.3  max       39.9 us  base       46.9   0.02x -
+  multi.word-delete.adjacent         x5  n=150  med        1.2  p95        1.5  max       32.2 us  base       46.2   0.03x -
+  multi.right.adjacent               x5  n=150  med        0.1  p95        0.1  max        0.2 us  base        0.1   1.00x 
+  multi.down.adjacent                x5  n=150  med        0.2  p95        3.9  max        6.8 us  base        0.3   0.70x 
+  multi.type.spread                  x5  n=150  med        3.1  p95        3.4  max      104.7 us  base       24.1   0.13x -
+  multi.backspace.spread             x5  n=150  med        3.0  p95        3.4  max      104.8 us  base       45.2   0.07x -
+  multi.enter.spread                 x5  n=150  med        4.9  p95       15.2  max      139.2 us  base       61.1   0.08x -
+  multi.join.spread                  x5  n=150  med        3.9  p95        6.0  max      132.7 us  base       67.0   0.06x -
+  multi.paste-word.spread            x5  n=150  med        3.2  p95        3.6  max      109.6 us  base       51.0   0.06x -
+  multi.word-delete.spread           x5  n=150  med        3.4  p95        4.0  max      111.5 us  base       53.2   0.06x -
+  multi.right.spread                 x5  n=150  med        0.1  p95        0.1  max        0.3 us  base        0.1   1.50x 
+  multi.down.spread                  x5  n=150  med        1.5  p95        2.3  max        7.4 us  base        1.4   1.07x 
+  multi.type.adjacent                x20 n=150  med        1.6  p95        2.0  max       41.0 us  base       26.2   0.06x -
+  multi.backspace.adjacent           x20 n=150  med        1.6  p95        2.0  max       43.4 us  base       46.7   0.03x -
+  multi.enter.adjacent               x20 n=150  med        6.8  p95        9.3  max       88.2 us  base      107.8   0.06x -
+  multi.join.adjacent                x20 n=150  med        4.8  p95        7.6  max      148.2 us  base       65.7   0.07x -
+  multi.paste-word.adjacent          x20 n=150  med        1.8  p95        2.6  max      101.2 us  base       52.2   0.04x -
+  multi.word-delete.adjacent         x20 n=150  med        2.8  p95        3.5  max       61.2 us  base       51.6   0.05x -
+  multi.right.adjacent               x20 n=150  med        0.2  p95        0.2  max        0.4 us  base        0.2   1.00x 
+  multi.down.adjacent                x20 n=150  med        2.9  p95       21.7  max       25.9 us  base        2.9   1.02x 
+  multi.type.spread                  x20 n=150  med       15.3  p95       41.7  max      733.9 us  base       23.9   0.64x -
+  multi.backspace.spread             x20 n=150  med       15.0  p95       22.6  max      696.5 us  base       47.2   0.32x -
+  multi.enter.spread                 x20 n=150  med       36.4  p95       77.3  max     1213.9 us  base      108.5   0.34x -
+  multi.join.spread                  x20 n=150  med       21.1  p95       51.8  max     1382.4 us  base      107.0   0.20x -
+  multi.paste-word.spread            x20 n=150  med       17.2  p95       26.6  max      981.3 us  base       50.9   0.34x -
+  multi.word-delete.spread           x20 n=150  med       18.3  p95       26.5  max      936.7 us  base       52.0   0.35x -
+  multi.right.spread                 x20 n=150  med        0.3  p95        0.4  max       32.4 us  base        0.2   1.42x 
+  multi.down.spread                  x20 n=150  med        5.6  p95        9.5  max       28.6 us  base        5.0   1.12x 
+  multi.peak-growth                                                            35.0 MB  base       68.1   0.51x -
+  clip.paste-1k-lines                x1  n=75   med       44.0  p95       52.3  max       61.9 us  base      108.5   0.40x -
+  clip.cut-1k-lines                  x1  n=75   med        8.2  p95       17.9  max      843.6 us  base       82.6   0.10x -
+  clip.paste-100k-lines              x1  n=20   med     3941.4  p95     4663.3  max     4663.3 us  base     4765.0   0.83x -
+  clip.cut-100k-lines                x1  n=20   med     1427.9  p95    25695.9  max    25695.9 us  base     2035.8   0.70x -
+  clip.paste-1MB-line                x1  n=20   med      179.7  p95      199.3  max      199.3 us  base      344.9   0.52x -
+  clip.cut-1MB-line                  x1  n=20   med       58.8  p95       62.8  max       62.8 us  base      232.1   0.25x -
+  clip.copy-half                     x1  n=20   med       35.7  p95      150.0  max      150.0 us  base       36.8   0.97x 
+  clip.cut-half                      x1  n=20   med       44.6  p95      233.9  max      233.9 us  base       91.8   0.49x -
+  clip.paste-half                    x1  n=20   med      250.9  p95      329.9  max      329.9 us  base      313.3   0.80x -
+  clip.cut-all                       x1  n=20   med       92.6  p95      215.4  max      215.4 us  base      114.6   0.81x -
+  clip.paste-all                     x1  n=20   med      486.5  p95     5524.6  max     5524.6 us  base      535.8   0.91x 
+  clip.peak-growth                                                            325.2 MB  base      376.7   0.86x -
+  replace.all.sparse                 x1  n=20   med      359.7  p95      399.4  max      399.4 us  base      358.4   1.00x 
+  replace.all.dense                  x1  n=20   med     1205.0  p95     1445.6  max     1445.6 us  base     1131.2   1.07x 
+  replace.all.newline                x1  n=20   med      371.5  p95      375.3  max      375.3 us  base      443.7   0.84x -
+  replace.regex.sparse               x1  n=20   med    13093.8  p95    13170.4  max    13170.4 us  base    12044.3   1.09x 
+  replace.regex.dense                x1  n=20   med    16281.6  p95    18315.3  max    18315.3 us  base    16056.8   1.01x 
+  replace.step                       x1  n=300  med       10.0  p95       11.5  max       50.9 us  base        5.8   1.70x +
+  replace.peak-growth                                                           6.8 MB  base        9.4   0.72x -
+  render.80x24.top                   x1  n=300  med        6.1  p95        6.2  max      140.7 us  base        6.4   0.96x 
+  render.200x60.mid                  x1  n=300  med       17.5  p95       17.5  max      904.8 us  base       18.3   0.95x 
+  render.200x60.mid-wrap-gutter      x1  n=300  med       19.9  p95       20.0  max       22.9 us  base       21.0   0.95x 
+  render.200x60.end                  x1  n=300  med       18.1  p95       18.2  max      895.7 us  base       18.9   0.96x 
+  render.type+frame                  x1  n=300  med       24.7  p95       25.7  max       48.9 us  base       24.9   0.99x 
+  render.cold-goto-end               x1  n=20   med     1665.0  p95     1974.9  max     1974.9 us  base     1687.2   0.99x 
+  render.peak-growth                                                           12.9 MB  base       15.9   0.81x -
+  history.browse.enter               x1  n=1    med        0.3  p95        0.3  max        0.3 us  base        0.6   0.44x 
+  history.browse.back                x1  n=60   med        0.1  p95        0.2  max        1.0 us  base       46.0   0.00x -
+  history.browse.forward             x1  n=60   med        0.1  p95        0.1  max        0.2 us  base       46.2   0.00x -
+  history.browse.peak-growth                                                    3.8 MB  base       32.9   0.12x -
+  history.type.keystroke             x1  n=300  med        0.7  p95        1.7  max       22.4 us  base        0.1   5.39x 
+  history.type.rss-growth                                                       0.8 MB  base        3.6   0.21x -
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                      3.4 MB  base        6.6   0.51x -
+  history.enter.keystroke            x1  n=300  med        1.7  p95        3.7  max       31.6 us  base       53.4   0.03x -
+  history.enter.rss-growth                                                      2.4 MB  base       43.3   0.05x -
+  history.enter.versions                                                       76.0 count  base       76.0   1.00x 
+  history.enter.peak-growth                                                     5.0 MB  base       46.3   0.11x -
+  history.multi.keystroke            x20 n=300  med       16.2  p95       38.0  max      736.6 us  base       52.4   0.31x -
+  history.multi.rss-growth                                                     15.8 MB  base       32.2   0.49x -
+  history.multi.versions                                                       76.0 count  base       76.0   1.00x 
+  history.multi.peak-growth                                                    18.4 MB  base       35.1   0.52x -
+
+=== medium: large source file — 50000 lines, 2.9 MB ===
+  io.rss-after-open                                                            11.6 MB  base       10.8   1.08x 
+  io.bytes-per-line                                                           244.0 B  base      226.7   1.08x 
+  io.save                            x1  n=10   med      928.7  p95     1302.2  max     1302.2 us  base      984.5   0.94x 
+  io.open                            x1  n=10   med     1941.0  p95     2005.7  max     2005.7 us  base     2953.8   0.66x -
+  io.peak-growth                                                               11.6 MB  base       10.8   1.08x 
+  edit.type                          x1  n=200  med        0.7  p95        1.0  max       26.4 us  base        0.1   8.13x 
+  edit.backspace                     x1  n=200  med        0.7  p95        0.9  max       24.4 us  base        0.1   5.68x 
+  edit.enter                         x1  n=200  med        1.2  p95        2.2  max       32.0 us  base      169.0   0.01x -
+  edit.join                          x1  n=200  med        1.0  p95        1.3  max       32.5 us  base      105.2   0.01x -
+  edit.delete                        x1  n=200  med        0.7  p95        1.4  max       28.3 us  base       52.8   0.01x -
+  edit.word-delete                   x1  n=200  med        0.8  p95        1.2  max       26.8 us  base        0.3   2.35x 
+  edit.kill-line                     x1  n=200  med        0.7  p95        1.7  max       32.6 us  base      107.2   0.01x -
+  edit.peak-growth                                                             11.5 MB  base      120.3   0.10x -
+  region.comment-1k                  x1  n=20   med       31.7  p95       66.1  max       66.1 us  base      129.9   0.24x -
+  region.case-1k                     x1  n=20   med       74.5  p95       77.5  max       77.5 us  base      152.4   0.49x -
+  region.reflow-100                  x1  n=10   med       30.5  p95       42.4  max       42.4 us  base       34.4   0.89x -
+  region.peak-growth                                                           14.5 MB  base       49.8   0.29x -
+  move.right                         x1  n=400  med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  move.left                          x1  n=400  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.word-right                    x1  n=400  med        0.0  p95        0.0  max        0.4 us  base        0.0   1.00x 
+  move.word-left                     x1  n=400  med        0.0  p95        0.1  max        0.1 us  base        0.0   1.00x 
+  move.down                          x1  n=400  med        0.2  p95        0.2  max        1.2 us  base        0.2   0.96x 
+  move.up                            x1  n=400  med        0.2  p95        0.2  max        0.6 us  base        0.2   1.00x 
+  move.end                           x1  n=400  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.home                          x1  n=400  med        0.0  p95        0.0  max        0.0 us  base        0.0   1.00x 
+  move.page-down                     x1  n=400  med        2.4  p95        2.5  max        2.6 us  base        2.2   1.10x 
+  move.page-up                       x1  n=400  med        2.3  p95        2.4  max       11.5 us  base        2.3   1.01x 
+  move.para-down                     x1  n=400  med        0.0  p95        0.0  max       84.3 us  base        0.0   1.00x 
+  move.para-up                       x1  n=400  med        0.0  p95        0.0  max      118.0 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=400  med        0.3  p95        0.3  max        1.0 us  base        0.2   1.00x 
+  move.up-wrap                       x1  n=400  med        0.2  p95        0.3  max        0.4 us  base        0.2   1.00x 
+  move.page-down-wrap                x1  n=400  med        6.1  p95        6.1  max        6.4 us  base        6.3   0.96x 
+  move.click-wrap                    x1  n=400  med        2.8  p95        2.8  max        9.4 us  base        3.0   0.96x 
+  goto.random                        x1  n=400  med        0.1  p95        0.1  max        1.4 us  base        0.0   2.55x 
+  goto.far                           x1  n=400  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.50x 
+  move.peak-growth                                                             10.8 MB  base       12.2   0.89x -
+  search.smart.absent                x1  n=30   med      886.5  p95      939.2  max      962.0 us  base      837.5   1.06x 
+  search.exact.absent                x1  n=30   med      129.7  p95      130.3  max      132.6 us  base      110.4   1.18x +
+  search.regex.absent                x1  n=30   med    42513.8  p95    45255.0  max    46151.8 us  base    39672.3   1.07x 
+  search.smart.sparse-next           x1  n=200  med       20.7  p95       22.5  max       24.0 us  base       19.4   1.07x 
+  search.smart.dense-next            x1  n=200  med        0.1  p95        0.1  max        0.2 us  base        0.1   1.00x 
+  search.regex.sparse-next           x1  n=200  med      863.8  p95      874.1  max     1022.6 us  base      803.1   1.08x 
+  search.peak-growth                                                           10.8 MB  base       12.1   0.89x -
+  multi.type.adjacent                x1  n=100  med        0.9  p95        4.1  max       32.7 us  base        0.1   9.79x 
+  multi.backspace.adjacent           x1  n=100  med        0.7  p95        1.4  max       27.8 us  base        0.1   6.82x 
+  multi.enter.adjacent               x1  n=100  med        1.3  p95        3.1  max       28.6 us  base      107.6   0.01x -
+  multi.join.adjacent                x1  n=100  med        0.9  p95        2.1  max       28.9 us  base      105.2   0.01x -
+  multi.paste-word.adjacent          x1  n=100  med        0.8  p95        1.5  max       27.8 us  base       54.6   0.01x -
+  multi.word-delete.adjacent         x1  n=100  med        0.8  p95        1.5  max       32.5 us  base        0.3   2.51x 
+  multi.right.adjacent               x1  n=100  med        0.0  p95        0.0  max        0.5 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=100  med        0.4  p95        0.4  max        2.2 us  base        0.4   1.03x 
+  multi.type.spread                  x1  n=100  med        1.0  p95        1.6  max       24.5 us  base        0.1  12.02x 
+  multi.backspace.spread             x1  n=100  med        0.7  p95        1.1  max       24.4 us  base        0.1   7.02x 
+  multi.enter.spread                 x1  n=100  med        1.3  p95        1.8  max       27.8 us  base       52.5   0.03x -
+  multi.join.spread                  x1  n=100  med        1.0  p95        1.5  max       29.0 us  base      104.5   0.01x -
+  multi.paste-word.spread            x1  n=100  med        0.8  p95        1.3  max       27.6 us  base       55.0   0.01x -
+  multi.word-delete.spread           x1  n=100  med        0.8  p95        1.1  max       26.4 us  base        0.3   2.74x 
+  multi.right.spread                 x1  n=100  med        0.0  p95        0.0  max        0.5 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=100  med        0.4  p95        0.4  max        2.0 us  base        0.4   1.02x 
+  multi.type.adjacent                x5  n=100  med        1.3  p95        1.6  max       27.9 us  base       46.5   0.03x -
+  multi.backspace.adjacent           x5  n=100  med        1.1  p95        1.7  max       30.7 us  base       98.9   0.01x -
+  multi.enter.adjacent               x5  n=100  med        2.6  p95        3.3  max       39.5 us  base      135.4   0.02x -
+  multi.join.adjacent                x5  n=100  med        2.1  p95        3.0  max       43.8 us  base      133.9   0.02x -
+  multi.paste-word.adjacent          x5  n=100  med        1.2  p95        1.8  max       41.2 us  base      100.1   0.01x -
+  multi.word-delete.adjacent         x5  n=100  med        1.4  p95        2.4  max       34.6 us  base       99.6   0.01x -
+  multi.right.adjacent               x5  n=100  med        0.1  p95        0.1  max        0.3 us  base        0.1   1.00x 
+  multi.down.adjacent                x5  n=100  med        1.7  p95        3.4  max        5.8 us  base        1.6   1.01x 
+  multi.type.spread                  x5  n=100  med        3.7  p95        4.4  max      121.1 us  base       46.6   0.08x -
+  multi.backspace.spread             x5  n=100  med        3.2  p95        4.4  max      118.9 us  base       99.2   0.03x -
+  multi.enter.spread                 x5  n=100  med        4.9  p95       19.5  max      139.6 us  base      137.0   0.04x -
+  multi.join.spread                  x5  n=100  med        4.2  p95        9.1  max      140.3 us  base      134.2   0.03x -
+  multi.paste-word.spread            x5  n=100  med        3.3  p95        4.2  max      131.8 us  base      100.5   0.03x -
+  multi.word-delete.spread           x5  n=100  med        3.6  p95        6.9  max      125.4 us  base      100.5   0.04x -
+  multi.right.spread                 x5  n=100  med        0.1  p95        0.1  max        0.5 us  base        0.1   1.50x 
+  multi.down.spread                  x5  n=100  med        1.7  p95        1.8  max        5.7 us  base        1.6   1.05x 
+  multi.type.adjacent                x20 n=100  med        1.9  p95        2.3  max       41.5 us  base       48.5   0.04x -
+  multi.backspace.adjacent           x20 n=100  med        1.6  p95        6.2  max      195.0 us  base      102.0   0.02x -
+  multi.enter.adjacent               x20 n=100  med       15.2  p95       20.4  max      149.5 us  base      246.2   0.06x -
+  multi.join.adjacent                x20 n=100  med       10.8  p95       13.5  max      192.8 us  base      243.7   0.04x -
+  multi.paste-word.adjacent          x20 n=100  med        4.8  p95        9.1  max      256.2 us  base      106.6   0.04x -
+  multi.word-delete.adjacent         x20 n=100  med        4.5  p95       12.9  max      204.9 us  base      105.6   0.04x -
+  multi.right.adjacent               x20 n=100  med        0.3  p95        0.3  max        0.5 us  base        0.2   1.05x 
+  multi.down.adjacent                x20 n=100  med        9.2  p95       13.7  max       19.7 us  base        9.1   1.01x 
+  multi.type.spread                  x20 n=100  med       16.6  p95       51.7  max      798.3 us  base       48.3   0.34x -
+  multi.backspace.spread             x20 n=100  med       13.9  p95       41.8  max      611.3 us  base      113.2   0.12x -
+  multi.enter.spread                 x20 n=100  med       27.4  p95       75.9  max     1350.3 us  base      249.5   0.11x -
+  multi.join.spread                  x20 n=100  med       21.7  p95       35.3  max     1167.0 us  base      244.5   0.09x -
+  multi.paste-word.spread            x20 n=100  med       16.8  p95       25.4  max      883.6 us  base      110.3   0.15x -
+  multi.word-delete.spread           x20 n=100  med       16.9  p95       29.7  max      871.7 us  base      118.5   0.14x -
+  multi.right.spread                 x20 n=100  med        0.4  p95        0.4  max        1.3 us  base        0.2   1.46x 
+  multi.down.spread                  x20 n=100  med        6.3  p95        6.5  max       21.1 us  base        5.8   1.08x 
+  multi.peak-growth                                                            35.1 MB  base      160.8   0.22x -
+  clip.paste-1k-lines                x1  n=50   med       45.5  p95       82.5  max      177.4 us  base      215.0   0.21x -
+  clip.cut-1k-lines                  x1  n=50   med       16.4  p95       20.0  max      820.7 us  base      185.9   0.09x -
+  clip.paste-100k-lines              x1  n=10   med     3981.4  p95     4192.7  max     4192.7 us  base     5244.9   0.76x -
+  clip.cut-100k-lines                x1  n=10   med     1453.1  p95     1839.9  max     1839.9 us  base     2441.7   0.60x -
+  clip.paste-1MB-line                x1  n=10   med      278.9  p95      298.9  max      298.9 us  base      434.0   0.64x -
+  clip.cut-1MB-line                  x1  n=10   med      170.8  p95      197.4  max      197.4 us  base      348.1   0.49x -
+  clip.copy-half                     x1  n=10   med       99.6  p95      625.7  max      625.7 us  base       85.6   1.16x +
+  clip.cut-half                      x1  n=10   med      171.1  p95      289.8  max      289.8 us  base      346.4   0.49x -
+  clip.paste-half                    x1  n=10   med     1155.7  p95     1195.3  max     1195.3 us  base     1045.8   1.11x +
+  clip.cut-all                       x1  n=10   med      465.7  p95      886.6  max      886.6 us  base      690.6   0.67x -
+  clip.paste-all                     x1  n=10   med     2356.3  p95     2395.1  max     2395.1 us  base     2681.1   0.88x -
+  clip.peak-growth                                                            292.6 MB  base      340.3   0.86x -
+  replace.all.sparse                 x1  n=10   med      900.3  p95     1144.6  max     1144.6 us  base      963.7   0.93x 
+  replace.all.dense                  x1  n=10   med     4224.2  p95     5074.3  max     5074.3 us  base     3968.1   1.06x 
+  replace.all.newline                x1  n=10   med      946.5  p95      982.6  max      982.6 us  base     1480.8   0.64x -
+  replace.regex.sparse               x1  n=10   med    44097.8  p95    44267.0  max    44267.0 us  base    40719.0   1.08x 
+  replace.regex.dense                x1  n=10   med    57506.5  p95    57895.2  max    57895.2 us  base    56906.8   1.01x 
+  replace.step                       x1  n=200  med       11.0  p95       19.0  max      109.0 us  base        5.5   2.01x +
+  replace.peak-growth                                                          17.2 MB  base       23.8   0.72x -
+  render.80x24.top                   x1  n=200  med        8.9  p95        8.9  max       16.9 us  base        8.9   1.00x 
+  render.200x60.mid                  x1  n=200  med       22.2  p95       22.3  max       27.4 us  base       21.9   1.01x 
+  render.200x60.mid-wrap-gutter      x1  n=200  med       25.0  p95       25.1  max       26.9 us  base       25.3   0.99x 
+  render.200x60.end                  x1  n=200  med       21.8  p95       21.8  max       23.1 us  base       21.8   1.00x 
+  render.type+frame                  x1  n=200  med       23.9  p95       26.1  max       73.1 us  base       22.8   1.05x 
+  render.cold-goto-end               x1  n=10   med       12.5  p95       14.1  max       14.1 us  base       13.0   0.96x 
+  render.peak-growth                                                           17.8 MB  base       24.4   0.73x -
+  history.browse.enter               x1  n=1    med        0.5  p95        0.5  max        0.5 us  base        0.5   1.00x 
+  history.browse.back                x1  n=60   med        0.2  p95        0.7  max        1.1 us  base       99.9   0.00x -
+  history.browse.forward             x1  n=60   med        0.2  p95        0.2  max        0.3 us  base       99.0   0.00x -
+  history.browse.peak-growth                                                   11.3 MB  base       89.9   0.13x -
+  history.type.keystroke             x1  n=300  med        0.8  p95        2.6  max       26.9 us  base        0.2   4.27x 
+  history.type.rss-growth                                                       0.9 MB  base        9.2   0.10x -
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                     10.7 MB  base       19.9   0.54x -
+  history.enter.keystroke            x1  n=300  med        2.9  p95        5.3  max       92.6 us  base      119.1   0.02x -
+  history.enter.rss-growth                                                      2.8 MB  base      116.9   0.02x -
+  history.enter.versions                                                       76.0 count  base       76.0   1.00x 
+  history.enter.peak-growth                                                    12.6 MB  base      127.6   0.10x -
+  history.multi.keystroke            x20 n=300  med       17.0  p95       38.5  max     1031.5 us  base      112.8   0.15x -
+  history.multi.rss-growth                                                     16.8 MB  base       79.0   0.21x -
+  history.multi.versions                                                       76.0 count  base       76.0   1.00x 
+  history.multi.peak-growth                                                    26.6 MB  base       89.7   0.30x -
+
+=== large: 61 MB log-like file — 1000000 lines, 58.2 MB ===
+  io.rss-after-open                                                           169.0 MB  base      168.4   1.00x 
+  io.bytes-per-line                                                           177.2 B  base      176.6   1.00x 
+  io.save                            x1  n=3    med    27808.6  p95    30344.6  max    30344.6 us  base    29569.5   0.94x 
+  io.open                            x1  n=3    med    55981.2  p95    68839.1  max    68839.1 us  base    56005.5   1.00x 
+  io.peak-growth                                                              234.3 MB  base      219.2   1.07x 
+  edit.type                          x1  n=40   med        3.7  p95        4.7  max        8.1 us  base        0.1  46.71x +
+  edit.backspace                     x1  n=40   med        3.5  p95        4.3  max       10.8 us  base        0.1  49.37x +
+  edit.enter                         x1  n=40   med        4.2  p95        6.1  max      133.4 us  base     6528.8   0.00x -
+  edit.join                          x1  n=40   med        3.5  p95        4.7  max      120.1 us  base     6662.4   0.00x -
+  edit.delete                        x1  n=40   med        2.6  p95        4.9  max      114.5 us  base     5365.7   0.00x -
+  edit.word-delete                   x1  n=40   med        2.7  p95        4.0  max      109.3 us  base     5411.7   0.00x -
+  edit.kill-line                     x1  n=40   med        3.3  p95        4.0  max      106.8 us  base     5905.2   0.00x -
+  edit.peak-growth                                                            227.9 MB  base     1372.5   0.17x -
+  region.comment-1k                  x1  n=6    med       35.6  p95       47.1  max       47.1 us  base     6220.9   0.01x -
+  region.case-1k                     x1  n=6    med       55.9  p95       63.3  max       63.3 us  base     6899.6   0.01x -
+  region.reflow-100                  x1  n=3    med       40.3  p95       47.5  max       47.5 us  base     6818.4   0.01x -
+  region.peak-growth                                                          227.7 MB  base      414.0   0.55x -
+  move.right                         x1  n=80   med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  move.left                          x1  n=80   med        0.0  p95        0.1  max        0.1 us  base        0.0   1.00x 
+  move.word-right                    x1  n=80   med        0.0  p95        0.1  max        0.4 us  base        0.0   1.00x 
+  move.word-left                     x1  n=80   med        0.1  p95        0.2  max        0.3 us  base        0.1   1.00x 
+  move.down                          x1  n=80   med        0.2  p95        0.3  max        1.4 us  base        0.2   0.96x 
+  move.up                            x1  n=80   med        0.2  p95        0.3  max        0.6 us  base        0.2   0.96x 
+  move.end                           x1  n=80   med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.home                          x1  n=80   med        0.0  p95        0.0  max        0.0 us  base        0.0   1.00x 
+  move.page-down                     x1  n=80   med        2.4  p95        2.4  max        2.5 us  base        2.2   1.06x 
+  move.page-up                       x1  n=80   med        2.3  p95        2.4  max        2.8 us  base        2.3   0.99x 
+  move.para-down                     x1  n=80   med        0.0  p95        0.0  max     2266.5 us  base        0.0   1.00x 
+  move.para-up                       x1  n=80   med        0.0  p95        0.0  max     2075.2 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=80   med        0.2  p95        0.3  max        1.3 us  base        0.2   1.00x 
+  move.up-wrap                       x1  n=80   med        0.2  p95        0.4  max        1.0 us  base        0.2   1.00x 
+  move.page-down-wrap                x1  n=80   med        6.1  p95        6.1  max        6.3 us  base        6.2   0.98x 
+  move.click-wrap                    x1  n=80   med        2.9  p95        2.9  max        3.5 us  base        2.9   1.00x 
+  goto.random                        x1  n=80   med        0.3  p95        0.7  max        1.4 us  base        0.0  15.05x 
+  goto.far                           x1  n=80   med        0.0  p95        0.0  max        0.1 us  base        0.0   1.50x 
+  move.peak-growth                                                            227.7 MB  base      214.3   1.06x 
+  search.smart.absent                x1  n=9    med    17828.2  p95    19441.9  max    19441.9 us  base    16636.2   1.07x 
+  search.exact.absent                x1  n=9    med     3897.5  p95     4174.0  max     4174.0 us  base     3779.3   1.03x 
+  search.regex.absent                x1  n=9    med   804441.4  p95   805996.9  max   805996.9 us  base   803560.3   1.00x 
+  search.smart.sparse-next           x1  n=40   med       22.5  p95       25.2  max       25.7 us  base       21.1   1.06x 
+  search.smart.dense-next            x1  n=40   med        0.1  p95        0.2  max        0.2 us  base        0.1   1.20x 
+  search.regex.sparse-next           x1  n=40   med      816.8  p95      836.4  max      838.2 us  base      818.9   1.00x 
+  search.peak-growth                                                          227.5 MB  base      214.3   1.06x 
+  multi.type.adjacent                x1  n=20   med        4.9  p95        9.7  max        9.7 us  base        0.3  15.68x +
+  multi.backspace.adjacent           x1  n=20   med        3.7  p95        5.7  max        5.7 us  base        0.2  20.59x +
+  multi.enter.adjacent               x1  n=20   med        4.7  p95        5.4  max        5.4 us  base     6414.2   0.00x -
+  multi.join.adjacent                x1  n=20   med        4.1  p95        5.3  max        5.3 us  base     6398.2   0.00x -
+  multi.paste-word.adjacent          x1  n=20   med        3.6  p95      116.4  max      116.4 us  base        0.3  13.24x +
+  multi.word-delete.adjacent         x1  n=20   med        2.5  p95        4.1  max        4.1 us  base        0.3   7.95x +
+  multi.right.adjacent               x1  n=20   med        0.0  p95        0.5  max        0.5 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=20   med        0.4  p95        1.3  max        1.3 us  base        0.4   1.00x 
+  multi.type.spread                  x1  n=20   med        3.8  p95        8.0  max        8.0 us  base        0.3  12.41x +
+  multi.backspace.spread             x1  n=20   med        3.7  p95        4.2  max        4.2 us  base        0.2  20.54x +
+  multi.enter.spread                 x1  n=20   med        4.8  p95        7.5  max        7.5 us  base     5789.9   0.00x -
+  multi.join.spread                  x1  n=20   med        4.2  p95        5.3  max        5.3 us  base     5771.2   0.00x -
+  multi.paste-word.spread            x1  n=20   med        3.6  p95      116.6  max      116.6 us  base        0.2  14.90x +
+  multi.word-delete.spread           x1  n=20   med        2.6  p95        3.9  max        3.9 us  base        0.4   6.30x +
+  multi.right.spread                 x1  n=20   med        0.0  p95        0.3  max        0.3 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=20   med        0.4  p95        1.0  max        1.0 us  base        0.4   0.98x 
+  multi.type.adjacent                x5  n=20   med        4.1  p95        8.6  max        8.6 us  base     5525.2   0.00x -
+  multi.backspace.adjacent           x5  n=20   med        3.7  p95        5.2  max        5.2 us  base     5592.4   0.00x -
+  multi.enter.adjacent               x5  n=20   med        8.1  p95        9.2  max        9.2 us  base     6964.3   0.00x -
+  multi.join.adjacent                x5  n=20   med        7.7  p95       18.1  max       18.1 us  base     6919.7   0.00x -
+  multi.paste-word.adjacent          x5  n=20   med        4.0  p95      132.1  max      132.1 us  base     6160.1   0.00x -
+  multi.word-delete.adjacent         x5  n=20   med        3.3  p95        5.1  max        5.1 us  base    11919.3   0.00x -
+  multi.right.adjacent               x5  n=20   med        0.1  p95        0.7  max        0.7 us  base        0.1   1.00x 
+  multi.down.adjacent                x5  n=20   med        1.7  p95        2.6  max        2.6 us  base        1.7   1.00x 
+  multi.type.spread                  x5  n=20   med        7.1  p95       17.9  max       17.9 us  base     5516.6   0.00x -
+  multi.backspace.spread             x5  n=20   med        6.3  p95        7.9  max        7.9 us  base     5487.3   0.00x -
+  multi.enter.spread                 x5  n=20   med       11.9  p95       13.8  max       13.8 us  base     6815.8   0.00x -
+  multi.join.spread                  x5  n=20   med       10.8  p95       12.0  max       12.0 us  base     6820.6   0.00x -
+  multi.paste-word.spread            x5  n=20   med        7.3  p95      270.5  max      270.5 us  base     6285.3   0.00x -
+  multi.word-delete.spread           x5  n=20   med        5.7  p95        7.1  max        7.1 us  base    11277.1   0.00x -
+  multi.right.spread                 x5  n=20   med        0.1  p95        0.7  max        0.7 us  base        0.1   1.67x 
+  multi.down.spread                  x5  n=20   med        1.7  p95        3.3  max        3.3 us  base        1.7   1.03x 
+  multi.type.adjacent                x20 n=20   med        4.5  p95       11.0  max       11.0 us  base     5474.6   0.00x -
+  multi.backspace.adjacent           x20 n=20   med        4.3  p95        7.3  max        7.3 us  base     5506.7   0.00x -
+  multi.enter.adjacent               x20 n=20   med       21.2  p95       28.2  max       28.2 us  base     8413.7   0.00x -
+  multi.join.adjacent                x20 n=20   med       20.2  p95       21.9  max       21.9 us  base     8333.4   0.00x -
+  multi.paste-word.adjacent          x20 n=20   med        4.7  p95      139.2  max      139.2 us  base     6231.6   0.00x -
+  multi.word-delete.adjacent         x20 n=20   med        5.1  p95        6.2  max        6.2 us  base    11163.4   0.00x -
+  multi.right.adjacent               x20 n=20   med        0.2  p95        0.7  max        0.7 us  base        0.2   1.00x 
+  multi.down.adjacent                x20 n=20   med        5.5  p95       16.7  max       16.7 us  base        5.6   0.98x 
+  multi.type.spread                  x20 n=20   med       17.8  p95       61.5  max       61.5 us  base     5496.6   0.00x -
+  multi.backspace.spread             x20 n=20   med       17.8  p95       20.0  max       20.0 us  base     5549.6   0.00x -
+  multi.enter.spread                 x20 n=20   med       41.5  p95       47.9  max       47.9 us  base     8926.2   0.00x -
+  multi.join.spread                  x20 n=20   med       36.8  p95       47.8  max       47.8 us  base     8931.3   0.00x -
+  multi.paste-word.spread            x20 n=20   med       20.9  p95      970.0  max      970.0 us  base     6210.5   0.00x -
+  multi.word-delete.spread           x20 n=20   med       17.9  p95       32.7  max       32.7 us  base    11059.6   0.00x -
+  multi.right.spread                 x20 n=20   med        0.4  p95        1.0  max        1.0 us  base        0.2   1.64x 
+  multi.down.spread                  x20 n=20   med        6.4  p95        8.9  max        8.9 us  base        6.4   1.00x 
+  multi.peak-growth                                                           233.5 MB  base     1720.0   0.14x -
+  clip.paste-1k-lines                x1  n=10   med       31.7  p95       39.5  max       39.5 us  base     6587.6   0.00x -
+  clip.cut-1k-lines                  x1  n=10   med       11.2  p95       12.7  max       12.7 us  base     6644.8   0.00x -
+  clip.paste-100k-lines              x1  n=3    med     2644.5  p95     2787.3  max     2787.3 us  base    10656.9   0.25x -
+  clip.cut-100k-lines                x1  n=3    med     1089.8  p95     1162.7  max     1162.7 us  base     8396.0   0.13x -
+  clip.paste-1MB-line                x1  n=3    med      174.6  p95      175.5  max      175.5 us  base      170.7   1.02x 
+  clip.cut-1MB-line                  x1  n=3    med       53.1  p95       54.2  max       54.2 us  base       71.5   0.74x -
+  clip.copy-half                     x1  n=3    med     5786.8  p95     6793.5  max     6793.5 us  base     5693.4   1.02x 
+  clip.cut-half                      x1  n=3    med     5646.9  p95     5703.1  max     5703.1 us  base    11931.0   0.47x -
+  clip.paste-half                    x1  n=3    med    23074.2  p95    23263.1  max    23263.1 us  base    21674.8   1.06x 
+  clip.cut-all                       x1  n=3    med    12673.1  p95    13489.5  max    13489.5 us  base    17025.2   0.74x -
+  clip.paste-all                     x1  n=3    med    45912.5  p95    46177.3  max    46177.3 us  base    36731.3   1.25x +
+  clip.peak-growth                                                            969.6 MB  base     1413.9   0.69x -
+  replace.all.sparse                 x1  n=3    med    16703.5  p95    16824.1  max    16824.1 us  base    20224.7   0.83x -
+  replace.all.dense                  x1  n=3    med    87333.3  p95   106508.6  max   106508.6 us  base    81162.7   1.08x 
+  replace.all.newline                x1  n=3    med    18234.9  p95    18302.4  max    18302.4 us  base   235365.3   0.08x -
+  replace.regex.sparse               x1  n=3    med   842440.0  p95   844763.9  max   844763.9 us  base   852939.4   0.99x 
+  replace.regex.dense                x1  n=3    med  1142235.2  p95  1160180.0  max  1160180.0 us  base  1119690.7   1.02x 
+  replace.step                       x1  n=40   med       20.2  p95       30.5  max       32.2 us  base        8.0   2.51x +
+  replace.peak-growth                                                         304.3 MB  base      329.1   0.92x 
+  render.80x24.top                   x1  n=40   med        8.8  p95        9.0  max       23.8 us  base        8.9   0.99x 
+  render.200x60.mid                  x1  n=40   med       21.5  p95       21.6  max       23.4 us  base       21.7   0.99x 
+  render.200x60.mid-wrap-gutter      x1  n=40   med       25.3  p95       25.5  max       27.2 us  base       25.6   0.99x 
+  render.200x60.end                  x1  n=40   med       21.3  p95       21.3  max       22.0 us  base       21.4   0.99x 
+  render.type+frame                  x1  n=40   med       25.4  p95       28.7  max       33.2 us  base       22.1   1.15x +
+  render.cold-goto-end               x1  n=3    med       13.9  p95       15.1  max       15.1 us  base       14.0   0.99x 
+  render.peak-growth                                                          387.9 MB  base      399.1   0.97x 
+  history.browse.enter               x1  n=1    med        0.6  p95        0.6  max        0.6 us  base        1.1   0.53x 
+  history.browse.back                x1  n=60   med        3.2  p95        4.5  max        6.0 us  base    10922.4   0.00x -
+  history.browse.forward             x1  n=60   med        3.2  p95        4.8  max        5.4 us  base    10887.2   0.00x -
+  history.browse.peak-growth                                                  229.2 MB  base     1683.0   0.14x -
+  history.type.keystroke             x1  n=300  med        2.7  p95        4.2  max      117.5 us  base        0.4   6.35x +
+  history.type.rss-growth                                                       0.0 MB  base      124.3   0.00x -
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                    228.7 MB  base      354.1   0.65x -
+  history.enter.keystroke            x1  n=300  med        3.8  p95        4.7  max      128.0 us
+  history.enter.rss-growth                                                      0.0 MB
+  history.enter.versions                                                       76.0 count
+  history.enter.peak-growth                                                   226.9 MB  base     2004.8   0.11x -
+  history.multi.keystroke            x20 n=300  med       16.8  p95       29.1  max      972.2 us  base    10854.8   0.00x -
+  history.multi.rss-growth                                                      6.0 MB  base     1470.5   0.00x -
+  history.multi.versions                                                       76.0 count  base       76.0   1.00x 
+  history.multi.peak-growth                                                   226.9 MB  base     1700.3   0.13x -
+
+=== short: millions of short lines — 2000000 lines, 6.9 MB ===
+  io.rss-after-open                                                           160.2 MB  base      190.6   0.84x -
+  io.bytes-per-line                                                            84.0 B  base       99.9   0.84x -
+  io.save                            x1  n=3    med    21975.5  p95    22055.9  max    22055.9 us  base    21447.3   1.02x 
+  io.open                            x1  n=3    med    48419.0  p95    48717.0  max    48717.0 us  base    62319.6   0.78x -
+  io.peak-growth                                                              191.8 MB  base      191.7   1.00x 
+  edit.type                          x1  n=40   med        6.8  p95       10.9  max       11.2 us  base        0.1  75.81x +
+  edit.backspace                     x1  n=40   med        7.3  p95       18.8  max       18.8 us  base        0.1  104.06x +
+  edit.enter                         x1  n=40   med       21.7  p95       29.0  max      331.2 us  base     8648.8   0.00x -
+  edit.join                          x1  n=40   med        8.7  p95       24.8  max      337.2 us
+  edit.delete                        x1  n=40   med        6.8  p95       10.3  max      300.8 us
+  edit.word-delete                   x1  n=40   med        7.5  p95       10.1  max      276.5 us
+  edit.kill-line                     x1  n=40   med        7.8  p95        9.7  max      239.5 us
+  edit.peak-growth                                                            190.6 MB  base     2022.4   0.09x -
+  region.comment-1k                  x1  n=6    med       24.3  p95       28.2  max       28.2 us  base     7993.3   0.00x -
+  region.case-1k                     x1  n=6    med       34.4  p95       40.1  max       40.1 us  base     9197.1   0.00x -
+  region.reflow-100                  x1  n=3    med       19.0  p95       25.3  max       25.3 us  base     9140.5   0.00x -
+  region.peak-growth                                                          191.6 MB  base      648.8   0.30x -
+  move.right                         x1  n=80   med        0.0  p95        0.0  max        0.4 us  base        0.0   1.00x 
+  move.left                          x1  n=80   med        0.0  p95        0.1  max        0.5 us  base        0.0   1.00x 
+  move.word-right                    x1  n=80   med        0.0  p95        0.1  max        0.4 us  base        0.0   1.50x 
+  move.word-left                     x1  n=80   med        0.0  p95        0.1  max        0.4 us  base        0.0   1.00x 
+  move.down                          x1  n=80   med        0.0  p95        0.1  max        1.3 us  base        0.0   1.00x 
+  move.up                            x1  n=80   med        0.0  p95        0.1  max        0.3 us  base        0.0   1.33x 
+  move.end                           x1  n=80   med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.home                          x1  n=80   med        0.0  p95        0.0  max        0.0 us  base        0.0   1.00x 
+  move.page-down                     x1  n=80   med        0.2  p95        0.3  max        0.4 us  base        0.2   1.04x 
+  move.page-up                       x1  n=80   med        0.2  p95        0.3  max        0.6 us  base        0.2   1.10x 
+  move.para-down                     x1  n=80   med        0.0  p95        0.1  max        0.3 us  base        0.0   1.00x 
+  move.para-up                       x1  n=80   med        0.0  p95        0.1  max        0.3 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=80   med        0.0  p95        0.1  max        0.1 us  base        0.0   1.00x 
+  move.up-wrap                       x1  n=80   med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.page-down-wrap                x1  n=80   med        0.5  p95        0.6  max        0.8 us  base        0.5   0.98x 
+  move.click-wrap                    x1  n=80   med        0.3  p95        0.3  max        0.8 us  base        0.3   1.00x 
+  goto.random                        x1  n=80   med        0.1  p95        0.1  max        1.1 us  base        0.0   3.03x 
+  goto.far                           x1  n=80   med        0.0  p95        0.0  max        0.1 us  base        0.0   1.50x 
+  move.peak-growth                                                            191.6 MB  base      191.1   1.00x 
+  search.smart.absent                x1  n=9    med     4311.3  p95     4768.7  max     4768.7 us  base     3842.8   1.12x +
+  search.exact.absent                x1  n=9    med     3863.1  p95     4312.3  max     4312.3 us  base     3606.4   1.07x 
+  search.regex.absent                x1  n=9    med   147934.2  p95   148112.7  max   148112.7 us  base   149354.2   0.99x 
+  search.smart.sparse-next           x1  n=40   med        2.3  p95        5.0  max        5.2 us  base        2.2   1.02x 
+  search.smart.dense-next            x1  n=40   med        0.0  p95        0.1  max        0.1 us  base        0.0   1.00x 
+  search.regex.sparse-next           x1  n=40   med       74.2  p95       74.5  max       75.8 us  base       74.8   0.99x 
+  search.peak-growth                                                          191.6 MB  base      191.1   1.00x 
+  multi.type.adjacent                x1  n=20   med        7.4  p95       11.6  max       11.6 us  base        0.2  41.02x +
+  multi.backspace.adjacent           x1  n=20   med        6.1  p95        7.1  max        7.1 us  base        0.1  67.47x +
+  multi.enter.adjacent               x1  n=20   med        8.7  p95       16.5  max       16.5 us  base     8695.5   0.00x -
+  multi.join.adjacent                x1  n=20   med        8.7  p95       10.3  max       10.3 us  base     8602.5   0.00x -
+  multi.paste-word.adjacent          x1  n=20   med        7.3  p95      337.5  max      337.5 us  base        0.3  27.97x +
+  multi.word-delete.adjacent         x1  n=20   med        6.6  p95        9.9  max        9.9 us  base        0.3  18.81x +
+  multi.right.adjacent               x1  n=20   med        0.0  p95        0.5  max        0.5 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=20   med        0.1  p95        1.5  max        1.5 us  base        0.1   0.85x 
+  multi.type.spread                  x1  n=20   med        6.1  p95       10.7  max       10.7 us  base        0.2  25.25x +
+  multi.backspace.spread             x1  n=20   med        6.5  p95        9.1  max        9.1 us  base        0.1  54.43x +
+  multi.enter.spread                 x1  n=20   med        7.1  p95       13.3  max       13.3 us  base     8597.4   0.00x -
+  multi.join.spread                  x1  n=20   med        6.5  p95       21.7  max       21.7 us  base     8667.4   0.00x -
+  multi.paste-word.spread            x1  n=20   med        6.3  p95      204.3  max      204.3 us  base        0.3  22.51x +
+  multi.word-delete.spread           x1  n=20   med        4.6  p95        6.2  max        6.2 us  base        0.3  14.40x +
+  multi.right.spread                 x1  n=20   med        0.0  p95        0.0  max        0.0 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=20   med        0.1  p95        1.0  max        1.0 us  base        0.1   1.00x 
+  multi.type.adjacent                x5  n=20   med        6.0  p95       10.2  max       10.2 us  base     7982.9   0.00x -
+  multi.backspace.adjacent           x5  n=20   med        6.0  p95        8.4  max        8.4 us  base     8070.4   0.00x -
+  multi.enter.adjacent               x5  n=20   med       12.3  p95       13.6  max       13.6 us  base     9817.6   0.00x -
+  multi.join.adjacent                x5  n=20   med       12.0  p95       27.2  max       27.2 us
+  multi.paste-word.adjacent          x5  n=20   med        6.4  p95      178.8  max      178.8 us
+  multi.word-delete.adjacent         x5  n=20   med        5.0  p95        5.9  max        5.9 us
+  multi.right.adjacent               x5  n=20   med        0.1  p95        0.4  max        0.4 us
+  multi.down.adjacent                x5  n=20   med        0.2  p95        2.1  max        2.1 us
+  multi.type.spread                  x5  n=20   med        8.2  p95       16.1  max       16.1 us  base     7959.0   0.00x -
+  multi.backspace.spread             x5  n=20   med        8.2  p95       21.9  max       21.9 us  base     7995.1   0.00x -
+  multi.enter.spread                 x5  n=20   med       16.0  p95       18.8  max       18.8 us  base    10714.0   0.00x -
+  multi.join.spread                  x5  n=20   med       15.4  p95       16.4  max       16.4 us
+  multi.paste-word.spread            x5  n=20   med       10.4  p95      288.7  max      288.7 us
+  multi.word-delete.spread           x5  n=20   med        7.3  p95        7.9  max        7.9 us
+  multi.right.spread                 x5  n=20   med        0.1  p95        0.4  max        0.4 us
+  multi.down.spread                  x5  n=20   med        0.3  p95        1.8  max        1.8 us
+  multi.type.adjacent                x20 n=20   med        7.1  p95        8.6  max        8.6 us  base     7935.6   0.00x -
+  multi.backspace.adjacent           x20 n=20   med        6.9  p95       13.1  max       13.1 us  base     7931.0   0.00x -
+  multi.enter.adjacent               x20 n=20   med       32.5  p95       36.6  max       36.6 us  base    14217.7   0.00x -
+  multi.join.adjacent                x20 n=20   med       32.3  p95       33.3  max       33.3 us
+  multi.paste-word.adjacent          x20 n=20   med        8.1  p95      229.8  max      229.8 us
+  multi.word-delete.adjacent         x20 n=20   med        7.0  p95        7.7  max        7.7 us
+  multi.right.adjacent               x20 n=20   med        0.2  p95        0.5  max        0.5 us
+  multi.down.adjacent                x20 n=20   med        3.1  p95        5.9  max        5.9 us
+  multi.type.spread                  x20 n=20   med       19.6  p95       42.0  max       42.0 us  base     7950.2   0.00x -
+  multi.backspace.spread             x20 n=20   med       20.0  p95       24.2  max       24.2 us  base     8089.3   0.00x -
+  multi.enter.spread                 x20 n=20   med       53.9  p95       66.8  max       66.8 us  base    17742.3   0.00x -
+  multi.join.spread                  x20 n=20   med       53.2  p95       58.6  max       58.6 us
+  multi.paste-word.spread            x20 n=20   med       27.4  p95     1154.0  max     1154.0 us
+  multi.word-delete.spread           x20 n=20   med       20.6  p95       39.6  max       39.6 us
+  multi.right.spread                 x20 n=20   med        0.4  p95        1.1  max        1.1 us
+  multi.down.spread                  x20 n=20   med        1.2  p95        5.2  max        5.2 us
+  multi.peak-growth                                                           234.5 MB  base     2022.1   0.12x -
+  clip.paste-1k-lines                x1  n=10   med       36.4  p95       46.7  max       46.7 us  base     8882.1   0.00x -
+  clip.cut-1k-lines                  x1  n=10   med       15.7  p95       18.6  max       18.6 us  base     8981.6   0.00x -
+  clip.paste-100k-lines              x1  n=3    med     4073.7  p95     4141.1  max     4141.1 us  base    14382.0   0.28x -
+  clip.cut-100k-lines                x1  n=3    med     1447.1  p95     1497.2  max     1497.2 us  base    10969.3   0.13x -
+  clip.paste-1MB-line                x1  n=3    med      179.7  p95      180.9  max      180.9 us  base      187.6   0.96x 
+  clip.cut-1MB-line                  x1  n=3    med       56.5  p95       61.7  max       61.7 us  base       52.0   1.09x 
+  clip.copy-half                     x1  n=3    med     4635.0  p95     4890.9  max     4890.9 us  base     4514.3   1.03x 
+  clip.cut-half                      x1  n=3    med     4506.3  p95     5603.5  max     5603.5 us  base    11729.0   0.38x -
+  clip.paste-half                    x1  n=3    med    19982.2  p95    22027.2  max    22027.2 us  base    28887.8   0.69x -
+  clip.cut-all                       x1  n=3    med    10004.0  p95    14081.2  max    14081.2 us  base    14279.9   0.70x -
+  clip.paste-all                     x1  n=3    med    42605.5  p95    42641.3  max    42641.3 us  base    45391.1   0.94x 
+  clip.peak-growth                                                            936.5 MB  base     1819.5   0.51x -
+  replace.all.sparse                 x1  n=3    med     8952.7  p95     9020.2  max     9020.2 us  base    13590.3   0.66x -
+  replace.all.dense                  x1  n=3    med    27126.8  p95    27333.0  max    27333.0 us  base    27630.5   0.98x 
+  replace.all.newline                x1  n=3    med    13066.4  p95    13327.8  max    13327.8 us  base  1024002.6   0.01x -
+  replace.regex.sparse               x1  n=3    med   165775.7  p95   165901.4  max   165901.4 us  base   162463.3   1.02x 
+  replace.regex.dense                x1  n=3    med   237685.5  p95   239649.6  max   239649.6 us  base   233209.4   1.02x 
+  replace.step                       x1  n=40   med       15.6  p95       24.0  max       24.4 us  base        3.4   4.67x +
+  replace.peak-growth                                                         240.7 MB  base      281.4   0.86x -
+  render.80x24.top                   x1  n=40   med        0.8  p95        1.1  max       10.2 us  base        0.8   1.01x 
+  render.200x60.mid                  x1  n=40   med        2.0  p95        2.1  max        3.5 us  base        2.0   1.01x 
+  render.200x60.mid-wrap-gutter      x1  n=40   med        3.0  p95        3.2  max        5.8 us  base        3.0   1.00x 
+  render.200x60.end                  x1  n=40   med        2.0  p95        2.1  max        2.8 us  base        2.0   0.99x 
+  render.type+frame                  x1  n=40   med        8.5  p95        9.9  max       10.8 us  base        2.3   3.67x +
+  render.cold-goto-end               x1  n=3    med        4.8  p95        5.8  max        5.8 us  base        5.1   0.95x 
+  render.peak-growth                                                          347.0 MB  base      407.4   0.85x -
+  history.browse.enter               x1  n=1    med        0.4  p95        0.4  max        0.4 us
+  history.browse.back                x1  n=60   med        7.4  p95        9.5  max       10.8 us
+  history.browse.forward             x1  n=60   med        6.8  p95        7.1  max        7.3 us
+  history.browse.peak-growth                                                  205.1 MB  base     1954.7   0.10x -
+  history.type.keystroke             x1  n=300  med        4.7  p95        7.9  max      180.9 us  base        0.3  13.97x +
+  history.type.rss-growth                                                       0.0 MB  base      365.8   0.00x -
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                    205.2 MB  base      580.0   0.35x -
+  history.enter.keystroke            x1  n=300  med        6.3  p95        9.3  max      211.1 us
+  history.enter.rss-growth                                                      6.0 MB
+  history.enter.versions                                                       76.0 count
+  history.enter.peak-growth                                                   221.3 MB  base     1954.6   0.11x -
+  history.multi.keystroke            x20 n=300  med       20.3  p95       43.6  max     1072.2 us
+  history.multi.rss-growth                                                     14.5 MB
+  history.multi.versions                                                       76.0 count
+  history.multi.peak-growth                                                   229.5 MB  base     1954.5   0.12x -
+
+=== long: a few 500 KB lines — 20 lines, 9.5 MB ===
+  io.rss-after-open                                                            19.4 MB  base       19.4   1.00x 
+  io.bytes-per-line                                                        968801.5 B  base   966851.1   1.00x 
+  io.save                            x1  n=5    med     1743.1  p95     2192.5  max     2192.5 us  base     1713.3   1.02x 
+  io.open                            x1  n=5    med     1389.7  p95     1828.6  max     1828.6 us  base     1365.6   1.02x 
+  io.peak-growth                                                               23.7 MB  base       19.9   1.19x +
+  edit.type                          x1  n=100  med       76.4  p95      108.6  max      239.3 us  base       90.8   0.84x -
+  edit.backspace                     x1  n=100  med       23.2  p95       72.6  max      126.0 us  base       84.9   0.27x -
+  edit.enter                         x1  n=100  med       22.3  p95       68.3  max      105.7 us  base       51.4   0.43x -
+  edit.join                          x1  n=100  med       12.7  p95       36.7  max       73.0 us  base       12.6   1.01x 
+  edit.delete                        x1  n=100  med       22.2  p95       71.5  max      106.7 us  base       23.5   0.94x 
+  edit.word-delete                   x1  n=100  med       21.5  p95       46.0  max       97.0 us  base       32.8   0.66x -
+  edit.kill-line                     x1  n=6    med       44.1  p95       68.5  max       68.5 us  base       47.8   0.92x 
+  edit.peak-growth                                                             99.7 MB  base      144.9   0.69x -
+  region.comment-1k                  x1  n=10   med      475.4  p95      693.3  max      693.3 us  base      589.9   0.81x -
+  region.case-1k                     x1  n=10   med     3168.4  p95     3360.4  max     3360.4 us  base     3171.7   1.00x 
+  region.reflow-100                  x1  n=5    med        3.8  p95    24483.3  max    24483.3 us  base        3.7   1.03x 
+  region.peak-growth                                                          186.0 MB  base      194.0   0.96x 
+  move.right                         x1  n=200  med        0.0  p95        0.0  max        0.7 us  base        0.0   1.00x 
+  move.left                          x1  n=200  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.word-right                    x1  n=200  med        0.0  p95        0.0  max        0.4 us  base        0.0   1.00x 
+  move.word-left                     x1  n=200  med        0.0  p95        0.1  max        0.2 us  base        0.0   1.00x 
+  move.down                          x1  n=200  med        0.4  p95        0.4  max      727.0 us  base        0.4   0.98x 
+  move.up                            x1  n=200  med        0.4  p95        0.4  max        0.6 us  base        0.4   1.03x 
+  move.end                           x1  n=200  med        0.0  p95        0.0  max        0.2 us  base        0.0   1.00x 
+  move.home                          x1  n=200  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.page-down                     x1  n=200  med     6349.5  p95     6586.3  max     7049.5 us  base     6300.8   1.01x 
+  move.page-up                       x1  n=200  med     5338.2  p95     5451.9  max     5617.1 us  base     5670.7   0.94x 
+  move.para-down                     x1  n=200  med        0.0  p95        0.0  max        0.9 us  base        0.0   1.00x 
+  move.para-up                       x1  n=200  med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=200  med        0.4  p95        0.4  max        2.1 us  base        0.5   0.96x 
+  move.up-wrap                       x1  n=200  med        0.4  p95        0.4  max        0.6 us  base        0.4   0.98x 
+  move.page-down-wrap                x1  n=200  med       11.0  p95       11.3  max       11.9 us  base       11.6   0.96x 
+  move.click-wrap                    x1  n=200  med      761.0  p95      763.0  max      783.8 us  base      764.4   1.00x 
+  goto.random                        x1  n=200  med        0.0  p95        0.0  max        1.6 us  base        0.0   1.00x 
+  goto.far                           x1  n=200  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.peak-growth                                                             19.9 MB  base       21.4   0.93x 
+  search.smart.absent                x1  n=15   med     4129.5  p95     4152.3  max     4152.3 us  base     2144.2   1.93x +
+  search.exact.absent                x1  n=15   med       73.1  p95       75.3  max       75.3 us  base       87.4   0.84x -
+  search.regex.absent                x1  n=15   med   171785.5  p95   176155.6  max   176155.6 us  base   127517.4   1.35x +
+  search.smart.sparse-next           x1  n=100  med      156.6  p95      157.5  max      158.6 us  base      146.1   1.07x 
+  search.smart.dense-next            x1  n=100  med        0.1  p95        0.1  max        0.3 us  base        0.1   1.14x 
+  search.regex.sparse-next           x1  n=100  med     8686.8  p95     8711.9  max     8716.6 us  base     6490.0   1.34x +
+  search.peak-growth                                                           19.8 MB  base       21.6   0.92x 
+  multi.type.adjacent                x1  n=50   med       33.1  p95      168.2  max      188.2 us  base       24.3   1.36x +
+  multi.backspace.adjacent           x1  n=50   med       10.1  p95       95.3  max      150.0 us  base       11.1   0.91x 
+  multi.enter.adjacent               x1  n=50   med       21.2  p95       80.8  max       91.4 us  base       11.3   1.87x +
+  multi.join.adjacent                x1  n=50   med       12.6  p95       45.2  max       56.3 us  base       12.7   0.99x 
+  multi.paste-word.adjacent          x1  n=50   med       24.2  p95      100.0  max      131.4 us  base       25.5   0.95x 
+  multi.word-delete.adjacent         x1  n=50   med       20.6  p95       78.5  max       94.9 us  base       23.6   0.87x -
+  multi.right.adjacent               x1  n=50   med        0.0  p95        0.0  max        0.8 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=50   med        0.3  p95        0.3  max      768.8 us  base        0.3   1.04x 
+  multi.type.spread                  x1  n=50   med       24.5  p95       39.0  max       51.4 us  base       26.1   0.94x 
+  multi.backspace.spread             x1  n=50   med       21.9  p95       24.6  max       42.9 us  base       23.2   0.94x 
+  multi.enter.spread                 x1  n=50   med       21.2  p95       40.5  max       59.6 us  base       23.0   0.92x 
+  multi.join.spread                  x1  n=50   med       12.8  p95       21.3  max       52.3 us  base       12.7   1.01x 
+  multi.paste-word.spread            x1  n=50   med       24.1  p95       40.5  max       76.3 us  base       24.2   0.99x 
+  multi.word-delete.spread           x1  n=50   med       21.6  p95       42.6  max       59.8 us  base       22.5   0.96x 
+  multi.right.spread                 x1  n=50   med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=50   med        0.3  p95        0.3  max      762.0 us  base        0.3   1.00x 
+  multi.type.adjacent                x5  n=50   med      282.6  p95      494.5  max      525.5 us  base      171.6   1.65x +
+  multi.backspace.adjacent           x5  n=50   med      346.7  p95      395.0  max      457.6 us  base      397.5   0.87x -
+  multi.enter.adjacent               x5  n=50   med      114.6  p95      161.7  max      341.4 us  base      117.7   0.97x 
+  multi.join.adjacent                x5  n=50   med       63.4  p95       91.4  max      182.0 us  base       69.4   0.91x 
+  multi.paste-word.adjacent          x5  n=50   med      156.7  p95      277.0  max      490.1 us  base      168.6   0.93x 
+  multi.word-delete.adjacent         x5  n=50   med      162.0  p95      417.1  max      487.0 us  base      205.9   0.79x -
+  multi.right.adjacent               x5  n=50   med        0.1  p95        0.1  max        0.8 us  base        0.1   1.00x 
+  multi.down.adjacent                x5  n=50   med     3809.6  p95     3827.2  max     4346.7 us  base     3816.7   1.00x 
+  multi.type.spread                  x5  n=50   med      183.8  p95      420.3  max      431.2 us  base      157.2   1.17x +
+  multi.backspace.spread             x5  n=50   med      402.1  p95      465.0  max      482.5 us  base      399.6   1.01x 
+  multi.enter.spread                 x5  n=50   med      115.1  p95      136.6  max      202.7 us  base      113.9   1.01x 
+  multi.join.spread                  x5  n=50   med       66.5  p95       82.1  max      190.5 us  base       66.5   1.00x 
+  multi.paste-word.spread            x5  n=50   med      150.0  p95      177.3  max      515.5 us  base      168.2   0.89x -
+  multi.word-delete.spread           x5  n=50   med      162.7  p95      404.5  max      485.8 us  base      154.3   1.05x 
+  multi.right.spread                 x5  n=50   med        0.1  p95        0.1  max        0.9 us  base        0.1   1.00x 
+  multi.down.spread                  x5  n=50   med     3808.9  p95     4157.9  max     4273.3 us  base     3813.2   1.00x 
+  multi.type.adjacent                x20 n=50   med       61.8  p95       76.4  max       84.1 us  base       63.2   0.98x 
+  multi.backspace.adjacent           x20 n=50   med       57.1  p95       63.4  max       79.0 us  base       56.3   1.01x 
+  multi.enter.adjacent               x20 n=50   med       25.8  p95       35.8  max      172.6 us  base       26.6   0.97x 
+  multi.join.adjacent                x20 n=50   med       16.0  p95       24.2  max       57.8 us  base       16.7   0.95x 
+  multi.paste-word.adjacent          x20 n=50   med       61.2  p95       82.5  max      112.3 us  base       64.0   0.96x 
+  multi.word-delete.adjacent         x20 n=50   med      186.9  p95      200.5  max      245.6 us  base      194.2   0.96x 
+  multi.right.adjacent               x20 n=50   med        0.2  p95        0.2  max        0.6 us  base        0.2   1.00x 
+  multi.down.adjacent                x20 n=50   med        5.6  p95        5.7  max      766.3 us  base        5.7   0.98x 
+  multi.type.spread                  x20 n=50   med     1701.3  p95     2019.0  max     2127.0 us  base     1774.3   0.96x 
+  multi.backspace.spread             x20 n=50   med     1450.3  p95     1527.8  max     1732.5 us  base     1535.5   0.94x 
+  multi.enter.spread                 x20 n=50   med      507.9  p95      981.3  max     1283.6 us  base      531.5   0.96x 
+  multi.join.spread                  x20 n=50   med      341.4  p95      557.8  max      877.5 us  base      355.0   0.96x 
+  multi.paste-word.spread            x20 n=50   med      690.9  p95     1188.8  max     1389.5 us  base      738.8   0.94x 
+  multi.word-delete.spread           x20 n=50   med     1035.8  p95     1678.5  max     1941.9 us  base      981.2   1.06x 
+  multi.right.spread                 x20 n=50   med        0.2  p95        0.3  max        1.1 us  base        0.2   0.96x 
+  multi.down.spread                  x20 n=50   med    15275.8  p95    16703.1  max    17163.7 us  base    15418.7   0.99x 
+  multi.peak-growth                                                          1390.9 MB  base     1483.5   0.94x 
+  clip.paste-1k-lines                x1  n=25   med      140.5  p95      278.4  max      302.9 us  base       70.8   1.98x +
+  clip.cut-1k-lines                  x1  n=25   med       30.9  p95       99.9  max      101.3 us  base       33.9   0.91x 
+  clip.paste-100k-lines              x1  n=5    med     3040.1  p95     3382.5  max     3382.5 us  base     3541.7   0.86x -
+  clip.cut-100k-lines                x1  n=5    med     1311.0  p95     1497.1  max     1497.1 us  base     1630.6   0.80x -
+  clip.paste-1MB-line                x1  n=5    med      200.1  p95      259.9  max      259.9 us  base      200.4   1.00x 
+  clip.cut-1MB-line                  x1  n=5    med       95.5  p95      160.8  max      160.8 us  base       93.3   1.02x 
+  clip.copy-half                     x1  n=5    med      121.6  p95      619.2  max      619.2 us  base       85.0   1.43x +
+  clip.cut-half                      x1  n=5    med      196.9  p95      223.9  max      223.9 us  base      135.5   1.45x +
+  clip.paste-half                    x1  n=5    med     1474.4  p95     1486.8  max     1486.8 us  base     1028.7   1.43x +
+  clip.cut-all                       x1  n=5    med      407.9  p95      877.7  max      877.7 us  base      399.5   1.02x 
+  clip.paste-all                     x1  n=5    med     2852.1  p95     3364.0  max     3364.0 us  base     2062.1   1.38x +
+  clip.peak-growth                                                            238.9 MB  base      242.4   0.99x 
+  replace.all.sparse                 x1  n=5    med     3954.9  p95     4752.1  max     4752.1 us  base     3984.5   0.99x 
+  replace.all.dense                  x1  n=5    med     5703.5  p95     5806.0  max     5806.0 us  base     5645.6   1.01x 
+  replace.all.newline                x1  n=5    med     4161.7  p95     4434.4  max     4434.4 us  base     4159.3   1.00x 
+  replace.regex.sparse               x1  n=5    med   175267.2  p95   176002.7  max   176002.7 us  base   132628.6   1.32x +
+  replace.regex.dense                x1  n=5    med   158243.7  p95   158934.4  max   158934.4 us  base   163428.0   0.97x 
+  replace.step                       x1  n=100  med      160.0  p95      301.0  max      342.2 us  base      168.7   0.95x 
+  replace.peak-growth                                                         127.3 MB  base      149.8   0.85x -
+  render.80x24.top                   x1  n=100  med        9.8  p95        9.9  max       18.9 us  base        9.8   1.01x 
+  render.200x60.mid                  x1  n=100  med     6430.7  p95     6572.8  max     7398.3 us  base     6389.6   1.01x 
+  render.200x60.mid-wrap-gutter      x1  n=100  med       86.4  p95       87.7  max      129.4 us  base       84.4   1.02x 
+  render.200x60.end                  x1  n=100  med       14.8  p95       14.8  max       15.8 us  base       14.5   1.02x 
+  render.type+frame                  x1  n=100  med     3926.3  p95     4030.2  max     4055.1 us  base     3894.6   1.01x 
+  render.cold-goto-end               x1  n=5    med       28.9  p95       31.3  max       31.3 us  base       27.9   1.04x 
+  render.peak-growth                                                          114.0 MB  base      122.6   0.93x 
+  history.browse.enter               x1  n=1    med        0.5  p95        0.5  max        0.5 us  base        0.5   1.00x 
+  history.browse.back                x1  n=60   med        0.2  p95        0.4  max        1.3 us  base        0.3   0.68x 
+  history.browse.forward             x1  n=60   med        0.1  p95        0.1  max        0.1 us  base        0.2   0.29x 
+  history.browse.peak-growth                                                   61.4 MB  base       67.4   0.91x 
+  history.type.keystroke             x1  n=300  med       24.8  p95      106.2  max      170.1 us  base       23.7   1.05x 
+  history.type.rss-growth                                                     116.8 MB  base      215.4   0.54x -
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                    139.3 MB  base      237.7   0.59x -
+  history.enter.keystroke            x1  n=300  med       20.5  p95       88.5  max      154.0 us  base       14.8   1.38x +
+  history.enter.rss-growth                                                     80.6 MB  base       86.7   0.93x 
+  history.enter.versions                                                       76.0 count  base       76.0   1.00x 
+  history.enter.peak-growth                                                   103.1 MB  base      109.0   0.95x 
+  history.multi.keystroke            x20 n=300  med      703.7  p95     1783.5  max     2110.0 us
+  history.multi.rss-growth                                                   1058.7 MB
+  history.multi.versions                                                       76.0 count
+  history.multi.peak-growth                                                  1080.9 MB  base     1549.6   0.70x -
+
+=== oneline: one 4 MB line (minified) — 1 lines, 3.8 MB ===
+  io.rss-after-open                                                             8.0 MB  base        7.9   1.02x 
+  io.bytes-per-line                                                       4212736.0 B  base  4136960.0   1.02x 
+  io.save                            x1  n=5    med      448.6  p95      610.1  max      610.1 us  base      416.4   1.08x 
+  io.open                            x1  n=5    med      288.3  p95      738.0  max      738.0 us  base      260.2   1.11x +
+  io.peak-growth                                                               11.9 MB  base        8.0   1.48x +
+  edit.type                          x1  n=100  med      433.6  p95      665.9  max      899.2 us  base      453.5   0.96x 
+  edit.backspace                     x1  n=100  med      194.4  p95      396.7  max      468.7 us  base      400.8   0.49x -
+  edit.enter                         x1  n=100  med      173.5  p95      309.6  max      370.6 us  base      205.6   0.84x -
+  edit.join                          x1  n=100  med      109.2  p95      189.2  max      334.2 us  base      111.2   0.98x 
+  edit.delete                        x1  n=100  med      212.3  p95      389.9  max      410.8 us  base      195.4   1.09x 
+  edit.word-delete                   x1  n=100  med      175.4  p95      286.2  max      370.1 us  base      205.3   0.85x -
+  edit.kill-line                     x1  n=1    med      139.2  p95      139.2  max      139.2 us  base      178.7   0.78x -
+  edit.peak-growth                                                            720.0 MB  base     1093.9   0.66x -
+  region.comment-1k                  x1  n=10   med      464.5  p95      665.5  max      665.5 us  base      452.8   1.03x 
+  region.case-1k                     x1  n=10   med     1167.9  p95     1526.4  max     1526.4 us  base     1166.3   1.00x 
+  region.reflow-100                  x1  n=5    med        0.6  p95    20129.5  max    20129.5 us  base        0.7   0.83x 
+  region.peak-growth                                                          166.1 MB  base      161.9   1.03x 
+  move.right                         x1  n=200  med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  move.left                          x1  n=200  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.word-right                    x1  n=200  med        0.0  p95        0.0  max        0.4 us  base        0.0   1.00x 
+  move.word-left                     x1  n=200  med        0.0  p95        0.1  max        0.1 us  base        0.0   1.00x 
+  move.down                          x1  n=200  med        0.4  p95        0.4  max     5403.6 us  base        0.4   1.03x 
+  move.up                            x1  n=200  med        0.4  p95        0.5  max        4.0 us  base        0.3   1.03x 
+  move.end                           x1  n=200  med        0.0  p95        0.0  max        0.3 us  base        0.0   1.00x 
+  move.home                          x1  n=200  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.page-down                     x1  n=200  med        0.2  p95        0.2  max        0.5 us  base        0.1   1.07x 
+  move.page-up                       x1  n=200  med        0.1  p95        0.1  max        1.0 us  base        0.1   1.01x 
+  move.para-down                     x1  n=200  med        0.0  p95        0.0  max        0.8 us  base        0.0   1.00x 
+  move.para-up                       x1  n=200  med        0.0  p95        0.0  max        0.2 us  base        0.0   1.00x 
+  move.down-wrap                     x1  n=200  med        0.4  p95        0.4  max        2.7 us  base        0.4   0.95x 
+  move.up-wrap                       x1  n=200  med        0.4  p95        0.4  max        0.7 us  base        0.4   1.00x 
+  move.page-down-wrap                x1  n=200  med        9.7  p95        9.9  max       10.0 us  base        9.7   1.00x 
+  move.click-wrap                    x1  n=200  med     6121.6  p95     6960.1  max    10376.3 us  base     6623.5   0.92x 
+  goto.random                        x1  n=200  med        0.0  p95        0.0  max        2.0 us  base        0.0   1.00x 
+  goto.far                           x1  n=200  med        0.0  p95        0.0  max        0.1 us  base        0.0   1.00x 
+  move.peak-growth                                                              8.8 MB  base       10.3   0.85x -
+  search.smart.absent                x1  n=15   med     1292.9  p95     1678.2  max     1678.2 us  base     1278.0   1.01x 
+  search.exact.absent                x1  n=15   med       26.6  p95       27.4  max       27.4 us  base       26.7   0.99x 
+  search.regex.absent                x1  n=15   med    50057.6  p95    50088.7  max    50088.7 us  base    51853.7   0.97x 
+  search.smart.sparse-next           x1  n=100  med     1199.7  p95     1212.1  max     1545.2 us  base     1150.0   1.04x 
+  search.smart.dense-next            x1  n=100  med        0.1  p95        0.1  max        0.3 us  base        0.1   1.14x 
+  search.regex.sparse-next           x1  n=100  med    25546.8  p95    25569.1  max    25614.8 us  base    26629.3   0.96x 
+  search.peak-growth                                                            7.8 MB  base        9.2   0.85x -
+  multi.type.adjacent                x1  n=50   med      356.4  p95      494.5  max      914.8 us  base      359.6   0.99x 
+  multi.backspace.adjacent           x1  n=50   med      242.4  p95      266.3  max      305.3 us  base      244.6   0.99x 
+  multi.enter.adjacent               x1  n=50   med      166.1  p95      242.3  max      524.9 us  base      216.1   0.77x -
+  multi.join.adjacent                x1  n=50   med      108.7  p95      204.7  max      449.6 us  base      107.5   1.01x 
+  multi.paste-word.adjacent          x1  n=50   med      288.7  p95      463.1  max      497.1 us  base      358.5   0.81x -
+  multi.word-delete.adjacent         x1  n=50   med      191.2  p95      273.5  max      734.0 us  base      236.5   0.81x -
+  multi.right.adjacent               x1  n=50   med        0.0  p95        0.0  max        0.9 us  base        0.0   1.00x 
+  multi.down.adjacent                x1  n=50   med        0.2  p95        0.3  max     6146.8 us  base        0.2   0.96x 
+  multi.type.spread                  x1  n=50   med      227.5  p95      403.4  max      544.7 us  base      232.3   0.98x 
+  multi.backspace.spread             x1  n=50   med      184.6  p95      216.9  max      236.5 us  base      181.0   1.02x 
+  multi.enter.spread                 x1  n=50   med      166.8  p95      208.4  max      468.0 us  base      160.8   1.04x 
+  multi.join.spread                  x1  n=50   med      106.3  p95      182.6  max      455.8 us  base      102.9   1.03x 
+  multi.paste-word.spread            x1  n=50   med      230.5  p95      407.7  max      430.8 us  base      300.7   0.77x -
+  multi.word-delete.spread           x1  n=50   med      183.9  p95      218.6  max      513.9 us  base      216.1   0.85x -
+  multi.right.spread                 x1  n=50   med        0.0  p95        0.0  max        0.2 us  base        0.0   1.00x 
+  multi.down.spread                  x1  n=50   med        0.2  p95        0.2  max     6084.5 us  base        0.2   1.00x 
+  multi.type.adjacent                x5  n=50   med      289.1  p95      419.4  max      491.3 us  base      292.6   0.99x 
+  multi.backspace.adjacent           x5  n=50   med      248.5  p95      276.7  max      303.5 us  base      248.4   1.00x 
+  multi.enter.adjacent               x5  n=50   med      159.1  p95      192.3  max      622.6 us  base      170.9   0.93x 
+  multi.join.adjacent                x5  n=50   med      106.4  p95      184.9  max      367.8 us  base      107.5   0.99x 
+  multi.paste-word.adjacent          x5  n=50   med      289.7  p95      424.6  max      464.3 us  base      293.0   0.99x 
+  multi.word-delete.adjacent         x5  n=50   med      605.3  p95      891.2  max      978.5 us  base      600.1   1.01x 
+  multi.right.adjacent               x5  n=50   med        0.1  p95        0.1  max        0.7 us  base        0.1   1.00x 
+  multi.down.adjacent                x5  n=50   med        1.2  p95        1.2  max     6072.1 us  base        1.2   1.00x 
+  multi.type.spread                  x5  n=50   med      275.3  p95      318.2  max      421.4 us  base      278.6   0.99x 
+  multi.backspace.spread             x5  n=50   med      257.1  p95      283.9  max      306.2 us  base      253.7   1.01x 
+  multi.enter.spread                 x5  n=50   med      332.9  p95      424.9  max      799.6 us  base      346.4   0.96x 
+  multi.join.spread                  x5  n=50   med      223.3  p95      370.8  max      404.0 us  base      215.0   1.04x 
+  multi.paste-word.spread            x5  n=50   med      385.6  p95      586.2  max      667.9 us  base      294.5   1.31x +
+  multi.word-delete.spread           x5  n=50   med      591.7  p95      819.8  max      877.1 us  base      605.8   0.98x 
+  multi.right.spread                 x5  n=50   med        0.1  p95        0.1  max        0.5 us  base        0.1   1.00x 
+  multi.down.spread                  x5  n=50   med        2.3  p95        2.4  max     6073.6 us  base        2.3   1.00x 
+  multi.type.adjacent                x20 n=50   med      552.3  p95      696.3  max      703.3 us  base      553.1   1.00x 
+  multi.backspace.adjacent           x20 n=50   med      516.7  p95      530.1  max      553.0 us  base      516.2   1.00x 
+  multi.enter.adjacent               x20 n=50   med      159.5  p95      210.5  max     1836.3 us  base      171.5   0.93x 
+  multi.join.adjacent                x20 n=50   med      108.7  p95      180.6  max      367.2 us  base      109.0   1.00x 
+  multi.paste-word.adjacent          x20 n=50   med      553.2  p95      690.5  max      747.4 us  base      557.2   0.99x 
+  multi.word-delete.adjacent         x20 n=50   med     1940.3  p95     2198.1  max     2268.6 us  base     1903.9   1.02x 
+  multi.right.adjacent               x20 n=50   med        0.2  p95        0.2  max        0.7 us  base        0.2   1.00x 
+  multi.down.adjacent                x20 n=50   med        5.2  p95        5.9  max     6082.7 us  base        5.1   1.01x 
+  multi.type.spread                  x20 n=50   med      541.1  p95      685.5  max      695.6 us  base      541.8   1.00x 
+  multi.backspace.spread             x20 n=50   med      522.2  p95      562.8  max      569.8 us  base      522.9   1.00x 
+  multi.enter.spread                 x20 n=50   med      386.7  p95      488.1  max     2089.0 us  base      382.9   1.01x 
+  multi.join.spread                  x20 n=50   med      259.6  p95      298.9  max      454.6 us  base      347.5   0.75x -
+  multi.paste-word.spread            x20 n=50   med      674.3  p95      876.5  max      991.1 us  base      664.5   1.01x 
+  multi.word-delete.spread           x20 n=50   med     1925.4  p95     2156.4  max     2796.5 us  base     1936.9   0.99x 
+  multi.right.spread                 x20 n=50   med        0.2  p95        0.2  max        0.6 us  base        0.2   0.96x 
+  multi.down.spread                  x20 n=50   med        6.9  p95        7.0  max     5331.0 us  base        6.8   1.01x 
+  multi.peak-growth                                                           918.9 MB  base     1008.9   0.91x 
+  clip.paste-1k-lines                x1  n=25   med      622.7  p95      813.2  max     1025.9 us  base      584.2   1.07x 
+  clip.cut-1k-lines                  x1  n=25   med      344.2  p95      379.1  max      476.7 us  base      313.8   1.10x 
+  clip.paste-100k-lines              x1  n=5    med     3693.5  p95     4182.0  max     4182.0 us  base     4113.4   0.90x -
+  clip.cut-100k-lines                x1  n=5    med     1671.0  p95     1693.8  max     1693.8 us  base     2010.1   0.83x -
+  clip.paste-1MB-line                x1  n=5    med      660.1  p95      715.1  max      715.1 us  base      672.0   0.98x 
+  clip.cut-1MB-line                  x1  n=5    med      406.7  p95      542.2  max      542.2 us  base      392.6   1.04x 
+  clip.copy-half                     x1  n=5    med       34.8  p95       64.5  max       64.5 us  base       32.7   1.06x 
+  clip.cut-half                      x1  n=5    med      273.4  p95      290.5  max      290.5 us  base      278.1   0.98x 
+  clip.paste-half                    x1  n=5    med      539.4  p95      669.4  max      669.4 us  base      536.0   1.01x 
+  clip.cut-all                       x1  n=5    med      292.8  p95      487.4  max      487.4 us  base      296.9   0.99x 
+  clip.paste-all                     x1  n=5    med      791.2  p95      806.6  max      806.6 us  base      789.0   1.00x 
+  clip.peak-growth                                                            580.2 MB  base      575.5   1.01x 
+  replace.all.sparse                 x1  n=5    med     1619.6  p95     2141.2  max     2141.2 us  base     1653.3   0.98x 
+  replace.all.dense                  x1  n=5    med     2354.5  p95     2745.3  max     2745.3 us  base     2366.5   0.99x 
+  replace.all.newline                x1  n=5    med     1602.7  p95     1649.0  max     1649.0 us  base     1676.0   0.96x 
+  replace.regex.sparse               x1  n=5    med    52127.0  p95    53113.3  max    53113.3 us  base    56091.5   0.93x 
+  replace.regex.dense                x1  n=5    med    63403.1  p95    63858.6  max    63858.6 us  base    64555.9   0.98x 
+  replace.step                       x1  n=100  med     1236.2  p95     1419.2  max     1549.8 us  base     1238.2   1.00x 
+  replace.peak-growth                                                         636.4 MB  base      896.9   0.71x -
+  render.80x24.top                   x1  n=100  med        0.9  p95        1.0  max       14.2 us  base        0.9   1.00x 
+  render.200x60.mid                  x1  n=100  med     3340.9  p95     3364.6  max     5945.2 us  base     2932.8   1.14x +
+  render.200x60.mid-wrap-gutter      x1  n=100  med       83.0  p95       83.8  max       95.3 us  base       84.0   0.99x 
+  render.200x60.end                  x1  n=100  med        2.4  p95        2.4  max        2.8 us  base        2.4   0.96x 
+  render.type+frame                  x1  n=100  med     5855.6  p95     6072.1  max     6311.9 us  base     5854.3   1.00x 
+  render.cold-goto-end               x1  n=5    med        2.7  p95        3.9  max        3.9 us  base        2.8   0.97x 
+  render.peak-growth                                                          585.8 MB  base      599.3   0.98x 
+  history.browse.enter               x1  n=1    med        0.5  p95        0.5  max        0.5 us  base        0.5   1.02x 
+  history.browse.back                x1  n=60   med        0.5  p95        1.0  max        1.2 us  base        0.7   0.83x 
+  history.browse.forward             x1  n=60   med        0.1  p95        0.1  max        0.1 us  base        0.1   0.38x 
+  history.browse.peak-growth                                                  445.6 MB  base      480.8   0.93x 
+  history.type.keystroke             x1  n=300  med      263.6  p95      518.0  max      659.4 us  base      362.1   0.73x -
+  history.type.rss-growth                                                     796.2 MB  base     1299.9   0.61x -
+  history.type.versions                                                        76.0 count  base       76.0   1.00x 
+  history.type.peak-growth                                                    805.7 MB  base     1309.7   0.62x -
+  history.enter.keystroke            x1  n=300  med      206.0  p95      620.9  max      700.3 us  base      205.1   1.00x 
+  history.enter.rss-growth                                                    722.3 MB  base      767.9   0.94x 
+  history.enter.versions                                                       76.0 count  base       76.0   1.00x 
+  history.enter.peak-growth                                                   731.8 MB  base      777.8   0.94x 
+  history.multi.keystroke            x20 n=300  med      566.9  p95      825.9  max     1044.7 us  base      612.2   0.93x 
+  history.multi.rss-growth                                                    795.1 MB  base      852.6   0.93x 
+  history.multi.versions                                                       76.0 count  base       76.0   1.00x 
+  history.multi.peak-growth                                                   804.7 MB  base      862.4   0.93x 
