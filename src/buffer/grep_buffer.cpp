@@ -93,10 +93,11 @@ std::vector<GrepHit> parseGrepOutput(std::string_view out, std::filesystem::path
 GrepBuffer::GrepBuffer() : Buffer("*grep*") { rebuild(); }
 
 ViewHint GrepBuffer::refresh(std::string pattern, std::filesystem::path root,
-                             std::vector<GrepHit> hits) {
+                             std::vector<GrepHit> hits, bool truncated) {
   _pattern = std::move(pattern);
   _root = std::move(root);
   _hits = std::move(hits);
+  _truncated = truncated;
   return rebuild();
 }
 
@@ -117,6 +118,8 @@ ViewHint GrepBuffer::rebuild() {
     header = std::to_string(_hits.size()) + (_hits.size() == 1 ? " match" : " matches") +
              " for \"" + escapeNonPrintable(_pattern) + "\"";
   header += " in " + escapeNonPrintable(_root.string());
+  if (_truncated)
+    header += " (search stopped at the limit)";
   lines.push_back(makeLine(std::move(header)));
   _prefixLens.push_back(0);
 

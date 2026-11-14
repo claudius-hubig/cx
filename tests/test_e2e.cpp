@@ -1882,6 +1882,35 @@ BOOST_AUTO_TEST_CASE(e2e_grep_lists_matches) {
   session.waitExit();
 }
 
+// Grepping '.' over a 4M-line file ran out of memory: the search now stops
+// at 100,000 result lines and says so.
+BOOST_AUTO_TEST_CASE(e2e_grep_stops_at_the_hit_limit) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir({"alpha.txt"});
+  {
+    std::ofstream big(dir.path() / "big.txt");
+    for (int i = 0; i < 150'000; ++i)
+      big << "hit\n";
+  }
+  PtySession session(24, 80, bin, {(dir.path() / "alpha.txt").string()});
+  session.readUntil("alpha", std::chrono::milliseconds{500});
+
+  session.send("\x1b"
+               "ghit\r");
+  auto out = stripAnsi(session.readUntil("limit)", std::chrono::milliseconds{10000}));
+  BOOST_CHECK_MESSAGE(out.find("100000 matches (search stopped at the limit)") != std::string::npos,
+                      "Expected the limit in the status: " + out);
+
+  session.send("\x1b"
+               "c");
+  session.waitExit();
+}
+
 BOOST_AUTO_TEST_CASE(e2e_grep_reports_no_matches) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

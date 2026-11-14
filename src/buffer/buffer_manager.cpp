@@ -65,10 +65,10 @@ PasteRingBuffer& BufferManager::pasteRingBuffer(PasteRing const& pr) {
 }
 
 GrepBuffer& BufferManager::grepBuffer(std::string pattern, std::filesystem::path root,
-                                      std::vector<GrepHit> hits) {
+                                      std::vector<GrepHit> hits, bool truncated) {
   if (!_grepBuffer)
     _grepBuffer = std::make_unique<GrepBuffer>();
-  auto hint = _grepBuffer->refresh(std::move(pattern), std::move(root), std::move(hits));
+  auto hint = _grepBuffer->refresh(std::move(pattern), std::move(root), std::move(hits), truncated);
   _grepBuffer->setSavedView({.point = hint.point, .viewFrom = hint.viewFrom});
   return *_grepBuffer;
 }

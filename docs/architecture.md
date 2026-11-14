@@ -153,7 +153,10 @@ Key responsibilities:
   reaches EOF leaves the poll set, and once every pipe is closed the loop
   polls for the child's exit instead of blocking in `waitpid()`, so a
   command that closes its outputs and keeps running (`cmd 2>/dev/null`)
-  neither spins the editor nor escapes the kill prompt.
+  neither spins the editor nor escapes the kill prompt. An optional
+  `PipeLimit` (lines and bytes of stdout) stops a command early: it is
+  killed, stdout is cut after the last whole line within the limit and the
+  result is marked `truncated`. Grep uses 100,000 lines / 64 MB.
 
 `Screen` holds session-wide state that does not belong to any one
 buffer: the active prompt, find state, the paste ring, the X11
@@ -555,7 +558,9 @@ or `:`, and the parser accepts either. Malformed records are skipped
 rather than aborting the parse. Consecutive hits in one file share a
 `GrepFile` (absolute and display path): a `std::filesystem::path` per
 hit cost ~800 bytes, 3.4 GB for 4M hits. The display rows are built
-once, straight into the base-class `LineStore`.
+once, straight into the base-class `LineStore`. A result set cut short by
+`runGrep()`'s output limit is marked in the header ("search stopped at
+the limit").
 
 Backend selection, argument construction, and opening a hit live in
 `Screen` (`runGrep()`, `searchStartDir()`, `openGrepHit()`), not here, so

@@ -120,6 +120,12 @@ constexpr auto kHighlightTtl = std::chrono::seconds(3);
 // pipe command (and the same value used to refresh the deadline if
 // the user answers no).
 constexpr auto kKillPromptDelay = std::chrono::seconds(10);
+// Find-in-files stops after this many result lines (one per hit, unless a
+// file name holds a newline) or bytes of output. Unbounded, grepping '.'
+// over a large tree could use up all memory, and a longer listing is no
+// use to read anyway.
+constexpr std::size_t kGrepMaxHits = 100'000;
+constexpr std::size_t kGrepMaxBytes = std::size_t{64} << 20;
 // Initial poll timeout when distinguishing bare-Esc from the start of
 // an escape sequence on the input stream.
 constexpr int kEscDisambiguationMs = 50;
@@ -1304,7 +1310,8 @@ void Screen::runGrep(std::string const& pattern) {
 
   setStatus("Searching...");
   draw();
-  auto res = runPipeCommand(args, "", root.string());
+  auto res =
+      runPipeCommand(args, "", root.string(), {.lines = kGrepMaxHits, .bytes = kGrepMaxBytes});
   if (!res)
     return;
   if (res->killed) {
@@ -1312,12 +1319,13 @@ void Screen::runGrep(std::string const& pattern) {
     return;
   }
   // Both backends exit 1 for "no matches" and >1 for a real failure.
-  // 127 is runPipeCommand's own marker for a failed exec.
-  if (res->exitCode == 127) {
+  // 127 is runPipeCommand's own marker for a failed exec. A search
+  // stopped at the limit has no exit code of its own.
+  if (!res->truncated && res->exitCode == 127) {
     setStatus("No grep available");
     return;
   }
-  if (res->exitCode > 1) {
+  if (!res->truncated && res->exitCode > 1) {
     auto err = res->stderrData;
     auto nl = err.find('\n');
     if (nl != std::string::npos)
@@ -1328,7 +1336,7 @@ void Screen::runGrep(std::string const& pattern) {
 
   auto hits = parseGrepOutput(res->stdoutData, root);
   auto count = hits.size();
-  auto& gb = _bufMgr->grepBuffer(pattern, root, std::move(hits));
+  auto& gb = _bufMgr->grepBuffer(pattern, root, std::move(hits), res->truncated);
   // Record the predecessor so `q` dismisses the listing, as it does for
   // the other read-only overlays. Re-running grep from inside the
   // results must not make the listing its own predecessor.
@@ -1338,7 +1346,8 @@ void Screen::runGrep(std::string const& pattern) {
   if (count == 0)
     setStatus("No matches for " + escapeNonPrintable(pattern));
   else
-    setStatus(std::to_string(count) + (count == 1 ? " match" : " matches"));
+    setStatus(std::to_string(count) + (count == 1 ? " match" : " matches") +
+              (res->truncated ? " (search stopped at the limit)" : ""));
 }
 
 void Screen::openGrepHit(GrepHit const& hit) {
@@ -2098,7 +2107,8 @@ std::string Screen::bufferWorkDir() const {
 
 std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string> const& args,
                                                          std::string_view input,
-                                                         std::string const& workDir) {
+                                                         std::string const& workDir,
+                                                         PipeLimit limit) {
   if (args.empty())
     return std::nullopt;
 
@@ -2204,6 +2214,40 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
     return {std::move(stdoutData), std::move(stderrData), -1, true};
   };
 
+  // True once stdout has reached the limit; cuts it after the last whole
+  // line within it. Lines are counted incrementally from `scanned`.
+  std::size_t scanned = 0, outLines = 0;
+  auto reachedLimit = [&] {
+    for (auto it = stdoutData.begin() + scanned;
+         (it = std::find(it, stdoutData.end(), '\n')) != stdoutData.end(); ++it) {
+      if (++outLines == limit.lines) {
+        stdoutData.erase(it + 1, stdoutData.end());
+        return true;
+      }
+    }
+    scanned = stdoutData.size();
+    if (stdoutData.size() < limit.bytes)
+      return false;
+    auto nl = stdoutData.rfind('\n', limit.bytes - 1);
+    stdoutData.resize(nl == std::string::npos ? 0 : nl + 1);
+    return true;
+  };
+  // Kill the command at the limit. No drain: the output is not wanted, and
+  // a grandchild could hold the pipes open.
+  auto limitReturn = [&]() -> PipeResult {
+    kill(pid, SIGKILL);
+    if (stdinOpen)
+      close(pipeIn[1]);
+    close(pipeOut[0]);
+    close(pipeErr[0]);
+    int wstatus;
+    while (waitpid(pid, &wstatus, 0) < 0 && errno == EINTR) {
+    }
+    _statusMsg.clear();
+    _statusExpiry.reset();
+    return {std::move(stdoutData), std::move(stderrData), -1, false, true};
+  };
+
   // Poll set is rebuilt each iteration because stdinOpen, the pipes' EOF
   // state and killPromptShowing can change. A pipe at EOF is left out: it
   // stays readable (POLLHUP) forever, so polling it would spin without
@@ -2292,8 +2336,11 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
           stdinOpen = false;
         }
       }
-      if (pfd.fd == pipeOut[0])
+      if (pfd.fd == pipeOut[0]) {
         readPipe(pipeOut[0], pfd.revents, stdoutData, outDone);
+        if (reachedLimit())
+          return limitReturn();
+      }
       if (pfd.fd == pipeErr[0])
         readPipe(pipeErr[0], pfd.revents, stderrData, errDone);
       if (pfd.fd == STDIN_FILENO && (pfd.revents & POLLIN)) {
@@ -2366,6 +2413,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   drainFd(pipeErr[0], stderrData);
   close(pipeOut[0]);
   close(pipeErr[0]);
+  bool truncated = reachedLimit();
 
   if (!reaped) {
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
@@ -2375,7 +2423,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
 
   _statusMsg.clear();
   _statusExpiry.reset();
-  return PipeResult{std::move(stdoutData), std::move(stderrData), exitCode, false};
+  return PipeResult{std::move(stdoutData), std::move(stderrData), exitCode, false, truncated};
 }
 
 void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> lineRange) {

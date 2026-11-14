@@ -40,6 +40,12 @@ class Buffer;
 class BufferManager;
 struct MouseEvent;
 
+/** @brief How much stdout Screen::runPipeCommand() collects before it stops the command. */
+struct PipeLimit {
+  std::size_t lines = static_cast<std::size_t>(-1); /**< '\\n'-terminated lines. */
+  std::size_t bytes = static_cast<std::size_t>(-1); /**< Bytes; must be > 0. */
+};
+
 /**
  * @brief Manages terminal I/O and the main input loop.
  *
@@ -352,18 +358,22 @@ private:
     std::string stdoutData;
     std::string stderrData;
     int exitCode;
-    bool killed;
+    bool killed;            /**< The user killed the command at the kill prompt. */
+    bool truncated = false; /**< Stopped at the PipeLimit; exitCode is then -1. */
   };
   /**
    * @brief Run a subprocess with a kill-prompt poll loop.
    *
-   * Used by Format, Tab-format, and PipeReplace. Forks/execs @p args, pipes
-   * @p input to stdin, and monitors the child with poll(); after 10s of
-   * inactivity it offers a kill prompt.
+   * Used by Format, Tab-format, PipeReplace and Grep. Forks/execs @p args,
+   * pipes @p input to stdin, and monitors the child with poll(); after 10s
+   * without output it offers a kill prompt. Once stdout reaches @p limit
+   * the command is killed (SIGKILL, so only for commands that need no
+   * cleanup) and stdoutData is cut after the last whole line within it.
    * @return The captured output, or nullopt on fork/pipe failure.
    */
   std::optional<PipeResult> runPipeCommand(std::vector<std::string> const& args,
-                                           std::string_view input, std::string const& workDir);
+                                           std::string_view input, std::string const& workDir,
+                                           PipeLimit limit = {});
 
   /** @brief Format the current buffer (or @p lineRange) via clang-format. */
   void executeFormat(std::optional<std::pair<std::size_t, std::size_t>> lineRange);

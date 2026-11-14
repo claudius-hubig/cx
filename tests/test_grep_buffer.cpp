@@ -143,6 +143,14 @@ BOOST_AUTO_TEST_CASE(header_is_singular_for_one_match) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), "1 match for \"pat\" in /r");
 }
 
+BOOST_AUTO_TEST_CASE(header_says_when_the_search_was_stopped) {
+  GrepBuffer buf;
+  buf.refresh("pat", "/r", parseGrepOutput(gitRecord("a.cpp", "1", "one"), "/r"), true);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "1 match for \"pat\" in /r (search stopped at the limit)");
+  buf.refresh("pat", "/r", parseGrepOutput(gitRecord("a.cpp", "1", "one"), "/r"));
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "1 match for \"pat\" in /r");
+}
+
 BOOST_AUTO_TEST_CASE(no_matches_shows_header_only) {
   GrepBuffer buf;
   auto hint = buf.refresh("nope", "/r", {});

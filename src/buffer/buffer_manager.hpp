@@ -66,10 +66,10 @@ public:
 
   /**
    * @brief The find-in-files buffer, created lazily and always refreshed
-   *        with the results of the search just run.
+   *        with the results of the search just run (see GrepBuffer::refresh).
    */
-  GrepBuffer& grepBuffer(std::string pattern, std::filesystem::path root,
-                         std::vector<GrepHit> hits);
+  GrepBuffer& grepBuffer(std::string pattern, std::filesystem::path root, std::vector<GrepHit> hits,
+                         bool truncated);
 
   /**
    * @brief Open (or return the existing) directory buffer for @p dir.

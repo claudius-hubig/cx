@@ -85,9 +85,12 @@ public:
 
   /**
    * @brief Replace the listing with a new result set.
+   * @param truncated The search was stopped before it finished, so @p hits
+   *                  are only the first matches (the header says so).
    * @return A ViewHint placing the cursor on the first result.
    */
-  ViewHint refresh(std::string pattern, std::filesystem::path root, std::vector<GrepHit> hits);
+  ViewHint refresh(std::string pattern, std::filesystem::path root, std::vector<GrepHit> hits,
+                   bool truncated = false);
 
   /**
    * @brief The hit at cursor position @p p.
@@ -111,6 +114,7 @@ private:
   std::string _pattern;
   std::filesystem::path _root;
   std::vector<GrepHit> _hits;
+  bool _truncated = false;
   /** @brief Byte length of the `path:line:` prefix of each line of _lines. */
   std::vector<std::size_t> _prefixLens;
 };
