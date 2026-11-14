@@ -258,6 +258,12 @@ std::expected<void, std::string> TextBuffer::save() {
 std::expected<void, std::string> TextBuffer::revert() {
   if (!_path)
     return std::unexpected("buffer has no path");
+  // The browsing view would go on to commit (truncate to) the version it
+  // shows, leaving the history's newest entry out of step with the
+  // reloaded text; later single-line deltas would then patch the wrong
+  // base.
+  if (_browsingHistory)
+    return std::unexpected("history is being browsed");
   if (!std::ifstream(*_path, std::ios::binary))
     return std::unexpected("cannot open " + _path->string());
   loadFromFile(*_path);

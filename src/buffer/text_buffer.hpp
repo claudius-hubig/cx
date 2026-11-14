@@ -121,8 +121,10 @@ public:
   /**
    * @brief Reload buffer contents from the backing file.
    *
-   * Bumps docVersion but does not touch view state.
-   * @return An error if the file cannot be read.
+   * Bumps docVersion but does not touch view state. Refused while a
+   * view is browsing the history (browsingHistory()), which shows and
+   * may commit an older version.
+   * @return An error if refused or the file cannot be read.
    */
   std::expected<void, std::string> revert() override;
 

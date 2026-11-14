@@ -154,6 +154,32 @@ BOOST_AUTO_TEST_CASE(revert_reloads_file_contents) {
   BOOST_CHECK_EQUAL(col, 12u); // "hello world" = 11 chars, 1-indexed
 }
 
+// Reverting under a history browse let the browsing view commit an old
+// version afterwards: the history then ended in a text the buffer did not
+// hold, and the next single-line edit was recorded as a delta against it
+// (out-of-bounds line patches when stepping back through it).
+BOOST_AUTO_TEST_CASE(revert_refused_while_browsing_history) {
+  TempFile f("one\ntwo\nthree\nfour\n");
+  TB<TextBuffer> buf(f.path().string(), f.path());
+  buf.setPoint(1, 0);
+  buf.view.deleteLine();
+  buf.view.deleteLine();
+  buf.view.deleteLine(); // "one", ""
+  BOOST_REQUIRE(buf.view.enterHistoryMode());
+  buf.view.stepHistory(-1);
+  auto shown = buf.lineCount();
+  auto result = buf.revert();
+  BOOST_CHECK(!result.has_value());
+  BOOST_CHECK_EQUAL(buf.lineCount(), shown);
+  buf.view.exitHistoryModeCommit();
+  // The history's newest version is the text the buffer holds.
+  auto const& newest = buf.history().at(buf.history().size() - 1);
+  BOOST_REQUIRE_EQUAL(newest.lines.size(), buf.lineCount());
+  for (std::size_t i = 0; i < buf.lineCount(); ++i)
+    BOOST_CHECK_EQUAL(*newest.lines[i], buf.lineContent(i));
+  BOOST_CHECK(buf.revert().has_value());
+}
+
 BOOST_AUTO_TEST_CASE(revert_bumps_docversion_and_clamps_view) {
   // revert() only reloads content; it does not touch view state. The
   // BufferView detects the docVersion change on next access and clamps
