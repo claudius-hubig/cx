@@ -156,8 +156,8 @@ BOOST_AUTO_TEST_CASE(revert_reloads_file_contents) {
 
 // Reverting under a history browse let the browsing view commit an old
 // version afterwards: the history then ended in a text the buffer did not
-// hold, and the next single-line edit was recorded as a delta against it
-// (out-of-bounds line patches when stepping back through it).
+// hold (with delta snapshots, the next single-line edit even patched lines
+// that did not exist).
 BOOST_AUTO_TEST_CASE(revert_refused_while_browsing_history) {
   TempFile f("one\ntwo\nthree\nfour\n");
   TB<TextBuffer> buf(f.path().string(), f.path());

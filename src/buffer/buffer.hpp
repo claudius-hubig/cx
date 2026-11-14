@@ -273,26 +273,16 @@ public:
   /** @} */
 
   /**
-   * @brief Hook invoked by BufferView after each successful edit.
+   * @brief Hook invoked after each successful edit (by BufferView, and by
+   *        the replace-all helpers that edit the buffer directly).
    *
-   * TextBuffer overrides this to append a snapshot to its version
-   * history; read-only buffers ignore it.
+   * TextBuffer overrides this to append a snapshot of the whole buffer to
+   * its version history; read-only buffers ignore it. A snapshot shares
+   * the line store's chunks, so this is cheap whatever the edit was.
    *
    * @param cursor Cursor position to record.
-   * @param dirtyFrom Index of the first modified line, or SIZE_MAX for a
-   *        full-buffer diff. Only `[dirtyFrom, dirtyFrom + max(1, 1 +
-   *        lineShift))` is treated as modified; preceding lines must be
-   *        bit-identical to the prior snapshot and following lines are
-   *        unchanged shifted positions.
-   * @param lineShift Net change in line count caused by this edit
-   *        (positive when the buffer grew, negative when it shrank).
    */
-  virtual void recordVersion(BufferPoint cursor, std::size_t dirtyFrom = SIZE_MAX,
-                             int lineShift = 0) {
-    (void)cursor;
-    (void)dirtyFrom;
-    (void)lineShift;
-  }
+  virtual void recordVersion(BufferPoint cursor) { (void)cursor; }
 
   /**
    * @name History-mode virtual interface

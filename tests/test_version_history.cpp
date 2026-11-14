@@ -4,6 +4,7 @@
 #include "buffer/version_history.hpp"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -135,56 +136,58 @@ BOOST_AUTO_TEST_CASE(clear_resets_history) {
   BOOST_CHECK(h.empty());
 }
 
-// Force-materializing over-long chains during pruning (#25). Drives many
-// single-line-delta captures across multiple prune cycles and verifies
-// that every surviving snapshot still materializes to the expected
-// content. Without the prune-time chain enforcement, sufficiently
-// pathological merge patterns can leave interior deltas walking back
-// further than kMaxDeltaChain entries.
-BOOST_AUTO_TEST_CASE(prune_force_materializes_long_chains) {
+// Pruning drops whole snapshots; the survivors must keep exactly the text
+// they were captured with, across many prune cycles and a mix of
+// same-count and line-count-changing edits (with delta snapshots, prune
+// had to merge and re-materialise neighbours, #25).
+BOOST_AUTO_TEST_CASE(prune_keeps_survivors_intact) {
   VersionHistory h;
-  auto lines = lps({"a", "b", "c", "d", "e"});
+  LineStore lines(4); // tiny chunks, so edits split, merge and share them
+  for (auto s : {"a", "b", "c", "d", "e"})
+    lines.push_back(lp(s));
+  std::vector<std::string> states;
+  auto join = [](LineStore const& ls) {
+    std::string t;
+    for (auto const& p : ls)
+      t += *p + "\n";
+    return t;
+  };
   h.capture(lines, {0, 0});
-
-  // Single-line edits stay on the delta path until kMaxDeltaChain forces
-  // a full snapshot. Mix in occasional lineShift!=0 captures (which take
-  // the full-snapshot branch) so prune meets a realistic delta/full mix.
+  states.push_back(join(lines));
   for (std::size_t step = 0; step < 800; ++step) {
-    std::size_t idx = step % lines.size();
-    lines.replace(idx, lp("v" + std::to_string(step)));
-    if (step % 17 == 0) {
-      // Take the multi-line branch — exercises the full-snapshot capture.
+    lines.replace(step % lines.size(), lp("v" + std::to_string(step)));
+    if (step % 17 == 0)
       lines.push_back(lp("x" + std::to_string(step)));
-      h.capture(lines, {0, 0}, idx, 1);
-    } else {
-      h.capture(lines, {0, 0}, idx, 0);
-    }
+    if (step % 23 == 0 && lines.size() > 3)
+      lines.erase(1);
+    h.capture(lines, {0, 0});
+    states.push_back(join(lines));
     BOOST_CHECK_LE(h.size(), VersionHistory::kMaxVersions);
   }
-
-  // Every surviving snapshot must materialize without crashing or
-  // returning bad content (the trailing edits land at tail).
+  // Survivors appear in capture order, each equal to a captured state.
+  std::size_t next = 0;
   for (std::size_t i = 0; i < h.size(); ++i) {
-    auto lines = h.linesAt(i);
-    BOOST_REQUIRE(!lines.empty());
-    for (auto const& lp : lines)
-      BOOST_REQUIRE(lp != nullptr);
+    auto t = join(h.linesAt(i));
+    while (next < states.size() && states[next] != t)
+      ++next;
+    BOOST_REQUIRE_MESSAGE(next < states.size(), "version " << i << " is not a captured state");
+    ++next;
   }
+  BOOST_CHECK_EQUAL(join(h.linesAt(h.size() - 1)), join(lines));
 }
 
-// Reading a version is a pure query: a delta is rebuilt into a store the
-// caller owns (VersionSnapshot::lines is no longer mutable, so the history
-// cannot cache it), and its timestamp and cursor need no rebuild at all.
-// Caching used to turn every delta that was looked at, even just for the
-// modeline's timestamp, into a full copy of the buffer's line vector.
-BOOST_AUTO_TEST_CASE(reading_a_delta_rebuilds_its_lines) {
+// Reading a version is a pure query: it returns a copy of the version's
+// store the caller owns, sharing its chunks and lines, and its timestamp
+// and cursor need no copy at all. (Rebuilt deltas used to be cached in the
+// history, which turned every version looked at into a full copy.)
+BOOST_AUTO_TEST_CASE(reading_a_version_shares_its_lines) {
   VersionHistory h;
   auto lines = lps({"a", "b", "c"});
   h.capture(lines, {0, 0});
   lines.replace(1, lp("B"));
-  h.capture(lines, {1, 1}, 1, 0);
+  h.capture(lines, {1, 1});
   lines.replace(2, lp("C"));
-  h.capture(lines, {2, 1}, 2, 0);
+  h.capture(lines, {2, 1});
 
   BOOST_CHECK(h.cursorAt(2) == (BufferPoint{2, 1}));
   BOOST_CHECK(h.timestampAt(0) <= h.timestampAt(2));
@@ -197,6 +200,7 @@ BOOST_AUTO_TEST_CASE(reading_a_delta_rebuilds_its_lines) {
     BOOST_CHECK_EQUAL(*v2[1], "B");
     BOOST_CHECK_EQUAL(*v2[2], "C");
     BOOST_CHECK(v1[0].get() == v2[0].get()); // unchanged lines stay shared
+    BOOST_CHECK(v1[1].get() == v2[1].get());
   }
   BOOST_CHECK_THROW(h.linesAt(3), std::out_of_range);
   BOOST_CHECK_THROW(h.cursorAt(3), std::out_of_range);

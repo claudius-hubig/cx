@@ -16,7 +16,7 @@ TextBuffer::TextBuffer(std::string name, std::filesystem::path const& path)
   loadFromFile(path);
   // After load so the shebang fallback can inspect the first line.
   detectMode();
-  _history.captureInitial(_lines, {0, 0});
+  _history.capture(_lines, {0, 0});
 }
 
 void TextBuffer::loadFromFile(std::filesystem::path const& path) {
@@ -264,8 +264,7 @@ std::expected<void, std::string> TextBuffer::revert() {
     return std::unexpected("buffer has no path");
   // The browsing view would go on to commit (truncate to) the version it
   // shows, leaving the history's newest entry out of step with the
-  // reloaded text; later single-line deltas would then patch the wrong
-  // base.
+  // reloaded text, so the reload could never be undone.
   if (_browsingHistory)
     return std::unexpected("history is being browsed");
   if (!std::ifstream(*_path, std::ios::binary))
@@ -274,11 +273,7 @@ std::expected<void, std::string> TextBuffer::revert() {
   _modified = false;
   ++_docVersion;
   _synCacheValidUpto = 0;
-  // Append (rather than clear) so the user can undo a revert. The
-  // capture takes the SIZE_MAX/full-diff branch and is therefore O(N)
-  // line comparisons against the previous snapshot — acceptable for
-  // an interactive operation and the cost of preserving undo across
-  // reverts.
+  // Append (rather than clear) so the user can undo a revert.
   _history.capture(_lines, {0, 0});
   return {};
 }

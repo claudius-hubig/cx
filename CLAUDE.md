@@ -119,7 +119,7 @@ src/
     dir_buffer.hpp/.cpp            Readonly directory browser with navigation and delete
     grep_buffer.hpp/.cpp           Readonly find-in-files results; grep output parser
     buffer_manager.hpp/.cpp        Buffer lifecycle, MRU, completions
-    version_history.hpp/.cpp       Append-only snapshot history with delta compression
+    version_history.hpp/.cpp       Append-only history of whole-buffer snapshots (shared chunks)
     modes/
       c/syntax.hpp/.cpp            C/C++ tokenizer, bracket matching
       dif/syntax.hpp/.cpp          Diff/patch tokenizer (add, remove, meta, hunk)

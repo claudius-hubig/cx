@@ -315,10 +315,13 @@ Public API:
   ({point, viewFrom, mark}) can be stashed on the buffer via
   `setSavedView()` / `savedView()` / `clearSavedView()` and later
   restored by `BufferView::fromSavedState()`.
-- **Version-history hooks**: `recordVersion(cursor, dirtyFrom, lineShift)`
-  is invoked by `BufferView` after every successful edit; the default
-  is a no-op (read-only buffers ignore it). `TextBuffer` overrides it to
-  append a snapshot to its `VersionHistory`. The history-browsing
+- **Version-history hooks**: `recordVersion(cursor)` is invoked by
+  `BufferView` after every successful edit (and by the replace-all
+  helpers, which edit the buffer directly); the default is a no-op
+  (read-only buffers ignore it). `TextBuffer` overrides it to append a
+  snapshot of the whole buffer to its `VersionHistory`; the snapshot
+  shares the line store's chunks, so callers need not describe what
+  changed. The history-browsing
   interface (`browsingHistory()`, `setBrowsingHistory()`,
   `versionHistoryInfo()`, `applyVersionAt()`, `truncateHistoryAfter()`)
   is virtual on the base class so `BufferView` can drive history
@@ -434,13 +437,8 @@ All user-facing movement, editing, and render operations are methods on
     predecessor. Only a backward deletion can reach visited cursors; it
     collapses them onto its start. A keystroke is O(N) in the cursor
     count.
-  - *History*: the batch ends with exactly one
-    `recordVersion(point, SIZE_MAX, netShift)`, so one keystroke is one
-    undo step regardless of cursor count. `SIZE_MAX` is load-bearing: a
-    scattered edit has no single contiguous dirty region, so passing a
-    `dirtyFrom` would violate `recordVersion()`'s contract and corrupt
-    `VersionHistory`'s delta reconstruction. The single-cursor path is
-    untouched and keeps its O(1) delta.
+  - *History*: the batch ends with exactly one `recordVersion(point)`,
+    so one keystroke is one undo step regardless of cursor count.
   - *Movement*: the parallel commands are thin wrappers whose `*Impl`
     body runs once for the primary and then once per extra cursor
     (`moveExtras()`), each extra temporarily installed as `_point`.
@@ -653,30 +651,22 @@ implement undo and version browsing. Each `VersionSnapshot` records
 the buffer's lines at the time of capture (a `LineStore` copy, which
 shares the buffer's chunks), a timestamp, and the cursor position.
 
-To keep capture cost low for the common case — single-line edits — a
-snapshot may instead store a `vector<LinePatch>` describing only the
-lines that changed since its predecessor. `linesAt(idx)` rebuilds a
-delta into a fresh `LineStore` the caller owns (a copy of the base
-snapshot with the patches applied via `replace`) and never stores the result,
-so reading a version (undo, history browsing) does not turn deltas into
-full copies; `timestampAt(idx)` and `cursorAt(idx)` need no rebuild.
-`kMaxDeltaChain` bounds the longest chain of consecutive deltas before a
-full snapshot is forced; this keeps a rebuild O(chain length) rather
-than O(history size).
+Every version is a complete snapshot: capturing copies one pointer per
+chunk (O(N/512)) whatever the edit was, and versions keep only the
+chunks and lines that differ between them, so memory grows with what
+was edited, not with file size × versions. `linesAt(idx)` returns a copy
+of the version's store (same cost) without changing the history;
+`timestampAt(idx)` and `cursorAt(idx)` are O(1).
 
 Pruning runs whenever `_versions.size()` exceeds `kMaxVersions` and
-trims the oldest entries down to `kThinCount`. Pruning is also
-delta-aware: dropped entries' patches are merged forward into their
-successors instead of materialising full snapshots first, so prune
-cost is proportional to the number of full snapshots dropped (a small
-constant) rather than to the total history size.
+drops every other entry among the oldest `kThinCount`. Snapshots are
+independent, so dropping one needs no fix-up of its neighbours; it
+costs one reference-count decrement per chunk plus freeing what only
+that version held.
 
-Public surface: `capture()`, `captureInitial()` (initial snapshot,
-moves the buffer's `lines` into a single shared block to avoid N
-individual `make_shared` allocations), `linesAt(idx)` / `timestampAt(idx)` /
-`cursorAt(idx)`, `truncateAfter(idx)`
-(for committing a history-mode rewind), `size()` / `empty()` /
-`clear()`.
+Public surface: `capture(lines, cursor)`, `linesAt(idx)` /
+`timestampAt(idx)` / `cursorAt(idx)`, `truncateAfter(idx)` (for
+committing a history-mode rewind), `size()` / `empty()` / `clear()`.
 
 ---
 

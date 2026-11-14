@@ -73,11 +73,10 @@ public:
    * that bypasses BufferView cannot corrupt the history chain by
    * inserting a new version mid-browse.
    */
-  void recordVersion(BufferPoint cursor, std::size_t dirtyFrom = SIZE_MAX,
-                     int lineShift = 0) override {
+  void recordVersion(BufferPoint cursor) override {
     if (_browsingHistory)
       return;
-    _history.capture(_lines, cursor, dirtyFrom, lineShift);
+    _history.capture(_lines, cursor);
   }
 
   /**

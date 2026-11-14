@@ -2,8 +2,8 @@
 
 /**
  * @file version_history.hpp
- * @brief VersionHistory — an append-only history of buffer snapshots with
- *        delta compression, backing undo and version browsing.
+ * @brief VersionHistory — an append-only history of whole-buffer
+ *        snapshots, backing undo and version browsing.
  */
 
 #include "line_store.hpp"
@@ -12,53 +12,23 @@
 #include <chrono>
 #include <cstddef>
 #include <deque>
-#include <memory>
-#include <string>
-#include <vector>
 
-/**
- * @brief One captured version of a buffer.
- *
- * A snapshot either stores the full lines (@c lines, a LineStore sharing
- * the buffer's chunks) or, for cheap single-line edits, only the lines
- * that changed since its predecessor (@c patches). Readers rebuild a delta's lines on demand
- * (VersionHistory::linesAt()) without storing the result.
- */
+/** @brief One captured version of a buffer. */
 struct VersionSnapshot {
-  /** @brief Alias retained for callers; the canonical type lives in types.hpp. */
-  using LinePtr = ::LinePtr;
-  LineStore lines;                                 /**< Full line storage (empty for a delta). */
+  /** @brief The buffer's lines; a LineStore copy, sharing chunks and lines with the buffer. */
+  LineStore lines;
   std::chrono::system_clock::time_point timestamp; /**< When the snapshot was captured. */
   BufferPoint cursor;                              /**< Cursor position at capture time. */
-
-  /** @brief A single changed line in a delta snapshot. */
-  struct LinePatch {
-    std::size_t line;
-    LinePtr content;
-  };
-  /**
-   * @brief Changed lines relative to the previous version.
-   *
-   * When @c lines is empty and @c patches is non-empty, this snapshot is
-   * a delta materialised lazily on access.
-   */
-  std::vector<LinePatch> patches;
-
-  /** @brief True if this snapshot is stored as a delta from its predecessor. */
-  bool isDelta() const { return lines.empty() && !patches.empty(); }
 };
 
 /**
- * @brief Append-only history of buffer snapshots with O(1) delta capture.
+ * @brief Append-only history of whole-buffer snapshots.
  *
- * Single-line edits (lineShift == 0) are stored as lightweight deltas that
- * record only the changed line, making capture O(1) rather than O(N).
- * Reading a version never changes how it is stored: linesAt() rebuilds a
- * delta into a vector the caller owns, so browsing the history does not
- * turn deltas into full copies. During pruning, dropped entries'
- * patches are merged into their successors instead of being materialised,
- * keeping prune cost proportional to the number of dropped full snapshots
- * rather than the total history size.
+ * Every version is a complete copy of the buffer's LineStore. A copy
+ * shares the store's chunks, so capturing costs one pointer per chunk
+ * (O(N / chunk size)) whatever the edit was, and versions keep only the
+ * chunks and lines that differ between them. Reading a version is a copy
+ * of the same kind and never changes the history.
  *
  * Pruning thins every other entry in the oldest @c kThinCount slots, so
  * when @c _versions.size() reaches @c kMaxVersions + 1 the post-prune size
@@ -71,9 +41,8 @@ public:
   /**
    * @brief Cap on retained snapshots.
    *
-   * Bounds steady-state memory at O(kMaxVersions * average
-   * lines-changed-per-edit) and the worst-case capture pause (a prune is
-   * amortised over kMaxVersions - kThinCount/2 captures).
+   * Bounds steady-state memory at O(kMaxVersions × the chunks and lines
+   * changed per edit) plus one chunk index per version.
    */
   static constexpr std::size_t kMaxVersions = 100;
   /**
@@ -84,52 +53,24 @@ public:
    * prunes.
    */
   static constexpr std::size_t kThinCount = 90;
-  /**
-   * @brief Max consecutive deltas before capture forces a full snapshot.
-   *
-   * Bounds the worst-case linesAt() walk back to a base snapshot at
-   * O(kMaxDeltaChain) line-pointer copies.
-   */
-  static constexpr std::size_t kMaxDeltaChain = 32;
 
   /**
-   * @brief Capture a snapshot of the live buffer's lines.
+   * @brief Append a snapshot of @p currentLines with @p cursor.
    *
-   * The delta path stores one LinePtr; the full path copies the store,
-   * which shares its chunks with the buffer (O(N / chunk size) pointers,
-   * never O(N strings)).
-   *
-   * @param currentLines The buffer's current lines.
-   * @param cursor Cursor position to record with the snapshot.
-   * @param dirtyFrom First line changed since the last capture (SIZE_MAX
-   *        means "unknown"; forces a full snapshot).
-   * @param lineShift Net change in line count from the edit; non-zero
-   *        forces a full snapshot.
+   * O(N / chunk size) pointer copies; may prune (see the class notes).
    */
-  void capture(LineStore const& currentLines, BufferPoint cursor, std::size_t dirtyFrom = SIZE_MAX,
-               int lineShift = 0);
-
-  /**
-   * @brief Capture the initial snapshot from freshly loaded lines.
-   *
-   * Same semantics as capture() but skips the prior-snapshot equality scan
-   * (there is no prior snapshot to compare against).
-   */
-  void captureInitial(LineStore const& lines, BufferPoint cursor);
+  void capture(LineStore const& currentLines, BufferPoint cursor);
 
   /** @brief Number of snapshots currently retained. */
   std::size_t size() const { return _versions.size(); }
   /** @brief True if no snapshots are retained. */
   bool empty() const { return _versions.empty(); }
   /**
-   * @brief The lines of version @p idx.
-   *
-   * A copy of the base snapshot's store (O(N / chunk size)) plus at most
-   * kMaxDeltaChain patch sets for a delta; the history itself is left as
-   * it was.
+   * @brief The lines of version @p idx: a copy of its store, O(N / chunk
+   *        size), sharing its chunks.
    * @throws std::out_of_range if @p idx is out of bounds.
    */
-  LineStore linesAt(std::size_t idx) const;
+  LineStore linesAt(std::size_t idx) const { return _versions.at(idx).lines; }
   /**
    * @brief When version @p idx was captured. O(1).
    * @throws std::out_of_range if @p idx is out of bounds.
@@ -150,24 +91,12 @@ public:
    */
   void truncateAfter(std::size_t idx);
 
-  /** @brief Discard all snapshots and reset internal state. */
-  void clear() {
-    _versions.clear();
-    _pendingDestroy.clear();
-    _deltaChainLen = 0;
-  }
+  /** @brief Discard all snapshots. */
+  void clear() { _versions.clear(); }
 
 private:
-  /**
-   * @brief Store the delta at @p idx as a full snapshot.
-   *
-   * Only pruning does this, to bound delta chains; readers use linesAt().
-   */
-  void materialize(std::size_t idx);
   /** @brief Prune the oldest entries when the history exceeds kMaxVersions. */
   void pruneIfNeeded();
 
   std::deque<VersionSnapshot> _versions;
-  std::deque<VersionSnapshot> _pendingDestroy;
-  std::size_t _deltaChainLen = 0;
 };

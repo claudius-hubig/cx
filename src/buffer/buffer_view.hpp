@@ -485,14 +485,10 @@ private:
    * @brief Write @c _batch back to point/extras and record a single
    *        version for the whole keystroke.
    *
-   * A scattered edit has no single contiguous dirty region, so this always
-   * passes @c SIZE_MAX as @c dirtyFrom — anything else would violate
-   * Buffer::recordVersion()'s contract and corrupt delta reconstruction.
-   * @param lineCountBefore Buffer line count before the batch started.
    * @param versionBefore Buffer docVersion before the batch started; no
    *        version is recorded when the buffer did not actually change.
    */
-  void endBatch(std::size_t lineCountBefore, std::size_t versionBefore);
+  void endBatch(std::size_t versionBefore);
 
   /**
    * @brief Pending shift for the not-yet-visited tail of @c _batch.

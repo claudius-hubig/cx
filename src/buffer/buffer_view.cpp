@@ -885,7 +885,6 @@ void BufferView::insert(uint32_t cp) {
 
   auto insertLine = _point.line;
   auto insertOff = _point.offset;
-  auto lineCountBefore = _buf.lineCount();
 
   // In overwrite mode: delete character under cursor before inserting (unless at end of line)
   // Exception: newline characters are always inserted (don't overwrite)
@@ -942,8 +941,7 @@ void BufferView::insert(uint32_t cp) {
       _desiredCol.reset();
   }
 
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, insertLine, shift);
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteAtPoint() {
@@ -966,7 +964,6 @@ void BufferView::deleteAtPoint() {
     delBytes = nextClusterStart(lineContent, delOff) - delOff;
   }
 
-  auto lineCountBefore = _buf.lineCount();
   auto oldVer = _buf.docVersion();
   _point = _buf.deleteAt(_point);
   if (_buf.docVersion() == oldVer)
@@ -993,8 +990,7 @@ void BufferView::deleteAtPoint() {
     }
   }
 
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, delLine, shift);
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteBeforePoint() {
@@ -1009,7 +1005,6 @@ void BufferView::deleteBeforePoint() {
 
   auto beforeLine = _point.line;
   auto beforeOff = _point.offset;
-  auto lineCountBefore = _buf.lineCount();
 
   auto oldVer = _buf.docVersion();
   _point = _buf.deleteBefore(_point);
@@ -1037,8 +1032,7 @@ void BufferView::deleteBeforePoint() {
     }
   }
 
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, _point.line, shift);
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteChunkAtPoint() {
@@ -1093,15 +1087,13 @@ void BufferView::deleteChunkBeforePoint() {
 }
 
 void BufferView::deleteSpan(BufferPoint from, BufferPoint to) {
-  auto lineCountBefore = _buf.lineCount();
   _buf.deleteRegion(from, to);
   _point = from;
   if (_mark && *_mark > from)
     *_mark = BatchShift{to, from}.apply(*_mark);
   syncAfterEdit();
 
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, from.line, shift);
+  _buf.recordVersion(_point);
 }
 
 void BufferView::deleteLine() {
@@ -1209,8 +1201,7 @@ void BufferView::toggleComment(std::string_view prefix) {
       shift(*_mark, li, ws);
   }
   syncAfterEdit();
-  // The single-line delta only holds when one line changed.
-  _buf.recordVersion(_point, fromLine == toLine ? fromLine : SIZE_MAX, 0);
+  _buf.recordVersion(_point);
 }
 
 namespace {
@@ -1305,8 +1296,7 @@ void BufferView::convertCase(CaseOp op) {
     _buf.deleteRegion(from, to);
     _buf.insertText(converted, from);
     syncAfterEdit();
-    // The single-line delta only holds when one line changed.
-    _buf.recordVersion(hadMark ? _point : to, from.line == to.line ? from.line : SIZE_MAX, 0);
+    _buf.recordVersion(hadMark ? _point : to);
   }
 
   // A word operation advances the cursor past the word (even when the
@@ -1386,14 +1376,11 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     }
     std::size_t const first = fromLine + head, last = toLine - tail;
     BufferPoint regionStart{first, 0};
-    auto lineCountBefore = _buf.lineCount();
     _buf.deleteRegion(regionStart, {last, _buf.lineContent(last).size()});
     _buf.insertText(replacement, regionStart);
     syncAfterEdit();
     _point = cursor.value_or(end);
-    int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-    // The single-line delta only holds when one line changed.
-    _buf.recordVersion(_point, first == last && shift == 0 ? first : SIZE_MAX, shift);
+    _buf.recordVersion(_point);
   };
 
   // No region, cursor in a table: align it and wrap the cursor's column.
@@ -1641,7 +1628,6 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
     clampToBuffer();
   collapseCursors();
 
-  auto lineCountBefore = _buf.lineCount();
   auto regionStart = (to < from) ? to : from;
 
   auto oldVersion = _buf.docVersion();
@@ -1658,8 +1644,7 @@ void BufferView::deleteRegion(BufferPoint from, BufferPoint to) {
   syncAfterEdit();
   _desiredCol.reset();
 
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, regionStart.line, shift);
+  _buf.recordVersion(_point);
 }
 
 BufferPoint BufferView::insertText(std::string_view text) {
@@ -1674,7 +1659,6 @@ BufferPoint BufferView::insertText(std::string_view text) {
 
   auto startLine = _point.line;
   auto startOff = _point.offset;
-  auto lineCountBefore = _buf.lineCount();
   _point = _buf.insertText(text, _point);
   syncAfterEdit();
 
@@ -1692,8 +1676,7 @@ BufferPoint BufferView::insertText(std::string_view text) {
     }
   }
 
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  _buf.recordVersion(_point, startLine, shift);
+  _buf.recordVersion(_point);
   return _point;
 }
 
@@ -1896,7 +1879,7 @@ void BufferView::beginBatch() {
                                            _batch.begin());
 }
 
-void BufferView::endBatch(std::size_t lineCountBefore, std::size_t versionBefore) {
+void BufferView::endBatch(std::size_t versionBefore) {
   _point = _batch[_batchPrimary];
   _extraCursors.clear();
   for (std::size_t i = 0; i < _batch.size(); ++i)
@@ -1912,12 +1895,8 @@ void BufferView::endBatch(std::size_t lineCountBefore, std::size_t versionBefore
 
   if (_buf.docVersion() == versionBefore)
     return; // nothing changed — don't record an empty version
-  int shift = static_cast<int>(_buf.lineCount()) - static_cast<int>(lineCountBefore);
-  // A keystroke applied at N scattered cursors has no single contiguous
-  // dirty region, so recordVersion()'s delta contract does not apply:
-  // SIZE_MAX forces a full snapshot. One version per keystroke regardless
-  // of cursor count.
-  _buf.recordVersion(_point, SIZE_MAX, shift);
+  // One version per keystroke regardless of cursor count.
+  _buf.recordVersion(_point);
 }
 
 bool BufferView::batchVisit(std::size_t i) {
@@ -1975,7 +1954,6 @@ bool BufferView::batchDeleteBackward(std::size_t i) {
 }
 
 void BufferView::multiInsert(uint32_t cp) {
-  auto lineCountBefore = _buf.lineCount();
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
@@ -1988,11 +1966,10 @@ void BufferView::multiInsert(uint32_t cp) {
       batchDeleteForward(i);
     batchInsertChar(i, cp);
   }
-  endBatch(lineCountBefore, versionBefore);
+  endBatch(versionBefore);
 }
 
 void BufferView::multiInsertText(std::string_view text) {
-  auto lineCountBefore = _buf.lineCount();
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
@@ -2000,11 +1977,10 @@ void BufferView::multiInsertText(std::string_view text) {
       continue;
     batchInsertText(i, text);
   }
-  endBatch(lineCountBefore, versionBefore);
+  endBatch(versionBefore);
 }
 
 void BufferView::multiDeleteForward() {
-  auto lineCountBefore = _buf.lineCount();
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
@@ -2012,11 +1988,10 @@ void BufferView::multiDeleteForward() {
       continue;
     batchDeleteForward(i);
   }
-  endBatch(lineCountBefore, versionBefore);
+  endBatch(versionBefore);
 }
 
 void BufferView::multiDeleteBackward() {
-  auto lineCountBefore = _buf.lineCount();
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
@@ -2024,11 +1999,10 @@ void BufferView::multiDeleteBackward() {
       continue;
     batchDeleteBackward(i);
   }
-  endBatch(lineCountBefore, versionBefore);
+  endBatch(versionBefore);
 }
 
 void BufferView::multiDeleteChunkForward() {
-  auto lineCountBefore = _buf.lineCount();
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
@@ -2040,11 +2014,10 @@ void BufferView::multiDeleteChunkForward() {
         break;
     } while (blankAt(_batch[i]) == startBlank);
   }
-  endBatch(lineCountBefore, versionBefore);
+  endBatch(versionBefore);
 }
 
 void BufferView::multiDeleteChunkBackward() {
-  auto lineCountBefore = _buf.lineCount();
   auto versionBefore = _buf.docVersion();
   beginBatch();
   for (std::size_t i = 0; i < _batch.size(); ++i) {
@@ -2056,7 +2029,7 @@ void BufferView::multiDeleteChunkBackward() {
         break;
     } while (blankBefore(_batch[i]) == startBlank);
   }
-  endBatch(lineCountBefore, versionBefore);
+  endBatch(versionBefore);
 }
 
 // --- History mode ---
