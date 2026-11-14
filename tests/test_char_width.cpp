@@ -813,9 +813,32 @@ BOOST_AUTO_TEST_CASE(snap_to_codepoint_backs_up_to_lead_byte) {
   BOOST_CHECK_EQUAL(snapToCodepoint(s, 5), 5u); // end of string
 }
 
-BOOST_AUTO_TEST_CASE(snap_to_codepoint_bounded_on_stray_continuations) {
+// A continuation byte no sequence reaches is drawn as its own "\x80"
+// character (decodeUtf8), so it is a boundary of its own: snapping it
+// onto the character before made the cursor skip it and Backspace
+// delete two characters.
+BOOST_AUTO_TEST_CASE(snap_to_codepoint_keeps_stray_continuations) {
   std::string s(10, '\x80');
-  BOOST_CHECK_EQUAL(snapToCodepoint(s, 8), 5u);
+  for (std::size_t off = 0; off <= s.size(); ++off)
+    BOOST_CHECK_EQUAL(snapToCodepoint(s, off), off);
+  std::string after = "\xef\xbc\xa1\x80x"; // Ａ, a stray byte, x
+  BOOST_CHECK_EQUAL(snapToCodepoint(after, 2), 0u);
+  BOOST_CHECK_EQUAL(snapToCodepoint(after, 3), 3u);
+  BOOST_CHECK_EQUAL(clusterStart(after, 3), 3u);
+  BOOST_CHECK_EQUAL(prevClusterStart(after, 4), 3u);
+  std::string truncated = "\xe4\xb8x"; // a lead byte without its full tail
+  BOOST_CHECK_EQUAL(snapToCodepoint(truncated, 1), 1u);
+}
+
+BOOST_AUTO_TEST_CASE(cluster_start_agrees_with_forward_walk_on_invalid_utf8) {
+  std::string s = "e\xef\xbc\xa1\x80\xe2\x80\x8b\xc3\xcc\x81\x80\x80\xf0\x9f\x98z";
+  std::vector<std::size_t> starts;
+  for (std::size_t i = 0; i < s.size(); i += charInfoAt(s.data() + i, s.size() - i).len)
+    starts.push_back(i);
+  for (std::size_t off = 0; off < s.size(); ++off) {
+    auto want = *(std::upper_bound(starts.begin(), starts.end(), off) - 1);
+    BOOST_CHECK_EQUAL(clusterStart(s, off), want);
+  }
 }
 
 // --- Characters wider than the wrap width ---
