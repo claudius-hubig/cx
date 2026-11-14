@@ -14,6 +14,7 @@
 #include "buffer/buffer.hpp"
 #include "types.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -48,9 +49,10 @@ findNextMatchInBuffer(Buffer const& buf, BufferPoint start, std::string const& p
  * @brief Replace every forward exact-match occurrence of @p pattern with
  *        @p replacement from @p start to end-of-buffer.
  *
- * After each replacement the scan resumes immediately after the inserted
- * text, guaranteeing termination even when @p replacement itself matches
- * @p pattern (the inserted text is not re-scanned). A no-op on a
+ * Every line is scanned once, left to right, against its original text
+ * and rewritten in one edit, so inserted text is never re-scanned (a
+ * @p replacement that contains @p pattern terminates) and a line costs
+ * time linear in its length however many matches it has. A no-op on a
  * read-only buffer or an empty pattern.
  *
  * @return The number of replacements performed.
@@ -60,11 +62,22 @@ inline std::size_t replaceAllForward(Buffer& buf, BufferPoint start, std::string
   if (pattern.empty() || buf.readonly())
     return 0;
   std::size_t count = 0;
-  BufferPoint cursor = start;
-  while (auto m = findNextMatchInBuffer(buf, cursor, pattern)) {
-    buf.deleteRegion(m->first, m->second);
-    cursor = buf.insertText(replacement, m->first);
-    ++count;
+  for (std::size_t li = start.line; li < buf.lineCount(); ++li) {
+    std::string const line = buf.lineContent(li); // a copy: the buffer's line is replaced below
+    std::size_t pos = li == start.line ? std::min(start.offset, line.size()) : 0;
+    std::size_t hit = line.find(pattern, pos);
+    if (hit == std::string::npos)
+      continue;
+    std::string out(line, 0, pos);
+    for (; hit != std::string::npos; hit = line.find(pattern, pos)) {
+      out.append(line, pos, hit - pos);
+      out += replacement;
+      pos = hit + pattern.size();
+      ++count;
+    }
+    out.append(line, pos);
+    buf.deleteRegion({li, 0}, {li, line.size()});
+    li = buf.insertText(out, {li, 0}).line; // a replacement may contain newlines
   }
   return count;
 }

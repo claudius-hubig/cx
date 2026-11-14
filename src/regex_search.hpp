@@ -163,9 +163,15 @@ inline std::string substituteCaptures(std::string const& line, std::size_t from,
  *        applying @p replacement (a sed-style template with $&/$N
  *        back-references) to each match.
  *
- * The scan resumes after the inserted text so a replacement that itself
- * matches the pattern does not loop, and steps past every empty match so
- * zero-width patterns (`x*`, `^`, `\b`, …) terminate. A no-op on a
+ * Every line is matched once, left to right, against its original text
+ * and rewritten in one edit. Matches therefore never see replaced text:
+ * a replacement that itself matches does not loop, `^a` replaces only
+ * the `a` that started the line (not the one that moves there once it
+ * is removed), and a line costs time linear in its length however many
+ * matches it has. An empty match is replaced and the scan steps one code
+ * point on, so zero-width patterns (`x*`, `^`, `\b`, …) terminate. (Unlike
+ * std::regex_replace, no non-empty match is retried at the position of an
+ * empty one, which only matters for patterns such as `|a`.) A no-op on a
  * read-only buffer.
  *
  * @return The number of replacements performed.
@@ -175,19 +181,30 @@ inline std::size_t replaceAllRegexForward(Buffer& buf, BufferPoint start, std::r
   if (buf.readonly())
     return 0;
   std::size_t count = 0;
-  BufferPoint cursor = start;
-  while (auto m = findNextRegexInBuffer(buf, cursor, re)) {
-    auto& line = buf.lineContent(m->first.line);
-    auto rendered = substituteCaptures(line, m->first.offset, m->second.offset, re, replacement);
-    buf.deleteRegion(m->first, m->second);
-    cursor = buf.insertText(rendered, m->first);
-    ++count;
-    if (m->first == m->second) {
-      auto next = stepPastEmptyMatch(buf, cursor);
-      if (!next)
-        break;
-      cursor = *next;
+  for (std::size_t li = start.line; li < buf.lineCount(); ++li) {
+    std::string const line = buf.lineContent(li); // a copy: the buffer's line is replaced below
+    std::size_t pos = li == start.line ? std::min(start.offset, line.size()) : 0;
+    std::string out(line, 0, pos);
+    std::size_t before = count;
+    while (auto m = findFirstRegex(line, pos, re)) {
+      bool empty = m->first == m->second;
+      out.append(line, pos, m->first - pos);
+      out += substituteCaptures(line, m->first, m->second, re, replacement);
+      ++count;
+      pos = m->second;
+      if (empty) {
+        if (pos >= line.size())
+          break;
+        auto len = std::min(utf8SeqLen(static_cast<unsigned char>(line[pos])), line.size() - pos);
+        out.append(line, pos, len);
+        pos += len;
+      }
     }
+    if (count == before)
+      continue;
+    out.append(line, pos);
+    buf.deleteRegion({li, 0}, {li, line.size()});
+    li = buf.insertText(out, {li, 0}).line; // a replacement may contain newlines
   }
   return count;
 }

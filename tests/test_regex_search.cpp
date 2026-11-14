@@ -216,6 +216,57 @@ BOOST_AUTO_TEST_CASE(replace_all_empty_match_steps_whole_code_points) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), ".\xc3\xa9.\xe4\xb8\xad.");
 }
 
+// Matching used to resume in the already-replaced text, so removing the
+// "a" at a line start let `^a` match the next one, and so on.
+BOOST_AUTO_TEST_CASE(replace_all_matches_the_original_line_only) {
+  TextBuffer buf("t");
+  buf.insertText("aaxa\naa", BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex("^a", err);
+  BOOST_REQUIRE(re);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, ""), 2u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "axa");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "a");
+
+  // A start offset leaves the text before it alone and still knows it is
+  // not at the line start.
+  TextBuffer buf2("t");
+  buf2.insertText("abab", BufferPoint{0, 0});
+  auto ab = compileRegex("^ab|b", err);
+  BOOST_REQUIRE(ab);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf2, {0, 2}, *ab, "X"), 1u);
+  BOOST_CHECK_EQUAL(buf2.lineContent(0), "abaX");
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_with_newline_replacement_continues_after_it) {
+  TextBuffer buf("t");
+  buf.insertText("a,b\nc,d", BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex(",", err);
+  BOOST_REQUIRE(re);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "\n"), 2u);
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 4u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "a");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "b");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "c");
+  BOOST_CHECK_EQUAL(buf.lineContent(3), "d");
+}
+
+// One edit per line instead of one per match: 200,000 matches on a single
+// line took minutes when each one shifted the rest of the line.
+BOOST_AUTO_TEST_CASE(replace_all_is_linear_in_matches_per_line) {
+  TextBuffer buf("t");
+  std::string line;
+  for (int i = 0; i < 200000; ++i)
+    line += "ab ";
+  buf.insertText(line, BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex("a", err);
+  BOOST_REQUIRE(re);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "xyz"), 200000u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0).size(), line.size() + 400000u);
+}
+
 BOOST_AUTO_TEST_CASE(step_past_empty_match_moves_forward) {
   TextBuffer buf("t");
   buf.insertText("\xc3\xa9x\nz", BufferPoint{0, 0});
