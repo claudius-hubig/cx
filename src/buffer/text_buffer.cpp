@@ -279,11 +279,11 @@ std::expected<void, std::string> TextBuffer::revert() {
   return {};
 }
 
-void TextBuffer::applySnapshot(VersionSnapshot const& s) {
+void TextBuffer::applySnapshot(std::vector<LinePtr> lines) {
   // Adopt the snapshot's LinePtrs directly. Lines unchanged across
   // snapshots share storage; lines changed since the snapshot was
   // taken were already detached on edit (Buffer::mutLine).
-  _lines = s.lines;
+  _lines = std::move(lines);
   if (_lines.empty())
     _lines.push_back(makeLine());
   _modified = true;

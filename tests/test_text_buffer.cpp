@@ -173,10 +173,10 @@ BOOST_AUTO_TEST_CASE(revert_refused_while_browsing_history) {
   BOOST_CHECK_EQUAL(buf.lineCount(), shown);
   buf.view.exitHistoryModeCommit();
   // The history's newest version is the text the buffer holds.
-  auto const& newest = buf.history().at(buf.history().size() - 1);
-  BOOST_REQUIRE_EQUAL(newest.lines.size(), buf.lineCount());
+  auto newest = buf.history().linesAt(buf.history().size() - 1);
+  BOOST_REQUIRE_EQUAL(newest.size(), buf.lineCount());
   for (std::size_t i = 0; i < buf.lineCount(); ++i)
-    BOOST_CHECK_EQUAL(*newest.lines[i], buf.lineContent(i));
+    BOOST_CHECK_EQUAL(*newest[i], buf.lineContent(i));
   BOOST_CHECK(buf.revert().has_value());
 }
 

@@ -370,7 +370,7 @@ std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
     if (auto* tb = dynamic_cast<TextBuffer*>(&pbuf); tb && !tb->history().empty()) {
       auto idx = *view.historyIndex();
       auto total = tb->history().size();
-      auto t = std::chrono::system_clock::to_time_t(tb->history().at(idx).timestamp);
+      auto t = std::chrono::system_clock::to_time_t(tb->history().timestampAt(idx));
       std::tm tm{};
       localtime_r(&t, &tm);
       char tbuf[32];

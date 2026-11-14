@@ -81,21 +81,20 @@ public:
   }
 
   /**
-   * @brief Replace buffer contents with @p s.
+   * @brief Replace buffer contents with @p lines.
    *
    * Bumps docVersion and invalidates the syntax cache; does NOT record a
    * new version.
    */
-  void applySnapshot(VersionSnapshot const& s);
+  void applySnapshot(std::vector<LinePtr> lines);
 
   VersionHistoryInfo versionHistoryInfo() const override {
     return {_history.size(), _history.empty()};
   }
 
   void applyVersionAt(std::size_t idx, BufferPoint& cursor) override {
-    auto const& snap = _history.at(idx);
-    applySnapshot(snap);
-    cursor = snap.cursor;
+    applySnapshot(_history.linesAt(idx));
+    cursor = _history.cursorAt(idx);
   }
 
   void truncateHistoryAfter(std::size_t idx) override { _history.truncateAfter(idx); }

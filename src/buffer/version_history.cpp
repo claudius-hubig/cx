@@ -1,6 +1,7 @@
 #include "version_history.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 
 /**
  * @brief Capture a snapshot of the current buffer state.
@@ -66,19 +67,15 @@ void VersionHistory::captureInitial(std::vector<LinePtr> const& lines, BufferPoi
 }
 
 /**
- * @brief Materialize a delta snapshot into a full snapshot.
+ * @brief Rebuild the line vector of version @p idx.
  *
- * If the snapshot at @p idx is a delta (stored as patches), this walks back
- * through the delta chain to find the base full snapshot, then applies all
- * intermediate patches to reconstruct the complete line vector.
- *
- * Uses lazy materialization - deltas are only resolved when accessed.
- *
- * @param idx The index of the snapshot to materialize.
+ * A full snapshot is copied as is. For a delta, walks back through the
+ * delta chain to the base full snapshot and applies every patch from
+ * there up to @p idx.
  */
-void VersionHistory::materialize(std::size_t idx) const {
-  if (idx >= _versions.size() || !_versions[idx].isDelta())
-    return;
+std::vector<LinePtr> VersionHistory::linesAt(std::size_t idx) const {
+  if (idx >= _versions.size())
+    throw std::out_of_range("VersionHistory::linesAt");
 
   std::size_t base = idx;
   while (base > 0 && _versions[base].isDelta())
@@ -92,7 +89,14 @@ void VersionHistory::materialize(std::size_t idx) const {
   for (std::size_t i = base + 1; i <= idx; ++i)
     for (auto const& p : _versions[i].patches)
       lines[p.line] = p.content;
-  _versions[idx].lines = std::move(lines);
+  return lines;
+}
+
+void VersionHistory::materialize(std::size_t idx) {
+  if (!_versions[idx].isDelta())
+    return;
+  _versions[idx].lines = linesAt(idx);
+  _versions[idx].patches.clear();
 }
 
 /**
@@ -154,7 +158,7 @@ void VersionHistory::pruneIfNeeded() {
   // enforces the bound, but merging dropped patches into successors
   // grows interior chains. Walk the rebuilt deque and force-materialize
   // any delta whose distance from the last full snapshot exceeds the
-  // bound, so `at()` never walks beyond kMaxDeltaChain entries.
+  // bound, so linesAt() never walks beyond kMaxDeltaChain entries.
   std::size_t chain = 0;
   for (std::size_t i = 0; i < _versions.size(); ++i) {
     if (!_versions[i].isDelta()) {

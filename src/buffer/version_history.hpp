@@ -20,14 +20,15 @@
  *
  * A snapshot either stores the full line vector (@c lines) or, for cheap
  * single-line edits, only the lines that changed since its predecessor
- * (@c patches). Delta snapshots are materialised lazily on access.
+ * (@c patches). Readers rebuild a delta's lines on demand
+ * (VersionHistory::linesAt()) without storing the result.
  */
 struct VersionSnapshot {
   /** @brief Alias retained for callers; the canonical type lives in types.hpp. */
   using LinePtr = ::LinePtr;
-  mutable std::vector<LinePtr> lines;          /**< Full line storage (empty for a delta). */
+  std::vector<LinePtr> lines;                      /**< Full line storage (empty for a delta). */
   std::chrono::system_clock::time_point timestamp; /**< When the snapshot was captured. */
-  BufferPoint cursor;                          /**< Cursor position at capture time. */
+  BufferPoint cursor;                              /**< Cursor position at capture time. */
 
   /** @brief A single changed line in a delta snapshot. */
   struct LinePatch {
@@ -51,7 +52,9 @@ struct VersionSnapshot {
  *
  * Single-line edits (lineShift == 0) are stored as lightweight deltas that
  * record only the changed line, making capture O(1) rather than O(N).
- * Deltas materialise lazily on at(). During pruning, dropped entries'
+ * Reading a version never changes how it is stored: linesAt() rebuilds a
+ * delta into a vector the caller owns, so browsing the history does not
+ * turn deltas into full copies. During pruning, dropped entries'
  * patches are merged into their successors instead of being materialised,
  * keeping prune cost proportional to the number of dropped full snapshots
  * rather than the total history size.
@@ -83,7 +86,7 @@ public:
   /**
    * @brief Max consecutive deltas before capture forces a full snapshot.
    *
-   * Bounds the worst-case at() walk back to a base snapshot at
+   * Bounds the worst-case linesAt() walk back to a base snapshot at
    * O(kMaxDeltaChain) line-pointer copies.
    */
   static constexpr std::size_t kMaxDeltaChain = 32;
@@ -118,13 +121,25 @@ public:
   /** @brief True if no snapshots are retained. */
   bool empty() const { return _versions.empty(); }
   /**
-   * @brief Access the snapshot at @p idx, materialising it if it is a delta.
+   * @brief The full line vector of version @p idx.
+   *
+   * O(N) pointer copies plus at most kMaxDeltaChain patch sets for a
+   * delta; the history itself is left as it was.
    * @throws std::out_of_range if @p idx is out of bounds.
    */
-  VersionSnapshot const& at(std::size_t idx) const {
-    materialize(idx);
-    return _versions.at(idx);
+  std::vector<LinePtr> linesAt(std::size_t idx) const;
+  /**
+   * @brief When version @p idx was captured. O(1).
+   * @throws std::out_of_range if @p idx is out of bounds.
+   */
+  std::chrono::system_clock::time_point timestampAt(std::size_t idx) const {
+    return _versions.at(idx).timestamp;
   }
+  /**
+   * @brief Cursor position recorded with version @p idx. O(1).
+   * @throws std::out_of_range if @p idx is out of bounds.
+   */
+  BufferPoint cursorAt(std::size_t idx) const { return _versions.at(idx).cursor; }
 
   /**
    * @brief Drop every snapshot after @p idx.
@@ -141,8 +156,12 @@ public:
   }
 
 private:
-  /** @brief Resolve a delta at @p idx into a full snapshot in place. */
-  void materialize(std::size_t idx) const;
+  /**
+   * @brief Store the delta at @p idx as a full snapshot.
+   *
+   * Only pruning does this, to bound delta chains; readers use linesAt().
+   */
+  void materialize(std::size_t idx);
   /** @brief Prune the oldest entries when the history exceeds kMaxVersions. */
   void pruneIfNeeded();
 

@@ -625,10 +625,13 @@ the buffer's lines at the time of capture (as a `vector<LinePtr>` of
 
 To keep capture cost low for the common case — single-line edits — a
 snapshot may instead store a `vector<LinePatch>` describing only the
-lines that changed since its predecessor. These delta snapshots are
-materialised lazily on `at(idx)`. `kMaxDeltaChain` bounds the longest
-chain of consecutive deltas before a full snapshot is forced; this
-keeps materialisation O(chain length) rather than O(history size).
+lines that changed since its predecessor. `linesAt(idx)` rebuilds a
+delta into a fresh vector the caller owns and never stores the result,
+so reading a version (undo, history browsing) does not turn deltas into
+full copies; `timestampAt(idx)` and `cursorAt(idx)` need no rebuild.
+`kMaxDeltaChain` bounds the longest chain of consecutive deltas before a
+full snapshot is forced; this keeps a rebuild O(chain length) rather
+than O(history size).
 
 Pruning runs whenever `_versions.size()` exceeds `kMaxVersions` and
 trims the oldest entries down to `kThinCount`. Pruning is also
@@ -639,7 +642,8 @@ constant) rather than to the total history size.
 
 Public surface: `capture()`, `captureInitial()` (initial snapshot,
 moves the buffer's `lines` into a single shared block to avoid N
-individual `make_shared` allocations), `at(idx)`, `truncateAfter(idx)`
+individual `make_shared` allocations), `linesAt(idx)` / `timestampAt(idx)` /
+`cursorAt(idx)`, `truncateAfter(idx)`
 (for committing a history-mode rewind), `size()` / `empty()` /
 `clear()`.
 
