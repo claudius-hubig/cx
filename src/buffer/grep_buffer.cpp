@@ -126,7 +126,6 @@ ViewHint GrepBuffer::rebuild() {
 
   // Populate _lines for base-class cursor navigation.
   _lines.clear();
-  _lines.reserve(_displayLines.size());
   for (auto& dl : _displayLines)
     _lines.push_back(makeLine(dl));
   if (_lines.empty())

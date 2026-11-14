@@ -261,16 +261,19 @@ per-line syntax cache. All *view state* (cursor position, viewport,
 mark, selection highlight, per-view caches) lives in `BufferView`, so
 multiple views can share the same `Buffer` for split-window editing.
 
-Text is stored as `std::vector<LinePtr>` where `LinePtr` is
-`std::shared_ptr<std::string const>` (one immutable string per line,
-without newline delimiters). The `LinePtr`s are shared with
-`VersionHistory` snapshots so capturing or restoring a snapshot is
-O(N pointer copies), not O(N string copies). Mutations go through
-`Buffer::mutLine(idx)` which detaches a fresh string copy when
-the existing `LinePtr` is shared (use_count > 1) and otherwise
-mutates in place via `const_cast`. An empty buffer has a single
-empty-string `LinePtr`; a file ending in `\n` is represented by an
-empty trailing entry.
+Text is stored in a `LineStore` (see below) of `LinePtr`s, where
+`LinePtr` is `std::shared_ptr<std::string const>` (one string per line,
+without newline delimiters). The store's chunks and lines are shared
+with `VersionHistory` snapshots, so capturing or restoring a snapshot
+copies one pointer per chunk (O(N/512)), not one per line and never a
+string. Mutations go through `Buffer::mutLine(idx)` →
+`LineStore::mutableLine`, which detaches a shared chunk and then a
+shared string before handing out a mutable reference; new lines come
+from `makeLine()`. `lineContent(idx)` and `lineCount()` keep their
+signatures; `lines()` returns `LineStore const&`. An empty buffer has a
+single empty-string line; a file ending in `\n` is represented by an
+empty trailing entry. Loading collects the lines into a vector and
+moves it into the store, which keeps the line strings contiguous.
 
 Public API:
 
@@ -349,7 +352,7 @@ Caching:
   computed match without rescanning.
 
 Conflict detection:
-- `scanForConflicts()` walks the line vector setting `_hasConflicts` if
+- `scanForConflicts()` walks the lines setting `_hasConflicts` if
   any line is a 7-character conflict marker (`<<<<<<<`, `=======`,
   `>>>>>>>`). Triggered by load, revert, and save in `TextBuffer`. When
   set, the syntax-cache pass overlays each conflict-marker line with a
@@ -633,7 +636,13 @@ unshared line well-defined.
 
 Assumptions (stated in the header): single-threaded (the lookup cache and
 the `use_count()` sharing test), and references/iterators are valid only
-until the next mutation. Not yet used by `Buffer`.
+until the next mutation. Bulk loads move a `std::vector<LinePtr>` in, so
+the chunk arrays are allocated after the lines (8 KB arrays interleaved
+with the line strings were measured to halve later scan speed).
+`operator[]` caches the last chunk's range and array (one comparison
+and one load for nearby reads); the iterator holds the current chunk's
+element range. Used by `Buffer` for its lines and by `VersionHistory`
+for full snapshots.
 
 ---
 
@@ -641,13 +650,14 @@ until the next mutation. Not yet used by `Buffer`.
 
 Append-only history of buffer snapshots used by `TextBuffer` to
 implement undo and version browsing. Each `VersionSnapshot` records
-the buffer's lines at the time of capture (as a `vector<LinePtr>` of
-`shared_ptr<string const>`), a timestamp, and the cursor position.
+the buffer's lines at the time of capture (a `LineStore` copy, which
+shares the buffer's chunks), a timestamp, and the cursor position.
 
 To keep capture cost low for the common case — single-line edits — a
 snapshot may instead store a `vector<LinePatch>` describing only the
 lines that changed since its predecessor. `linesAt(idx)` rebuilds a
-delta into a fresh vector the caller owns and never stores the result,
+delta into a fresh `LineStore` the caller owns (a copy of the base
+snapshot with the patches applied via `replace`) and never stores the result,
 so reading a version (undo, history browsing) does not turn deltas into
 full copies; `timestampAt(idx)` and `cursorAt(idx)` need no rebuild.
 `kMaxDeltaChain` bounds the longest chain of consecutive deltas before a
@@ -893,21 +903,23 @@ token vector allocation.
 
 ### Performance characteristics
 
-The text storage model (`vector<LinePtr>`, one immutable
-`shared_ptr<string const>` per line) is simple but has known
-scalability limits:
+The text storage model (a chunked `LineStore` of `LinePtr`s, one
+`shared_ptr<string const>` per line) has these characteristics:
 
 - **Per-line overhead**: each line is a separate `std::string` plus a
   `shared_ptr` control block (~32 bytes overhead + allocator metadata).
   A file with millions of short lines wastes significant memory and
-  fragments the heap. Snapshots and the live buffer share `LinePtr`s,
-  so unchanged lines are not duplicated across versions.
-- **Line splits/joins are O(N) shifts**: inserting or deleting a
-  newline calls `_lines.insert()`/`_lines.erase()`, which shifts all
-  subsequent `LinePtr`s. The shifted entries are pointer-sized so the
-  cost is low per element, but still proportional to file size.
-- **Region deletion is O(N)**: `deleteRegion()` creates a temporary merged
-  line and erases a range of `_lines`, both proportional to file size.
+  fragments the heap. Snapshots and the live buffer share chunks and
+  `LinePtr`s, so unchanged lines are not duplicated across versions.
+- **Line splits/joins are O(T + N/T)**: inserting or deleting a line
+  shifts pointers within one chunk (T ≈ 512) and updates the chunk
+  index; the first edit of a chunk shared with a snapshot clones it
+  (512 pointer copies).
+- **Region deletion and large pastes** drop or build whole chunks;
+  the cost is proportional to the region, not to the file.
+- **Huge lines**: an edit to a line shared with a snapshot copies the
+  whole line string, so history memory grows by the line's size per
+  version (e.g. a 4 MB minified line).
 - **Rendering is full-redraw**: `render()` rebuilds the entire screen
   string on every keystroke. This is adequate for typical terminal sizes
   but may cause lag on very large terminals over slow connections.

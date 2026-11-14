@@ -694,7 +694,7 @@ static bool isBracketChar(char c, SyntaxToken tok) {
   return true;
 }
 
-std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos,
+std::optional<BufferPoint> findMatchingBracket(LineStore const& lines, BufferPoint pos,
                                                LineTokensFn const& getTokens) {
   if (pos.line >= lines.size())
     return std::nullopt;
@@ -774,17 +774,17 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines
   return std::nullopt;
 }
 
-std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos) {
+std::optional<BufferPoint> findMatchingBracket(LineStore const& lines, BufferPoint pos) {
   // Convenience overload for callers without a syntax cache (tests,
   // ad-hoc uses). Memoizes tokens across the call so each visited line
   // is tokenized at most once, starting from the file head.
   struct LocalCache {
-    std::vector<LinePtr> const& lines;
+    LineStore const& lines;
     std::vector<std::vector<SyntaxToken>> tokens;
     std::size_t validUpto = 0;
     SyntaxState stateAfterValid{};
 
-    explicit LocalCache(std::vector<LinePtr> const& l) : lines(l), tokens(l.size()) {}
+    explicit LocalCache(LineStore const& l) : lines(l), tokens(l.size()) {}
 
     std::span<SyntaxToken const> at(std::size_t i) {
       if (i < validUpto)

@@ -126,8 +126,8 @@ static bool isJsonBracketChar(char c, SyntaxToken tok) {
   return c == '[' || c == ']' || c == '{' || c == '}';
 }
 
-std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
-                                                   BufferPoint pos, LineTokensFn const& getTokens) {
+std::optional<BufferPoint> findMatchingBracketJson(LineStore const& lines, BufferPoint pos,
+                                                   LineTokensFn const& getTokens) {
   if (pos.line >= lines.size())
     return std::nullopt;
   auto const& line = *lines[pos.line];
@@ -201,8 +201,7 @@ std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& l
   return std::nullopt;
 }
 
-std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
-                                                   BufferPoint pos) {
+std::optional<BufferPoint> findMatchingBracketJson(LineStore const& lines, BufferPoint pos) {
   // Convenience overload that re-tokenizes each visited line from
   // scratch. Intended for tests/ad-hoc use; production callers should
   // thread `cachedLineTokens()` through the callback overload.

@@ -20,14 +20,13 @@
 #include <tuple>
 #include <vector>
 
-// Convert a `vector<string>` to a `vector<LinePtr>` for tests that
-// construct ad-hoc input for the bracket matchers (which now take
-// `vector<LinePtr> const&`).
-inline std::vector<LinePtr> toLinePtrs(std::vector<std::string> const& v) {
-  std::vector<LinePtr> out;
-  out.reserve(v.size());
+// Convert a `vector<string>` to a `LineStore` for tests that construct
+// ad-hoc input for the bracket matchers and markdown helpers (which take
+// `LineStore const&`).
+inline LineStore toLineStore(std::vector<std::string> const& v) {
+  LineStore out;
   for (auto const& s : v)
-    out.push_back(std::make_shared<std::string const>(s));
+    out.push_back(makeLine(s));
   return out;
 }
 

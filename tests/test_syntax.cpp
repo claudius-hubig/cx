@@ -730,7 +730,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_render_uses_amber_color) {
 }
 
 BOOST_AUTO_TEST_CASE(preprocessor_bracket_not_matched) {
-  auto lines = toLinePtrs({"#include <stdio.h>", "foo(<bar>);"});
+  auto lines = toLineStore({"#include <stdio.h>", "foo(<bar>);"});
   auto result = findMatchingBracket(lines, {0, 9});
   BOOST_CHECK(!result.has_value());
 }
@@ -767,15 +767,14 @@ BOOST_AUTO_TEST_CASE(advance_state_block_comment_inside_raw_string_ignored) {
 // Bug 1: findMatchingBracket must skip brackets in strings/comments
 // ============================================================
 
-// Build a LinePtr vector from newline-separated text. The bracket
-// matchers now take `vector<LinePtr> const&`, so tests build LinePtrs
-// directly instead of strings.
-static std::vector<LinePtr> mklines(std::string_view s) {
-  std::vector<LinePtr> result;
+// Build lines from newline-separated text. The bracket matchers take
+// `LineStore const&`, so tests build a store directly instead of strings.
+static LineStore mklines(std::string_view s) {
+  LineStore result;
   std::size_t start = 0;
   for (std::size_t i = 0; i <= s.size(); ++i) {
     if (i == s.size() || s[i] == '\n') {
-      result.push_back(std::make_shared<std::string const>(s.substr(start, i - start)));
+      result.push_back(makeLine(s.substr(start, i - start)));
       start = i + 1;
     }
   }
@@ -1333,7 +1332,7 @@ BOOST_AUTO_TEST_CASE(json_colon_comma_normal) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_match_square) {
-  auto lines = toLinePtrs({"[1, 2]"});
+  auto lines = toLineStore({"[1, 2]"});
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
   BOOST_CHECK_EQUAL(match->line, 0u);
@@ -1346,14 +1345,14 @@ BOOST_AUTO_TEST_CASE(json_bracket_match_square) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_match_brace) {
-  auto lines = toLinePtrs({R"({"a": 1})"});
+  auto lines = toLineStore({R"({"a": 1})"});
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
   BOOST_CHECK_EQUAL(match->offset, 7u);
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_inside_string_skipped) {
-  auto lines = toLinePtrs({R"({"key": "["})"});
+  auto lines = toLineStore({R"({"key": "["})"});
   // The [ at pos 8 is inside a string — cursor on { at 0 should match } at 11.
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
@@ -1361,7 +1360,7 @@ BOOST_AUTO_TEST_CASE(json_bracket_inside_string_skipped) {
 }
 
 BOOST_AUTO_TEST_CASE(json_bracket_multiline) {
-  auto lines = toLinePtrs({"{", "  \"a\": 1", "}"});
+  auto lines = toLineStore({"{", "  \"a\": 1", "}"});
   auto match = findMatchingBracketJson(lines, {0, 0});
   BOOST_REQUIRE(match.has_value());
   BOOST_CHECK_EQUAL(match->line, 2u);

@@ -10,6 +10,7 @@
  * BufferMode enum that selects the per-mode syntax tokenizer.
  */
 
+#include "line_store.hpp"
 #include "modes/c/syntax.hpp"
 #include "types.hpp"
 
@@ -200,11 +201,11 @@ public:
   /**
    * @brief Direct const access to the line storage.
    *
-   * Snapshots and the live buffer share these LinePtrs; mutation goes
-   * through mutLine(), which detaches when shared, so applying a snapshot
-   * is O(N pointer copies) rather than O(N string copies).
+   * Snapshots and the live buffer share the store's chunks and lines;
+   * mutation goes through mutLine(), which detaches what is shared, so
+   * taking or applying a snapshot is O(N / chunk size) pointer copies.
    */
-  std::vector<LinePtr> const& lines() const { return _lines; }
+  LineStore const& lines() const { return _lines; }
 
   /**
    * @brief Document version counter, incremented on every edit.
@@ -392,32 +393,18 @@ protected:
   /**
    * @brief Line storage; always holds at least one (possibly empty) line.
    *
-   * The mutation helpers below maintain that invariant.
+   * The mutation helpers below maintain that invariant. New lines come
+   * from makeLine() (line_store.hpp) so mutLine() may edit them in place.
    */
-  std::vector<LinePtr> _lines{std::make_shared<std::string const>()};
+  LineStore _lines{std::vector{makeLine()}};
 
   /**
-   * @brief Detach line @p idx from other holders and return a mutable
-   *        reference to its string.
+   * @brief Detach line @p idx from other holders (snapshots) and return a
+   *        mutable reference to its string; see LineStore::mutableLine().
    *
-   * If the LinePtr is uniquely held the string is mutated in place via
-   * const_cast; otherwise a fresh copy is allocated and stored back.
+   * The reference is valid until the next change to @c _lines.
    */
-  std::string& mutLine(std::size_t idx) {
-    auto& p = _lines[idx];
-    if (p.use_count() > 1)
-      p = std::make_shared<std::string const>(*p);
-    return const_cast<std::string&>(*p);
-  }
-
-  /** @brief Construct a LinePtr from an rvalue/lvalue string. */
-  static LinePtr makeLine(std::string s) {
-    return std::make_shared<std::string const>(std::move(s));
-  }
-  /** @brief Construct a LinePtr from a string view. */
-  static LinePtr makeLine(std::string_view sv) { return std::make_shared<std::string const>(sv); }
-  /** @brief Construct an empty LinePtr. */
-  static LinePtr makeLine() { return std::make_shared<std::string const>(); }
+  std::string& mutLine(std::size_t idx) { return _lines.mutableLine(idx); }
   bool _modified = false;
   bool _hasConflicts = false;
   bool _overwriteMode = false; /**< Insert vs overwrite mode toggle. */

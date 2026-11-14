@@ -29,11 +29,10 @@ void tokenizeJsonLine(std::string const& line, SyntaxState& state, std::vector<S
  * @return The matching bracket position, or nullopt if @p pos is not on a
  *         bracket or no match is found.
  */
-std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
-                                                   BufferPoint pos, LineTokensFn const& getTokens);
+std::optional<BufferPoint> findMatchingBracketJson(LineStore const& lines, BufferPoint pos,
+                                                   LineTokensFn const& getTokens);
 /**
  * @brief Convenience overload that re-tokenizes each visited line from
  *        scratch.
  */
-std::optional<BufferPoint> findMatchingBracketJson(std::vector<LinePtr> const& lines,
-                                                   BufferPoint pos);
+std::optional<BufferPoint> findMatchingBracketJson(LineStore const& lines, BufferPoint pos);

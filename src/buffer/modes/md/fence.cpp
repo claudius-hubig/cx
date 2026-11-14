@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-std::vector<bool> markdownFencedLines(std::vector<LinePtr> const& lines) {
+std::vector<bool> markdownFencedLines(LineStore const& lines) {
   std::vector<bool> fenced(lines.size(), false);
   char fenceChar = 0; // 0 outside a fence
   std::size_t fenceLen = 0;

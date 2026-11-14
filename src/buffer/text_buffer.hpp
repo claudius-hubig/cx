@@ -86,7 +86,7 @@ public:
    * Bumps docVersion and invalidates the syntax cache; does NOT record a
    * new version.
    */
-  void applySnapshot(std::vector<LinePtr> lines);
+  void applySnapshot(LineStore lines);
 
   VersionHistoryInfo versionHistoryInfo() const override {
     return {_history.size(), _history.empty()};

@@ -17,12 +17,15 @@
 #include <variant>
 
 /**
- * @brief Shared pointer to immutable line storage.
+ * @brief Shared pointer to one line's text.
  *
- * Used by both Buffer and VersionHistory. The string behind the pointer
- * is immutable; mutation goes through Buffer::mutLine(), which detaches a
- * private copy whenever the pointer is shared. Sharing lets snapshots and
- * the live buffer reference unchanged lines without copying them.
+ * Used by LineStore, Buffer and VersionHistory. The string is treated as
+ * immutable while shared: the only mutation path is
+ * LineStore::mutableLine() (via Buffer::mutLine()), which first detaches
+ * a private copy if the line is shared and edits in place only an
+ * unshared line created by makeLine() (line_store.hpp). Sharing lets
+ * snapshots and the live buffer reference unchanged lines without
+ * copying them.
  */
 using LinePtr = std::shared_ptr<std::string const>;
 

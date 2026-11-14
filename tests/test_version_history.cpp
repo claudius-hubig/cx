@@ -7,10 +7,9 @@
 #include <string>
 #include <vector>
 
-static LinePtr lp(std::string s) { return std::make_shared<std::string const>(std::move(s)); }
-static std::vector<LinePtr> lps(std::initializer_list<std::string> ss) {
-  std::vector<LinePtr> r;
-  r.reserve(ss.size());
+static LinePtr lp(std::string s) { return makeLine(std::move(s)); }
+static LineStore lps(std::initializer_list<std::string> ss) {
+  LineStore r;
   for (auto& s : ss)
     r.push_back(lp(s));
   return r;
@@ -36,7 +35,7 @@ BOOST_AUTO_TEST_CASE(capture_shares_unchanged_lines) {
   VersionHistory h;
   auto lines = lps({"a", "b", "c", "d"});
   h.capture(lines, {0, 0});
-  lines[1] = lp("B"); // mutate just one entry
+  lines.replace(1, lp("B")); // mutate just one entry
   h.capture(lines, {1, 0});
   BOOST_CHECK_EQUAL(h.size(), 2u);
   // Unchanged lines share storage.
@@ -152,7 +151,7 @@ BOOST_AUTO_TEST_CASE(prune_force_materializes_long_chains) {
   // the full-snapshot branch) so prune meets a realistic delta/full mix.
   for (std::size_t step = 0; step < 800; ++step) {
     std::size_t idx = step % lines.size();
-    lines[idx] = lp("v" + std::to_string(step));
+    lines.replace(idx, lp("v" + std::to_string(step)));
     if (step % 17 == 0) {
       // Take the multi-line branch — exercises the full-snapshot capture.
       lines.push_back(lp("x" + std::to_string(step)));
@@ -173,7 +172,7 @@ BOOST_AUTO_TEST_CASE(prune_force_materializes_long_chains) {
   }
 }
 
-// Reading a version is a pure query: a delta is rebuilt into a vector the
+// Reading a version is a pure query: a delta is rebuilt into a store the
 // caller owns (VersionSnapshot::lines is no longer mutable, so the history
 // cannot cache it), and its timestamp and cursor need no rebuild at all.
 // Caching used to turn every delta that was looked at, even just for the
@@ -182,9 +181,9 @@ BOOST_AUTO_TEST_CASE(reading_a_delta_rebuilds_its_lines) {
   VersionHistory h;
   auto lines = lps({"a", "b", "c"});
   h.capture(lines, {0, 0});
-  lines[1] = lp("B");
+  lines.replace(1, lp("B"));
   h.capture(lines, {1, 1}, 1, 0);
-  lines[2] = lp("C");
+  lines.replace(2, lp("C"));
   h.capture(lines, {2, 1}, 2, 0);
 
   BOOST_CHECK(h.cursorAt(2) == (BufferPoint{2, 1}));

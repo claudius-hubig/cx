@@ -17,6 +17,7 @@
  * and the header (the first line of a file) a byte-order mark before it.
  */
 
+#include "buffer/line_store.hpp"
 #include "types.hpp"
 
 #include <cstddef>
@@ -54,7 +55,7 @@ struct PipeRun {
  * reuse the result for every line in [first, last].
  * @pre @p line < @p lines.size().
  */
-std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_t line);
+std::optional<PipeRun> findPipeRun(LineStore const& lines, std::size_t line);
 
 /**
  * @brief Find the GFM table that contains line @p line: findPipeRun()
@@ -63,7 +64,7 @@ std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_
  *
  * @pre @p line < @p lines.size().
  */
-std::optional<TableLines> findMarkdownTable(std::vector<LinePtr> const& lines, std::size_t line);
+std::optional<TableLines> findMarkdownTable(LineStore const& lines, std::size_t line);
 
 /** @brief Result of formatMarkdownTable(). */
 struct FormattedTable {

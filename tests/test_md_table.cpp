@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(rejects_non_tables) {
 }
 
 BOOST_AUTO_TEST_CASE(find_table_bounds) {
-  auto lines = toLinePtrs({
+  auto lines = toLineStore({
       "Prose with a | pipe", // 0: directly above, not part of the table
       "| a | b |",           // 1: header
       "|---|---|",           // 2
@@ -434,7 +434,7 @@ BOOST_AUTO_TEST_CASE(view_formatted_table_leaves_buffer_unmodified) {
 // --- Prefixes, spacer rows, awkward cells ---
 
 BOOST_AUTO_TEST_CASE(block_quoted_table) {
-  auto lines = toLinePtrs({"> | a | b |", "> |---|---|", "> | long cell | 2 |", "text"});
+  auto lines = toLineStore({"> | a | b |", "> |---|---|", "> | long cell | 2 |", "text"});
   auto t = findMarkdownTable(lines, 2);
   BOOST_REQUIRE(t);
   BOOST_CHECK_EQUAL(t->first, 0u);
@@ -457,7 +457,7 @@ BOOST_AUTO_TEST_CASE(block_quoted_table) {
 
 BOOST_AUTO_TEST_CASE(table_after_byte_order_mark) {
   std::vector<std::string> lines{"\xef\xbb\xbf| a | b |", "|---|---|", "| 1 | 22 |"};
-  BOOST_CHECK(findMarkdownTable(toLinePtrs(lines), 0));
+  BOOST_CHECK(findMarkdownTable(toLineStore(lines), 0));
   auto r = formatMarkdownTable(lines, BufferPoint{2, 2}, 80);
   BOOST_REQUIRE(r);
   BOOST_CHECK_EQUAL(joinLines(r->lines), "\xef\xbb\xbf| a   | b   |\n"
@@ -508,7 +508,7 @@ BOOST_AUTO_TEST_CASE(cell_ending_in_backslash_blank_is_stable) {
 // --- Fenced code blocks ---
 
 BOOST_AUTO_TEST_CASE(fenced_lines) {
-  auto lines = toLinePtrs({
+  auto lines = toLineStore({
       "text",    // 0
       "```sh",   // 1 open
       "a | b",   // 2
@@ -598,7 +598,7 @@ BOOST_AUTO_TEST_CASE(view_rewrites_only_changed_lines) {
   TempFile f(doc);
   TextBuffer buf(f.path().string(), f.path());
   BufferView view(buf);
-  std::vector<LinePtr> before = buf.lines();
+  LineStore before = buf.lines(); // a snapshot: shares chunks and lines
   view.setPoint(0, 2);
   view.reflowParagraph(80, BufferView::ReflowTables::Markdown);
   BOOST_CHECK_EQUAL(buf.lineContent(3), "| b   | 2   |");

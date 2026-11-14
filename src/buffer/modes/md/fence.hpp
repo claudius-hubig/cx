@@ -5,6 +5,7 @@
  * @brief Fenced code block detection for Markdown buffers.
  */
 
+#include "buffer/line_store.hpp"
 #include "types.hpp"
 
 #include <vector>
@@ -19,4 +20,4 @@
  * line of its own. An unclosed fence runs to the end of the buffer.
  * Fences inside block quotes are not recognised.
  */
-std::vector<bool> markdownFencedLines(std::vector<LinePtr> const& lines);
+std::vector<bool> markdownFencedLines(LineStore const& lines);

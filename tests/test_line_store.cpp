@@ -229,3 +229,35 @@ BOOST_AUTO_TEST_CASE(push_back_after_copy_leaves_the_copy_alone) {
   BOOST_CHECK_EQUAL(s.size(), 2u);
   BOOST_CHECK(contents(snap) == std::vector<std::string>{"a"});
 }
+
+BOOST_AUTO_TEST_CASE(construct_from_moved_vector) {
+  auto lines = numbered(1000);
+  auto copy = lines;
+  LineStore s(std::move(lines), 4);
+  BOOST_CHECK(s.invariantsHold());
+  BOOST_REQUIRE_EQUAL(s.size(), 1000u);
+  for (std::size_t i = 0; i < copy.size(); ++i)
+    BOOST_CHECK(s[i] == copy[i]);
+}
+
+BOOST_AUTO_TEST_CASE(moves_leave_a_valid_empty_store) {
+  LineStore a(numbered(100), 4);
+  (void)a[50]; // a cached chunk that must not survive the move
+  LineStore b = std::move(a);
+  BOOST_CHECK(a.empty() && a.invariantsHold() && a.begin() == a.end());
+  BOOST_CHECK_EQUAL(*b[50], "50");
+  a.push_back(makeLine("x"));
+  BOOST_CHECK_EQUAL(*a[0], "x");
+  b = std::move(a);
+  BOOST_CHECK(a.empty() && a.invariantsHold());
+  checkEqual(b, {"x"});
+}
+
+BOOST_AUTO_TEST_CASE(iterator_at_starts_mid_store) {
+  LineStore s(numbered(50), 4);
+  auto it = s.iteratorAt(17);
+  for (std::size_t i = 17; i < 50; ++i, ++it)
+    BOOST_CHECK_EQUAL(**it, std::to_string(i));
+  BOOST_CHECK(it == s.end());
+  BOOST_CHECK(s.iteratorAt(50) == s.end());
+}

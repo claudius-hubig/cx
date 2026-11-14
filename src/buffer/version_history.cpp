@@ -13,7 +13,7 @@
  *
  * Automatically prunes old snapshots if the history exceeds kMaxVersions.
  */
-void VersionHistory::capture(std::vector<LinePtr> const& currentLines, BufferPoint cursor,
+void VersionHistory::capture(LineStore const& currentLines, BufferPoint cursor,
                              std::size_t dirtyFrom, int lineShift) {
   if (!_pendingDestroy.empty())
     _pendingDestroy.pop_front();
@@ -51,10 +51,10 @@ void VersionHistory::capture(std::vector<LinePtr> const& currentLines, BufferPoi
  * Same as capture() but skips the comparison with previous snapshot
  * (there is no previous snapshot when loading a file).
  *
- * @param lines The initial line vector from the loaded buffer.
+ * @param lines The initial lines of the loaded buffer.
  * @param cursor The cursor position (typically {0, 0}).
  */
-void VersionHistory::captureInitial(std::vector<LinePtr> const& lines, BufferPoint cursor) {
+void VersionHistory::captureInitial(LineStore const& lines, BufferPoint cursor) {
   VersionSnapshot snap;
   snap.timestamp = std::chrono::system_clock::now();
   snap.cursor = cursor;
@@ -67,13 +67,13 @@ void VersionHistory::captureInitial(std::vector<LinePtr> const& lines, BufferPoi
 }
 
 /**
- * @brief Rebuild the line vector of version @p idx.
+ * @brief Rebuild the lines of version @p idx.
  *
  * A full snapshot is copied as is. For a delta, walks back through the
  * delta chain to the base full snapshot and applies every patch from
  * there up to @p idx.
  */
-std::vector<LinePtr> VersionHistory::linesAt(std::size_t idx) const {
+LineStore VersionHistory::linesAt(std::size_t idx) const {
   if (idx >= _versions.size())
     throw std::out_of_range("VersionHistory::linesAt");
 
@@ -81,14 +81,12 @@ std::vector<LinePtr> VersionHistory::linesAt(std::size_t idx) const {
   while (base > 0 && _versions[base].isDelta())
     --base;
 
-  // Value-copy the vector of LinePtr; this aliases the inner
-  // shared_ptr<string const> handles rather than deep-copying their
-  // string contents. Aliasing is safe because the strings are
-  // immutable (shared_ptr<string const>).
+  // Copying the store shares its chunks; replace() clones only the
+  // chunks the patches touch.
   auto lines = _versions[base].lines;
   for (std::size_t i = base + 1; i <= idx; ++i)
     for (auto const& p : _versions[i].patches)
-      lines[p.line] = p.content;
+      lines.replace(p.line, p.content);
   return lines;
 }
 
@@ -141,7 +139,7 @@ void VersionHistory::pruneIfNeeded() {
     } else if (!dropped.isDelta() && kept.isDelta()) {
       kept.lines = dropped.lines;
       for (auto const& p : kept.patches)
-        kept.lines[p.line] = p.content;
+        kept.lines.replace(p.line, p.content);
       kept.patches.clear();
     }
     _pendingDestroy.push_back(std::move(dropped));

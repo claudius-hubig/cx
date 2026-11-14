@@ -6,6 +6,7 @@
  *        delta compression, backing undo and version browsing.
  */
 
+#include "line_store.hpp"
 #include "types.hpp"
 
 #include <chrono>
@@ -18,15 +19,15 @@
 /**
  * @brief One captured version of a buffer.
  *
- * A snapshot either stores the full line vector (@c lines) or, for cheap
- * single-line edits, only the lines that changed since its predecessor
- * (@c patches). Readers rebuild a delta's lines on demand
+ * A snapshot either stores the full lines (@c lines, a LineStore sharing
+ * the buffer's chunks) or, for cheap single-line edits, only the lines
+ * that changed since its predecessor (@c patches). Readers rebuild a delta's lines on demand
  * (VersionHistory::linesAt()) without storing the result.
  */
 struct VersionSnapshot {
   /** @brief Alias retained for callers; the canonical type lives in types.hpp. */
   using LinePtr = ::LinePtr;
-  std::vector<LinePtr> lines;                      /**< Full line storage (empty for a delta). */
+  LineStore lines;                                 /**< Full line storage (empty for a delta). */
   std::chrono::system_clock::time_point timestamp; /**< When the snapshot was captured. */
   BufferPoint cursor;                              /**< Cursor position at capture time. */
 
@@ -92,42 +93,43 @@ public:
   static constexpr std::size_t kMaxDeltaChain = 32;
 
   /**
-   * @brief Capture a snapshot from the live buffer's line vector.
+   * @brief Capture a snapshot of the live buffer's lines.
    *
-   * The LinePtrs are reference-counted, so this is O(N pointers) on both
-   * the delta path (single-line replacement) and the full path — never
-   * O(N strings).
+   * The delta path stores one LinePtr; the full path copies the store,
+   * which shares its chunks with the buffer (O(N / chunk size) pointers,
+   * never O(N strings)).
    *
-   * @param currentLines The buffer's current line vector.
+   * @param currentLines The buffer's current lines.
    * @param cursor Cursor position to record with the snapshot.
    * @param dirtyFrom First line changed since the last capture (SIZE_MAX
    *        means "unknown"; forces a full snapshot).
    * @param lineShift Net change in line count from the edit; non-zero
    *        forces a full snapshot.
    */
-  void capture(std::vector<LinePtr> const& currentLines, BufferPoint cursor,
-               std::size_t dirtyFrom = SIZE_MAX, int lineShift = 0);
+  void capture(LineStore const& currentLines, BufferPoint cursor, std::size_t dirtyFrom = SIZE_MAX,
+               int lineShift = 0);
 
   /**
-   * @brief Capture the initial snapshot from a freshly loaded line vector.
+   * @brief Capture the initial snapshot from freshly loaded lines.
    *
    * Same semantics as capture() but skips the prior-snapshot equality scan
    * (there is no prior snapshot to compare against).
    */
-  void captureInitial(std::vector<LinePtr> const& lines, BufferPoint cursor);
+  void captureInitial(LineStore const& lines, BufferPoint cursor);
 
   /** @brief Number of snapshots currently retained. */
   std::size_t size() const { return _versions.size(); }
   /** @brief True if no snapshots are retained. */
   bool empty() const { return _versions.empty(); }
   /**
-   * @brief The full line vector of version @p idx.
+   * @brief The lines of version @p idx.
    *
-   * O(N) pointer copies plus at most kMaxDeltaChain patch sets for a
-   * delta; the history itself is left as it was.
+   * A copy of the base snapshot's store (O(N / chunk size)) plus at most
+   * kMaxDeltaChain patch sets for a delta; the history itself is left as
+   * it was.
    * @throws std::out_of_range if @p idx is out of bounds.
    */
-  std::vector<LinePtr> linesAt(std::size_t idx) const;
+  LineStore linesAt(std::size_t idx) const;
   /**
    * @brief When version @p idx was captured. O(1).
    * @throws std::out_of_range if @p idx is out of bounds.

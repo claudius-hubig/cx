@@ -213,7 +213,7 @@ std::size_t offsetAfterNonBlank(std::string_view s, std::size_t n) {
 
 } // namespace
 
-std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_t line) {
+std::optional<PipeRun> findPipeRun(LineStore const& lines, std::size_t line) {
   auto pipe = [&](std::size_t i) { return hasPipe(*lines[i]); };
   if (!pipe(line))
     return std::nullopt;
@@ -229,7 +229,7 @@ std::optional<PipeRun> findPipeRun(std::vector<LinePtr> const& lines, std::size_
   return run;
 }
 
-std::optional<TableLines> findMarkdownTable(std::vector<LinePtr> const& lines, std::size_t line) {
+std::optional<TableLines> findMarkdownTable(LineStore const& lines, std::size_t line) {
   auto run = findPipeRun(lines, line);
   if (!run || !run->header || line < *run->header)
     return std::nullopt;

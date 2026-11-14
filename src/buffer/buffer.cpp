@@ -37,9 +37,9 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
       indented.reserve(autoIndent + tail.size());
       indented.append(autoIndent, ' ');
       indented.append(tail);
-      _lines.insert(_lines.begin() + at.line + 1, makeLine(std::move(indented)));
+      _lines.insert(at.line + 1, makeLine(std::move(indented)));
     } else {
-      _lines.insert(_lines.begin() + at.line + 1, makeLine(std::move(tail)));
+      _lines.insert(at.line + 1, makeLine(std::move(tail)));
     }
     at.line++;
     at.offset = autoIndent;
@@ -64,10 +64,10 @@ BufferPoint Buffer::deleteAt(BufferPoint at) {
     ++_docVersion;
   } else if (at.line + 1 < _lines.size()) {
     invalidateSynCache(at.line);
-    // Take the next line's content out of the vector first so the
+    // Take the next line's content out of the store first so the
     // mutLine call below operates on a stable index.
     std::string nextContent = lineContent(at.line + 1);
-    _lines.erase(_lines.begin() + at.line + 1);
+    _lines.erase(at.line + 1);
     auto& line = mutLine(at.line);
     line.append(nextContent);
     _modified = true;
@@ -88,7 +88,7 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
   } else if (at.line > 0) {
     invalidateSynCache(at.line - 1);
     std::string lineContentCopy = lineContent(at.line);
-    _lines.erase(_lines.begin() + at.line);
+    _lines.erase(at.line);
     auto& prev = mutLine(at.line - 1);
     std::size_t newOffset = prev.size();
     prev.append(lineContentCopy);
@@ -119,45 +119,32 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
     return at;
   }
 
-  // Save tail past insertion point, truncate the line there.
+  // The first piece goes onto the line at `at` (after cutting its tail
+  // off); every later piece becomes a new line, all inserted in one go,
+  // and the tail moves to the end of the last one.
   std::string tail(lineContent(at.line), at.offset);
-  mutLine(at.line).resize(at.offset);
+  auto firstNl = text.find('\n');
+  auto& first = mutLine(at.line);
+  first.resize(at.offset);
+  first.append(text.substr(0, firstNl));
 
-  // Open a gap for new lines (single vector shift instead of K shifts).
-  // Each gap LinePtr will be replaced with a freshly allocated string
-  // below; share a single empty placeholder until then.
-  _lines.insert(_lines.begin() + at.line + 1, newlineCount, makeLine());
-
-  // Fill lines from text chunks separated by '\n'.
-  std::size_t lineIdx = at.line;
-  std::size_t i = 0;
-  while (i < text.size()) {
+  std::vector<LinePtr> added;
+  added.reserve(newlineCount);
+  for (auto i = firstNl + 1;;) {
     auto nl = text.find('\n', i);
-    std::size_t chunkEnd = (nl == std::string_view::npos) ? text.size() : nl;
-
-    std::string_view chunk(text.data() + i, chunkEnd - i);
-    if (lineIdx == at.line)
-      mutLine(lineIdx).append(chunk);
-    else
-      _lines[lineIdx] = makeLine(chunk);
-
-    if (nl != std::string_view::npos) {
-      ++lineIdx;
-      i = nl + 1;
-    } else {
-      at.offset = chunkEnd - i;
-      i = chunkEnd;
+    if (nl == std::string_view::npos) {
+      std::string last(text.substr(i));
+      at.offset = last.size();
+      last += tail;
+      added.push_back(makeLine(std::move(last)));
+      break;
     }
+    added.push_back(makeLine(text.substr(i, nl - i)));
+    i = nl + 1;
   }
-
-  if (text.back() == '\n') {
-    at.line = lineIdx;
-    at.offset = 0;
-  } else {
-    at.line = lineIdx;
-  }
-
-  mutLine(at.line).append(tail);
+  auto const count = added.size();
+  _lines.insert(at.line + 1, std::move(added));
+  at.line += count;
   _modified = true;
   ++_docVersion;
   return at;
@@ -181,7 +168,7 @@ void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
     auto& fromLine = mutLine(from.line);
     fromLine.resize(from.offset);
     fromLine.append(toTail);
-    _lines.erase(_lines.begin() + from.line + 1, _lines.begin() + to.line + 1);
+    _lines.erase(from.line + 1, to.line + 1);
   }
 
   _modified = true;
@@ -246,8 +233,9 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
 
   // Rough size estimate to avoid repeated reallocations.
   std::size_t estimate = 0;
-  for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
-    auto const& line = *_lines[l];
+  auto it = _lines.iteratorAt(from.line);
+  for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l, ++it) {
+    auto const& line = **it;
     std::size_t start = (l == from.line) ? std::min(from.offset, line.size()) : 0;
     std::size_t end = (l == to.line) ? std::min(to.offset, line.size()) : line.size();
     // +1 for the inter-line '\n'. The emission loop only writes one
@@ -257,8 +245,9 @@ std::string Buffer::extractRegion(BufferPoint from, BufferPoint to) const {
   }
   std::string result;
   result.reserve(estimate);
-  for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l) {
-    auto const& line = *_lines[l];
+  it = _lines.iteratorAt(from.line);
+  for (std::size_t l = from.line; l <= to.line && l < _lines.size(); ++l, ++it) {
+    auto const& line = **it;
     std::size_t start = (l == from.line) ? from.offset : 0;
     std::size_t end = (l == to.line) ? to.offset : line.size();
     start = std::min(start, line.size());

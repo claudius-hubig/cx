@@ -11,6 +11,7 @@
  * is mode-agnostic.
  */
 
+#include "buffer/line_store.hpp"
 #include "types.hpp"
 
 #include <cstdint>
@@ -140,7 +141,7 @@ using LineTokensFn = std::function<std::span<SyntaxToken const>(std::size_t line
  * @return The matching bracket position, or nullopt if @p pos is not on a
  *         bracket or no match is found.
  */
-std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos,
+std::optional<BufferPoint> findMatchingBracket(LineStore const& lines, BufferPoint pos,
                                                LineTokensFn const& getTokens);
 /**
  * @brief Convenience overload that tokenizes lines lazily and memoizes them
@@ -152,4 +153,4 @@ std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines
  * ad-hoc use; production hot paths should thread cachedLineTokens() through
  * the callback overload instead.
  */
-std::optional<BufferPoint> findMatchingBracket(std::vector<LinePtr> const& lines, BufferPoint pos);
+std::optional<BufferPoint> findMatchingBracket(LineStore const& lines, BufferPoint pos);
