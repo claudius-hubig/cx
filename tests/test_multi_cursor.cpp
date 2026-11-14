@@ -774,3 +774,26 @@ BOOST_AUTO_TEST_CASE(batch_edits_match_reference_model) {
     }
   }
 }
+
+// Cursors can be added while browsing history (Ctrl-Shift-Down is not
+// an edit). Stepping to another version replaces the text under them, so
+// they used to survive pointing past the end of shorter lines, and the
+// first keystroke after committing threw out of the editor.
+BOOST_AUTO_TEST_CASE(stepping_history_drops_cursors_added_while_browsing) {
+  TextBuffer buf("t");
+  BufferView v(buf);
+  v.insertText("a\nb");
+  v.setPoint(0, 1);
+  v.insertText("AAAAAAAA");
+  v.setPoint(1, 1);
+  v.insertText("BBBBBBBB");
+  BOOST_REQUIRE(v.enterHistoryMode());
+  v.setPoint(0, 9);
+  BOOST_REQUIRE(v.addCursorDown()); // at (1, 9)
+  v.stepHistory(-1);                // line 1 is "b" again
+  BOOST_CHECK(!v.multiCursor());
+  v.exitHistoryModeCommit();
+  BOOST_CHECK_NO_THROW(v.insert('x'));
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "aAAAAAAAAx");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "b");
+}

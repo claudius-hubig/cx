@@ -2079,6 +2079,8 @@ void BufferView::stepHistory(int delta) {
   if (newIdx == *_historyIndex)
     return;
   _historyIndex = newIdx;
+  // Cursors added while browsing refer to the text being replaced.
+  collapseCursors();
   _buf.applyVersionAt(newIdx, _point);
   syncAfterEdit();
   clampPoint(_point);
