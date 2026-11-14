@@ -95,6 +95,48 @@ BOOST_AUTO_TEST_CASE(raw_string_with_delimiter) {
   BOOST_CHECK(!st.rawDelim.has_value());
 }
 
+// A raw-string delimiter is at most 16 characters without spaces,
+// parentheses, backslashes or quotes; anything else after R" is an
+// ordinary string. Searching the whole rest of the line for a '(' made a
+// line of R"R"R"... quadratic.
+BOOST_AUTO_TEST_CASE(raw_string_needs_a_valid_delimiter) {
+  auto line = mkline(R"__(a = R"x y"; f(1);)__");
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks);
+  BOOST_CHECK(allTokens(toks, 5, 10, SyntaxToken::String)); // "x y"
+  BOOST_CHECK(toks[12] != SyntaxToken::String);             // f
+  BOOST_CHECK(!st.rawDelim.has_value());
+
+  auto tooLong = mkline(R"__(R"abcdefghijklmnopq(x)abcdefghijklmnopq")__");
+  SyntaxState st2;
+  tokenizeLine(tooLong, st2, toks);
+  BOOST_CHECK(!st2.rawDelim.has_value());
+  SyntaxState st3;
+  advanceBlockCommentState(tooLong, st3);
+  BOOST_CHECK(!st3.rawDelim.has_value());
+
+  auto longest = mkline(R"__(R"abcdefghijklmnop(x)__");
+  SyntaxState st4;
+  tokenizeLine(longest, st4, toks);
+  BOOST_REQUIRE(st4.rawDelim.has_value());
+  BOOST_CHECK_EQUAL(*st4.rawDelim, "abcdefghijklmnop");
+}
+
+BOOST_AUTO_TEST_CASE(raw_string_prefix_run_is_linear) {
+  std::string content;
+  for (int i = 0; i < 200000; ++i)
+    content += "R\"";
+  auto line = mkline(content);
+  SyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeLine(line, st, toks); // took ~10 s when quadratic
+  BOOST_CHECK_EQUAL(toks.size(), line.size());
+  SyntaxState st2;
+  advanceBlockCommentState(line, st2);
+  BOOST_CHECK(!st2.rawDelim.has_value());
+}
+
 BOOST_AUTO_TEST_CASE(raw_string_multiline_start) {
   auto line = mkline(R"__(s = R"(hello)__");
   SyntaxState st;

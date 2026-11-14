@@ -102,6 +102,29 @@ static bool isIdentChar(char c) {
   return isIdentStart(c) || (u >= '0' && u <= '9') || u >= 0x80;
 }
 
+/**
+ * @brief Offset of the `(` that ends the raw-string delimiter starting
+ *        at @p dstart (just past `R"`), or line.size() if there is none.
+ *
+ * A delimiter is at most 16 characters, none of them a space, a
+ * parenthesis, a backslash or a tab ([lex.string]). A quote is legal but
+ * taken to end the attempt too, since `R"x"` is far more likely an
+ * ordinary string after an `R`. Stopping early also keeps a line of
+ * `R"R"R"…` linear instead of rescanning the rest of the line for every
+ * `R"`, and bounds each `)delim"` comparison.
+ */
+static std::size_t rawDelimiterEnd(std::string const& line, std::size_t dstart) {
+  static constexpr std::size_t kMaxDelimiter = 16;
+  for (std::size_t i = dstart; i < line.size() && i <= dstart + kMaxDelimiter; ++i) {
+    char c = line[i];
+    if (c == '(')
+      return i;
+    if (c == ' ' || c == ')' || c == '\\' || c == '"' || c == '\t')
+      break;
+  }
+  return line.size();
+}
+
 /** @brief True if @p word is a C/C++ keyword. */
 static bool isKeyword(std::string_view word) {
   return std::binary_search(std::begin(kKeywords), std::end(kKeywords), word);
@@ -281,10 +304,7 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
     if (line[i] == 'R' && i + 1 < sz && line[i + 1] == '"' &&
         (i == 0 || !isIdentChar(line[i - 1]))) {
       std::size_t dstart = i + 2;
-      // Scan for opening ( to find the delimiter.
-      std::size_t paren = dstart;
-      while (paren < sz && line[paren] != '(')
-        ++paren;
+      std::size_t paren = rawDelimiterEnd(line, dstart);
       if (paren < sz) {
         // Use a string_view for the in-line scan; only materialize a
         // std::string when the literal crosses a line boundary and we
@@ -568,9 +588,7 @@ void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
     if (line[i] == 'R' && i + 1 < sz && line[i + 1] == '"' &&
         (i == 0 || !isIdentChar(line[i - 1]))) {
       std::size_t dstart = i + 2;
-      std::size_t paren = dstart;
-      while (paren < sz && line[paren] != '(')
-        ++paren;
+      std::size_t paren = rawDelimiterEnd(line, dstart);
       if (paren < sz) {
         std::string_view delim(line.data() + dstart, paren - dstart);
         i = paren + 1;
