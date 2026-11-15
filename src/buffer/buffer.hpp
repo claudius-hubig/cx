@@ -12,7 +12,7 @@
 
 #include "line_store.hpp"
 #include "modes/c/syntax.hpp"
-#include "syntax_state.hpp"
+#include "syntax_cache.hpp"
 #include "types.hpp"
 
 #include <cstdint>
@@ -411,18 +411,11 @@ protected:
   mutable BracketMatchCache _bracketCache;
 
   /**
-   * @brief Per-line syntax tokenisation cache entry.
-   *
-   * Each entry stores the tokenisation result for a line and the
-   * multi-line state at the *end* of that line (the state that feeds the
-   * next line). Lines [0, _synCacheValidUpto) have valid entries, all
-   * holding the current mode's SyntaxState alternative.
+   * @brief Per-line tokens and end-of-line tokenizer state (see
+   *        SyntaxCache). Lines [0, _synCacheValidUpto) have valid entries;
+   *        ensureSynCache() switches the alternative to the buffer mode's.
    */
-  struct LineSyntaxCache {
-    SyntaxState stateAfter;          /**< State at end of this line. */
-    std::vector<SyntaxToken> tokens; /**< Per-byte token classification. */
-  };
-  mutable std::vector<LineSyntaxCache> _synCache;
+  mutable SyntaxCache _synCache;
   mutable std::size_t _synCacheValidUpto = 0;
 
   /** @brief Scan lines for git merge-conflict markers and set _hasConflicts. */
@@ -431,4 +424,12 @@ protected:
   void invalidateSynCache(std::size_t fromLine);
   /** @brief Ensure the syntax cache covers lines [0, upToLine). Called by render(). */
   void ensureSynCache(std::size_t upToLine) const;
+  /**
+   * @brief ensureSynCache() for a mode whose state is @p S, tokenizing
+   *        each line with `tokenize(line, S&, tokens)`.
+   */
+  template <class S, class Tokenize>
+  void fillSynCache(std::size_t upToLine, Tokenize tokenize) const;
+  /** @brief The cached tokens of line @p i. @pre @p i < _synCacheValidUpto. */
+  std::span<SyntaxToken const> synTokens(std::size_t i) const;
 };

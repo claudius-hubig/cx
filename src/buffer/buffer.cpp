@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <span>
+#include <variant>
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
@@ -276,13 +277,57 @@ void Buffer::invalidateSynCache(std::size_t fromLine) {
 
 std::span<SyntaxToken const> Buffer::cachedLineTokens(std::size_t lineIdx) const {
   ensureSynCache(lineIdx + 1);
-  return _synCache[lineIdx].tokens;
+  return synTokens(lineIdx);
+}
+
+std::span<SyntaxToken const> Buffer::synTokens(std::size_t i) const {
+  return std::visit(
+      [i](auto const& entries) -> std::span<SyntaxToken const> { return entries[i].tokens; },
+      _synCache);
 }
 
 void Buffer::ensureSynCache(std::size_t upToLine) const {
+  // Modes without cross-line state ignore it.
+  auto stateless = [](void (*tokenize)(std::string const&, std::vector<SyntaxToken>&)) {
+    return [tokenize](std::string const& line, std::monostate&, std::vector<SyntaxToken>& out) {
+      tokenize(line, out);
+    };
+  };
+  if (_mode == BufferMode::Md)
+    fillSynCache<MdSyntaxState>(upToLine, tokenizeMarkdownLine);
+  else if (_mode == BufferMode::Jsn)
+    fillSynCache<std::monostate>(upToLine, stateless(tokenizeJsonLine));
+  else if (_mode == BufferMode::Dif)
+    fillSynCache<std::monostate>(upToLine, stateless(tokenizeDiffLine));
+  else if (_mode == BufferMode::Cpp)
+    fillSynCache<CSyntaxState>(upToLine, tokenizeLine);
+  else if (_mode == BufferMode::Sh)
+    fillSynCache<ShSyntaxState>(upToLine, tokenizeShellLine);
+  else if (_mode == BufferMode::Yml)
+    fillSynCache<YmlSyntaxState>(upToLine, tokenizeYamlLine);
+  else if (_mode == BufferMode::Tml)
+    fillSynCache<TmlSyntaxState>(upToLine, tokenizeTomlLine);
+  else if (_mode == BufferMode::Py)
+    fillSynCache<PySyntaxState>(upToLine, tokenizePythonLine);
+  else
+    fillSynCache<std::monostate>(
+        upToLine, stateless([](std::string const& line, std::vector<SyntaxToken>& out) {
+          out.assign(line.size(), SyntaxToken::Normal);
+        }));
+}
+
+template <class S, class Tokenize>
+void Buffer::fillSynCache(std::size_t upToLine, Tokenize tokenize) const {
+  using Entries = std::vector<LineSyntax<S>>;
+  // A mode with another state type replaces the whole cache.
+  auto* cache = std::get_if<Entries>(&_synCache);
+  if (!cache) {
+    cache = &_synCache.template emplace<Entries>();
+    _synCacheValidUpto = 0;
+  }
   // Resize if _lines changed (insertions / deletions).
-  if (_synCache.size() != _lines.size()) {
-    _synCache.resize(_lines.size());
+  if (cache->size() != _lines.size()) {
+    cache->resize(_lines.size());
     if (_synCacheValidUpto > _lines.size())
       _synCacheValidUpto = 0;
   }
@@ -292,35 +337,18 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
     return; // already covered
 
   // Start from the state at the end of the previous valid line.
-  SyntaxState state;
+  S state{};
   if (_synCacheValidUpto > 0)
-    state = _synCache[_synCacheValidUpto - 1].stateAfter;
+    state = (*cache)[_synCacheValidUpto - 1].stateAfter;
 
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
     auto const& line = *_lines[i];
-    auto& tokens = _synCache[i].tokens;
-    if (_mode == BufferMode::Md)
-      tokenizeMarkdownLine(line, syntaxStateFor<MdSyntaxState>(state), tokens);
-    else if (_mode == BufferMode::Jsn)
-      tokenizeJsonLine(line, tokens);
-    else if (_mode == BufferMode::Dif)
-      tokenizeDiffLine(line, tokens);
-    else if (_mode == BufferMode::Cpp)
-      tokenizeLine(line, syntaxStateFor<CSyntaxState>(state), tokens);
-    else if (_mode == BufferMode::Sh)
-      tokenizeShellLine(line, syntaxStateFor<ShSyntaxState>(state), tokens);
-    else if (_mode == BufferMode::Yml)
-      tokenizeYamlLine(line, syntaxStateFor<YmlSyntaxState>(state), tokens);
-    else if (_mode == BufferMode::Tml)
-      tokenizeTomlLine(line, syntaxStateFor<TmlSyntaxState>(state), tokens);
-    else if (_mode == BufferMode::Py)
-      tokenizePythonLine(line, syntaxStateFor<PySyntaxState>(state), tokens);
-    else
-      tokens.assign(line.size(), SyntaxToken::Normal);
-    _synCache[i].stateAfter = state;
+    auto& entry = (*cache)[i];
+    tokenize(line, state, entry.tokens);
+    entry.stateAfter = state;
 
     if (_hasConflicts && isConflictMarker(line))
-      _synCache[i].tokens.assign(line.size(), SyntaxToken::ConflictMarker);
+      entry.tokens.assign(line.size(), SyntaxToken::ConflictMarker);
   }
   _synCacheValidUpto = upToLine;
 }
@@ -788,7 +816,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // cues are more important than the cursor cue.
   auto setupLine = [&](std::size_t lineIdx, std::string const& line) {
     if (syntaxActive) {
-      lineTokens = _synCache[lineIdx].tokens;
+      lineTokens = synTokens(lineIdx);
       curLineBg = getLineBg(lineTokens, line);
     } else {
       curLineBg = nullptr;

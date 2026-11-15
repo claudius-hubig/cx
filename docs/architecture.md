@@ -860,14 +860,17 @@ The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 Tokens are mapped to ANSI colours in `Buffer::render()`.
 
 Per-line tokenisation results are cached in `Buffer::_synCache` and
-invalidated from the edited line forward. Each entry holds the line's
-tokens and the tokenizer state after it, a `SyntaxState`
-(`buffer/syntax_state.hpp`): a `std::variant` of the per-mode state
-structs above, `std::monostate` for modes without one (txt, dif, jsn),
-so an entry is only as large as the largest mode's state (80 bytes in
-all, down from 136 with one struct holding every mode's fields).
-`ensureSynCache()` reaches the buffer mode's alternative with
-`syntaxStateFor<S>()`. `Buffer::render()` extends
+invalidated from the edited line forward. Each entry, a `LineSyntax<S>`,
+holds the line's tokens and the tokenizer state after it, where `S` is
+the buffer mode's state struct (above), or `std::monostate` for modes
+without one (txt, dif, jsn), which takes no space. The cache is a
+`SyntaxCache` (`buffer/syntax_cache.hpp`), a `std::variant` of one entry
+vector per state type: the variant is per buffer, so entries carry no
+tag and each is only as large as its own mode needs (72 bytes for C and
+shell, 32 for Markdown/Python/YAML/TOML, 24 for the stateless modes).
+`ensureSynCache()` picks the mode's state type and tokenizer and hands
+them to `fillSynCache<S>()`, which switches the variant (and drops the
+old entries) when the mode's state type changed. `Buffer::render()` extends
 the cache up to just past the last visible line via `ensureSynCache()`;
 `Buffer::cachedLineTokens()` exposes this incrementally-extended cache
 to `findMatchingBracket()`, so jump-to-matching-bracket looks up

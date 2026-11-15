@@ -7,7 +7,7 @@
  *
  * Each mode's tokenizer writes into the same SyntaxToken set, and threads
  * its own cross-line state type (here CSyntaxState) across lines; the
- * buffer's per-line syntax cache holds any of them (see syntax_state.hpp).
+ * buffer's per-line syntax cache stores the one of its mode (see syntax_cache.hpp).
  */
 
 #include "buffer/line_store.hpp"

@@ -1545,6 +1545,26 @@ BOOST_AUTO_TEST_CASE(conflict_tokens_override_cpp_mode) {
   BOOST_CHECK(toks0[0] == SyntaxToken::Keyword); // "return"
 }
 
+BOOST_AUTO_TEST_CASE(mode_change_retokenizes_with_the_new_modes_state) {
+  // The cache holds one entry type per mode's state; switching to a mode
+  // with another state type must start over, not reuse the old entries.
+  TempFile tmp("/* a\nb */\n# x\n", ".cpp");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(buf.cachedLineTokens(1)[0] == SyntaxToken::Comment); // block comment carried
+  BOOST_CHECK(buf.cachedLineTokens(2)[0] == SyntaxToken::Preprocessor);
+
+  buf.setMode(BufferMode::Sh);
+  BOOST_CHECK(buf.cachedLineTokens(1)[0] == SyntaxToken::Normal);
+  BOOST_CHECK(buf.cachedLineTokens(2)[0] == SyntaxToken::Comment);
+
+  buf.setMode(BufferMode::Txt);
+  BOOST_CHECK(buf.cachedLineTokens(2)[0] == SyntaxToken::Normal);
+
+  buf.setMode(BufferMode::Cpp);
+  BOOST_CHECK(buf.cachedLineTokens(1)[0] == SyntaxToken::Comment);
+  BOOST_CHECK(buf.cachedLineTokens(2)[0] == SyntaxToken::Preprocessor);
+}
+
 BOOST_AUTO_TEST_CASE(conflict_tokens_in_txt_mode) {
   TempFile tmp("hello\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n", ".txt");
   TB<TextBuffer> buf(tmp.path().string(), tmp.path());

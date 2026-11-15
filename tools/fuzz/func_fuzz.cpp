@@ -13,7 +13,6 @@
 #include "buffer/modes/sh/syntax.hpp"
 #include "buffer/modes/tml/syntax.hpp"
 #include "buffer/modes/yml/syntax.hpp"
-#include "buffer/syntax_state.hpp"
 #include "buffer/text_buffer.hpp"
 #include "buffer/version_history.hpp"
 #include "prompt.hpp"
@@ -33,6 +32,7 @@
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <variant>
 
 static std::mt19937_64 rng(1);
 static std::size_t R(std::size_t n) { return n ? rng() % n : 0; }
@@ -566,12 +566,15 @@ static void fuzzUtf8() {
 }
 
 // --------------------------------------------------------------- tokenizers
-// Every tokenizer behind one signature: the mode's state lives in the
-// SyntaxState variant, as in the buffer's syntax cache.
+// Every tokenizer behind one signature: the mode's state lives in a
+// variant of all of them.
+using SyntaxState = std::variant<std::monostate, CSyntaxState, MdSyntaxState, ShSyntaxState,
+                                 PySyntaxState, YmlSyntaxState, TmlSyntaxState>;
 using TokFn = void (*)(std::string const&, SyntaxState&, std::vector<SyntaxToken>&);
 template <class S, void (*Fn)(std::string const&, S&, std::vector<SyntaxToken>&)>
 static void withState(std::string const& line, SyntaxState& st, std::vector<SyntaxToken>& out) {
-  Fn(line, syntaxStateFor<S>(st), out);
+  auto* s = std::get_if<S>(&st);
+  Fn(line, s ? *s : st.emplace<S>(), out);
 }
 template <void (*Fn)(std::string const&, std::vector<SyntaxToken>&)>
 static void stateless(std::string const& line, SyntaxState&, std::vector<SyntaxToken>& out) {

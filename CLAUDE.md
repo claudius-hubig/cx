@@ -112,7 +112,7 @@ src/
     buffer_sink.hpp                Abstract interface decoupling BufferManager from Screen
     buffer.hpp/.cpp                Abstract base: text storage, cursor, viewport, rendering
     line_store.hpp/.cpp            Chunked copy-on-write line sequence (cheap snapshots)
-    syntax_state.hpp               SyntaxState: variant of the per-mode tokenizer states
+    syntax_cache.hpp               SyntaxCache: per-line tokens + tokenizer state, per mode
     text_buffer.hpp/.cpp           Editable file-backed buffer
     help_buffer.hpp/.cpp           Readonly keybinding reference
     buffer_list_buffer.hpp/.cpp    Readonly trie-based open-buffer listing
