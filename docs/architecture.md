@@ -423,7 +423,8 @@ All user-facing movement, editing, and render operations are methods on
   cancelling (Esc-Esc) shows the newest version again, puts the cursor
   back where it was on entry and drops nothing. The read-only flag
   lives on the buffer, so a view must leave history mode before it is
-  dropped.
+  dropped; `Screen::setBuffer()` cancels it, so opening an overlay
+  never discards versions.
   Only one view per buffer may browse at a time: `enterHistoryMode()`
   returns false while the buffer is already browsing, since the shown
   snapshot is per buffer. `inHistoryMode()` / `historyIndex()` expose the current state to

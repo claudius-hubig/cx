@@ -278,9 +278,11 @@ void Screen::setBuffer(Buffer& buf) {
     _layout = std::make_unique<PanelLayout>(buf, rows.value, cols.value);
   } else {
     auto& panel = _layout->focused();
-    // Exit history mode on the old buffer before switching away.
-    if (_view && _view->inHistoryMode())
-      _view->exitHistoryModeCommit();
+    // Leave history mode on the old buffer before its view is dropped,
+    // without committing: opening an overlay (help, paste ring) must not
+    // discard the versions after the one being looked at.
+    if (_view)
+      _view->exitHistoryModeCancel();
     // Save view state if this is the last view for the old buffer.
     if (_buf && _layout->viewCountFor(*_buf) == 1)
       panel.saveViewState();

@@ -631,7 +631,6 @@ BOOST_AUTO_TEST_CASE(exit_history_clears_browsing_flag) {
   view.insert('X');
   view.enterHistoryMode();
   BOOST_CHECK(buf.readonly());
-  // Simulate what setBuffer does: commit and clear.
   view.exitHistoryModeCommit();
   BOOST_CHECK(!buf.readonly());
   BOOST_CHECK(!view.inHistoryMode());

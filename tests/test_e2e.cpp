@@ -2311,3 +2311,38 @@ BOOST_AUTO_TEST_CASE(e2e_history_esc_esc_cancels_and_enter_commits) {
     }
   }
 }
+
+// Switching buffers drops the view, and used to commit the version it was
+// browsing: looking at an older version and then opening the help screen
+// silently discarded every newer version.
+BOOST_AUTO_TEST_CASE(e2e_help_while_browsing_history_keeps_newer_versions) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("base\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("base", std::chrono::milliseconds{500});
+  session.send("abc");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x15[[");
+  session.readUntil("v 2/4", std::chrono::milliseconds{1000});
+
+  // Help and back.
+  session.send("\x1b?");
+  session.readUntil("Press 'q'", std::chrono::milliseconds{1000});
+  session.send("q");
+  auto out = stripAnsi(session.readUntil("abcbase", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("abcbase") != std::string::npos, "newest version shown: " + out);
+
+  // All four versions are still there.
+  session.send("\x15");
+  out = stripAnsi(session.readUntil("v 4/4", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("v 4/4") != std::string::npos, "history badge: " + out);
+
+  session.send("\x15\x1b"
+               "cn");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
