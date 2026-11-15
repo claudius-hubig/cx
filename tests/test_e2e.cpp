@@ -3,6 +3,7 @@
 
 #include "test_helpers.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -2409,4 +2410,39 @@ BOOST_AUTO_TEST_CASE(e2e_exit_while_browsing_history_asks_to_save) {
   session.send("y");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
   BOOST_CHECK_EQUAL(readFile(tmp.path()), "abcbase\n");
+}
+
+// The region was written to the command's stdin with one blocking write.
+// A command that streams (cat, tr, sed) stops reading once its own output
+// pipe is full, and nothing drained that pipe while the write was blocked:
+// from about 1 MB on the editor hung for good, without the kill prompt.
+BOOST_AUTO_TEST_CASE(e2e_pipe_large_region_through_streaming_command) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  std::string body;
+  for (int i = 0; i < 20000; ++i)
+    body += std::string(99, 'x') + "\n";
+  TempFile tmp(body);
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // Mark, Ctrl-End, Ctrl-P, command.
+  session.send(std::string_view("\x00\x1b[1;5F\x10", 8));
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("tr x y\r");
+  // The cursor ends up after the output; mark the spot and save.
+  session.readOutput(std::chrono::milliseconds{1000});
+  session.send("Z\x13");
+  auto out = stripAnsi(session.readUntil("Saved", std::chrono::milliseconds{10000}));
+  BOOST_REQUIRE_MESSAGE(out.find("Saved") != std::string::npos, "editor did not come back");
+  std::ranges::replace(body, 'x', 'y');
+  BOOST_CHECK(readFile(tmp.path()) == body + "Z");
+
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }

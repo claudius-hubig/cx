@@ -11,6 +11,7 @@
 #include "replace.hpp"
 #include "search.hpp"
 #include "utf8.hpp"
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
@@ -2186,6 +2187,12 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   close(pipeIn[0]);
   close(pipeOut[1]);
   close(pipeErr[1]);
+  // Feeding the child must never block. A blocking write() of a large
+  // input returns only once all of it is taken, and a filter that streams
+  // (cat, tr, sed) stops reading as soon as its own output pipe is full —
+  // which this loop can only drain between writes. With O_NONBLOCK a write
+  // takes what fits and poll() says when there is room for more.
+  fcntl(pipeIn[1], F_SETFL, fcntl(pipeIn[1], F_GETFL) | O_NONBLOCK);
 
   std::string stdoutData, stderrData;
   std::size_t written = 0;
@@ -2329,7 +2336,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
           auto n = write(pipeIn[1], input.data() + written, input.size() - written);
           if (n > 0)
             written += static_cast<std::size_t>(n);
-          else if (n < 0 && errno != EINTR) {
+          else if (n < 0 && errno != EINTR && errno != EAGAIN) {
             close(pipeIn[1]);
             stdinOpen = false;
           }
