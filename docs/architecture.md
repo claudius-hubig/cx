@@ -262,7 +262,9 @@ Key responsibilities:
 - `create()` — creates a new empty `TextBuffer` with a synthetic name
 - `kill()` — removes a buffer; always leaves at least one buffer alive
 - `completions()` — returns match candidates for the switch-buffer prompt,
-  covering both open buffers and filesystem entries
+  covering both open buffers and filesystem entries. The directory
+  listing behind it is cached per directory and re-read when the
+  directory's modification time changes
 - `displayName()` — returns a short unambiguous name for status line and
   buffer-list display (filename only when unambiguous, full path otherwise)
 - `touch()` / `secondMRU()` — MRU management for default buffer switching

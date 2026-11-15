@@ -192,8 +192,14 @@ BufferManager::completions(std::string const& prefix) const {
     }
 
     auto dirStr = dir.string();
-    if (_dirCache.dir != dirStr) {
+    // The cached listing is good for as long as the directory's mtime
+    // stands, which creating, removing or renaming an entry changes. One
+    // stat per keystroke, against re-reading the directory each time.
+    std::error_code mtimeEc;
+    auto mtime = std::filesystem::last_write_time(dir, mtimeEc);
+    if (_dirCache.dir != dirStr || _dirCache.mtime != mtime) {
       _dirCache.dir = dirStr;
+      _dirCache.mtime = mtime;
       _dirCache.entries.clear();
       // weakly_canonical(absolute(dir)) does a stat() per path
       // component; recompute only on the cache-miss path so a typing

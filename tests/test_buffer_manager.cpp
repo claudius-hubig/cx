@@ -6,6 +6,8 @@
 #include "tests/test_helpers.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <unistd.h>
 
@@ -381,4 +383,35 @@ BOOST_AUTO_TEST_CASE(saved_view_is_clamped_to_a_shrunken_listing) {
   BOOST_CHECK_LT(view.viewFromRaw().line.value, again.lineCount());
   BOOST_REQUIRE(view.mark().has_value());
   BOOST_CHECK_LT(view.mark()->line, again.lineCount());
+}
+
+BOOST_AUTO_TEST_CASE(completions_see_files_created_since_the_last_listing) {
+  // The listing behind path completion was cached per directory and only
+  // replaced when another directory was completed, so a file created in
+  // the meantime (a Save As, say) was not offered.
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempDir dir({"alpha.txt"});
+  // The cache goes by the directory's mtime, whose clock ticks every few
+  // milliseconds: backdate it, so that each change below is certain to
+  // move it.
+  auto backdate = [&] {
+    std::filesystem::last_write_time(dir.path(), std::filesystem::file_time_type::clock::now() -
+                                                     std::chrono::hours(1));
+  };
+  backdate();
+  auto prefix = dir.path().string() + "/";
+  auto offered = [&](std::string const& name) {
+    auto all = mgr.completions(prefix);
+    return std::ranges::any_of(all, [&](auto const& c) { return c.first == prefix + name; });
+  };
+  BOOST_CHECK(offered("alpha.txt"));
+  BOOST_CHECK(!offered("beta.txt"));
+
+  std::ofstream(dir.path() / "beta.txt") << "new";
+  BOOST_CHECK(offered("beta.txt"));
+  backdate();
+  BOOST_CHECK(offered("beta.txt"));
+  std::filesystem::remove(dir.path() / "alpha.txt");
+  BOOST_CHECK(!offered("alpha.txt"));
 }

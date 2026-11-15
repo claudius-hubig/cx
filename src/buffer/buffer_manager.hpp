@@ -162,10 +162,16 @@ private:
    * The canonicalised directory path is cached alongside the listing
    * because weakly_canonical() walks every component with stat() —
    * recomputing it per keystroke is the dominant cost on the cache-hit
-   * fast path.
+   * fast path. The entry is replaced when another directory is completed
+   * or this one's modification time changes (an entry was created,
+   * removed or renamed). A change made within the same tick of the
+   * filesystem clock as the listing (a few milliseconds) goes unnoticed
+   * until the next one; no one types that fast.
    */
   struct DirCacheEntry {
     std::string dir;
+    /** @brief Modification time of @c dir when it was listed (min() if unreadable). */
+    std::filesystem::file_time_type mtime{};
     std::filesystem::path canonDir;
     std::vector<std::pair<std::string, bool>> entries; /**< {filename, isDir}. */
   };
