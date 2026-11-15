@@ -2346,3 +2346,39 @@ BOOST_AUTO_TEST_CASE(e2e_help_while_browsing_history_keeps_newer_versions) {
                "cn");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
+
+// Closing the panel that was browsing history dropped its view without
+// leaving history mode. The buffer then stayed read-only on the older
+// version for good: no typing, no save, no kill.
+BOOST_AUTO_TEST_CASE(e2e_closing_the_panel_browsing_history_releases_the_buffer) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("base\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("base", std::chrono::milliseconds{500});
+  session.send("abc");
+  session.readOutput(std::chrono::milliseconds{200});
+  // Split, browse one version back in the focused panel, close that panel.
+  session.send("\x18v");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x15[");
+  session.readUntil("v 3/4", std::chrono::milliseconds{1000});
+  session.send("\x18.");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // The remaining panel shows the newest version and can edit and save it.
+  session.send("Z");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x13");
+  auto out = stripAnsi(session.readUntil("Saved", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Saved") != std::string::npos, "save status: " + out);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "Zabcbase\n");
+
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}

@@ -3838,6 +3838,10 @@ void Screen::dispatchAction(Action action) {
       if (_layout->count() <= 1) {
         setStatus("Last panel");
       } else {
+        // The view is about to be dropped: leave history mode, or the
+        // buffer stays read-only with nothing left to release it.
+        if (_view)
+          _view->exitHistoryModeCancel();
         // Save view state if this is the last view for the buffer.
         if (_buf && _layout->viewCountFor(*_buf) == 1)
           _layout->focused().saveViewState();
