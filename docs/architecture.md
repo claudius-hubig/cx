@@ -553,7 +553,9 @@ display stays in sync with actual keybindings.
 
 Readonly buffer that displays open buffers as a trie-based directory tree
 with collapsed single-child nodes. Overrides `render()` to highlight the
-selected line with reverse video. `selectedName()` returns the buffer name
+selected line with reverse video; rows are clipped to the panel width
+(`clipToVisualWidth()`), like those of the directory and grep buffers.
+`selectedName()` returns the buffer name
 under the cursor for use by `Screen` when the user presses Enter.
 
 ---
@@ -930,7 +932,7 @@ token vector allocation.
 |----------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `contentWidth()`, `BufferPoint`, `ByteOffset`, `VisualCol`, `ViewFrom`                                   |
 | `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
-| `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`), clusters (`charInfoAt` measures a character plus its combining marks as one unit; `clusterStart`, `prevClusterStart`, `nextClusterStart`, used by all cursor movement and character deletion in `BufferView`, `Buffer` and `Prompt`, so the cursor never rests between a character and its marks), `codepointClass` (block summary `kBlockClass` in front of one binary search), escaped characters — invisible format characters, line/paragraph separators and C1 controls — shown as `codepointEscape` escapes and orphaned marks drawn on `kOrphanMarkBase` ◌, `visualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
+| `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`), clusters (`charInfoAt` measures a character plus its combining marks as one unit; `clusterStart`, `prevClusterStart`, `nextClusterStart`, used by all cursor movement and character deletion in `BufferView`, `Buffer` and `Prompt`, so the cursor never rests between a character and its marks), `codepointClass` (block summary `kBlockClass` in front of one binary search), escaped characters — invisible format characters, line/paragraph separators and C1 controls — shown as `codepointEscape` escapes and orphaned marks drawn on `kOrphanMarkBase` ◌, `visualWidth`, `clipToVisualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
 | `src/unicode_tables.hpp`               | Generated (`tools/gen_unicode_tables.py`, Unicode 15.1 as in xfce4-terminal): `CodepointClass` (`Normal`, `Wide`, `Combining`, `Escaped`) and the sorted range table `kCodepointClasses`; looked up through `codepointClass()` in `utf8.hpp` |
 | `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache, edit cursor, mark), `PromptDisplay`, `PromptHistory` (per-label input history)    |
 | `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |

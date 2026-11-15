@@ -3,6 +3,7 @@
 
 #include "buffer/buffer_list_buffer.hpp"
 #include "buffer/buffer_view.hpp"
+#include "byte_constants.hpp"
 #include "test_helpers.hpp"
 
 #include <string>
@@ -107,4 +108,38 @@ BOOST_AUTO_TEST_CASE(standalone_dir_buffer_without_files) {
   BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "*1*");
   buf.movePhysicalDown();
   BOOST_CHECK_EQUAL(buf.selectedName(buf.point()), "/home/project");
+}
+
+BOOST_AUTO_TEST_CASE(render_clamps_long_path_to_panel_width) {
+  // Rows were written unclipped, unlike those of the directory and grep
+  // buffers: a long path ran past the panel into the pane beside it, or
+  // wrapped at the edge of the terminal.
+  std::string longName = "/a/" + std::string(120, 'x') + ".txt";
+  TB<BufferListBuffer> buf(std::vector<std::string>{longName, "*1*"});
+
+  std::string narrow;
+  buf.render(narrow, RowIdx{10}, ColIdx{40}, renderParams(buf));
+  BOOST_CHECK(narrow.find(std::string(120, 'x')) == std::string::npos);
+  // Nothing is drawn in or beyond the gutter column except the gutter.
+  for (auto const& row : renderToGrid(narrow, 10, 60))
+    BOOST_CHECK_EQUAL(row.substr(39), std::string(21, ' '));
+
+  std::string wide;
+  buf.render(wide, RowIdx{10}, ColIdx{300}, renderParams(buf));
+  BOOST_CHECK(wide.find(std::string(120, 'x')) != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(render_resets_style_cut_by_the_clamp) {
+  // A control byte in a name is shown as a coloured escape; when the
+  // clamp cuts inside it the colour must not leak into the rest of the row.
+  std::string name = "/a/" + std::string(30, 'y') + "\x01\x01\x01\x01.txt";
+  TB<BufferListBuffer> buf(std::vector<std::string>{name, "/a/other.txt"});
+  std::string out;
+  buf.render(out, RowIdx{10}, ColIdx{40}, renderParams(buf));
+  auto colour = out.rfind(ansi::CtrlColor);
+  BOOST_REQUIRE(colour != std::string::npos);
+  auto reset = out.find(ansi::Reset, colour);
+  auto erase = out.find(ansi::EraseLine, colour);
+  BOOST_REQUIRE(reset != std::string::npos);
+  BOOST_CHECK_LT(reset, erase);
 }

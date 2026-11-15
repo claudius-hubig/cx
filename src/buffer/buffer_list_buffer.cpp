@@ -191,8 +191,16 @@ std::tuple<RowIdx, ColIdx> BufferListBuffer::render(std::string& out, RowIdx row
       bool highlight = (lineIdx == curLine);
       if (highlight)
         out += ansi::ReverseVideo;
-      out += _displayLines[lineIdx];
-      if (highlight)
+      // Clamp to the panel width, reserving the final column for the
+      // gutter, so a long path can't run past the panel into a sibling
+      // pane or wrap at the edge of the terminal.
+      std::string_view full = _displayLines[lineIdx];
+      auto clipped = clipToVisualWidth(full, cols.value > 1 ? cols.value - 1 : 0);
+      out += clipped;
+      // A clamp may have cut between an escaped byte's colour-on and
+      // colour-off; reset so styling never leaks into the cleared
+      // remainder or the gutter cell.
+      if (highlight || clipped.size() < full.size())
         out += ansi::Reset;
       out += ansi::EraseLine;
     } else {

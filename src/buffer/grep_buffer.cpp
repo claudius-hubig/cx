@@ -7,27 +7,6 @@
 
 namespace {
 
-/**
- * @brief Truncate a (possibly ANSI-styled) display string to at most
- *        @p maxCols visual columns.
- *
- * Cuts only on whole character / escape-sequence boundaries so a
- * multi-byte char or CSI sequence is never split. CSI-aware because
- * display lines carry escapeNonPrintable() styling for control bytes
- * that appear in matched text.
- */
-std::string truncateDisplayToWidth(std::string_view s, std::size_t maxCols) {
-  std::size_t col = 0, i = 0;
-  while (i < s.size()) {
-    auto info = displayCharInfoAt(s.data() + i, s.size() - i);
-    if (col + info.width > maxCols)
-      break;
-    col += info.width;
-    i += info.len;
-  }
-  return std::string(s.substr(0, i));
-}
-
 /** @brief Drop leading spaces and tabs so deeply indented hits stay readable. */
 std::string_view trimLeadingWhitespace(std::string_view s) {
   std::size_t i = 0;
@@ -166,7 +145,7 @@ std::tuple<RowIdx, ColIdx> GrepBuffer::render(std::string& out, RowIdx rows, Col
       // panel into a sibling pane.
       std::string_view full = *_lines[lineIdx];
       std::size_t budget = cols.value > 1 ? cols.value - 1 : 0;
-      std::string clipped = truncateDisplayToWidth(full, budget);
+      auto clipped = clipToVisualWidth(full, budget);
 
       // Dim the "path:line:" prefix so the matched text reads first. The
       // prefix length is a character boundary in the untruncated string,

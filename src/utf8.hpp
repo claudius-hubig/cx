@@ -434,6 +434,21 @@ std::string escapeNonPrintable(std::string_view s);
 std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth);
 
 /**
+ * @brief The longest prefix of @p s that is at most @p maxWidth columns
+ *        wide.
+ *
+ * Cuts on whole character / escape-sequence boundaries only, so a
+ * multi-byte character or a CSI sequence is never split. The walk is
+ * CSI-aware (displayCharInfoAt), for already-rendered strings that carry
+ * escapeNonPrintable() styling; a cut may therefore land between a
+ * style-on and its style-off, and a caller that writes the result to the
+ * terminal should reset the style when anything was cut.
+ *
+ * @return A view into @p s, valid as long as @p s is. Defined in utf8.cpp.
+ */
+std::string_view clipToVisualWidth(std::string_view s, std::size_t maxWidth);
+
+/**
  * @brief Sum of display widths of characters in @c line[from..to).
  *
  * Defined in utf8.cpp.

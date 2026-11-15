@@ -138,6 +138,18 @@ std::string truncateVisualFromFront(std::string_view s, std::size_t maxWidth) {
   return out;
 }
 
+std::string_view clipToVisualWidth(std::string_view s, std::size_t maxWidth) {
+  std::size_t col = 0, i = 0;
+  while (i < s.size()) {
+    auto info = displayCharInfoAt(s.data() + i, s.size() - i);
+    if (col + info.width > maxWidth)
+      break;
+    col += info.width;
+    i += info.len;
+  }
+  return s.substr(0, i);
+}
+
 /**
  * @brief Read UTF-8 continuation bytes from stdin and append to destination.
  *

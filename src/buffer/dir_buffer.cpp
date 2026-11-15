@@ -52,27 +52,6 @@ std::string formatMtime(struct timespec const& ts) {
   return buf;
 }
 
-/**
- * @brief Truncate a (possibly ANSI-styled) display string to at most
- *        @p maxCols visual columns.
- *
- * Cuts only on whole character / escape-sequence boundaries so a
- * multi-byte char or CSI sequence is never split. The width walk is
- * CSI-aware (displayCharInfoAt) because display lines may carry
- * escapeNonPrintable styling for control-byte filenames.
- */
-std::string truncateDisplayToWidth(std::string_view s, std::size_t maxCols) {
-  std::size_t col = 0, i = 0;
-  while (i < s.size()) {
-    auto info = displayCharInfoAt(s.data() + i, s.size() - i);
-    if (col + info.width > maxCols)
-      break;
-    col += info.width;
-    i += info.len;
-  }
-  return std::string(s.substr(0, i));
-}
-
 } // namespace
 
 namespace dir_buffer_detail {
@@ -404,7 +383,7 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
       std::string_view full = _displayLines[lineIdx];
       std::string content = marked ? "DEL " + std::string(full.substr(4)) : std::string(full);
       std::size_t budget = cols.value > 1 ? cols.value - 1 : 0;
-      std::string clipped = truncateDisplayToWidth(content, budget);
+      auto clipped = clipToVisualWidth(content, budget);
       out += clipped;
       // A clamp may have cut between an escaped byte's colour-on and
       // colour-off; reset so styling never leaks into the cleared

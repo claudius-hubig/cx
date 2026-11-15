@@ -575,6 +575,34 @@ BOOST_AUTO_TEST_CASE(visualColRange_counts_escape_as_content) {
   BOOST_CHECK_EQUAL(visualColRange(line, 0, line.size()), 7u);
 }
 
+// --- clipToVisualWidth ---
+
+BOOST_AUTO_TEST_CASE(clipToVisualWidth_keeps_what_fits) {
+  BOOST_CHECK_EQUAL(clipToVisualWidth("hello", 10), "hello");
+  BOOST_CHECK_EQUAL(clipToVisualWidth("hello", 5), "hello");
+  BOOST_CHECK_EQUAL(clipToVisualWidth("hello", 3), "hel");
+  BOOST_CHECK_EQUAL(clipToVisualWidth("hello", 0), "");
+  BOOST_CHECK_EQUAL(clipToVisualWidth("", 4), "");
+}
+
+BOOST_AUTO_TEST_CASE(clipToVisualWidth_never_splits_a_character) {
+  // "日本" is two wide characters of three bytes each.
+  std::string_view cjk = "a\xe6\x97\xa5\xe6\x9c\xac";
+  BOOST_CHECK_EQUAL(clipToVisualWidth(cjk, 5), cjk);
+  BOOST_CHECK_EQUAL(clipToVisualWidth(cjk, 4), "a\xe6\x97\xa5"); // half of "本" does not fit
+  BOOST_CHECK_EQUAL(clipToVisualWidth(cjk, 2), "a");
+  // A combining mark stays with its base: e + U+0301.
+  BOOST_CHECK_EQUAL(clipToVisualWidth("e\xcc\x81x", 1), "e\xcc\x81");
+}
+
+BOOST_AUTO_TEST_CASE(clipToVisualWidth_treats_csi_sequences_as_zero_width) {
+  std::string_view styled = "ab\x1b[31mcd\x1b[39mef";
+  BOOST_CHECK_EQUAL(clipToVisualWidth(styled, 6), styled);
+  // The sequence before the first dropped character is kept whole.
+  BOOST_CHECK_EQUAL(clipToVisualWidth(styled, 3), "ab\x1b[31mc");
+  BOOST_CHECK_EQUAL(clipToVisualWidth(styled, 2), "ab\x1b[31m");
+}
+
 // --- truncateVisualFromFront ---
 
 BOOST_AUTO_TEST_CASE(truncateFromFront_fits) {
