@@ -28,7 +28,7 @@ void tokenizeShellLine(std::string const& line, ShSyntaxState& state,
   // line whose content equals the tag. For the `<<-` form, leading
   // tabs are stripped before the comparison and the terminator may be
   // indented with tabs.
-  if (state.heredocTag.has_value()) {
+  if (state.heredocTag) {
     std::string_view body(line);
     if (state.heredocStripTabs) {
       std::size_t s = 0;
@@ -137,7 +137,7 @@ void tokenizeShellLine(std::string const& line, ShSyntaxState& state,
           if (i < sz)
             tokens[i++] = SyntaxToken::String; // closing quote
           if (!tag.empty()) {
-            state.heredocTag = std::move(tag);
+            state.heredocTag = std::make_shared<std::string const>(std::move(tag));
             state.heredocStripTabs = strip;
           }
         } else {
@@ -147,7 +147,7 @@ void tokenizeShellLine(std::string const& line, ShSyntaxState& state,
           for (std::size_t k = ds; k < i; ++k)
             tokens[k] = SyntaxToken::String; // delimiter pairs with body
           if (!tag.empty()) {
-            state.heredocTag = std::move(tag);
+            state.heredocTag = std::make_shared<std::string const>(std::move(tag));
             state.heredocStripTabs = strip;
           }
         }

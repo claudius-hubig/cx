@@ -120,7 +120,7 @@ BOOST_AUTO_TEST_CASE(raw_string_needs_a_valid_delimiter) {
   CSyntaxState st4;
   tokenizeLine(longest, st4, toks);
   BOOST_REQUIRE(st4.rawDelim.has_value());
-  BOOST_CHECK_EQUAL(*st4.rawDelim, "abcdefghijklmnop");
+  BOOST_CHECK_EQUAL(st4.rawDelim->view(), "abcdefghijklmnop");
 }
 
 BOOST_AUTO_TEST_CASE(raw_string_prefix_run_is_linear) {
@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(raw_string_multiline_start) {
   BOOST_CHECK(allTokens(toks, 4, line.size(), SyntaxToken::String));
   // Raw string continues to next line.
   BOOST_CHECK(st.rawDelim.has_value());
-  BOOST_CHECK_EQUAL(*st.rawDelim, "");
+  BOOST_CHECK_EQUAL(st.rawDelim->view(), "");
 }
 
 BOOST_AUTO_TEST_CASE(raw_string_multiline_end) {
@@ -155,7 +155,7 @@ BOOST_AUTO_TEST_CASE(raw_string_multiline_end) {
   std::string content = "world)\";";
   auto line = mkline(content);
   CSyntaxState st;
-  st.rawDelim = std::string(""); // continuing from previous line
+  st.rawDelim.emplace(""); // continuing from previous line
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // Everything up to and including )" should be String (positions 0..6).
@@ -169,7 +169,7 @@ BOOST_AUTO_TEST_CASE(raw_string_multiline_with_delim) {
   std::vector<SyntaxToken> toks1;
   tokenizeLine(line1, st, toks1);
   BOOST_CHECK(st.rawDelim.has_value());
-  BOOST_CHECK_EQUAL(*st.rawDelim, "foo");
+  BOOST_CHECK_EQUAL(st.rawDelim->view(), "foo");
 
   auto line2 = mkline(R"__(middle)__");
   std::vector<SyntaxToken> toks2;
@@ -744,7 +744,7 @@ BOOST_AUTO_TEST_CASE(advance_state_skips_raw_string) {
   CSyntaxState st;
   advanceBlockCommentState(line1, st);
   BOOST_CHECK(st.rawDelim.has_value());
-  BOOST_CHECK_EQUAL(*st.rawDelim, "");
+  BOOST_CHECK_EQUAL(st.rawDelim->view(), "");
   BOOST_CHECK(!st.inBlockComment);
 
   std::string content2 = "world)\";";
@@ -1682,17 +1682,17 @@ BOOST_AUTO_TEST_CASE(sh_heredoc_open_body_close) {
   tokenizeShellLine(l1, st, t1);
   BOOST_CHECK(t1[4] == SyntaxToken::Operator && t1[5] == SyntaxToken::Operator);
   BOOST_CHECK(allTokens(t1, 6, 9, SyntaxToken::String)); // delimiter word
-  BOOST_CHECK(st.heredocTag.has_value());
+  BOOST_CHECK(st.heredocTag);
 
   auto l2 = mkline("  hello $x");
   tokenizeShellLine(l2, st, t2);
   BOOST_CHECK(allTokens(t2, 0, l2.size(), SyntaxToken::String)); // body
-  BOOST_CHECK(st.heredocTag.has_value());                        // still open
+  BOOST_CHECK(st.heredocTag);                                    // still open
 
   auto l3 = mkline("EOF");
   tokenizeShellLine(l3, st, t3);
   BOOST_CHECK(allTokens(t3, 0, 3, SyntaxToken::Normal)); // terminator
-  BOOST_CHECK(!st.heredocTag.has_value());               // closed
+  BOOST_CHECK(!st.heredocTag);                           // closed
 }
 
 BOOST_AUTO_TEST_CASE(sh_heredoc_fake_terminator_inside_is_body) {
@@ -1703,7 +1703,7 @@ BOOST_AUTO_TEST_CASE(sh_heredoc_fake_terminator_inside_is_body) {
   auto body = mkline("ENDX"); // not exactly the tag — still body
   tokenizeShellLine(body, st, t);
   BOOST_CHECK(allTokens(t, 0, 4, SyntaxToken::String));
-  BOOST_CHECK(st.heredocTag.has_value());
+  BOOST_CHECK(st.heredocTag);
 }
 
 BOOST_AUTO_TEST_CASE(sh_heredoc_dash_strips_leading_tabs) {
@@ -1711,11 +1711,11 @@ BOOST_AUTO_TEST_CASE(sh_heredoc_dash_strips_leading_tabs) {
   std::vector<SyntaxToken> t;
   auto l1 = mkline("cat <<-END");
   tokenizeShellLine(l1, st, t);
-  BOOST_CHECK(st.heredocTag.has_value());
+  BOOST_CHECK(st.heredocTag);
   BOOST_CHECK(st.heredocStripTabs);
   auto term = mkline("\tEND"); // tab-indented terminator closes <<-
   tokenizeShellLine(term, st, t);
-  BOOST_CHECK(!st.heredocTag.has_value());
+  BOOST_CHECK(!st.heredocTag);
 }
 
 BOOST_AUTO_TEST_CASE(sh_here_string_is_not_heredoc) {
@@ -1723,7 +1723,7 @@ BOOST_AUTO_TEST_CASE(sh_here_string_is_not_heredoc) {
   std::vector<SyntaxToken> t;
   auto line = mkline("cat <<<word");
   tokenizeShellLine(line, st, t);
-  BOOST_CHECK(!st.heredocTag.has_value()); // <<< is a here-string
+  BOOST_CHECK(!st.heredocTag); // <<< is a here-string
 }
 
 // ============================================================

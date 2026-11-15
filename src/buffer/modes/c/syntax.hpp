@@ -13,11 +13,16 @@
 #include "buffer/line_store.hpp"
 #include "types.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /** @brief Token classes shared across all mode tokenizers. */
@@ -45,6 +50,29 @@ enum class SyntaxToken : uint8_t {
 };
 
 /**
+ * @brief The delimiter of a C++ raw string literal, held inline.
+ *
+ * The standard allows at most 16 characters ([lex.string]), and the
+ * tokenizer does not take a longer one as a raw string, so 17 bytes cover
+ * every delimiter without a heap allocation or a pointer per cached line.
+ */
+class RawDelimiter {
+public:
+  static constexpr std::size_t kMaxSize = 16;
+
+  /** @pre @p d.size() <= kMaxSize. */
+  explicit RawDelimiter(std::string_view d) : _size(static_cast<std::uint8_t>(d.size())) {
+    assert(d.size() <= kMaxSize);
+    std::ranges::copy(d.substr(0, kMaxSize), _chars.begin());
+  }
+  std::string_view view() const { return {_chars.data(), _size}; }
+
+private:
+  std::array<char, kMaxSize> _chars{};
+  std::uint8_t _size;
+};
+
+/**
  * @brief C/C++ tokenizer state carried between lines.
  *
  * Invariant: at the start of any line at most one of {inBlockComment,
@@ -53,7 +81,7 @@ enum class SyntaxToken : uint8_t {
 struct CSyntaxState {
   bool inBlockComment = false;
   bool inPreprocessor = false; /**< Next line continues a \#directive (prior ended with '\'). */
-  std::optional<std::string> rawDelim; /**< has_value() = inside R"delim(...)delim". */
+  std::optional<RawDelimiter> rawDelim; /**< has_value() = inside R"delim(...)delim". */
 };
 
 /**

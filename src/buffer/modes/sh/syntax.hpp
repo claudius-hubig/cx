@@ -8,17 +8,21 @@
 
 #include "buffer/modes/c/syntax.hpp"
 
-#include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
 /** @brief Shell tokenizer state carried between lines. */
 struct ShSyntaxState {
   /**
-   * @brief Shell heredoc tag: has_value() means subsequent lines are
-   *        heredoc body (String) until a line equal to the tag.
+   * @brief Shell heredoc tag: non-null means subsequent lines are heredoc
+   *        body (String) until a line equal to the tag.
+   *
+   * Shared and immutable: a tag has no length limit, and every line of
+   * the heredoc's body carries the same one, so copying the state from
+   * line to line shares it instead of copying the string.
    */
-  std::optional<std::string> heredocTag;
+  std::shared_ptr<std::string const> heredocTag;
   /** @brief Set for the `<<-` form, where leading tabs are stripped before the
    *         terminator comparison. */
   bool heredocStripTabs = false;

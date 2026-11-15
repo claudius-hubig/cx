@@ -114,8 +114,7 @@ static bool isIdentChar(char c) {
  * `R"`, and bounds each `)delim"` comparison.
  */
 static std::size_t rawDelimiterEnd(std::string const& line, std::size_t dstart) {
-  static constexpr std::size_t kMaxDelimiter = 16;
-  for (std::size_t i = dstart; i < line.size() && i <= dstart + kMaxDelimiter; ++i) {
+  for (std::size_t i = dstart; i < line.size() && i <= dstart + RawDelimiter::kMaxSize; ++i) {
     char c = line[i];
     if (c == '(')
       return i;
@@ -244,7 +243,7 @@ void tokenizeLine(std::string const& line, CSyntaxState& state, std::vector<Synt
       // We need to find )delim" to end the raw string.
       tokens[i] = SyntaxToken::String;
       if (line[i] == ')') {
-        auto& d = *state.rawDelim;
+        auto d = state.rawDelim->view();
         std::size_t dlen = d.size();
         // Check if )delim" follows.
         if (i + dlen + 1 < sz && line[i + dlen + 1] == '"') {
@@ -306,9 +305,8 @@ void tokenizeLine(std::string const& line, CSyntaxState& state, std::vector<Synt
       std::size_t dstart = i + 2;
       std::size_t paren = rawDelimiterEnd(line, dstart);
       if (paren < sz) {
-        // Use a string_view for the in-line scan; only materialize a
-        // std::string when the literal crosses a line boundary and we
-        // need to persist the delimiter into state.
+        // A string_view for the in-line scan; the delimiter is copied
+        // into the state only when the literal crosses a line boundary.
         std::string_view delim(line.data() + dstart, paren - dstart);
         // Mark R"delim( as String.
         for (std::size_t k = i; k <= paren; ++k)
@@ -340,7 +338,7 @@ void tokenizeLine(std::string const& line, CSyntaxState& state, std::vector<Synt
           ++i;
         }
         if (!closed)
-          state.rawDelim = std::string(delim);
+          state.rawDelim.emplace(delim);
         continue;
       }
     }
@@ -539,7 +537,7 @@ void advanceBlockCommentState(std::string const& line, CSyntaxState& state) {
     // Inside a raw string literal — scan for closing )delim".
     if (state.rawDelim.has_value()) {
       if (line[i] == ')') {
-        auto const& d = *state.rawDelim;
+        auto d = state.rawDelim->view();
         std::size_t dlen = d.size();
         if (i + dlen + 1 < sz && line[i + dlen + 1] == '"') {
           bool match = true;
@@ -614,7 +612,7 @@ void advanceBlockCommentState(std::string const& line, CSyntaxState& state) {
           ++i;
         }
         if (!closed)
-          state.rawDelim = std::string(delim);
+          state.rawDelim.emplace(delim);
         continue;
       }
     }

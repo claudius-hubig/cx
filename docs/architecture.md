@@ -866,8 +866,12 @@ the buffer mode's state struct (above), or `std::monostate` for modes
 without one (txt, dif, jsn), which takes no space. The cache is a
 `SyntaxCache` (`buffer/syntax_cache.hpp`), a `std::variant` of one entry
 vector per state type: the variant is per buffer, so entries carry no
-tag and each is only as large as its own mode needs (72 bytes for C and
+tag and each is only as large as its own mode needs (48 bytes for C and
 shell, 32 for Markdown/Python/YAML/TOML, 24 for the stateless modes).
+The two string-valued states are kept small: a C++ raw-string delimiter
+is at most 16 characters, so `RawDelimiter` holds it inline (17 bytes),
+and a shell heredoc tag, which has no limit, is a
+`shared_ptr<string const>` shared by every line of the heredoc.
 `ensureSynCache()` picks the mode's state type and tokenizer and hands
 them to `fillSynCache<S>()`, which switches the variant (and drops the
 old entries) when the mode's state type changed. `Buffer::render()` extends
