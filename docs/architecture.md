@@ -49,11 +49,14 @@ terminal to the alternate screen buffer; enables SGR mouse tracking
 `?1006h` extended coordinates; `?1003h` any-motion is deliberately not
 enabled) and bracketed paste (`?2004h`). On destruction, disables both,
 restores the saved state, and returns to the normal screen. Guarantees
-cleanup even on exception. A signal that ends the process (SIGTERM,
-SIGHUP, SIGINT, SIGQUIT) would skip the destructor, so while an
-instance exists a handler puts the terminal back first and then
-re-raises the signal with its default action; unsaved buffers are still
-lost.
+cleanup even on exception. A signal that ends the process would skip
+the destructor, so while an instance exists a handler puts the terminal
+back first and then re-raises the signal with its default action (core
+dump included); unsaved buffers are still lost. This covers SIGTERM,
+SIGHUP, SIGINT and SIGQUIT, and the crashes SIGSEGV, SIGABRT, SIGBUS,
+SIGFPE and SIGILL. The handler runs on an alternate stack
+(`sigaltstack`), since a stack overflow leaves no room for it on the
+normal one.
 
 ---
 

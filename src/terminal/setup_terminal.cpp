@@ -26,8 +26,11 @@ namespace {
 
 // The signals that end the process by default and can reach an editor:
 // kill, a closed terminal window, and Ctrl-C / Ctrl-\ sent from outside
-// (raw mode keeps the keyboard from generating them).
-constexpr std::array kFatalSignals = {SIGTERM, SIGHUP, SIGINT, SIGQUIT};
+// (raw mode keeps the keyboard from generating them); then the ones a bug
+// ends it with: a bad memory access, abort() (where an uncaught exception
+// or a failed assertion ends up), and the rarer faults of the same kind.
+constexpr std::array kFatalSignals = {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV,
+                                      SIGABRT, SIGBUS, SIGFPE, SIGILL};
 
 // termios state for the signal handler. Written once, before the handlers
 // are installed, so the handler only ever reads it.
@@ -35,10 +38,19 @@ struct termios g_savedFlags;
 // The dispositions the handlers replaced, put back by the destructor.
 std::array<struct sigaction, kFatalSignals.size()> g_savedActions;
 
+// The handler's own stack. A stack overflow (deep recursion, which is how
+// std::regex fails on a long line) arrives as SIGSEGV with no room left
+// on the stack it overflowed, so the handler could not run there. A fixed
+// size, as SIGSTKSZ is not a constant; the handler needs very little.
+std::array<char, 64 * 1024> g_handlerStack;
+// The alternate stack that was set before, put back by the destructor.
+stack_t g_savedStack;
+
 // Put the terminal back, then let the signal end the process as it would
 // have: the handler was installed with SA_RESETHAND, so the default action
 // is in place again and the re-raised signal is delivered when this
-// returns. Only async-signal-safe calls (write, tcsetattr, raise).
+// returns, with a core dump where the signal has one. Only
+// async-signal-safe calls (write, tcsetattr, raise).
 void restoreTerminalAndReraise(int signo) {
   if (write(STDOUT_FILENO, kAltScreenOff.data(), kAltScreenOff.size()) == -1) {
     // Nothing useful can be done about it from a signal handler.
@@ -68,12 +80,17 @@ SetupTerminal::SetupTerminal() {
 
   // A signal that ends the process skips the destructor, which would
   // leave the shell in raw mode on the alternate screen with mouse
-  // reporting on.
+  // reporting on. Should the alternate stack be refused, the handler
+  // runs on the normal one, which only a stack overflow lacks.
   g_savedFlags = _saved_flags;
+  stack_t stack = {};
+  stack.ss_sp = g_handlerStack.data();
+  stack.ss_size = g_handlerStack.size();
+  sigaltstack(&stack, &g_savedStack);
   struct sigaction sa = {};
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = restoreTerminalAndReraise;
-  sa.sa_flags = SA_RESETHAND;
+  sa.sa_flags = SA_RESETHAND | SA_ONSTACK;
   for (std::size_t i = 0; i < kFatalSignals.size(); ++i)
     sigaction(kFatalSignals[i], &sa, &g_savedActions[i]);
 }
@@ -81,6 +98,7 @@ SetupTerminal::SetupTerminal() {
 SetupTerminal::~SetupTerminal() {
   for (std::size_t i = 0; i < kFatalSignals.size(); ++i)
     sigaction(kFatalSignals[i], &g_savedActions[i], nullptr);
+  sigaltstack(&g_savedStack, nullptr);
   if (write(STDOUT_FILENO, kAltScreenOff.data(), kAltScreenOff.size()) == -1)
     logError("write failed (alt screen teardown)");
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &_saved_flags) != 0)

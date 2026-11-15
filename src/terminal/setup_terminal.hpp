@@ -11,11 +11,13 @@
  * @brief Configures the terminal for raw mode and the alternate screen on
  *        construction, restoring the original state on destruction.
  *
- * While an instance exists, SIGTERM, SIGHUP, SIGINT and SIGQUIT restore
- * the terminal too before ending the process as they would have: the
- * destructor does not run for them. Nothing else is done on a signal, so
- * unsaved buffers are lost as before. At most one instance may exist at a
- * time (the handler's state is per process).
+ * While an instance exists, the signals that end the process restore the
+ * terminal too before ending it as they would have, since the destructor
+ * does not run for them: SIGTERM, SIGHUP, SIGINT and SIGQUIT, and the
+ * crashes SIGSEGV (a stack overflow included), SIGABRT, SIGBUS, SIGFPE
+ * and SIGILL. Nothing else is done on a signal, so unsaved buffers are
+ * lost as before. At most one instance may exist at a time (the handler's
+ * state is per process).
  *
  * stdin file flags (fcntl F_GETFL) are intentionally NOT saved or restored
  * — cx relies on blocking reads with SIGWINCH-driven EINTR, and the
