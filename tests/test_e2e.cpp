@@ -2689,3 +2689,34 @@ BOOST_AUTO_TEST_CASE(e2e_replace_and_pipe_are_one_history_version_each) {
                "cn");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
+
+// The directory browser kept the listing from when the directory was
+// first opened, so a file created later never appeared in it.
+BOOST_AUTO_TEST_CASE(e2e_directory_browser_shows_files_created_since) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir({"first.txt"});
+  PtySession session(24, 100, bin, {(dir.path() / "first.txt").string()});
+  session.readUntil("first.txt", std::chrono::milliseconds{500});
+
+  // Directory browser, then back to the file with Enter on it.
+  session.send("\x1b"
+               "d");
+  session.readUntil("drwx", std::chrono::milliseconds{1000});
+  session.send("\x1b[B\x1b[B\r");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  std::ofstream(dir.path() / "second.txt") << "new";
+  session.send("\x1b"
+               "d");
+  auto out = stripAnsi(session.readUntil("second.txt", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("second.txt") != std::string::npos, "listing: " + out);
+
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}

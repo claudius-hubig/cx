@@ -6,6 +6,7 @@
 #include "tests/test_helpers.hpp"
 
 #include <algorithm>
+#include <fstream>
 #include <unistd.h>
 
 // --- Construction ---
@@ -334,4 +335,50 @@ BOOST_AUTO_TEST_CASE(open_symlink_loop_does_not_throw) {
   std::filesystem::create_symlink(loop, loop);
   BOOST_CHECK_NO_THROW(mgr.open(loop));
   BOOST_CHECK_NO_THROW(mgr.openDir(loop));
+}
+
+// --- Directory listings ---
+
+BOOST_AUTO_TEST_CASE(openDir_again_rereads_the_listing) {
+  // The listing used to be built once, when the buffer was created: a file
+  // saved afterwards never showed up in the directory browser.
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempDir dir({"b.txt", "c.txt"});
+  auto& first = mgr.openDir(dir.path());
+  auto names = [](DirBuffer const& d) {
+    std::vector<std::string> out;
+    for (auto const& e : d.entries())
+      out.push_back(e.name);
+    return out;
+  };
+  BOOST_CHECK((names(first) == std::vector<std::string>{".", "..", "b.txt", "c.txt"}));
+
+  // The panel moved on with the cursor on c.txt.
+  first.setSavedView({.point = {3, 0}});
+  std::ofstream(dir.path() / "a.txt") << "new";
+
+  auto& again = mgr.openDir(dir.path());
+  BOOST_CHECK_EQUAL(&again, &first);
+  BOOST_CHECK((names(again) == std::vector<std::string>{".", "..", "a.txt", "b.txt", "c.txt"}));
+  // The saved cursor followed c.txt down one line.
+  BOOST_REQUIRE(again.savedView().has_value());
+  BOOST_CHECK_EQUAL(again.savedView()->point.line, 4u);
+}
+
+BOOST_AUTO_TEST_CASE(saved_view_is_clamped_to_a_shrunken_listing) {
+  NullBufferSink sink;
+  BufferManager mgr(sink);
+  TempDir dir({"b.txt", "c.txt", "d.txt"});
+  auto& buf = mgr.openDir(dir.path());
+  buf.setSavedView({.point = {4, 0}, .viewFrom = {.line = RowIdx{4}}, .mark = BufferPoint{4, 2}});
+  std::filesystem::remove(dir.path() / "c.txt");
+  std::filesystem::remove(dir.path() / "d.txt");
+
+  auto& again = mgr.openDir(dir.path());
+  auto view = BufferView::fromSavedState(again);
+  BOOST_CHECK_LT(view.point().line, again.lineCount());
+  BOOST_CHECK_LT(view.viewFromRaw().line.value, again.lineCount());
+  BOOST_REQUIRE(view.mark().has_value());
+  BOOST_CHECK_LT(view.mark()->line, again.lineCount());
 }

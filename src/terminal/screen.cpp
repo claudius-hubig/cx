@@ -1224,7 +1224,9 @@ void Screen::openSwitchBufferPrompt() {
             if (!target)
               target = _bufMgr->find(value);
             if (target) {
-              setBuffer(*target);
+              // A directory is reopened, which re-reads its listing.
+              setBuffer(dynamic_cast<DirBuffer*>(target) ? _bufMgr->openDir(target->name())
+                                                         : *target);
             } else if (!value.empty() && value[0] == '*') {
               std::string name = value;
               if (name.back() != '*')
@@ -2807,7 +2809,8 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
       Buffer* target = _bufMgr->find(name);
       if (target) {
         prevBuf() = nullptr;
-        setBuffer(*target);
+        // A directory is reopened, which re-reads its listing.
+        setBuffer(dynamic_cast<DirBuffer*>(target) ? _bufMgr->openDir(name) : *target);
       }
     } else if (auto* gb = dynamic_cast<GrepBuffer*>(_buf); gb && _bufMgr) {
       // Grep buffer: Enter opens the file behind the selected result.

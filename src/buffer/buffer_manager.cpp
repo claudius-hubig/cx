@@ -78,8 +78,17 @@ DirBuffer& BufferManager::openDir(std::filesystem::path const& dir) {
   auto key = canonical.string();
   auto it = _dirBuffers.find(key);
   if (it != _dirBuffers.end()) {
+    // The listing is a snapshot from when the buffer was created; files
+    // may have come and gone since. The saved cursor follows its entry.
+    auto& buf = *it->second;
+    auto saved = buf.savedView();
+    auto hint = buf.reload(saved ? saved->point : BufferPoint{});
+    if (saved) {
+      saved->point = hint.point;
+      buf.setSavedView(*saved);
+    }
     touch(key);
-    return *it->second;
+    return buf;
   }
   auto buf = std::make_unique<DirBuffer>(canonical);
   auto& ref = *buf;

@@ -28,6 +28,12 @@ BufferView BufferView::fromSavedState(Buffer& buf) {
     v._showLineNumbers = saved->showLineNumbers;
     v._highlightCurrentLine = saved->highlightCurrentLine;
     buf.clearSavedView();
+    // The buffer may have been rebuilt since the state was saved (a
+    // directory listing re-read on reopening, for one).
+    v.clampPoint(v._point);
+    if (v._mark)
+      v.clampPoint(*v._mark);
+    v.clampViewFrom();
   }
   v._docVersion = buf.docVersion();
   return v;

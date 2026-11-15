@@ -74,8 +74,10 @@ public:
   /**
    * @brief Open (or return the existing) directory buffer for @p dir.
    *
-   * Canonicalises the path; creates a new DirBuffer when not already open.
-   * Calls touch().
+   * Canonicalises the path; creates a new DirBuffer when not already
+   * open, and re-reads the listing of one that is (the directory may have
+   * changed on disk), keeping its saved cursor on the same entry. Calls
+   * touch().
    */
   DirBuffer& openDir(std::filesystem::path const& dir);
 

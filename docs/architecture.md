@@ -255,7 +255,8 @@ Key responsibilities:
 - `open()` — canonicalizes a path and opens or returns an existing
   `TextBuffer`
 - `openDir()` — canonicalizes a directory path and opens or returns an
-  existing `DirBuffer`
+  existing `DirBuffer`; an existing one has its listing re-read
+  (`DirBuffer::reload()`), with the saved cursor kept on its entry
 - `grepBuffer()` — creates or refreshes the singleton `GrepBuffer` with a
   new result set
 - `create()` — creates a new empty `TextBuffer` with a synthetic name
@@ -565,7 +566,11 @@ owner, group, size, and modification time. Supports:
 - Renaming the selected entry (`r`) and creating subdirectories (`m`)
 
 Each entry is represented as a `DirBuffer::Entry` struct with metadata
-gathered from the filesystem. `refresh()` rebuilds the listing from disk.
+gathered from the filesystem. `refresh()` rebuilds the listing from disk
+and bumps `docVersion()`, so views of it re-clamp. `reload()` re-reads
+a listing that may have gone stale (it is called whenever the directory
+is opened again): the cursor and the deletion marks follow their
+entries by name, since positions shift when files come and go.
 
 ---
 

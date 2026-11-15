@@ -105,6 +105,28 @@ ViewHint DirBuffer::navigate(std::filesystem::path const& dir) {
   return refresh();
 }
 
+ViewHint DirBuffer::reload(BufferPoint current) {
+  std::string selected;
+  if (current.line < _entries.size())
+    selected = _entries[current.line].name;
+  std::set<std::string> marked;
+  for (auto idx : _markedForDelete)
+    if (idx < _entries.size())
+      marked.insert(_entries[idx].name);
+
+  auto hint = refresh(selected);
+  // refresh() answers line 0 for a name it cannot find; "." is the only
+  // entry that is really there.
+  if (hint.point.line == 0 && selected != ".")
+    hint.point.line = std::min(current.line, _entries.size() - 1);
+
+  _markedForDelete.clear();
+  for (std::size_t i = 0; i < _entries.size(); ++i)
+    if (marked.contains(_entries[i].name))
+      _markedForDelete.insert(i);
+  return hint;
+}
+
 ViewHint DirBuffer::toggleHidden(BufferPoint currentPoint) {
   std::string prevName;
   if (currentPoint.line < _entries.size())
@@ -335,6 +357,8 @@ ViewHint DirBuffer::refresh(std::string prevName) {
     _lines.push_back(makeLine(dl));
   if (_lines.empty())
     _lines.push_back(makeLine());
+  // The lines changed under every view of this buffer.
+  ++_docVersion;
 
   // Restore cursor position.
   std::size_t newLine = 0;

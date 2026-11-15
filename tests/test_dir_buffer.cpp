@@ -392,6 +392,70 @@ BOOST_AUTO_TEST_CASE(navigate_clears_marks) {
   BOOST_CHECK(buf.markedPaths().empty());
 }
 
+// --- reload ---
+
+namespace {
+std::size_t indexOf(DirBuffer const& buf, std::string const& name) {
+  auto const& entries = buf.entries();
+  for (std::size_t i = 0; i < entries.size(); ++i)
+    if (entries[i].name == name)
+      return i;
+  return entries.size();
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(reload_picks_up_new_and_removed_files) {
+  TmpDir tmp;
+  tmp.createFile("b.txt");
+  tmp.createFile("d.txt");
+  DirBuffer buf(tmp.path);
+  auto versionBefore = buf.docVersion();
+
+  tmp.createFile("a.txt");
+  fs::remove(tmp.path / "d.txt");
+  buf.reload({0, 0});
+  BOOST_CHECK_LT(indexOf(buf, "a.txt"), buf.entries().size());
+  BOOST_CHECK_EQUAL(indexOf(buf, "d.txt"), buf.entries().size());
+  BOOST_CHECK_EQUAL(buf.lineCount(), buf.entries().size());
+  // Views notice the rebuilt listing and re-clamp.
+  BOOST_CHECK_NE(buf.docVersion(), versionBefore);
+}
+
+BOOST_AUTO_TEST_CASE(reload_keeps_cursor_and_marks_on_their_entries) {
+  TmpDir tmp;
+  tmp.createFile("b.txt");
+  tmp.createFile("c.txt");
+  tmp.createFile("d.txt");
+  DirBuffer buf(tmp.path);
+  buf.toggleDeleteMark({indexOf(buf, "d.txt"), 0});
+  BufferPoint cursor{indexOf(buf, "c.txt"), 0};
+
+  // A file sorting before both shifts every index by one.
+  tmp.createFile("a.txt");
+  auto hint = buf.reload(cursor);
+  BOOST_CHECK_EQUAL(hint.point.line, indexOf(buf, "c.txt"));
+  BOOST_CHECK_EQUAL(hint.point.line, cursor.line + 1);
+  BOOST_CHECK(buf.isMarked(indexOf(buf, "d.txt")));
+  BOOST_REQUIRE_EQUAL(buf.markedPaths().size(), 1u);
+  BOOST_CHECK_EQUAL(buf.markedPaths()[0].filename().string(), "d.txt");
+}
+
+BOOST_AUTO_TEST_CASE(reload_drops_marks_of_vanished_entries_and_clamps_the_cursor) {
+  TmpDir tmp;
+  tmp.createFile("b.txt");
+  tmp.createFile("c.txt");
+  DirBuffer buf(tmp.path);
+  auto last = indexOf(buf, "c.txt");
+  buf.toggleDeleteMark({last, 0});
+
+  fs::remove(tmp.path / "c.txt");
+  auto hint = buf.reload({last, 0});
+  BOOST_CHECK(buf.markedPaths().empty());
+  // The entry is gone: the cursor stays on that line, clamped to the end.
+  BOOST_CHECK_EQUAL(hint.point.line, buf.entries().size() - 1);
+  BOOST_CHECK_EQUAL(buf.entries().back().name, "b.txt");
+}
+
 // --- rename + mkdir ---
 
 BOOST_AUTO_TEST_CASE(rename_renames_file_on_disk) {

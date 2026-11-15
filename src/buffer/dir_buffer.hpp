@@ -44,6 +44,18 @@ public:
   ViewHint navigate(std::filesystem::path const& dir);
 
   /**
+   * @brief Re-read the directory, which may have changed on disk since
+   *        the listing was built.
+   *
+   * Deletion marks stay on the entries they were set on (matched by name,
+   * since positions shift); marks on entries that are gone are dropped.
+   * @param current The cursor position in the listing as it was.
+   * @return A ViewHint that keeps the cursor on the same entry, or on the
+   *         same line if that entry is gone.
+   */
+  ViewHint reload(BufferPoint current);
+
+  /**
    * @brief Toggle visibility of dotfiles.
    * @return A ViewHint that tries to keep the cursor on the same entry.
    */
@@ -123,7 +135,8 @@ public:
 
 private:
   /**
-   * @brief Rebuild the entry list and display lines.
+   * @brief Rebuild the entry list and display lines. Bumps docVersion(),
+   *        so every view of the listing re-clamps its positions.
    * @param prevName When non-empty, tries to place the returned cursor on
    *        the entry with that name. Taken by value: callers pass names
    *        of entries, which this function destroys.
