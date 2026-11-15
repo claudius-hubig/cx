@@ -783,8 +783,9 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   (`# ...`), bold (`**...**`, single-line), and links (`[text](url)`).
   Links may span lines: `MdSyntaxState::mdLink` (`MdLink::Label`/`Url`) carries
   an open `[...` label or `](...` destination across the boundary and
-  is Link-coloured until it closes (optimistically to end of file if
-  it never does). Headings are suppressed while a link continuation is
+  is Link-coloured until it closes, or until a blank line ends the
+  paragraph if it never does (so an unmatched `[` in prose does not
+  recolour the rest of the file). Headings are suppressed while a link continuation is
   open. Bold is single-line only. Inline code spans (`` `...` ``) are
   skipped so markup inside them is not tokenised — most importantly a
   stray `[` cannot open a link, which prevents an unbalanced bracket in

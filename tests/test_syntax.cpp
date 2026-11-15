@@ -1152,7 +1152,7 @@ BOOST_AUTO_TEST_CASE(md_link_label_spans_three_lines) {
   BOOST_CHECK(st.mdLink == MdLink::None);
 }
 
-BOOST_AUTO_TEST_CASE(md_unterminated_link_colors_to_eof) {
+BOOST_AUTO_TEST_CASE(md_unterminated_link_colors_to_end_of_paragraph) {
   MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("[never closed");
@@ -1161,7 +1161,35 @@ BOOST_AUTO_TEST_CASE(md_unterminated_link_colors_to_eof) {
   auto l2 = mkline("still going");
   tokenizeMarkdownLine(l2, st, toks);
   BOOST_CHECK(allTokens(toks, 0, l2.size(), SyntaxToken::Link));
-  BOOST_CHECK(st.mdLink == MdLink::Label); // stays open optimistically
+  BOOST_CHECK(st.mdLink == MdLink::Label); // stays open within the paragraph
+
+  // A blank line (whitespace counts) ends the paragraph and the link.
+  auto l3 = mkline("  ");
+  tokenizeMarkdownLine(l3, st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::None);
+  auto l4 = mkline("# a heading again");
+  tokenizeMarkdownLine(l4, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, l4.size(), SyntaxToken::Heading));
+}
+
+BOOST_AUTO_TEST_CASE(md_unmatched_bracket_in_prose_stays_in_its_paragraph) {
+  // "[0, 1)" has no ']': every later line used to be link text until some
+  // ']' turned up, however far down the file.
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(mkline("The interval [0, 1) is half-open."), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+  tokenizeMarkdownLine(mkline(""), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::None);
+  auto next = mkline("An unrelated paragraph.");
+  tokenizeMarkdownLine(next, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, next.size(), SyntaxToken::Normal));
+
+  // The same for an open destination.
+  tokenizeMarkdownLine(mkline("see [text](http://"), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::Url);
+  tokenizeMarkdownLine(mkline(""), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::None);
 }
 
 BOOST_AUTO_TEST_CASE(md_heading_suppressed_during_link_continuation) {

@@ -6,6 +6,15 @@ void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
   std::size_t sz = line.size();
   std::size_t i = 0;
 
+  // A blank line ends the paragraph, and with it a link that is still
+  // open: link text cannot span paragraphs. Otherwise an unmatched '[' in
+  // prose, as in "the interval [0, 1)", would colour everything up to the
+  // next ']' anywhere in the file as link text.
+  if (line.find_first_not_of(" \t") == std::string::npos) {
+    state.mdLink = MdLink::None;
+    return;
+  }
+
   // Continuation of a link that began on an earlier line. A link
   // spanning the boundary cannot also be a heading, so this is
   // resolved before the heading check.

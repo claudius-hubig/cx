@@ -104,7 +104,8 @@ The `SyntaxState` struct carries state between lines:
   (the quote char, `0` = not in one); number of `[`/`{` left open by
   earlier lines (multi-line arrays)
 - **mdLink** — a Markdown `[...](...)` link spanning the line boundary
-  (`None` / `Label` / `Url`)
+  (`None` / `Label` / `Url`); a blank line ends an open one, so an
+  unmatched `[` colours the rest of its paragraph at most
 
 C/C++, Shell, Python, YAML, TOML and Markdown tokenisation each maintain
 multi-line state. Only the JSON and Diff tokenizers are stateless: they

@@ -17,9 +17,11 @@
  *
  * Tracks a `[text](url)` link that spans lines: @c Label while the `[...`
  * label is still open (no `]` yet), @c Url while the `](...` destination is
- * still open (no `)` yet). An unterminated link stays Link-coloured to end
- * of file, matching the optimistic behaviour of the raw-string / heredoc /
- * triple-string states.
+ * still open (no `)` yet). An unterminated link stays Link-coloured to the
+ * end of its paragraph: a blank line closes it, since link text cannot
+ * span paragraphs. (To the end of the file, as an unterminated raw string
+ * or heredoc runs, would let one unmatched `[` in prose recolour
+ * everything after it.)
  */
 enum class MdLink : uint8_t { None, Label, Url };
 
