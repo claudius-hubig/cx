@@ -283,6 +283,30 @@ BOOST_AUTO_TEST_CASE(find_table_bounds) {
     BOOST_CHECK(!findMarkdownTable(lines, l));
 }
 
+// The tokenizer's line-by-line scan must find the same tables as Alt-q
+// does, except that it only knows a header once it is past it.
+BOOST_AUTO_TEST_CASE(line_scan_agrees_with_find_table) {
+  std::vector<std::vector<std::string>> docs{
+      {"Prose with a | pipe", "| a | b |", "|---|---|", "| 1 | 2 |", "", "| x | y |", "| z | w |",
+       "| p | q |", "|---|", "plain text"},
+      // A delimiter row with the wrong cell count, then a real table.
+      {"a | b | c", "|---|", "| x |", "|---|", "| y |", "text", "|---|", "| z |"},
+      {"> | a | b |", "> |---|---|", "> | long cell | 2 |", "text"},
+      {"\xef\xbb\xbf| a | b |", "|---|---|", "| 1 | 2 |"},
+      {"a | b", "--- | ---", "1 | 2", "3", "4 | 5"},
+      {"|", "|---|", "| a |", "|---|"},
+  };
+  for (auto const& doc : docs) {
+    auto lines = toLineStore(doc);
+    MdTableScan scan;
+    for (std::size_t l = 0; l < doc.size(); ++l) {
+      auto table = findMarkdownTable(lines, l);
+      bool const belowHeader = table && l > table->first;
+      BOOST_CHECK_MESSAGE(scan.advance(doc[l]) == belowHeader, "line " << l << ": " << doc[l]);
+    }
+  }
+}
+
 BOOST_AUTO_TEST_CASE(cursor_follows_text_through_rewrap) {
   // Cursor just before "jumps" in a cell that gets wrapped.
   std::vector<std::string> lines{

@@ -1,5 +1,7 @@
 #include "syntax.hpp"
 
+#include "buffer/modes/md/list.hpp"
+
 void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
                           std::vector<SyntaxToken>& tokens) {
   tokens.assign(line.size(), SyntaxToken::Normal);
@@ -11,17 +13,23 @@ void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
   // ends whatever link was open before it.
   if (state.fence.advance(line)) {
     state.mdLink = MdLink::None;
+    state.table = {};
     return;
   }
 
-  // A blank line ends the paragraph, and with it a link that is still
-  // open: link text cannot span paragraphs. Otherwise an unmatched '[' in
-  // prose, as in "the interval [0, 1)", would colour everything up to the
-  // next ']' anywhere in the file as link text.
-  if (line.find_first_not_of(" \t") == std::string::npos) {
+  // A link that is still open ends where its block does: link text cannot
+  // span blocks. Otherwise an unmatched '[' in prose, as in "the interval
+  // [0, 1)", would colour everything up to the next ']' anywhere in the
+  // file as link text. A block ends at a blank line, a list item and a
+  // table row, which is where Alt-q starts a new block as well.
+  bool const tableRow = state.table.advance(line);
+  auto const text = line.find_first_not_of(" \t");
+  if (text == std::string::npos) {
     state.mdLink = MdLink::None;
     return;
   }
+  if (tableRow || listMarkerLength(line, text) > 0)
+    state.mdLink = MdLink::None;
 
   // Continuation of a link that began on an earlier line. A link
   // spanning the boundary cannot also be a heading, so this is
@@ -139,12 +147,17 @@ void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
     // end of the line; carry the open part into MdSyntaxState so it
     // resumes on the next line. Disallow nested '[' inside the label
     // so a mismatched outer '[' does not greedily consume a real link
-    // further along the line.
+    // further along the line. A table row is a block of its own, so
+    // there a link that does not close on the line is not one.
     if (line[i] == '[') {
       std::size_t start = i;
       std::size_t scan = i + 1;
       while (scan < sz && line[scan] != ']' && line[scan] != '[')
         ++scan;
+      if (scan == sz && tableRow) {
+        i = start + 1;
+        continue;
+      }
       if (scan == sz) {
         // Label runs off the end of the line — continues next line.
         for (std::size_t j = start; j < sz; ++j)
@@ -161,6 +174,10 @@ void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
           for (std::size_t j = start; j < urlScan; ++j)
             tokens[j] = SyntaxToken::Link;
           i = urlScan;
+          continue;
+        }
+        if (tableRow) {
+          i = start + 1;
           continue;
         }
         // `](` present but `)` missing — destination continues.

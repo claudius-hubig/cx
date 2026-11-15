@@ -21,9 +21,11 @@
 #include "types.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /** @brief Inclusive line range [first, last] of a Markdown table. */
@@ -65,6 +67,33 @@ std::optional<PipeRun> findPipeRun(LineStore const& lines, std::size_t line);
  * @pre @p line < @p lines.size().
  */
 std::optional<TableLines> findMarkdownTable(LineStore const& lines, std::size_t line);
+
+/**
+ * @brief Whether a line-by-line scan is inside a GFM table.
+ *
+ * For a caller that sees one line at a time and cannot look ahead: the
+ * Markdown tokenizer, which keeps one per line in the syntax cache, hence
+ * the single byte. It agrees with findPipeRun() on the delimiter row and
+ * every row below it. The header is only known once the delimiter row
+ * under it has been seen, so advance() returns false for it.
+ */
+struct MdTableScan {
+  /**
+   * 0: the last line had no pipe. @c kInTable: it was a table's delimiter
+   * row or a row below it. Otherwise it may be a header, and this is its
+   * cell count (capped, so headers of 254 cells or more count as equal).
+   */
+  std::uint8_t prev = 0;
+  static constexpr std::uint8_t kInTable = 255;
+
+  /**
+   * @brief Step over @p line, the line after the one last stepped over.
+   * @return True if @p line is a table's delimiter row or a row below it.
+   */
+  bool advance(std::string_view line);
+
+  bool operator==(MdTableScan const&) const = default;
+};
 
 /** @brief Result of formatMarkdownTable(). */
 struct FormattedTable {

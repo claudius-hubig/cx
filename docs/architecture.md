@@ -783,9 +783,14 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   (`# ...`), bold (`**...**`, single-line), and links (`[text](url)`).
   Links may span lines: `MdSyntaxState::mdLink` (`MdLink::Label`/`Url`) carries
   an open `[...` label or `](...` destination across the boundary and
-  is Link-coloured until it closes, or until a blank line ends the
-  paragraph if it never does (so an unmatched `[` in prose does not
-  recolour the rest of the file). Headings are suppressed while a link continuation is
+  is Link-coloured until it closes, or until its block ends if it never
+  does (so an unmatched `[` in prose does not recolour the rest of the
+  file). A block ends where Alt-q starts a new one: at a blank line, a
+  fenced code block, a list item (`listMarkerLength()`) and a table row
+  (`MdSyntaxState::table`, an `MdTableScan`). A table row is a block of
+  its own, so a `[` not closed on the row is plain text there; only the
+  header row is not recognised, as the delimiter row below it is what
+  makes it one. Headings are suppressed while a link continuation is
   open. Bold is single-line only. Inline code spans (`` `...` ``) are
   skipped so markup inside them is not tokenised — most importantly a
   stray `[` cannot open a link, which prevents an unbalanced bracket in
@@ -813,7 +818,15 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   markers (`> `), which every output row gets, and the header a
   byte-order mark. The returned cursor keeps
   its logical cell and its non-blank-byte offset within that cell's
-  text.
+  text. `MdTableScan` is the same table test for a caller that sees one
+  line at a time (the tokenizer): it remembers the cell count of the line
+  above instead of looking at the line below, so it reports the
+  delimiter row and the rows under it, but not the header.
+
+- **Markdown list markers** (`modes/md/list.hpp`): `listMarkerLength()`
+  recognises `- `, `* `, `+ `, `1. ` and `1) `. Reflow uses it in every
+  mode to reflow each list item on its own, and the Markdown tokenizer
+  to end an open link at the next item.
 
 - **Markdown fences** (`modes/md/fence.hpp/.cpp`): `MdFence` is the
   line-by-line state of "which fenced code block am I in" (``` or ~~~,

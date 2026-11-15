@@ -1194,6 +1194,87 @@ BOOST_AUTO_TEST_CASE(md_unmatched_bracket_in_prose_stays_in_its_paragraph) {
   BOOST_CHECK(st.mdLink == MdLink::None);
 }
 
+// Alt-q reflows every list item on its own; an open link ends there too.
+BOOST_AUTO_TEST_CASE(md_list_item_ends_an_open_link) {
+  for (auto marker : {"- ", "* ", "+ ", "2. ", "10) ", "  - "}) {
+    MdSyntaxState st;
+    std::vector<SyntaxToken> toks;
+    tokenizeMarkdownLine(mkline("- the interval [0, 1)"), st, toks);
+    BOOST_CHECK(st.mdLink == MdLink::Label);
+    auto item = std::string(marker) + "second item, with a [link](url)";
+    tokenizeMarkdownLine(item, st, toks);
+    auto link = item.find('[');
+    BOOST_CHECK_MESSAGE(allTokens(toks, 0, link, SyntaxToken::Normal), marker);
+    BOOST_CHECK_MESSAGE(allTokens(toks, link, item.size(), SyntaxToken::Link), marker);
+    BOOST_CHECK(st.mdLink == MdLink::None);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(md_link_continues_on_a_line_that_only_looks_like_a_list_item) {
+  // No blank after the marker character: not an item, so still the label.
+  for (auto text : {"-not an item](url)", "**bold** start](url)", "2.5 times](url)"}) {
+    MdSyntaxState st;
+    std::vector<SyntaxToken> toks;
+    tokenizeMarkdownLine(mkline("see [a label"), st, toks);
+    auto line = mkline(text);
+    tokenizeMarkdownLine(line, st, toks);
+    BOOST_CHECK_MESSAGE(allTokens(toks, 0, line.size(), SyntaxToken::Link), text);
+  }
+  // The continuation lines of an item belong to it.
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(mkline("- see [a label"), st, toks);
+  auto cont = mkline("  that wraps](url)");
+  tokenizeMarkdownLine(cont, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, cont.size(), SyntaxToken::Link));
+}
+
+// A table row is one line and its cells cannot share a link with another
+// row: an unmatched '[' in a cell used to colour the rows below it.
+BOOST_AUTO_TEST_CASE(md_table_rows_keep_links_to_themselves) {
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto normal = [&](std::string const& line) {
+    tokenizeMarkdownLine(line, st, toks);
+    return allTokens(toks, 0, line.size(), SyntaxToken::Normal) && st.mdLink == MdLink::None;
+  };
+  BOOST_CHECK(normal("| Name | Range |"));
+  BOOST_CHECK(normal("|------|-------|"));
+  BOOST_CHECK(normal("| a | the interval [0, 1) |")); // not closed on the row: plain text
+  BOOST_CHECK(normal("| b | see [text](http:// |"));
+
+  // A link that is closed on its row is one, also after an unmatched '['.
+  auto row = mkline("| c | [0, 1) and [link](url) |");
+  tokenizeMarkdownLine(row, st, toks);
+  auto link = row.find("[link]");
+  BOOST_CHECK(allTokens(toks, 0, link, SyntaxToken::Normal));
+  BOOST_CHECK(allTokens(toks, link, link + 11, SyntaxToken::Link));
+
+  // The table ends with its pipes; prose carries a link across lines again.
+  tokenizeMarkdownLine(mkline("Prose with [a label"), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+  auto cont = mkline("that | wraps](url)"); // a pipe, but no table
+  tokenizeMarkdownLine(cont, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, cont.size(), SyntaxToken::Link));
+}
+
+BOOST_AUTO_TEST_CASE(md_table_ends_a_link_left_open_above_it) {
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(mkline("Text with [an open"), st, toks);
+  // The header is not known to be one yet, so it is still link text ...
+  auto header = mkline("| A | B |");
+  tokenizeMarkdownLine(header, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, header.size(), SyntaxToken::Link));
+  // ... and the delimiter row under it ends the link.
+  for (auto text : {"|---|---|", "| 1 | 2 |"}) {
+    auto line = mkline(text);
+    tokenizeMarkdownLine(line, st, toks);
+    BOOST_CHECK_MESSAGE(allTokens(toks, 0, line.size(), SyntaxToken::Normal), text);
+    BOOST_CHECK(st.mdLink == MdLink::None);
+  }
+}
+
 BOOST_AUTO_TEST_CASE(md_fenced_code_has_no_markup) {
   MdSyntaxState st;
   std::vector<SyntaxToken> toks;
@@ -1248,8 +1329,8 @@ BOOST_AUTO_TEST_CASE(md_inline_triple_backticks_are_not_a_fence) {
 }
 
 BOOST_AUTO_TEST_CASE(md_syntax_cache_entry_stays_32_bytes) {
-  // One entry per line of the buffer: the fence state must fit in the
-  // padding next to the link state.
+  // One entry per line of the buffer: the table and fence state must fit
+  // in the padding next to the link state.
   BOOST_CHECK_EQUAL(sizeof(LineSyntax<MdSyntaxState>), 32u);
 }
 

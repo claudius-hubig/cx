@@ -3,6 +3,7 @@
 #include "modes/c/syntax.hpp"
 #include "modes/jsn/syntax.hpp"
 #include "modes/md/fence.hpp"
+#include "modes/md/list.hpp"
 #include "modes/md/table.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
@@ -1463,37 +1464,6 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     return candidate;
   };
 
-  // Detect a list bullet at offset `off` of `line`. Returns the bullet
-  // length (text + trailing whitespace) on match, 0 otherwise.
-  auto bulletLen = [](std::string const& line, std::size_t off) -> std::size_t {
-    if (off >= line.size())
-      return 0;
-    char c = line[off];
-    if (c == '-' || c == '*' || c == '+') {
-      if (off + 1 < line.size() && (line[off + 1] == ' ' || line[off + 1] == '\t')) {
-        std::size_t k = off + 2;
-        while (k < line.size() && (line[k] == ' ' || line[k] == '\t'))
-          ++k;
-        return k - off;
-      }
-      return 0;
-    }
-    if (c >= '0' && c <= '9') {
-      std::size_t k = off;
-      while (k < line.size() && line[k] >= '0' && line[k] <= '9')
-        ++k;
-      if (k < line.size() && (line[k] == '.' || line[k] == ')')) {
-        ++k;
-        if (k < line.size() && (line[k] == ' ' || line[k] == '\t')) {
-          while (k < line.size() && (line[k] == ' ' || line[k] == '\t'))
-            ++k;
-          return k - off;
-        }
-      }
-    }
-    return 0;
-  };
-
   // Reflow one block into a vector of output lines. Caller stitches
   // them together with '\n' and the inter-block blank rows.
   auto reflowBlock = [&](Block const& b) -> std::vector<std::string> {
@@ -1501,7 +1471,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     std::string firstPrefix = commonPrefix;
     std::string contPrefix = commonPrefix;
     auto const& first = b.lines.front();
-    std::size_t bl = bulletLen(first, commonPrefix.size());
+    std::size_t bl = listMarkerLength(first, commonPrefix.size());
     std::string firstWordsStart = first.substr(commonPrefix.size());
     if (bl > 0) {
       // Preserve the bullet as the literal start of the first output
@@ -1580,7 +1550,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     for (std::size_t j = 0; j < b.lines.size(); ++j) {
       auto const& l = b.lines[j];
       auto ws = leadingWs(l);
-      bool isBullet = bulletLen(l, ws) > 0;
+      bool isBullet = listMarkerLength(l, ws) > 0;
       if (isBullet && !current.lines.empty()) {
         subs.push_back(std::move(current));
         current = Block{b.firstLine + j, {}};

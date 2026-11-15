@@ -104,8 +104,12 @@ The `SyntaxState` struct carries state between lines:
   (the quote char, `0` = not in one); number of `[`/`{` left open by
   earlier lines (multi-line arrays)
 - **mdLink** — a Markdown `[...](...)` link spanning the line boundary
-  (`None` / `Label` / `Url`); a blank line ends an open one, so an
-  unmatched `[` colours the rest of its paragraph at most
+  (`None` / `Label` / `Url`); a blank line, a fenced code block, a list
+  item or a table row ends an open one, so an unmatched `[` colours the
+  rest of its paragraph or list item at most
+- **table** — whether the line above was a table's delimiter row or a
+  row below it, or else its cell count (it may be a header); in a table
+  row a link has to close on the row
 - **fence** — inside a Markdown fenced code block (the fence character
   and the length of its opening run); those lines, and the fence lines
   themselves, get no markup tokens

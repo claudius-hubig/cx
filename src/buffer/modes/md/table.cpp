@@ -229,6 +229,26 @@ std::optional<PipeRun> findPipeRun(LineStore const& lines, std::size_t line) {
   return run;
 }
 
+bool MdTableScan::advance(std::string_view line) {
+  if (!hasPipe(line)) {
+    prev = 0;
+    return false;
+  }
+  if (prev == kInTable)
+    return true;
+  auto capped = [](std::size_t cells) {
+    return static_cast<std::uint8_t>(std::min<std::size_t>(cells, kInTable - 1));
+  };
+  // The header test of findPipeRun(), with the line above remembered
+  // rather than the line below looked at.
+  if (prev != 0 && isDelimiterRow(line) && capped(splitRow(line).size()) == prev) {
+    prev = kInTable;
+    return true;
+  }
+  prev = capped(splitRow(line, true).size());
+  return false;
+}
+
 std::optional<TableLines> findMarkdownTable(LineStore const& lines, std::size_t line) {
   auto run = findPipeRun(lines, line);
   if (!run || !run->header || line < *run->header)
