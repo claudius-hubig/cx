@@ -400,6 +400,11 @@ All user-facing movement, editing, and render operations are methods on
   and apply the necessary mark-adjustment locally. A chunk delete finds
   its span first and removes it as one edit (`deleteSpan`), so it is a
   single history entry however long the chunk is.
+  `replaceRegion(from, to, text)` swaps a region for new text as one
+  edit and one history entry; `Screen` uses it wherever text is replaced
+  (find-and-replace, formatting, piping a region, paste cycling), so
+  undoing never lands on a state with the old text gone and the new not
+  yet there.
 - **Case conversion**: `convertCase(CaseOp)` upper/lower/capitalizes the
   active region, or the word at/after the cursor when no mark is set. The
   transform is byte-wise ASCII (UTF-8-safe and length-preserving), applied

@@ -1512,9 +1512,7 @@ void Screen::openReplaceConfirmPrompt(std::string pattern, std::string replaceme
             }
             std::size_t newReplaced = replaced;
             if (c == 'y' || c == '!') {
-              _view->deleteRegion(matchStart, matchEnd);
-              auto after = _view->insertText(replacement);
-              _view->setPoint(after.line, after.offset);
+              _view->replaceRegion(matchStart, matchEnd, replacement);
               ++newReplaced;
             } else {
               // 'n': advance past the match without modifying.
@@ -1702,9 +1700,7 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
               auto& line = _buf->lineContent(matchStart.line);
               std::string rendered =
                   substituteCaptures(line, matchStart.offset, matchEnd.offset, *re, replacement);
-              _view->deleteRegion(matchStart, matchEnd);
-              auto after = _view->insertText(rendered);
-              _view->setPoint(after.line, after.offset);
+              _view->replaceRegion(matchStart, matchEnd, rendered);
               ++newReplaced;
             } else {
               _view->setPoint(matchEnd.line, matchEnd.offset);
@@ -2538,9 +2534,7 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
 
   auto savedLine = _view->point().line;
   auto savedOffset = _view->point().offset;
-  _view->clearMark();
-  _view->deleteRegion({0, 0}, endPt);
-  _view->insertText(res->stdoutData);
+  _view->replaceRegion({0, 0}, endPt, res->stdoutData);
   auto line = std::min(savedLine, _buf->lineCount() - 1);
   auto offset = std::min(savedOffset, _buf->lineContent(line).size());
   _view->setPoint(line, offset);
@@ -2570,23 +2564,21 @@ void Screen::executePipeReplace(std::string command) {
     return;
   }
 
-  _view->deleteRegion(from, to);
+  // The output replaces the region; with no output, what the command
+  // wrote to stderr does, so a failed command is not a silent deletion.
+  std::string const stderrText = res->stderrData.empty() ? "" : "STDERR:\n" + res->stderrData;
+  _view->replaceRegion(from, to, res->stdoutData.empty() ? stderrText : res->stdoutData);
   _view->clearMark();
 
-  if (!res->stdoutData.empty()) {
-    _view->insertText(res->stdoutData);
-    if (!res->stderrData.empty()) {
-      std::string trimmed;
-      trimmed.reserve(res->stderrData.size());
-      for (char c : res->stderrData)
-        if (c != '\n' && c != '\r')
-          trimmed += c;
-      // Escape: the child's stderr is attacker-controlled and could
-      // otherwise inject terminal escape sequences through the modeline.
-      setStatus("Command returned error output: " + escapeNonPrintable(trimmed));
-    }
-  } else if (!res->stderrData.empty()) {
-    _view->insertText("STDERR:\n" + res->stderrData);
+  if (!res->stdoutData.empty() && !res->stderrData.empty()) {
+    std::string trimmed;
+    trimmed.reserve(res->stderrData.size());
+    for (char c : res->stderrData)
+      if (c != '\n' && c != '\r')
+        trimmed += c;
+    // Escape: the child's stderr is attacker-controlled and could
+    // otherwise inject terminal escape sequences through the modeline.
+    setStatus("Command returned error output: " + escapeNonPrintable(trimmed));
   }
 
   _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
@@ -3640,9 +3632,8 @@ void Screen::dispatchAction(Action action) {
   case Action::PasteCycle:
     if (_buf && !_buf->readonly() && _pasteState && !_pasteRing.empty()) {
       auto nextIdx = (_pasteState->rbIdx + 1) % _pasteRing.size();
-      _view->deleteRegion(_pasteState->start, _pasteState->end);
-      auto start = _view->point();
-      auto end = _view->insertText(_pasteRing.at(nextIdx));
+      auto start = std::min(_pasteState->start, _pasteState->end);
+      auto end = _view->replaceRegion(_pasteState->start, _pasteState->end, _pasteRing.at(nextIdx));
       _pasteState = PasteState{start, end, nextIdx};
       setStatus("Cycling paste " + std::to_string(nextIdx + 1) + "/" +
                 std::to_string(_pasteRing.size()));

@@ -315,6 +315,22 @@ public:
   std::string extractRegion(BufferPoint from, BufferPoint to) const;
   void deleteRegion(BufferPoint from, BufferPoint to);
   BufferPoint insertText(std::string_view text);
+
+  /**
+   * @brief Replace the region [@p from, @p to) with @p text as one edit
+   *        and one history version.
+   *
+   * deleteRegion() followed by insertText() records two versions, the
+   * first of them a state the user never asked for (the region gone, the
+   * replacement not yet there). The arguments are normalised and clamped
+   * to the buffer; an empty region inserts and an empty @p text deletes.
+   * Collapses to a single cursor, clears the mark and leaves the point
+   * after the inserted text. Nothing is recorded when there is nothing to
+   * do (empty region and empty text, or a read-only buffer).
+   *
+   * @return The point after the inserted text.
+   */
+  BufferPoint replaceRegion(BufferPoint from, BufferPoint to, std::string_view text);
   /** @} */
 
   /**

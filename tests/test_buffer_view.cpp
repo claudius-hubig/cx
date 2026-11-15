@@ -654,6 +654,67 @@ BOOST_AUTO_TEST_CASE(apply_snapshot_sets_modified) {
   BOOST_CHECK(buf.modified());
 }
 
+BOOST_AUTO_TEST_CASE(replaceRegion_is_one_edit_and_one_version) {
+  TempFile f("foo bar foo\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.setMark({0, 0});
+  auto versions = buf.history().size();
+
+  auto end = view.replaceRegion({0, 4}, {0, 7}, "LONGER");
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "foo LONGER foo");
+  BOOST_CHECK(end == (BufferPoint{0, 10}));
+  BOOST_CHECK(view.point() == end);
+  BOOST_CHECK(!view.mark());
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 1);
+
+  // One step back is the text before the replacement, not a state with
+  // the region deleted and nothing in its place.
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.stepHistory(-1);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "foo bar foo");
+  view.exitHistoryModeCancel();
+}
+
+BOOST_AUTO_TEST_CASE(replaceRegion_across_lines_and_reversed_arguments) {
+  TempFile f("one\ntwo\nthree\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  auto end = view.replaceRegion({2, 2}, {0, 1}, "X\nY");
+  BOOST_CHECK_EQUAL(buf.lineCount(), 3u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "oX");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "Yree");
+  BOOST_CHECK(end == (BufferPoint{1, 1}));
+}
+
+BOOST_AUTO_TEST_CASE(replaceRegion_inserts_deletes_and_skips_no_ops) {
+  TempFile f("abcdef\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  auto versions = buf.history().size();
+
+  // Empty region: an insertion.
+  view.replaceRegion({0, 3}, {0, 3}, "-");
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "abc-def");
+  // Empty text: a deletion; positions past the buffer are clamped.
+  auto end = view.replaceRegion({0, 3}, {0, 99}, "");
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "abc");
+  BOOST_CHECK(end == (BufferPoint{0, 3}));
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 2);
+
+  // Nothing to do: no version, and the mark survives.
+  view.setMark({0, 0});
+  view.replaceRegion({0, 1}, {0, 1}, "");
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 2);
+  BOOST_CHECK(view.mark().has_value());
+
+  // Read-only while browsing history.
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.replaceRegion({0, 0}, {0, 3}, "zzz");
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "abc");
+  view.exitHistoryModeCancel();
+}
+
 BOOST_AUTO_TEST_CASE(cancel_history_restores_latest_and_keeps_every_version) {
   TempFile f("A\n");
   TextBuffer buf(f.path().string(), f.path());

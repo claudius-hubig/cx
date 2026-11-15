@@ -1680,6 +1680,38 @@ BufferPoint BufferView::insertText(std::string_view text) {
   return _point;
 }
 
+BufferPoint BufferView::replaceRegion(BufferPoint from, BufferPoint to, std::string_view text) {
+  if (_buf.readonly())
+    return _point;
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+
+  // Bounds only, not clampPoint(): a search match may begin or end inside
+  // a cluster, and snapping would change what is replaced.
+  auto inBuffer = [&](BufferPoint p) {
+    p.line = std::min(p.line, _buf.lineCount() - 1);
+    p.offset = std::min(p.offset, _buf.lineContent(p.line).size());
+    return p;
+  };
+  from = inBuffer(from);
+  to = inBuffer(to);
+  if (to < from)
+    std::swap(from, to);
+  if (from == to && text.empty())
+    return _point;
+
+  collapseCursors();
+  if (from != to)
+    _buf.deleteRegion(from, to);
+  _point = _buf.insertText(text, from);
+  _mark.reset();
+  syncAfterEdit();
+  _desiredCol.reset();
+
+  _buf.recordVersion(_point);
+  return _point;
+}
+
 // --- Multiple cursors ---
 
 namespace {

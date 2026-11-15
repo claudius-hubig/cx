@@ -2642,3 +2642,50 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_restores_the_terminal) {
   BOOST_CHECK((after.c_lflag & ICANON) != 0);
   BOOST_CHECK((after.c_lflag & ECHO) != 0);
 }
+
+// Replacing a match and piping a region used to delete and then insert:
+// two history versions, the first one with the text gone and nothing in
+// its place. Each is one undo step now.
+BOOST_AUTO_TEST_CASE(e2e_replace_and_pipe_are_one_history_version_each) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("foo bar foo\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("foo", std::chrono::milliseconds{500});
+
+  // Esc-% foo -> LONGER, replace the first match, quit the walk.
+  session.send("\x1b%");
+  session.readUntil("Replace:", std::chrono::milliseconds{1000});
+  session.send("foo\r");
+  session.readUntil("with:", std::chrono::milliseconds{1000});
+  session.send("LONGER\r");
+  session.readUntil("Replace this?", std::chrono::milliseconds{1000});
+  session.send("y");
+  session.readUntil("Replace this?", std::chrono::milliseconds{1000});
+  session.send("q");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Pipe the whole first line through tr: mark at line start, End, Ctrl-P.
+  session.send(std::string_view("\x1b[H\x00\x1b[F\x10", 8));
+  session.readUntil("Shell command:", std::chrono::milliseconds{1000});
+  session.send("tr a-z A-Z\r");
+  session.readUntil("LONGER BAR FOO", std::chrono::milliseconds{3000});
+
+  // Load, replace, pipe: three versions; one step back undoes the pipe.
+  session.send("\x15");
+  auto out = stripAnsi(session.readUntil("v 3/3", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("v 3/3") != std::string::npos, "history badge: " + out);
+  session.send("[");
+  out = stripAnsi(session.readUntil("LONGER bar foo", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("LONGER bar foo") != std::string::npos, "previous version: " + out);
+
+  session.send("\x1b\x1b");
+  session.readUntil("cancelled", std::chrono::milliseconds{1000});
+  session.send("\x1b"
+               "cn");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
