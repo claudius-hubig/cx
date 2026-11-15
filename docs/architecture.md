@@ -47,7 +47,7 @@ current `termios` state and puts stdin into raw mode; switches the
 terminal to the alternate screen buffer; enables SGR mouse tracking
 (`?1000h` press/release, `?1002h` motion-while-held for drag-select,
 `?1006h` extended coordinates; `?1003h` any-motion is deliberately not
-enabled). On destruction, disables mouse tracking,
+enabled) and bracketed paste (`?2004h`). On destruction, disables both,
 restores the saved state, and returns to the normal screen. Guarantees
 cleanup even on exception.
 
@@ -127,7 +127,10 @@ Key responsibilities:
     cx has no use for (function keys, …) is dropped whole and never
     leaks its tail bytes into the buffer or the prompt. `ESC O` is told
     apart from Alt-O by whether a byte follows within the Esc
-    disambiguation window
+    disambiguation window. A bracketed paste (`ESC[200~ … ESC[201~`) is
+    read whole and inserted with one `BufferView::insertText()` — one
+    undo step, no auto-indent or Tab formatting; a prompt takes its
+    first line, and a read-only buffer or confirm prompt drops it
   - `handleNormalInput` — printable characters and control keys in normal
     editing mode
   - `handleMouseEvent` / `extendDragSelection` — left-press positions the
@@ -921,7 +924,7 @@ token vector allocation.
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
 | `src/replace.hpp`                      | Find-and-replace helpers (`findNextMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt`                  |
 | `src/regex_search.hpp`                 | Regex search/replace helpers (`compileRegex`, `findFirstRegex`, `findNextRegexInBuffer`, `stepPastEmptyMatch`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y; mid-line searches keep the preceding text as context and scans step past empty matches; both replace-all helpers match each line once against its original text, rewrite it in one edit, and (bypassing BufferView) record one history version themselves |
-| `src/key_sequence.hpp`                 | `Key`, `KeyPress`, `decodeCsiKey`, `decodeSs3Key` — decode the CSI / SS3 sequences of cursor and editing keys (xterm, VT220/tmux and rxvt forms, with modifiers); anything else decodes to nothing |
+| `src/key_sequence.hpp`                 | `Key`, `KeyPress`, `decodeCsiKey`, `decodeSs3Key` — decode the CSI / SS3 sequences of cursor and editing keys (xterm, VT220/tmux and rxvt forms, with modifiers); anything else decodes to nothing. Also the bracketed-paste markers (`isPasteStart`, `kPasteEnd`) and `normalizePastedText` |
 | `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
 | `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`); `cli::usage` help text            |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |

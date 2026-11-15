@@ -14,6 +14,7 @@
 
 #include <charconv>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -139,3 +140,42 @@ inline std::optional<KeyPress> decodeSs3Key(char final) {
              ? decodeCsiKey({}, final)
              : std::nullopt;
 }
+
+/**
+ * @name Bracketed paste
+ *
+ * With DEC private mode 2004 set, a terminal sends pasted text between
+ * `ESC [ 200 ~` and `ESC [ 201 ~` instead of as if it had been typed, so
+ * it can be inserted as one edit: no auto-indent or Tab formatting per
+ * pasted character, and no pasted byte is taken for a command.
+ */
+/** @{ */
+/** @brief True if `ESC [ params final` is the marker that starts a paste. */
+inline constexpr bool isPasteStart(std::string_view params, char final) {
+  return final == '~' && params == "200";
+}
+
+/** @brief The marker that ends a paste. */
+inline constexpr std::string_view kPasteEnd = "\x1b[201~";
+
+/**
+ * @brief Pasted text with its line breaks as '\n'.
+ *
+ * Terminals send the line breaks of a paste as the Enter key would, '\r';
+ * text copied from a CRLF file may arrive with "\r\n".
+ */
+inline std::string normalizePastedText(std::string_view raw) {
+  std::string text;
+  text.reserve(raw.size());
+  for (std::size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] != '\r') {
+      text += raw[i];
+      continue;
+    }
+    text += '\n';
+    if (i + 1 < raw.size() && raw[i + 1] == '\n')
+      ++i;
+  }
+  return text;
+}
+/** @} */

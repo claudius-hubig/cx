@@ -789,6 +789,28 @@ static std::optional<char> readSs3Final() {
   return final;
 }
 
+/** @brief The text of @p s up to its first line break; prompt input is single-line. */
+static std::string_view firstLine(std::string const& s) {
+  return std::string_view(s).substr(0, s.find_first_of("\r\n"));
+}
+
+/**
+ * @brief Read the text of a bracketed paste whose start marker has already
+ *        been consumed, up to the end marker (or EOF), with its line
+ *        breaks as '\n'.
+ */
+static std::string readBracketedPaste() {
+  std::string raw;
+  for (char c; readByte(c);) {
+    raw += c;
+    if (c == kPasteEnd.back() && raw.ends_with(kPasteEnd)) {
+      raw.resize(raw.size() - kPasteEnd.size());
+      break;
+    }
+  }
+  return normalizePastedText(raw);
+}
+
 void Screen::handlePromptInput(char c) {
   auto& p = *_prompt;
   // Only a paste-cycle immediately after a paste may replace it.
@@ -815,9 +837,20 @@ void Screen::handlePromptInput(char c) {
       std::string params;
       char first, final;
       if (next == ansi::CsiIntro) {
-        if (readByte(first) && readCsi(first, params, final))
-          if (auto key = decodeCsiKey(params, final))
-            handlePromptKey(*key);
+        if (!readByte(first) || !readCsi(first, params, final))
+          return;
+        if (isPasteStart(params, final)) {
+          // Pasted text: its first line, as for a paste from the ring. A
+          // confirm prompt takes no answer from a paste.
+          auto text = readBracketedPaste();
+          if (p.showInput && !text.empty()) {
+            p.insert(firstLine(text));
+            p.historyIdx.reset();
+            runAutocomplete();
+          }
+        } else if (auto key = decodeCsiKey(params, final)) {
+          handlePromptKey(*key);
+        }
       } else if (next == ansi::Ss3Intro) {
         if (auto ss3 = readSs3Final())
           if (auto key = decodeSs3Key(*ss3))
@@ -861,11 +894,6 @@ void Screen::handlePromptInput(char c) {
   } else if (auto action = handleShortcut(shortcutFromCtrlChar(c))) {
     handlePromptAction(*action, lastPaste);
   }
-}
-
-/** @brief The text of @p s up to its first line break; prompt input is single-line. */
-static std::string_view firstLine(std::string const& s) {
-  return std::string_view(s).substr(0, s.find_first_of("\r\n"));
 }
 
 void Screen::handlePromptAction(Action action, std::optional<Prompt::Paste> lastPaste) {
@@ -2587,9 +2615,20 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
       // of having its tail typed into the buffer.
       std::string params;
       char final;
-      if (readCsi(seq[1], params, final))
-        if (auto key = decodeCsiKey(params, final))
-          handleKeyPress(*key);
+      if (!readCsi(seq[1], params, final))
+        return;
+      if (isPasteStart(params, final)) {
+        // Pasted text goes in as one edit. A read-only buffer drops it:
+        // typed, its characters would have run as that buffer's commands.
+        auto text = readBracketedPaste();
+        if (_buf && !_buf->readonly() && !text.empty()) {
+          _view->insertText(text);
+          _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
+          _pasteState.reset();
+        }
+      } else if (auto key = decodeCsiKey(params, final)) {
+        handleKeyPress(*key);
+      }
     } else if (auto ss3 = seq[0] == ansi::Ss3Intro ? readSs3Final() : std::nullopt) {
       // SS3: arrows and Home/End in application-cursor mode; F1..F4.
       if (auto key = decodeSs3Key(*ss3))

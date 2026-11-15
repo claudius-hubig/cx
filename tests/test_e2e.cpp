@@ -2528,3 +2528,83 @@ BOOST_AUTO_TEST_CASE(e2e_alt_o_still_inserts_the_letter) {
                "c");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
+
+// Without bracketed paste a terminal paste arrives as keystrokes: every
+// Enter auto-indented on top of the pasted indentation (a staircase in
+// C/JSON/Python buffers), and every character was its own undo step.
+BOOST_AUTO_TEST_CASE(e2e_bracketed_paste_is_one_literal_edit) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("", ".cpp");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  auto start = session.readOutput(std::chrono::milliseconds{300});
+  BOOST_CHECK_MESSAGE(start.find("\x1b[?2004h") != std::string::npos,
+                      "bracketed paste not enabled");
+
+  // Line breaks arrive as '\r', as a terminal sends them. The tab would
+  // run clang-format on the line if it were typed.
+  std::string const code = "int main() {\n    if (x) {\n\tfoo();\n    }\n}\n";
+  auto typed = code;
+  std::ranges::replace(typed, '\n', '\r');
+  session.send("\x1b[200~" + typed + "\x1b[201~");
+  session.readOutput(std::chrono::milliseconds{300});
+
+  // One history version for the whole paste.
+  session.send("\x15");
+  auto out = stripAnsi(session.readUntil("v 2/2", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("v 2/2") != std::string::npos, "history badge: " + out);
+  session.send("\x15\x13");
+  session.readUntil("Saved", std::chrono::milliseconds{1000});
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), code);
+
+  session.send("\x1b"
+               "c");
+  auto end = session.readOutput(std::chrono::milliseconds{300});
+  BOOST_CHECK_MESSAGE(end.find("\x1b[?2004l") != std::string::npos, "bracketed paste left on");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
+
+// A paste into a prompt inserts its first line; a paste into a read-only
+// buffer is dropped (typed, its characters would run as commands there).
+BOOST_AUTO_TEST_CASE(e2e_bracketed_paste_in_prompt_and_read_only_buffer) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("one needle here\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("needle", std::chrono::milliseconds{500});
+
+  // Find prompt: only "needle" is taken, and Enter finds it.
+  session.send("\x06");
+  session.readUntil("Find:", std::chrono::milliseconds{1000});
+  session.send("\x1b[200~needle\rsecond line\x1b[201~");
+  auto out = stripAnsi(session.readUntil("Find: needle", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Find: needle") != std::string::npos, "prompt: " + out);
+  BOOST_CHECK_MESSAGE(out.find("second") == std::string::npos, "prompt took a second line: " + out);
+  session.send("\r");
+  out = stripAnsi(session.readUntil("1:11", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("1:11") != std::string::npos, "cursor after the match: " + out);
+
+  // Help buffer: 'q' in pasted text must not dismiss it.
+  session.send("\x1b?");
+  session.readUntil("Press 'q'", std::chrono::milliseconds{1000});
+  session.send("\x1b[200~q\x1b[201~");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b[B");
+  out = stripAnsi(session.readOutput(std::chrono::milliseconds{300}));
+  BOOST_CHECK_MESSAGE(out.find("*help*") != std::string::npos, "help was dismissed: " + out);
+
+  session.send("q");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "one needle here\n");
+}

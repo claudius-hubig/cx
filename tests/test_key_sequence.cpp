@@ -89,3 +89,21 @@ BOOST_AUTO_TEST_CASE(csi_final_byte_range) {
   BOOST_CHECK(!isCsiFinal('0') && !isCsiFinal(';') && !isCsiFinal('<') && !isCsiFinal(' '));
   BOOST_CHECK(!isCsiFinal('\x7f'));
 }
+
+BOOST_AUTO_TEST_CASE(paste_start_marker) {
+  BOOST_CHECK(isPasteStart("200", '~'));
+  BOOST_CHECK(!isPasteStart("201", '~'));
+  BOOST_CHECK(!isPasteStart("200", 'A'));
+  // The markers are not keys.
+  BOOST_CHECK(!decodeCsiKey("200", '~'));
+  BOOST_CHECK(!decodeCsiKey("201", '~'));
+}
+
+BOOST_AUTO_TEST_CASE(pasted_line_breaks_become_newlines) {
+  BOOST_CHECK_EQUAL(normalizePastedText("one\rtwo\r"), "one\ntwo\n");
+  BOOST_CHECK_EQUAL(normalizePastedText("one\r\ntwo\r\n"), "one\ntwo\n");
+  BOOST_CHECK_EQUAL(normalizePastedText("one\ntwo"), "one\ntwo");
+  BOOST_CHECK_EQUAL(normalizePastedText("a\r\rb"), "a\n\nb");
+  BOOST_CHECK_EQUAL(normalizePastedText(""), "");
+  BOOST_CHECK_EQUAL(normalizePastedText("tab\tkept"), "tab\tkept");
+}
