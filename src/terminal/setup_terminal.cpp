@@ -4,7 +4,9 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <stdexcept>
 #include <string_view>
@@ -27,11 +29,13 @@ namespace {
 
 // The signals that end the process by default and can reach an editor:
 // kill, a closed terminal window, and Ctrl-C / Ctrl-\ sent from outside
-// (raw mode keeps the keyboard from generating them); then the ones a bug
-// ends it with: a bad memory access, abort() (where an uncaught exception
-// or a failed assertion ends up), and the rarer faults of the same kind.
+// (raw mode keeps the keyboard from generating them); then the crashes,
+// the ones a bug ends it with: a bad memory access, abort() (where an
+// uncaught exception or a failed assertion ends up), and the rarer faults
+// of the same kind.
 constexpr std::array kFatalSignals = {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV,
                                       SIGABRT, SIGBUS, SIGFPE, SIGILL};
+constexpr std::array kCrashSignals = {SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL};
 
 // termios state for the signal handler. Written once, before the handlers
 // are installed, so the handler only ever reads it.
@@ -42,25 +46,50 @@ std::array<struct sigaction, kFatalSignals.size()> g_savedActions;
 // The handler's own stack. A stack overflow (deep recursion, which is how
 // std::regex fails on a long line) arrives as SIGSEGV with no room left
 // on the stack it overflowed, so the handler could not run there. A fixed
-// size, as SIGSTKSZ is not a constant; the handler needs very little.
-std::array<char, 64 * 1024> g_handlerStack;
+// size, as SIGSTKSZ is not a constant: the handler needs very little, the
+// crash hook it calls (which saves files) a good deal more.
+std::array<char, 256 * 1024> g_handlerStack;
 // The alternate stack that was set before, put back by restore().
 stack_t g_savedStack;
+
+// The CrashHook in effect. The hook is the one the handler looks at, so
+// it is set last and cleared first.
+std::atomic<CrashHook::Fn> g_crashHook = nullptr;
+void* g_crashContext = nullptr;
+// How long the crash hook gets before SIGALRM ends the process.
+constexpr unsigned kCrashHookSeconds = 60;
 
 // Put the terminal back, then let the signal end the process as it would
 // have: the handler was installed with SA_RESETHAND, so the default action
 // is in place again and the re-raised signal is delivered when this
-// returns, with a core dump where the signal has one. Only
-// async-signal-safe calls (write, tcsetattr, raise).
+// returns, with a core dump where the signal has one.
+//
+// Apart from the crash hook only async-signal-safe calls are made (write,
+// tcsetattr, alarm, raise). The hook is taken out before it is called, so
+// a crash inside it cannot run it again: the same signal ends the process
+// at once, another one comes back here and skips it.
 void restoreTerminalAndReraise(int signo) {
   if (write(STDOUT_FILENO, kAltScreenOff.data(), kAltScreenOff.size()) == -1) {
     // Nothing useful can be done about it from a signal handler.
   }
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_savedFlags);
+  if (std::ranges::find(kCrashSignals, signo) != kCrashSignals.end()) {
+    if (auto hook = g_crashHook.exchange(nullptr)) {
+      alarm(kCrashHookSeconds);
+      hook(g_crashContext);
+    }
+  }
   raise(signo);
 }
 
 } // namespace
+
+CrashHook::CrashHook(Fn hook, void* context) {
+  g_crashContext = context;
+  g_crashHook = hook;
+}
+
+CrashHook::~CrashHook() { g_crashHook = nullptr; }
 
 SetupTerminal::SetupTerminal() {
   // Throw before touching raw mode or the alternate screen so a failure

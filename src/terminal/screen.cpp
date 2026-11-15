@@ -817,7 +817,8 @@ bool Screen::emergencySave() noexcept {
       }
     }
   } catch (...) {
-    // There is nobody left to report it to but the user.
+    // Called from the crash handler too, where nothing may get out and
+    // there is nobody left to report it to but the user.
     static constexpr std::string_view kFailed = "cx: saving the modified buffers failed\n";
     writeAll(STDOUT_FILENO, kFailed.data(), kFailed.size());
     allSaved = false;

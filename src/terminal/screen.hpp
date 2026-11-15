@@ -96,7 +96,9 @@ public:
    *        it. Modified buffers without a file are abandoned (and listed).
    *
    * The way out when nobody can be asked any more: on a second SIGTERM
-   * (see loop()). Nothing is checked first: a file that changed on disk is overwritten.
+   * (see loop()) and when the editor crashes (see CrashHook), where it
+   * runs in a signal handler on whatever state the crash left behind.
+   * Nothing is checked first: a file that changed on disk is overwritten.
    *
    * @pre The terminal has been restored, so the lines stay on the user's
    *      screen.

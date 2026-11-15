@@ -2837,6 +2837,49 @@ BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
   BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
+// A crash took every unsaved buffer with it. The crash handler now saves
+// the ones that have a file and lists them, once the terminal is back.
+BOOST_AUTO_TEST_CASE(e2e_crash_saves_the_modified_files) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  NoCoreDumps noCoreDumps;
+  for (int signo : {SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL}) {
+    BOOST_TEST_CONTEXT("signal " << signo) {
+      TempFile tmp("text\n");
+      PtySession session(24, 80, bin, {tmp.path().string()});
+      session.readUntil("text");
+      modifyFileAndScratch(session, "X");
+
+      kill(session.childPid, signo);
+      auto out = session.readOutput(milliseconds{500});
+      BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: saved " + tmp.path().string()), out);
+      BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: discarded *s*"), out);
+      BOOST_CHECK_EQUAL(readFile(tmp.path()), "Xtext\n");
+
+      // It is still the crash that ends the process.
+      int status = 0;
+      BOOST_REQUIRE_EQUAL(waitpid(session.childPid, &status, 0), session.childPid);
+      session.childPid = -1;
+      BOOST_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == signo);
+    }
+  }
+
+  // A signal sent to end the editor at once is not a crash: nothing is saved.
+  TempFile tmp("text\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("text");
+  session.send("X");
+  session.readOutput(milliseconds{150});
+  kill(session.childPid, SIGINT);
+  auto out = session.readOutput(milliseconds{500});
+  BOOST_CHECK(out.find("cx: saved") == std::string::npos);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+}
+
 // Replacing a match and piping a region used to delete and then insert:
 // two history versions, the first one with the text gone and nothing in
 // its place. Each is one undo step now.

@@ -2,7 +2,8 @@
 
 /**
  * @file setup_terminal.hpp
- * @brief SetupTerminal — RAII raw-mode and alternate-screen configuration.
+ * @brief SetupTerminal — RAII raw-mode and alternate-screen configuration,
+ *        and CrashHook, the last thing run when the editor crashes.
  */
 
 #include <termios.h>
@@ -14,10 +15,11 @@
  * While an instance exists, the signals that end the process restore the
  * terminal too before ending it as they would have, since the destructor
  * does not run for them: SIGTERM (until Screen takes it over), SIGHUP,
- * SIGINT and SIGQUIT, and the crashes SIGSEGV (a stack overflow
- * included), SIGABRT, SIGBUS, SIGFPE and SIGILL. Nothing else is done on
- * a signal, so unsaved buffers are lost as before. At most one instance
- * may exist at a time (the handler's state is per process).
+ * SIGINT and SIGQUIT, and the crashes SIGSEGV (a stack overflow included),
+ * SIGABRT, SIGBUS, SIGFPE and SIGILL. A crash also runs the CrashHook, if
+ * there is one; nothing else is done on a signal, so without a hook
+ * unsaved buffers are lost. At most one instance may exist at a time (the
+ * handler's state is per process).
  *
  * stdin file flags (fcntl F_GETFL) are intentionally NOT saved or restored
  * — cx relies on blocking reads with SIGWINCH-driven EINTR, and the
@@ -51,4 +53,30 @@ private:
    */
   struct termios _saved_flags{};
   bool _restored = false; /**< restore() has run. */
+};
+
+/**
+ * @brief While an instance exists, a crash under a SetupTerminal calls
+ *        `hook(context)` once, after the terminal has been restored and
+ *        before the signal ends the process.
+ *
+ * The hook runs inside a signal handler, on the handler's stack, after a
+ * fault of unknown cause, so nothing it does is safe in the strict sense:
+ * the data it reads may be damaged, and a lock it needs (the allocator's)
+ * may be held by the code that crashed. It is the last chance to save the
+ * user's work, so it runs anyway. A second fault inside it ends the
+ * process, and so does a hook that has not returned after a minute.
+ *
+ * @p context must outlive the instance. At most one instance may exist at
+ * a time.
+ */
+class CrashHook {
+public:
+  using Fn = void (*)(void* context) noexcept;
+
+  CrashHook(Fn hook, void* context);
+  ~CrashHook();
+
+  CrashHook(CrashHook const&) = delete;
+  CrashHook& operator=(CrashHook const&) = delete;
 };

@@ -31,9 +31,9 @@ Entry point. Parses the command line with `cli::parse()`
 first two by printing `cli::usage()` or `versionText()`
 (`src/version.hpp/.cpp`) and exiting. Otherwise it constructs
 `SetupTerminal`, `Screen`, and `BufferManager` in the correct order, opens any files given on the command line, then calls
-`Screen::loop()` to run the editor. When the loop ends with
-`Exit::Emergency`, `main` calls `SetupTerminal::restore()` and then
-`Screen::emergencySave()`,
+`Screen::loop()` to run the editor. A `CrashHook` makes a crash call
+`Screen::emergencySave()`; `main` calls it itself, after
+`SetupTerminal::restore()`, when the loop ends with `Exit::Emergency`,
 and exits with status 1 if a buffer could not be saved. Each path argument is parsed via
 `parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
 `:LINE` suffix (e.g. `cx src/foo.cpp:42`). If stdin is a pipe, `main`
@@ -56,12 +56,20 @@ restores the saved state, and returns to the normal screen
 normal screen). Guarantees cleanup even on exception. A signal that
 ends the process would skip the destructor, so while an instance exists
 a handler puts the terminal back first and then re-raises the signal
-with its default action (core dump included); unsaved buffers are still
-lost. This covers SIGTERM
+with its default action (core dump included). This covers SIGTERM
 (until `Screen` takes it over), SIGHUP, SIGINT and SIGQUIT, and the
 crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL. The handler runs
 on an alternate stack (`sigaltstack`), since a stack overflow leaves no
 room for it on the normal one.
+
+`CrashHook` (same files) registers what a crash does between restoring
+the terminal and dying: `main` uses it to save the modified buffers.
+The hook runs in the signal handler on whatever state the crash left,
+so it is best effort by nature. It is called at most once (a fault
+inside it ends the process) and SIGALRM ends a hook that has not
+returned after a minute, for instance one waiting on the allocator lock
+that the crashed code holds. The other signals run no hook, so SIGHUP,
+SIGINT and SIGQUIT still lose unsaved buffers.
 
 ---
 
@@ -140,7 +148,8 @@ Key responsibilities:
   buffer to the restored terminal. A cancelled exit flow resets this, so
   the next SIGTERM asks again. The handler only counts; requests are
   acted on in the loop, so one that arrives while a command is running
-  waits for it, as a key would.
+  waits for it, as a key would. `emergencySave()` is also what the
+  `CrashHook` runs.
 - **Input dispatch**: Any `std::exception` escaping a handler is
   logged and shown in the status line rather than ending the session:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
