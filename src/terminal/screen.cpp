@@ -2755,7 +2755,10 @@ void Screen::handleNormalInput(char c, std::optional<char>& pendingChar) {
   if (c == key::Enter || c == key::Newline) {
     // Buffer list: Enter selects the highlighted buffer.
     auto* blb = dynamic_cast<BufferListBuffer*>(_buf);
-    if (blb && prevBuf() && _bufMgr) {
+    if (_view && _view->inHistoryMode()) {
+      // History mode: Enter commits the version shown, like Ctrl-u.
+      dispatchAction(Action::VersionHistory);
+    } else if (blb && prevBuf() && _bufMgr) {
       auto name = blb->selectedName(_view->point());
       Buffer* target = _bufMgr->find(name);
       if (target) {
@@ -3141,6 +3144,14 @@ void Screen::handleBareEscEsc() {
   if (_view && _view->multiCursor()) {
     _view->collapseCursors();
     setStatus("Single cursor");
+    return;
+  }
+  // History mode: back to the newest version, dropping nothing.
+  if (_view && _view->inHistoryMode()) {
+    _view->exitHistoryModeCancel();
+    _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
+    _pasteState.reset();
+    setStatus("History: cancelled");
     return;
   }
   // Overlay dismissal takes precedence over mark clearing: the mark

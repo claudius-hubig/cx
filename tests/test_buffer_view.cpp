@@ -655,6 +655,62 @@ BOOST_AUTO_TEST_CASE(apply_snapshot_sets_modified) {
   BOOST_CHECK(buf.modified());
 }
 
+BOOST_AUTO_TEST_CASE(cancel_history_restores_latest_and_keeps_every_version) {
+  TempFile f("A\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  insertString(view, "123");
+  view.setPoint(0, 1); // the cursor moved after the last edit
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.stepHistory(-2);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "1A");
+
+  view.exitHistoryModeCancel();
+  BOOST_CHECK(!view.inHistoryMode());
+  BOOST_CHECK(!buf.readonly());
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "123A");
+  BOOST_CHECK_EQUAL(buf.history().size(), 4u);
+  BOOST_CHECK(view.point() == (BufferPoint{0, 1}));
+  // Editing works again and continues the full history.
+  view.insert('x');
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "1x23A");
+  BOOST_CHECK_EQUAL(buf.history().size(), 5u);
+}
+
+BOOST_AUTO_TEST_CASE(cancel_history_leaves_a_saved_buffer_unmodified) {
+  // Stepping to an older version marks the buffer modified; returning to
+  // the newest one (the saved text) must not leave it that way.
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  BOOST_REQUIRE(buf.save());
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.stepHistory(-1);
+  BOOST_CHECK(buf.modified());
+  view.exitHistoryModeCancel();
+  BOOST_CHECK(!buf.modified());
+
+  // An unsaved buffer stays modified.
+  view.insert('Y');
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.stepHistory(-1);
+  view.exitHistoryModeCancel();
+  BOOST_CHECK(buf.modified());
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "XYhello");
+}
+
+BOOST_AUTO_TEST_CASE(cancel_history_without_stepping_keeps_the_cursor) {
+  TempFile f("hello\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  view.insert('X');
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.moveEnd();
+  view.exitHistoryModeCancel();
+  BOOST_CHECK(view.point() == (BufferPoint{0, 6}));
+}
+
 // gotoLine in no-wrap mode previously assigned `_viewFrom.col = ByteOffset{0}`
 // unconditionally. With a saved no-wrap state (VisualCol alternative),
 // any subsequent hScroll() access threw bad_variant_access. The fix

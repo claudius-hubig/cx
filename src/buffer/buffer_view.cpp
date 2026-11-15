@@ -2042,6 +2042,7 @@ bool BufferView::enterHistoryMode() {
   collapseCursors();
   _buf.setBrowsingHistory(true);
   _historyIndex = info.size - 1;
+  _historyEntryPoint = _point;
   // Match stepHistory(): the mark cannot meaningfully refer to a position
   // in a snapshot that may differ from the current contents.
   _mark.reset();
@@ -2060,13 +2061,16 @@ void BufferView::stepHistory(int delta) {
     ni = 0;
   if (ni >= static_cast<long long>(info.size))
     ni = static_cast<long long>(info.size) - 1;
-  auto newIdx = static_cast<std::size_t>(ni);
-  if (newIdx == *_historyIndex)
+  showHistoryVersion(static_cast<std::size_t>(ni));
+}
+
+void BufferView::showHistoryVersion(std::size_t idx) {
+  if (idx == *_historyIndex)
     return;
-  _historyIndex = newIdx;
+  _historyIndex = idx;
   // Cursors added while browsing refer to the text being replaced.
   collapseCursors();
-  _buf.applyVersionAt(newIdx, _point);
+  _buf.applyVersionAt(idx, _point);
   syncAfterEdit();
   clampPoint(_point);
   _mark.reset();
@@ -2077,6 +2081,21 @@ void BufferView::exitHistoryModeCommit() {
   if (!_historyIndex)
     return;
   _buf.truncateHistoryAfter(*_historyIndex);
+  _buf.setBrowsingHistory(false);
+  _historyIndex.reset();
+}
+
+void BufferView::exitHistoryModeCancel() {
+  if (!_historyIndex)
+    return;
+  // The buffer was read-only throughout, so the newest version is the
+  // text it held on entry.
+  auto latest = _buf.versionHistoryInfo().size - 1;
+  if (*_historyIndex != latest) {
+    showHistoryVersion(latest);
+    _point = _historyEntryPoint;
+    clampPoint(_point);
+  }
   _buf.setBrowsingHistory(false);
   _historyIndex.reset();
 }

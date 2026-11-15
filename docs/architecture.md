@@ -413,12 +413,17 @@ All user-facing movement, editing, and render operations are methods on
 - **Highlight**: `setHighlight/clearHighlight` for find highlighting.
 - **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to
   the first non-space byte when it is in the leading whitespace.
-- **History mode**: `enterHistoryMode()`, `stepHistory(delta)`, and
-  `exitHistoryModeCommit()` provide read-only browsing of the
-  underlying buffer's version history. Entering flips the buffer to
-  read-only via `setBrowsingHistory(true)`; stepping calls
-  `applyVersionAt()` and updates the cursor; committing truncates any
-  forward history beyond the selected version and re-enables editing.
+- **History mode**: `enterHistoryMode()`, `stepHistory(delta)`,
+  `exitHistoryModeCommit()` and `exitHistoryModeCancel()` provide
+  read-only browsing of the underlying buffer's version history.
+  Entering flips the buffer to read-only via
+  `setBrowsingHistory(true)`; stepping calls `applyVersionAt()` and
+  updates the cursor; committing (Ctrl-u, Enter) truncates any forward
+  history beyond the selected version and re-enables editing;
+  cancelling (Esc-Esc) shows the newest version again, puts the cursor
+  back where it was on entry and drops nothing. The read-only flag
+  lives on the buffer, so a view must leave history mode before it is
+  dropped.
   Only one view per buffer may browse at a time: `enterHistoryMode()`
   returns false while the buffer is already browsing, since the shown
   snapshot is per buffer. `inHistoryMode()` / `historyIndex()` expose the current state to
@@ -504,6 +509,9 @@ on every successful edit (via the inherited `recordVersion()` hook),
 and on `save()` / `revert()` to preserve the on-disk state as a
 restorable snapshot. `readonly()` returns `_browsingHistory`, which
 makes the buffer immutable while a view is stepping through history.
+Showing the newest version again while browsing restores the
+`modified()` flag the buffer had when browsing began, so stepping back
+and returning (or cancelling) leaves a saved buffer unmodified.
 
 ---
 

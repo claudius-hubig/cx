@@ -2266,3 +2266,48 @@ BOOST_AUTO_TEST_CASE(e2e_replace_label_escapes_control_characters) {
     session.waitExit();
   }
 }
+
+// Whole content of the file at @p path.
+static std::string readFile(std::filesystem::path const& path) {
+  std::ifstream f(path, std::ios::binary);
+  return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+
+// Help and README promise that Esc-Esc leaves history mode without
+// committing and that Enter commits; neither key did anything, so every
+// way out of history mode dropped the newer versions.
+BOOST_AUTO_TEST_CASE(e2e_history_esc_esc_cancels_and_enter_commits) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  struct Case {
+    std::string_view key, status, saved;
+  };
+  for (auto const& c : {Case{"\x1b\x1b", "History: cancelled", "abcbase\n"},
+                        Case{"\r", "History: committed", "abase\n"}}) {
+    BOOST_TEST_CONTEXT(c.status) {
+      TempFile tmp("base\n");
+      PtySession session(24, 80, bin, {std::string(tmp.path())});
+      session.readUntil("base", std::chrono::milliseconds{500});
+      session.send("abc");
+      session.readOutput(std::chrono::milliseconds{200});
+      // History mode, two versions back: the buffer shows "abase".
+      session.send("\x15[[");
+      session.readUntil("v 2/4", std::chrono::milliseconds{1000});
+
+      session.send(c.key);
+      auto out = stripAnsi(session.readUntil(c.status, std::chrono::milliseconds{1000}));
+      BOOST_CHECK_MESSAGE(out.find(c.status) != std::string::npos, "status: " + out);
+
+      session.send("\x13");
+      session.readUntil("Saved", std::chrono::milliseconds{1000});
+      BOOST_CHECK_EQUAL(readFile(tmp.path()), c.saved);
+      session.send("\x1b"
+                   "c");
+      BOOST_CHECK_EQUAL(session.waitExit(), 0);
+    }
+  }
+}

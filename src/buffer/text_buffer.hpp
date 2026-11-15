@@ -63,7 +63,11 @@ public:
   VersionHistory const& history() const { return _history; }
 
   bool browsingHistory() const override { return _browsingHistory; }
-  void setBrowsingHistory(bool b) override { _browsingHistory = b; }
+  void setBrowsingHistory(bool b) override {
+    if (b && !_browsingHistory)
+      _modifiedBeforeBrowsing = _modified;
+    _browsingHistory = b;
+  }
 
   /**
    * @brief Append a snapshot to the history.
@@ -94,6 +98,10 @@ public:
   void applyVersionAt(std::size_t idx, BufferPoint& cursor) override {
     applySnapshot(_history.linesAt(idx));
     cursor = _history.cursorAt(idx);
+    // The newest version is the text the buffer held when browsing began
+    // (it is read-only meanwhile), so showing it again is not a change.
+    if (_browsingHistory && idx + 1 == _history.size())
+      _modified = _modifiedBeforeBrowsing;
   }
 
   void truncateHistoryAfter(std::size_t idx) override { _history.truncateAfter(idx); }
@@ -184,6 +192,8 @@ private:
   LineEndingStyle _lineEndingStyle = LineEndingStyle::Unix;
   VersionHistory _history;
   bool _browsingHistory = false;
+  /** @brief modified() when history browsing began; see applyVersionAt(). */
+  bool _modifiedBeforeBrowsing = false;
   /**
    * @brief mtime of the backing file at the last load/save; nullopt while
    *        no baseline is known.

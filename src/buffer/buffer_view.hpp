@@ -323,7 +323,11 @@ public:
    * Meaningful only when the underlying buffer is a TextBuffer; no-ops
    * otherwise. Entering flips the buffer to read-only (so all edit methods
    * become no-ops via their readonly() guard); committing truncates any
-   * forward history after the selected version.
+   * forward history after the selected version, cancelling keeps all of it.
+   *
+   * A view that is dropped while browsing must leave history mode first
+   * (commit or cancel): the read-only flag lives on the buffer, and nothing
+   * else would clear it.
    */
   /** @{ */
   bool inHistoryMode() const { return _historyIndex.has_value(); }
@@ -338,7 +342,16 @@ public:
    */
   bool enterHistoryMode();
   void stepHistory(int delta);
+  /** @brief Keep the version shown and drop every later one. */
   void exitHistoryModeCommit();
+  /**
+   * @brief Leave history mode with the buffer as it was on entry: the
+   *        newest version is shown again and no version is dropped.
+   *
+   * The cursor returns to where it was on entry if an older version had
+   * been stepped to (a snapshot carries its own cursor).
+   */
+  void exitHistoryModeCancel();
   /** @} */
 
   /**
@@ -491,6 +504,12 @@ private:
   void endBatch(std::size_t versionBefore);
 
   /**
+   * @brief Show version @p idx of the history in the buffer.
+   * @pre In history mode; @p idx is a valid version index.
+   */
+  void showHistoryVersion(std::size_t idx);
+
+  /**
    * @brief Pending shift for the not-yet-visited tail of @c _batch.
    *
    * Cursors are visited in ascending order and every edit happens at or
@@ -617,4 +636,6 @@ private:
 
   std::size_t _docVersion = 0;
   std::optional<std::size_t> _historyIndex;
+  /** @brief The cursor on entering history mode, for exitHistoryModeCancel(). */
+  BufferPoint _historyEntryPoint;
 };
