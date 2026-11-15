@@ -49,7 +49,11 @@ terminal to the alternate screen buffer; enables SGR mouse tracking
 `?1006h` extended coordinates; `?1003h` any-motion is deliberately not
 enabled) and bracketed paste (`?2004h`). On destruction, disables both,
 restores the saved state, and returns to the normal screen. Guarantees
-cleanup even on exception.
+cleanup even on exception. A signal that ends the process (SIGTERM,
+SIGHUP, SIGINT, SIGQUIT) would skip the destructor, so while an
+instance exists a handler puts the terminal back first and then
+re-raises the signal with its default action; unsaved buffers are still
+lost.
 
 ---
 

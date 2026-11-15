@@ -17,6 +17,7 @@
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 #include <vector>
 
@@ -2607,4 +2608,37 @@ BOOST_AUTO_TEST_CASE(e2e_bracketed_paste_in_prompt_and_read_only_buffer) {
                "c");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
   BOOST_CHECK_EQUAL(readFile(tmp.path()), "one needle here\n");
+}
+
+// A signal that ends the process skips ~SetupTerminal: the shell was left
+// in raw mode, on the alternate screen, with mouse reporting on.
+BOOST_AUTO_TEST_CASE(e2e_sigterm_restores_the_terminal) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin);
+  session.readOutput(std::chrono::milliseconds{300});
+  struct termios raw{};
+  BOOST_REQUIRE_EQUAL(tcgetattr(session.masterFd, &raw), 0);
+  BOOST_CHECK((raw.c_lflag & ICANON) == 0); // cx is running in raw mode
+
+  kill(session.childPid, SIGTERM);
+  auto out = session.readOutput(std::chrono::milliseconds{500});
+  BOOST_CHECK_MESSAGE(out.find("\x1b[?1049l") != std::string::npos, "alternate screen left on");
+  BOOST_CHECK_MESSAGE(out.find("\x1b[?1000l") != std::string::npos, "mouse reporting left on");
+  BOOST_CHECK_MESSAGE(out.find("\x1b[?2004l") != std::string::npos, "bracketed paste left on");
+
+  // The process still dies of the signal, as it would have unhandled.
+  int status = 0;
+  BOOST_REQUIRE_EQUAL(waitpid(session.childPid, &status, 0), session.childPid);
+  session.childPid = -1;
+  BOOST_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM);
+
+  struct termios after{};
+  BOOST_REQUIRE_EQUAL(tcgetattr(session.masterFd, &after), 0);
+  BOOST_CHECK((after.c_lflag & ICANON) != 0);
+  BOOST_CHECK((after.c_lflag & ECHO) != 0);
 }
