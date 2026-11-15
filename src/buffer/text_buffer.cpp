@@ -1,5 +1,7 @@
 #include "text_buffer.hpp"
 
+#include <sys/stat.h>
+
 #include <cstring>
 #include <expected>
 #include <filesystem>
@@ -230,12 +232,7 @@ void TextBuffer::setPath(std::filesystem::path p) {
   detectMode();
 }
 
-std::expected<void, std::string> TextBuffer::save() {
-  if (!_path)
-    return std::unexpected("buffer has no path");
-  std::ofstream file(*_path, std::ios::binary);
-  if (!file)
-    return std::unexpected("cannot open " + _path->string());
+bool TextBuffer::writeLines(std::ofstream& file) const {
   // Mirrors the load site (see loadFromFile): a '\n' is written between
   // every adjacent pair of lines but never after the last, so a buffer
   // whose representation has an empty trailing entry (per the invariant
@@ -250,14 +247,39 @@ std::expected<void, std::string> TextBuffer::save() {
   }
   // Close before checking for errors: a small file sits wholly in the
   // stream buffer until close() flushes it, so a full disk or an exceeded
-  // quota is reported only there. Closing also has to come before the stat
-  // below, so the stamp reflects the bytes just written.
+  // quota is reported only there.
   file.close();
-  if (file.fail())
+  return !file.fail();
+}
+
+std::expected<void, std::string> TextBuffer::save() {
+  if (!_path)
+    return std::unexpected("buffer has no path");
+  std::ofstream file(*_path, std::ios::binary);
+  if (!file)
+    return std::unexpected("cannot open " + _path->string());
+  // The file is closed by now, which the stat below needs: the stamp has
+  // to reflect the bytes just written.
+  if (!writeLines(file))
     return std::unexpected("write error for " + _path->string());
   _modified = false;
   scanForConflicts();
   captureDiskStamp();
+  return {};
+}
+
+std::expected<void, std::string> TextBuffer::writeCopy(std::filesystem::path const& path) const {
+  // The file has to be private from the moment it exists, and the stdlib
+  // cannot ask for that: narrowing the permissions afterwards would leave
+  // a moment in which somebody else can open it. noreplace also keeps a
+  // symlink planted under that name from being followed.
+  auto const mask = umask(S_IRWXG | S_IRWXO);
+  std::ofstream file(path, std::ios::binary | std::ios::noreplace);
+  umask(mask);
+  if (!file)
+    return std::unexpected("cannot create " + path.string());
+  if (!writeLines(file))
+    return std::unexpected("write error for " + path.string());
   return {};
 }
 

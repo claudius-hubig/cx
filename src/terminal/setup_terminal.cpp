@@ -47,7 +47,7 @@ std::array<struct sigaction, kFatalSignals.size()> g_savedActions;
 // std::regex fails on a long line) arrives as SIGSEGV with no room left
 // on the stack it overflowed, so the handler could not run there. A fixed
 // size, as SIGSTKSZ is not a constant: the handler needs very little, the
-// crash hook it calls (which saves files) a good deal more.
+// crash hook it calls (which writes files) a good deal more.
 std::array<char, 256 * 1024> g_handlerStack;
 // The alternate stack that was set before, put back by restore().
 stack_t g_savedStack;

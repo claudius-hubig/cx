@@ -98,6 +98,40 @@ BOOST_AUTO_TEST_CASE(save_reports_a_write_that_fails_on_close) {
   BOOST_CHECK(buf.modified());
 }
 
+// --- writeCopy ---
+
+BOOST_AUTO_TEST_CASE(writeCopy_leaves_the_buffer_and_its_file_alone) {
+  TempFile tmp("on disk\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  buf.insert('X');
+  TempFile copy; // a name that is free once the file is removed
+  std::filesystem::remove(copy.path());
+
+  BOOST_CHECK(buf.writeCopy(copy.path()));
+  auto read = [](std::filesystem::path const& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  };
+  BOOST_CHECK_EQUAL(read(copy.path()), "Xon disk\n");
+  BOOST_CHECK_EQUAL(read(tmp.path()), "on disk\n");
+  BOOST_CHECK(buf.modified());
+  BOOST_CHECK(!buf.changedOnDisk());
+
+  // The buffer's own file may be private, so the copy is the owner's alone.
+  using std::filesystem::perms;
+  BOOST_CHECK(std::filesystem::status(copy.path()).permissions() ==
+              (perms::owner_read | perms::owner_write));
+}
+
+BOOST_AUTO_TEST_CASE(writeCopy_does_not_replace_a_file) {
+  TempFile tmp("text\n"), existing("keep me\n");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(!buf.writeCopy(existing.path()));
+  std::ifstream f(existing.path(), std::ios::binary);
+  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  BOOST_CHECK_EQUAL(content, "keep me\n");
+}
+
 // --- changedOnDisk ---
 
 BOOST_AUTO_TEST_CASE(changedOnDisk_false_for_pathless) {

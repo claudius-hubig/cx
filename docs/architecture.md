@@ -34,7 +34,7 @@ first two by printing `cli::usage()` or `versionText()`
 `Screen::loop()` to run the editor. A `CrashHook` makes a crash call
 `Screen::emergencySave()`; `main` calls it itself, after
 `SetupTerminal::restore()`, when the loop ends with `Exit::Emergency`,
-and exits with status 1 if a buffer could not be saved. Each path argument is parsed via
+and exits with status 1 if a buffer could not be written. Each path argument is parsed via
 `parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
 `:LINE` suffix (e.g. `cx src/foo.cpp:42`). If stdin is a pipe, `main`
 drains it before raw-mode setup, dups `/dev/tty` over fd 0 so terminal
@@ -141,15 +141,20 @@ Key responsibilities:
   exit flow of Esc-c, which asks about each modified buffer; an exit
   flow the user already opened is left alone. A further SIGTERM while
   that flow is open means nobody is answering: `loop()` returns
-  `Exit::Emergency` and `main` calls `emergencySave()`, which saves
-  every modified buffer that has a file without asking (not even when
-  the file changed on disk), abandons the others, and writes one
-  `cx: saved …` / `cx: could not save …` / `cx: discarded …` line per
-  buffer to the restored terminal. A cancelled exit flow resets this, so
-  the next SIGTERM asks again. The handler only counts; requests are
-  acted on in the loop, so one that arrives while a command is running
-  waits for it, as a key would. `emergencySave()` is also what the
-  `CrashHook` runs.
+  `Exit::Emergency` and `main` calls `emergencySave()`. A cancelled
+  exit flow resets this, so the next SIGTERM asks again. The handler
+  only counts; requests are acted on in the loop, so one that arrives
+  while a command is running waits for it, as a key would.
+- **Emergency save**: `emergencySave()` is the way out when nobody can
+  be asked: after that second SIGTERM, and from the `CrashHook` when the
+  editor crashes. It never writes a buffer's own file, since nobody
+  agreed to that and after a crash the buffer may be damaged. Every
+  modified buffer that has a file goes to a new file next to it
+  (`Buffer::writeCopy()`): `<file>.unsaved-<UTC time>`, owner-only,
+  never replacing a file. The file itself stays as it was last saved,
+  and modified buffers without a file are abandoned. The restored
+  terminal gets one line per buffer: `cx: unsaved <file> written to
+  <copy>`, `cx: could not save …` or `cx: discarded …`.
 - **Input dispatch**: Any `std::exception` escaping a handler is
   logged and shown in the status line rather than ending the session:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
@@ -531,7 +536,11 @@ All user-facing movement, editing, and render operations are methods on
 Concrete editable buffer backed by a file on disk. Reads the file on
 construction; `save()` writes lines back as a truncating binary write
 and returns `std::expected<void, std::string>` with an error message on
-failure. `revert()` reloads the buffer contents from its backing file
+failure. `writeCopy(path)` writes the same bytes to a new owner-only
+file instead (`umask` and `std::ios::noreplace`: private from creation,
+and an existing file or symlink of that name is not touched) and leaves
+the buffer's path, modified flag and disk stamp alone; the emergency
+save uses it. `revert()` reloads the buffer contents from its backing file
 and bumps `docVersion`; it does *not* touch view state. Callers that
 need to reposition the cursor after a revert (e.g. `Screen` on the
 user-invoked `Revert` action) explicitly reset `_view->setPoint(0,0)`

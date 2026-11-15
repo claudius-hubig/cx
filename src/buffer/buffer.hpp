@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <span>
@@ -177,6 +178,20 @@ public:
    * @return An empty expected on success, or an error message.
    */
   virtual std::expected<void, std::string> save() { return std::unexpected("buffer has no path"); }
+
+  /**
+   * @brief Write buffer contents to the new file @p path instead, leaving
+   *        the buffer as it is: its own file, its path and its modified
+   *        flag are not touched.
+   *
+   * The file is created readable and writable by its owner only, since
+   * the buffer's own file may be private. Fails if @p path exists. The
+   * base implementation reports an error; TextBuffer overrides it.
+   * @return An empty expected on success, or an error message.
+   */
+  virtual std::expected<void, std::string> writeCopy(std::filesystem::path const& /*path*/) const {
+    return std::unexpected("buffer cannot be saved");
+  }
 
   /**
    * @brief Reload buffer contents from the backing file.

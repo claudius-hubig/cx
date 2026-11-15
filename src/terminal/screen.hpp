@@ -73,7 +73,7 @@ public:
   /** @brief How loop() ended. */
   enum class Exit {
     Normal,    /**< The exit command, or stdin was closed. */
-    Emergency, /**< Told to terminate with unsaved buffers left: emergencySave() is due. */
+    Emergency, /**< Told to terminate with the exit flow unanswered: emergencySave() is due. */
   };
 
   /**
@@ -86,23 +86,28 @@ public:
    * waiting for: the modified buffers are asked about, one by one. A
    * second SIGTERM while that is still going on ends the loop with
    * Exit::Emergency, for the caller to restore the terminal and call
-   * emergencySave().
+   * emergencySave(), which leaves the unsaved buffers in copies.
    */
   [[nodiscard]] Exit loop();
 
   /**
-   * @brief Save every modified buffer that has a file, without asking,
-   *        and write one line per buffer to stdout saying what became of
-   *        it. Modified buffers without a file are abandoned (and listed).
+   * @brief Write every modified buffer that has a file to a copy next to
+   *        that file, without asking, and write one line per buffer to
+   *        stdout saying what became of it. Modified buffers without a
+   *        file are abandoned (and listed).
+   *
+   * The copy is a new file `<file>.unsaved-<UTC time>`, readable by its
+   * owner only. The file itself is never written: nobody was asked, and
+   * the buffer may be damaged, so the user decides afterwards which of
+   * the two to keep.
    *
    * The way out when nobody can be asked any more: on a second SIGTERM
    * (see loop()) and when the editor crashes (see CrashHook), where it
    * runs in a signal handler on whatever state the crash left behind.
-   * Nothing is checked first: a file that changed on disk is overwritten.
    *
    * @pre The terminal has been restored, so the lines stay on the user's
    *      screen.
-   * @return False if a buffer could not be saved.
+   * @return False if a buffer could not be written.
    */
   bool emergencySave() noexcept;
 

@@ -29,6 +29,7 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <format>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -799,8 +800,12 @@ bool Screen::emergencySave() noexcept {
     writeAll(STDOUT_FILENO, line.data(), line.size());
   };
   try {
+    // One suffix for all the copies of this run, in UTC: looking up the
+    // local time zone is more than a crash handler should attempt.
+    auto const now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+    auto const copySuffix = std::format(".unsaved-{:%Y%m%dT%H%M%SZ}", now);
     // A buffer whose history is being browsed shows an old version and
-    // is read-only: back to the newest one, which is what gets saved.
+    // is read-only: back to the newest one, which is what gets written.
     leaveHistoryModeInAllPanels();
     for (auto const& name : _bufMgr->bufferNames()) {
       Buffer* buf = _bufMgr->find(name);
@@ -808,8 +813,13 @@ bool Screen::emergencySave() noexcept {
         continue;
       if (!buf->hasPath()) {
         report("discarded " + name + " (it has no file)");
-      } else if (auto res = buf->save()) {
-        report("saved " + name);
+        continue;
+      }
+      // To a copy, never over the file: nobody was asked, and after a
+      // crash the buffer may be damaged.
+      auto const copy = name + copySuffix;
+      if (auto res = buf->writeCopy(copy)) {
+        report("unsaved " + name + " written to " + copy);
       } else {
         report("could not save " + name + ": " + res.error());
         logError(res.error());

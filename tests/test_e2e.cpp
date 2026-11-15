@@ -2694,6 +2694,31 @@ bool afterTeardown(std::string const& out, std::string const& line) {
   return teardown != std::string::npos && out.find(line, teardown) != std::string::npos;
 }
 
+// The files named `<file>.unsaved-…`: what an emergency save leaves next
+// to @p file.
+std::vector<std::filesystem::path> unsavedCopies(std::filesystem::path const& file) {
+  std::vector<std::filesystem::path> copies;
+  for (auto const& entry : std::filesystem::directory_iterator(file.parent_path()))
+    if (entry.path().string().starts_with(file.string() + ".unsaved-"))
+      copies.push_back(entry.path());
+  return copies;
+}
+
+// An emergency save never writes a file itself: check that @p file still
+// reads @p onDisk, that one copy of it holds @p unsaved, and that @p out
+// names the copy on the normal screen. Removes the copy.
+void checkUnsavedCopy(std::string const& out, std::filesystem::path const& file,
+                      std::string const& onDisk, std::string const& unsaved) {
+  BOOST_CHECK_EQUAL(readFile(file), onDisk);
+  auto copies = unsavedCopies(file);
+  BOOST_REQUIRE_EQUAL(copies.size(), 1u);
+  BOOST_CHECK_EQUAL(readFile(copies[0]), unsaved);
+  BOOST_CHECK_MESSAGE(
+      afterTeardown(out, "cx: unsaved " + file.string() + " written to " + copies[0].string()),
+      out);
+  std::filesystem::remove(copies[0]);
+}
+
 } // namespace
 
 // SIGTERM used to end the editor with every unsaved buffer lost. It is
@@ -2714,7 +2739,7 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_exits_when_nothing_is_modified) {
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
 
-BOOST_AUTO_TEST_CASE(e2e_sigterm_asks_and_a_second_one_saves_the_files) {
+BOOST_AUTO_TEST_CASE(e2e_sigterm_asks_and_a_second_one_writes_copies) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
     BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
@@ -2740,15 +2765,13 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_asks_and_a_second_one_saves_the_files) {
   BOOST_CHECK_EQUAL(readFile(a.path()), "alpha\n");
   BOOST_CHECK_EQUAL(readFile(b.path()), "beta\n");
 
-  // Nobody answers: the second one saves what has a file and leaves, with
-  // the list of it on the normal screen.
+  // Nobody answers: the second one writes what has a file to a copy next
+  // to it and leaves, with the list of the copies on the normal screen.
   kill(session.childPid, SIGTERM);
   auto out = session.readOutput(milliseconds{500});
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
-  BOOST_CHECK_EQUAL(readFile(a.path()), "Aalpha\n");
-  BOOST_CHECK_EQUAL(readFile(b.path()), "Bbeta\n");
-  BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: saved " + a.path().string()), out);
-  BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: saved " + b.path().string()), out);
+  checkUnsavedCopy(out, a.path(), "alpha\n", "Aalpha\n");
+  checkUnsavedCopy(out, b.path(), "beta\n", "Bbeta\n");
   BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: discarded *s*"), out);
 }
 
@@ -2785,8 +2808,8 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_cancels_a_prompt_and_can_be_cancelled_itself) {
   BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
 }
 
-// An exit the user started is theirs to answer: one SIGTERM does not save
-// over their head, the one after it does.
+// An exit the user started is theirs to answer: one SIGTERM does not end
+// it over their head, the one after it does.
 BOOST_AUTO_TEST_CASE(e2e_sigterm_during_an_exit_started_with_esc_c) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
@@ -2809,9 +2832,9 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_during_an_exit_started_with_esc_c) {
   BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
 
   kill(session.childPid, SIGTERM);
-  session.readOutput(milliseconds{500});
+  auto out = session.readOutput(milliseconds{500});
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
-  BOOST_CHECK_EQUAL(readFile(tmp.path()), "Xtext\n");
+  checkUnsavedCopy(out, tmp.path(), "text\n", "Xtext\n");
 }
 
 BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
@@ -2837,9 +2860,10 @@ BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
   BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
-// A crash took every unsaved buffer with it. The crash handler now saves
-// the ones that have a file and lists them, once the terminal is back.
-BOOST_AUTO_TEST_CASE(e2e_crash_saves_the_modified_files) {
+// A crash took every unsaved buffer with it. The crash handler now writes
+// the ones that have a file to copies next to them and lists those, once
+// the terminal is back.
+BOOST_AUTO_TEST_CASE(e2e_crash_writes_the_modified_files_to_copies) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
     BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
@@ -2856,9 +2880,9 @@ BOOST_AUTO_TEST_CASE(e2e_crash_saves_the_modified_files) {
 
       kill(session.childPid, signo);
       auto out = session.readOutput(milliseconds{500});
-      BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: saved " + tmp.path().string()), out);
       BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: discarded *s*"), out);
-      BOOST_CHECK_EQUAL(readFile(tmp.path()), "Xtext\n");
+      // The buffer may be damaged, so the file stays as it was last saved.
+      checkUnsavedCopy(out, tmp.path(), "text\n", "Xtext\n");
 
       // It is still the crash that ends the process.
       int status = 0;
@@ -2876,7 +2900,8 @@ BOOST_AUTO_TEST_CASE(e2e_crash_saves_the_modified_files) {
   session.readOutput(milliseconds{150});
   kill(session.childPid, SIGINT);
   auto out = session.readOutput(milliseconds{500});
-  BOOST_CHECK(out.find("cx: saved") == std::string::npos);
+  BOOST_CHECK(out.find("cx: unsaved") == std::string::npos);
+  BOOST_CHECK(unsavedCopies(tmp.path()).empty());
   BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
 }
 

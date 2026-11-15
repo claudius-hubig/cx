@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <iosfwd>
 #include <optional>
 #include <string>
 
@@ -124,6 +125,9 @@ public:
    */
   std::expected<void, std::string> save() override;
 
+  /** @brief Write the lines to the new, owner-only file @p path (see Buffer::writeCopy()). */
+  std::expected<void, std::string> writeCopy(std::filesystem::path const& path) const override;
+
   /**
    * @brief Reload buffer contents from the backing file.
    *
@@ -177,6 +181,11 @@ private:
   void detectMode();
   /** @brief Read the backing file into @c _lines, populating @c _lineEndingStyle. */
   void loadFromFile(std::filesystem::path const& path);
+  /**
+   * @brief Write @c _lines to @p file and close it.
+   * @return False if a write, or the flush on closing, failed.
+   */
+  bool writeLines(std::ofstream& file) const;
 
   /**
    * @brief Capture the on-disk mtime and size of @c _path as the baseline
