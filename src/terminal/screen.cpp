@@ -16,11 +16,13 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -58,6 +60,14 @@ static void writeAll(int fd, char const* data, std::size_t len) {
 // readByte), and runPipeCommand(). Single-consumer at any moment because
 // only one of those code paths runs at a time on the main thread.
 static sig_atomic_t volatile g_resized = 0;
+
+// SIGTERMs received and not yet acted on: counted by the handler, taken by
+// loop(). A count rather than a flag, since the second request means
+// something else than the first (see Screen::handleTerminationRequest())
+// and two may arrive before the loop gets to either. A lock-free atomic
+// is safe to use from a signal handler.
+static std::atomic<int> g_termRequests = 0;
+static_assert(std::atomic<int>::is_always_lock_free);
 
 /**
  * @brief Build a PromptDisplay summarising the current completions list.
@@ -134,6 +144,37 @@ constexpr int kEscDisambiguationMs = 50;
 } // namespace
 
 static void handle_sigwinch(int) { g_resized = 1; }
+static void handle_sigterm(int) { ++g_termRequests; }
+
+/**
+ * @brief Block until stdin is readable or a signal has been caught.
+ *
+ * Checking the handlers' flags and then blocking in read() would miss a
+ * signal that arrives in between until the next key. So SIGWINCH and
+ * SIGTERM are held back while the flags are checked and let in again by
+ * pselect() as it starts to wait. They are held for that moment only: a
+ * blocked signal would be inherited by the commands the editor runs.
+ *
+ * @return True if stdin is ready to be read (or broken, which the read
+ *         reports); false if a handler has set its flag.
+ */
+static bool waitForInput() {
+  sigset_t held, before;
+  sigemptyset(&held);
+  sigaddset(&held, SIGWINCH);
+  sigaddset(&held, SIGTERM);
+  sigprocmask(SIG_BLOCK, &held, &before);
+  bool ready = false;
+  if (!g_resized && g_termRequests == 0) {
+    fd_set in;
+    FD_ZERO(&in);
+    FD_SET(STDIN_FILENO, &in);
+    ready =
+        pselect(STDIN_FILENO + 1, &in, nullptr, nullptr, nullptr, &before) >= 0 || errno != EINTR;
+  }
+  sigprocmask(SIG_SETMASK, &before, nullptr);
+  return ready;
+}
 
 /**
  * @brief Read a single byte from stdin, retrying on EINTR.
@@ -243,6 +284,13 @@ Screen::Screen() : _size{RowIdx{0}, ColIdx{0}} {
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = handle_sigwinch;
   sigaction(SIGWINCH, &sa, nullptr);
+
+  // SIGTERM asks the editor to exit, as Esc-c does, rather than ending it
+  // with the unsaved buffers lost (see handleTerminationRequest()). This
+  // takes the signal over from SetupTerminal, which only restores the
+  // terminal.
+  sa.sa_handler = handle_sigterm;
+  sigaction(SIGTERM, &sa, nullptr);
 
   // Pipe-based formatters and similar tools may close their stdin
   // before reading all our input (e.g. `head -n 1`). Default SIGPIPE
@@ -654,55 +702,49 @@ void Screen::draw() {
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
 }
 
-void Screen::loop() {
-  char c;
+Screen::Exit Screen::loop() {
   std::optional<char> pendingChar;
   while (true) {
-    if (pendingChar) {
-      c = *pendingChar;
-      pendingChar.reset();
-    } else {
-      // read() returns -1 with errno == EINTR when interrupted by a signal
-      // (e.g. SIGWINCH). In that case check the resize flag and retry.
+    // The next input byte; none if a signal was caught instead.
+    std::optional<char> input = std::exchange(pendingChar, std::nullopt);
+    if (!input && waitForInput()) {
+      char c;
       ssize_t n = read(STDIN_FILENO, &c, 1);
-      if (n == -1 && errno == EINTR) {
-        if (g_resized) {
-          g_resized = 0;
-          resize();
-          draw();
-        }
-        continue;
-      }
       if (n == 0)
         break; // clean EOF — stdin closed, exit loop
       if (n < 0) {
-        // Transient error (e.g. EIO if the controlling tty is severed,
+        // EINTR: a signal, which the next wait finds. Anything else is a
+        // transient error (e.g. EIO if the controlling tty is severed,
         // or EAGAIN if stdin was somehow flipped to non-blocking). Log
         // and retry rather than treating it as EOF; if it's persistent
         // the next read will fail again.
-        logError(std::string("stdin read: ") + std::strerror(errno));
+        if (errno != EINTR)
+          logError(std::string("stdin read: ") + std::strerror(errno));
         continue;
       }
+      input = c;
+    }
 
-      // Also check after a successful read, in case the signal arrived
-      // between loop iterations rather than during a blocked read().
+    if (input) {
+      // Defence in depth: an exception escaping one action must not end
+      // the session (main() would exit and drop every unsaved buffer).
+      try {
+        if (_prompt)
+          handlePromptInput(*input);
+        else
+          handleNormalInput(*input, pendingChar);
+      } catch (std::exception const& e) {
+        logError(e.what());
+        setStatus(std::string("Error: ") + escapeNonPrintable(e.what()));
+      }
+    } else {
       if (g_resized) {
         g_resized = 0;
         resize();
-        draw();
       }
-    }
-
-    // Defence in depth: an exception escaping one action must not end the
-    // session (main() would exit and drop every unsaved buffer).
-    try {
-      if (_prompt)
-        handlePromptInput(c);
-      else
-        handleNormalInput(c, pendingChar);
-    } catch (std::exception const& e) {
-      logError(e.what());
-      setStatus(std::string("Error: ") + escapeNonPrintable(e.what()));
+      for (int n = g_termRequests.exchange(0); n > 0; --n)
+        if (handleTerminationRequest())
+          return Exit::Emergency;
     }
 
     // Process pending exit: walk modified buffers or break.
@@ -710,10 +752,77 @@ void Screen::loop() {
       if (tryExit())
         break;
     }
+    // The exit flow a SIGTERM asked for is over once it has been cancelled.
+    if (!_exitPending)
+      _exitBySignal = false;
 
-    syncPrimarySelection();
+    if (input)
+      syncPrimarySelection();
     draw();
   }
+  return Exit::Normal;
+}
+
+bool Screen::handleTerminationRequest() {
+  if (_exitPending && _exitBySignal)
+    return true;
+  _exitBySignal = true;
+  if (!_exitPending) {
+    // Esc-c does nothing while a prompt is open; a request to terminate
+    // must not wait for the prompt, so it is cancelled as Esc would.
+    abortPrompt();
+    _exitPending = true;
+  }
+  return false;
+}
+
+void Screen::abortPrompt() {
+  if (!_prompt)
+    return;
+  auto abortFn = std::move(_prompt->onAbort);
+  _prompt.reset();
+  if (abortFn)
+    abortFn();
+}
+
+void Screen::leaveHistoryModeInAllPanels() {
+  if (_layout)
+    _layout->forEachPanel([](Panel& panel) { panel.view().exitHistoryModeCancel(); });
+}
+
+bool Screen::emergencySave() noexcept {
+  if (!_bufMgr)
+    return true;
+  bool allSaved = true;
+  auto report = [](std::string line) {
+    line = "cx: " + escapeNonPrintable(line) + "\n";
+    writeAll(STDOUT_FILENO, line.data(), line.size());
+  };
+  try {
+    // A buffer whose history is being browsed shows an old version and
+    // is read-only: back to the newest one, which is what gets saved.
+    leaveHistoryModeInAllPanels();
+    for (auto const& name : _bufMgr->bufferNames()) {
+      Buffer* buf = _bufMgr->find(name);
+      if (!buf || !buf->modified() || buf->readonly())
+        continue;
+      if (!buf->hasPath()) {
+        report("discarded " + name + " (it has no file)");
+      } else if (auto res = buf->save()) {
+        report("saved " + name);
+      } else {
+        report("could not save " + name + ": " + res.error());
+        logError(res.error());
+        allSaved = false;
+      }
+    }
+  } catch (...) {
+    // There is nobody left to report it to but the user.
+    static constexpr std::string_view kFailed = "cx: saving the modified buffers failed\n";
+    writeAll(STDOUT_FILENO, kFailed.data(), kFailed.size());
+    allSaved = false;
+  }
+  return allSaved;
 }
 
 void Screen::pullExternalClipboard() {
@@ -860,10 +969,7 @@ void Screen::handlePromptInput(char c) {
       }
     } else {
       // Bare Esc: cancel prompt.
-      auto abortFn = std::move(p.onAbort);
-      _prompt.reset();
-      if (abortFn)
-        abortFn();
+      abortPrompt();
     }
   } else if (c == key::Tab && p.onTab) {
     p.display = p.onTab(p.input);
@@ -2657,6 +2763,8 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         break;
       }
       if (nn == -1 && errno == EINTR) {
+        if (g_termRequests > 0)
+          break; // a request to terminate ends the wait: back to loop()
         if (g_resized) {
           g_resized = 0;
           resize();
@@ -3235,6 +3343,8 @@ void Screen::handleCtrlXInput() {
       break;
     }
     if (nn == -1 && errno == EINTR) {
+      if (g_termRequests > 0)
+        break; // a request to terminate ends the wait: back to loop()
       if (g_resized) {
         g_resized = 0;
         resize();
@@ -3276,8 +3386,7 @@ bool Screen::tryExit() {
   // A buffer whose history is being browsed is read-only, and would be
   // skipped below with its unsaved changes. Leave history mode in every
   // panel first, so each buffer is back at its newest version.
-  if (_layout)
-    _layout->forEachPanel([](Panel& panel) { panel.view().exitHistoryModeCancel(); });
+  leaveHistoryModeInAllPanels();
 
   // Find the next modified, non-readonly buffer.
   for (auto& name : _bufMgr->bufferNames()) {

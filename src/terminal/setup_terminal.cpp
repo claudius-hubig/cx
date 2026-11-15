@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 // 1049: alternate screen buffer; 1000: button press/release tracking;
 // 1002: button-event tracking (motion reports *only while a button is
@@ -35,7 +36,7 @@ constexpr std::array kFatalSignals = {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV,
 // termios state for the signal handler. Written once, before the handlers
 // are installed, so the handler only ever reads it.
 struct termios g_savedFlags;
-// The dispositions the handlers replaced, put back by the destructor.
+// The dispositions the handlers replaced, put back by restore().
 std::array<struct sigaction, kFatalSignals.size()> g_savedActions;
 
 // The handler's own stack. A stack overflow (deep recursion, which is how
@@ -43,7 +44,7 @@ std::array<struct sigaction, kFatalSignals.size()> g_savedActions;
 // on the stack it overflowed, so the handler could not run there. A fixed
 // size, as SIGSTKSZ is not a constant; the handler needs very little.
 std::array<char, 64 * 1024> g_handlerStack;
-// The alternate stack that was set before, put back by the destructor.
+// The alternate stack that was set before, put back by restore().
 stack_t g_savedStack;
 
 // Put the terminal back, then let the signal end the process as it would
@@ -95,7 +96,11 @@ SetupTerminal::SetupTerminal() {
     sigaction(kFatalSignals[i], &sa, &g_savedActions[i]);
 }
 
-SetupTerminal::~SetupTerminal() {
+SetupTerminal::~SetupTerminal() { restore(); }
+
+void SetupTerminal::restore() {
+  if (std::exchange(_restored, true))
+    return;
   for (std::size_t i = 0; i < kFatalSignals.size(); ++i)
     sigaction(kFatalSignals[i], &g_savedActions[i], nullptr);
   sigaltstack(&g_savedStack, nullptr);

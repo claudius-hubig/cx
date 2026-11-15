@@ -31,7 +31,10 @@ Entry point. Parses the command line with `cli::parse()`
 first two by printing `cli::usage()` or `versionText()`
 (`src/version.hpp/.cpp`) and exiting. Otherwise it constructs
 `SetupTerminal`, `Screen`, and `BufferManager` in the correct order, opens any files given on the command line, then calls
-`Screen::loop()` to run the editor. Each path argument is parsed via
+`Screen::loop()` to run the editor. When the loop ends with
+`Exit::Emergency`, `main` calls `SetupTerminal::restore()` and then
+`Screen::emergencySave()`,
+and exits with status 1 if a buffer could not be saved. Each path argument is parsed via
 `parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
 `:LINE` suffix (e.g. `cx src/foo.cpp:42`). If stdin is a pipe, `main`
 drains it before raw-mode setup, dups `/dev/tty` over fd 0 so terminal
@@ -48,15 +51,17 @@ terminal to the alternate screen buffer; enables SGR mouse tracking
 (`?1000h` press/release, `?1002h` motion-while-held for drag-select,
 `?1006h` extended coordinates; `?1003h` any-motion is deliberately not
 enabled) and bracketed paste (`?2004h`). On destruction, disables both,
-restores the saved state, and returns to the normal screen. Guarantees
-cleanup even on exception. A signal that ends the process would skip
-the destructor, so while an instance exists a handler puts the terminal
-back first and then re-raises the signal with its default action (core
-dump included); unsaved buffers are still lost. This covers SIGTERM,
-SIGHUP, SIGINT and SIGQUIT, and the crashes SIGSEGV, SIGABRT, SIGBUS,
-SIGFPE and SIGILL. The handler runs on an alternate stack
-(`sigaltstack`), since a stack overflow leaves no room for it on the
-normal one.
+restores the saved state, and returns to the normal screen
+(`restore()` does the same early, for output that is to stay on the
+normal screen). Guarantees cleanup even on exception. A signal that
+ends the process would skip the destructor, so while an instance exists
+a handler puts the terminal back first and then re-raises the signal
+with its default action (core dump included); unsaved buffers are still
+lost. This covers SIGTERM
+(until `Screen` takes it over), SIGHUP, SIGINT and SIGQUIT, and the
+crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL. The handler runs
+on an alternate stack (`sigaltstack`), since a stack overflow leaves no
+room for it on the normal one.
 
 ---
 
@@ -119,8 +124,24 @@ Key responsibilities:
   overwrite flag via DECSCUSR — steady block (`ansi::CursorBlock`) for
   insert, steady bar (`ansi::CursorBar`) for overwrite — and reset to the
   terminal default when the alternate screen is torn down.
-- **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH, and
-  dispatches to sub-handlers. Any `std::exception` escaping a handler is
+- **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH and
+  SIGTERM, and dispatches to sub-handlers. It waits in `pselect()` with
+  the two signals blocked just for the check of their flags, so a signal
+  that arrives right before the wait is not left until the next key.
+- **Termination**: SIGTERM is the exit command. The first one
+  (`handleTerminationRequest()`) cancels an open prompt and starts the
+  exit flow of Esc-c, which asks about each modified buffer; an exit
+  flow the user already opened is left alone. A further SIGTERM while
+  that flow is open means nobody is answering: `loop()` returns
+  `Exit::Emergency` and `main` calls `emergencySave()`, which saves
+  every modified buffer that has a file without asking (not even when
+  the file changed on disk), abandons the others, and writes one
+  `cx: saved …` / `cx: could not save …` / `cx: discarded …` line per
+  buffer to the restored terminal. A cancelled exit flow resets this, so
+  the next SIGTERM asks again. The handler only counts; requests are
+  acted on in the loop, so one that arrives while a command is running
+  waits for it, as a key would.
+- **Input dispatch**: Any `std::exception` escaping a handler is
   logged and shown in the status line rather than ending the session:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
     text entry, history navigation, autocomplete, and confirmation;

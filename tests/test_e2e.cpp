@@ -64,7 +64,9 @@ struct PtySession {
 
   ~PtySession() {
     if (childPid > 0) {
-      kill(childPid, SIGTERM);
+      // SIGKILL: a SIGTERM only asks the editor to exit, and it asks back
+      // when a buffer is modified.
+      kill(childPid, SIGKILL);
       int status = 0;
       waitpid(childPid, &status, 0);
     }
@@ -410,7 +412,7 @@ BOOST_AUTO_TEST_CASE(e2e_stdin_pipe_seeds_scratch_buffer) {
     usleep(10000);
   }
   if (waitpid(pid, &status, WNOHANG) != pid)
-    kill(pid, SIGTERM);
+    kill(pid, SIGKILL);
   close(masterFd);
 }
 
@@ -2635,7 +2637,7 @@ BOOST_AUTO_TEST_CASE(e2e_fatal_signal_restores_the_terminal) {
   }
 
   NoCoreDumps noCoreDumps;
-  for (int signo : {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL}) {
+  for (int signo : {SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL}) {
     BOOST_TEST_CONTEXT("signal " << signo) {
       PtySession session(24, 80, bin);
       session.readOutput(std::chrono::milliseconds{300});
@@ -2661,6 +2663,178 @@ BOOST_AUTO_TEST_CASE(e2e_fatal_signal_restores_the_terminal) {
       BOOST_CHECK((after.c_lflag & ECHO) != 0);
     }
   }
+}
+
+namespace {
+
+using std::chrono::milliseconds;
+
+bool running(PtySession const& session) {
+  int status = 0;
+  return waitpid(session.childPid, &status, WNOHANG) == 0;
+}
+
+// Type @p text at the start of the buffer shown, then switch to the
+// scratch buffer "*s*" and type into that: one modified buffer with a
+// file and one without.
+void modifyFileAndScratch(PtySession& session, std::string_view text) {
+  session.send(text);
+  session.readOutput(milliseconds{150});
+  session.send("\x0f"); // Ctrl-o
+  session.readOutput(milliseconds{150});
+  session.send("*s*\r");
+  session.readOutput(milliseconds{150});
+  session.send("scratch");
+  session.readOutput(milliseconds{150});
+}
+
+// True if @p out leaves the alternate screen and only then has @p line.
+bool afterTeardown(std::string const& out, std::string const& line) {
+  auto teardown = out.find("\x1b[?1049l");
+  return teardown != std::string::npos && out.find(line, teardown) != std::string::npos;
+}
+
+} // namespace
+
+// SIGTERM used to end the editor with every unsaved buffer lost. It is
+// the exit command now.
+BOOST_AUTO_TEST_CASE(e2e_sigterm_exits_when_nothing_is_modified) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("text\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("text");
+  kill(session.childPid, SIGTERM);
+  auto out = session.readOutput(milliseconds{500});
+  BOOST_CHECK(out.find("\x1b[?1049l") != std::string::npos);
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
+
+BOOST_AUTO_TEST_CASE(e2e_sigterm_asks_and_a_second_one_saves_the_files) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile a("alpha\n"), b("beta\n");
+  PtySession session(24, 80, bin, {a.path().string(), b.path().string()});
+  session.readUntil("beta");
+  session.send("B");
+  session.readOutput(milliseconds{150});
+  session.send("\x0f"); // Ctrl-o: over to the other file
+  session.readOutput(milliseconds{150});
+  session.send(a.path().string() + "\r");
+  session.readUntil("alpha");
+  modifyFileAndScratch(session, "A");
+
+  // The first one asks, as Esc-c does, and saves nothing.
+  kill(session.childPid, SIGTERM);
+  auto asked = stripAnsi(session.readUntil("Exiting. Save"));
+  BOOST_CHECK(asked.find("Exiting. Save") != std::string::npos);
+  BOOST_CHECK(running(session));
+  BOOST_CHECK_EQUAL(readFile(a.path()), "alpha\n");
+  BOOST_CHECK_EQUAL(readFile(b.path()), "beta\n");
+
+  // Nobody answers: the second one saves what has a file and leaves, with
+  // the list of it on the normal screen.
+  kill(session.childPid, SIGTERM);
+  auto out = session.readOutput(milliseconds{500});
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  BOOST_CHECK_EQUAL(readFile(a.path()), "Aalpha\n");
+  BOOST_CHECK_EQUAL(readFile(b.path()), "Bbeta\n");
+  BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: saved " + a.path().string()), out);
+  BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: saved " + b.path().string()), out);
+  BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: discarded *s*"), out);
+}
+
+BOOST_AUTO_TEST_CASE(e2e_sigterm_cancels_a_prompt_and_can_be_cancelled_itself) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("text\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("text");
+  session.send("X");
+  session.readOutput(milliseconds{150});
+  session.send("\x06"); // Ctrl-f: a Find prompt, where Esc-c does nothing
+  session.readOutput(milliseconds{150});
+
+  kill(session.childPid, SIGTERM);
+  auto asked = stripAnsi(session.readUntil("Exiting. Save"));
+  BOOST_CHECK(asked.find("Exiting. Save") != std::string::npos);
+
+  // Esc cancels the exit. The next SIGTERM is a first one again: it asks.
+  session.send("\x1b");
+  session.readOutput(milliseconds{200});
+  kill(session.childPid, SIGTERM);
+  asked = stripAnsi(session.readUntil("Exiting. Save"));
+  BOOST_CHECK(asked.find("Exiting. Save") != std::string::npos);
+  BOOST_CHECK(running(session));
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+
+  session.send("n");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+}
+
+// An exit the user started is theirs to answer: one SIGTERM does not save
+// over their head, the one after it does.
+BOOST_AUTO_TEST_CASE(e2e_sigterm_during_an_exit_started_with_esc_c) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("text\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("text");
+  session.send("X");
+  session.readOutput(milliseconds{150});
+  session.send("\x1b"
+               "c");
+  session.readUntil("Exiting. Save");
+
+  kill(session.childPid, SIGTERM);
+  session.readOutput(milliseconds{300});
+  BOOST_CHECK(running(session));
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+
+  kill(session.childPid, SIGTERM);
+  session.readOutput(milliseconds{500});
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "Xtext\n");
+}
+
+BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempDir dir({"f.txt"});
+  auto path = dir.path() / "f.txt";
+  PtySession session(24, 80, bin, {path.string()});
+  session.readUntil("f.txt");
+  session.send("X");
+  session.readOutput(milliseconds{150});
+  std::filesystem::remove_all(dir.path()); // nowhere to save to any more
+
+  kill(session.childPid, SIGTERM);
+  session.readUntil("Exiting. Save");
+  kill(session.childPid, SIGTERM);
+  auto out = session.readOutput(milliseconds{500});
+  BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: could not save " + path.string()), out);
+  BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
 // Replacing a match and piping a region used to delete and then insert:

@@ -70,13 +70,39 @@ public:
    */
   void draw();
 
+  /** @brief How loop() ended. */
+  enum class Exit {
+    Normal,    /**< The exit command, or stdin was closed. */
+    Emergency, /**< Told to terminate with unsaved buffers left: emergencySave() is due. */
+  };
+
   /**
    * @brief Run the main input loop.
    *
    * Reads keystrokes one character at a time, dispatches them, and redraws
    * after each. Returns when stdin is closed or on the exit command.
+   *
+   * SIGTERM is taken as the exit command (Esc-c), whatever the editor is
+   * waiting for: the modified buffers are asked about, one by one. A
+   * second SIGTERM while that is still going on ends the loop with
+   * Exit::Emergency, for the caller to restore the terminal and call
+   * emergencySave().
    */
-  void loop();
+  [[nodiscard]] Exit loop();
+
+  /**
+   * @brief Save every modified buffer that has a file, without asking,
+   *        and write one line per buffer to stdout saying what became of
+   *        it. Modified buffers without a file are abandoned (and listed).
+   *
+   * The way out when nobody can be asked any more: on a second SIGTERM
+   * (see loop()). Nothing is checked first: a file that changed on disk is overwritten.
+   *
+   * @pre The terminal has been restored, so the lines stay on the user's
+   *      screen.
+   * @return False if a buffer could not be saved.
+   */
+  bool emergencySave() noexcept;
 
   /** @brief Display a timed status message on the status line. */
   void setStatus(std::string msg);
@@ -131,6 +157,18 @@ private:
    * @return True when no modified buffers remain (the caller should exit).
    */
   bool tryExit();
+  /**
+   * @brief Act on one SIGTERM: the first starts the exit flow, as Esc-c
+   *        does, after cancelling a prompt that is in its way (an exit
+   *        flow that is already open is left as it is).
+   * @return True for a further SIGTERM while that flow is still open:
+   *         nobody is answering, so the caller is to save and leave.
+   */
+  bool handleTerminationRequest();
+  /** @brief Close the active prompt, if any, as a bare Esc does. */
+  void abortPrompt();
+  /** @brief Put every buffer whose history is being browsed back at its newest version. */
+  void leaveHistoryModeInAllPanels();
   /**
    * @brief Kill the named buffer and switch every panel showing it to the
    *        replacement buffer.
@@ -403,6 +441,8 @@ private:
   std::optional<std::chrono::steady_clock::time_point> _statusExpiry;
   bool _killPending = false; /**< Kill the buffer after SaveAs completes. */
   bool _exitPending = false; /**< Exit after all modified buffers are handled. */
+  /** A SIGTERM has asked for the exit flow that is open (_exitPending). */
+  bool _exitBySignal = false;
   /**
    * @brief Runtime mouse-tracking toggle.
    *

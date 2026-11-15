@@ -118,7 +118,11 @@ int main(int argc, char* argv[]) {
       screen.draw();
     }
 
-    screen.loop();
+    if (screen.loop() == Screen::Exit::Emergency) {
+      // The list of what was saved belongs on the user's normal screen.
+      terminal.restore();
+      return screen.emergencySave() ? 0 : 1;
+    }
   } catch (std::exception const& e) {
     logError(e.what());
     return 1;
