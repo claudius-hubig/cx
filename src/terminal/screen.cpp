@@ -3228,6 +3228,12 @@ bool Screen::tryExit() {
     prevBuf() = nullptr;
   }
 
+  // A buffer whose history is being browsed is read-only, and would be
+  // skipped below with its unsaved changes. Leave history mode in every
+  // panel first, so each buffer is back at its newest version.
+  if (_layout)
+    _layout->forEachPanel([](Panel& panel) { panel.view().exitHistoryModeCancel(); });
+
   // Find the next modified, non-readonly buffer.
   for (auto& name : _bufMgr->bufferNames()) {
     Buffer* buf = _bufMgr->find(name);

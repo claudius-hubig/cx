@@ -2382,3 +2382,31 @@ BOOST_AUTO_TEST_CASE(e2e_closing_the_panel_browsing_history_releases_the_buffer)
                "c");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
+
+// Exit only asks about buffers that are not read-only, and a buffer is
+// read-only while its history is browsed: Esc-c in history mode used to
+// quit at once and lose the unsaved changes.
+BOOST_AUTO_TEST_CASE(e2e_exit_while_browsing_history_asks_to_save) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("base\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("base", std::chrono::milliseconds{500});
+  session.send("abc");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("\x15[");
+  session.readUntil("v 3/4", std::chrono::milliseconds{1000});
+
+  session.send("\x1b"
+               "c");
+  auto out = stripAnsi(session.readUntil("Exiting. Save", std::chrono::milliseconds{1000}));
+  BOOST_REQUIRE_MESSAGE(out.find("Exiting. Save") != std::string::npos, "no save prompt: " + out);
+  // What gets saved is the newest version, not the one that was shown.
+  session.send("y");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "abcbase\n");
+}
