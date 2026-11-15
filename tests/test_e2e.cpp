@@ -2446,3 +2446,85 @@ BOOST_AUTO_TEST_CASE(e2e_pipe_large_region_through_streaming_command) {
                "c");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
 }
+
+// The input loop read a fixed number of bytes per escape sequence, so the
+// tail of a key it did not know was typed into the buffer: F1 inserted
+// "OP", F5 "~", Ctrl-PgUp "5~".
+BOOST_AUTO_TEST_CASE(e2e_unhandled_keys_insert_nothing) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("hello\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("hello", std::chrono::milliseconds{500});
+  // F1, F5, F9, F12, Ctrl-PgUp, Ctrl-PgDn, Ctrl-Insert, Shift-Tab, focus
+  // in, the Linux console's F1. Sent one at a time, as a keyboard would.
+  for (std::string_view key : {"\x1bOP", "\x1b[15~", "\x1b[20~", "\x1b[24~", "\x1b[5;5~",
+                               "\x1b[6;5~", "\x1b[2;5~", "\x1b[Z", "\x1b[I", "\x1b[[A"}) {
+    session.send(key);
+    session.readOutput(std::chrono::milliseconds{120});
+  }
+  // The buffer is unmodified, so Esc-c exits without asking.
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "hello\n");
+}
+
+// tmux, screen and the Linux console send Home and End as ESC[1~ / ESC[4~,
+// and a terminal in application-cursor mode as ESC O H / ESC O F.
+BOOST_AUTO_TEST_CASE(e2e_home_and_end_in_every_encoding) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  struct Case {
+    std::string_view home, end;
+  };
+  for (auto const& c : {Case{"\x1b[H", "\x1b[F"}, Case{"\x1b[1~", "\x1b[4~"},
+                        Case{"\x1b[7~", "\x1b[8~"}, Case{"\x1bOH", "\x1bOF"}}) {
+    BOOST_TEST_CONTEXT(stripAnsi(c.home)) {
+      TempFile tmp("abc\n");
+      PtySession session(24, 80, bin, {std::string(tmp.path())});
+      session.readUntil("abc", std::chrono::milliseconds{500});
+      session.send(c.end);
+      session.readOutput(std::chrono::milliseconds{120});
+      session.send("Z");
+      session.readOutput(std::chrono::milliseconds{120});
+      session.send(c.home);
+      session.readOutput(std::chrono::milliseconds{120});
+      session.send("A\x13");
+      session.readUntil("Saved", std::chrono::milliseconds{1000});
+      BOOST_CHECK_EQUAL(readFile(tmp.path()), "AabcZ\n");
+      session.send("\x1b"
+                   "c");
+      BOOST_CHECK_EQUAL(session.waitExit(), 0);
+    }
+  }
+}
+
+// Alt-O is "ESC O" with nothing after it: still typed as a letter.
+BOOST_AUTO_TEST_CASE(e2e_alt_o_still_inserts_the_letter) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("abc\n");
+  PtySession session(24, 80, bin, {std::string(tmp.path())});
+  session.readUntil("abc", std::chrono::milliseconds{500});
+  session.send("\x1bO");
+  session.readOutput(std::chrono::milliseconds{300});
+  session.send("\x13");
+  session.readUntil("Saved", std::chrono::milliseconds{1000});
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "Oabc\n");
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}

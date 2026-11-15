@@ -117,10 +117,17 @@ Key responsibilities:
   logged and shown in the status line rather than ending the session:
   - `handlePromptInput` — generic handler for the active `Prompt`, driving
     text entry, history navigation, autocomplete, and confirmation;
-    `handlePromptCsi` reads whole CSI sequences so unhandled ones never
-    leak their tail bytes into the input
-  - `handleEscapeInput` — CSI escape sequences (arrows, page keys),
-    Esc-prefix chords, and SGR mouse payloads routed to `handleMouseEvent`
+    cursor and editing keys go to `handlePromptKey`
+  - `handleEscapeInput` — key escape sequences, Esc-prefix chords, and
+    SGR mouse payloads routed to `handleMouseEvent`
+  - `handleKeyPress` — the cursor and editing keys (arrows, Home/End,
+    PgUp/PgDn, Insert, Delete, with Ctrl / Ctrl-Shift) in normal mode.
+    Both input paths read a CSI (`ESC [ … final`) or SS3 (`ESC O final`)
+    sequence to its end and decode it with `key_sequence.hpp`, so a key
+    cx has no use for (function keys, …) is dropped whole and never
+    leaks its tail bytes into the buffer or the prompt. `ESC O` is told
+    apart from Alt-O by whether a byte follows within the Esc
+    disambiguation window
   - `handleNormalInput` — printable characters and control keys in normal
     editing mode
   - `handleMouseEvent` / `extendDragSelection` — left-press positions the
@@ -914,6 +921,7 @@ token vector allocation.
 | `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
 | `src/replace.hpp`                      | Find-and-replace helpers (`findNextMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt`                  |
 | `src/regex_search.hpp`                 | Regex search/replace helpers (`compileRegex`, `findFirstRegex`, `findNextRegexInBuffer`, `stepPastEmptyMatch`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y; mid-line searches keep the preceding text as context and scans step past empty matches; both replace-all helpers match each line once against its original text, rewrite it in one edit, and (bypassing BufferView) record one history version themselves |
+| `src/key_sequence.hpp`                 | `Key`, `KeyPress`, `decodeCsiKey`, `decodeSs3Key` — decode the CSI / SS3 sequences of cursor and editing keys (xterm, VT220/tmux and rxvt forms, with modifiers); anything else decodes to nothing |
 | `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
 | `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`); `cli::usage` help text            |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |

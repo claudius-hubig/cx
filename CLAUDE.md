@@ -99,6 +99,7 @@ src/
   cli.hpp                          cli::parse — -h/--help, --version, `--`, file arguments
   version.hpp/.cpp                 versionText() for --version (cx only; uses generated build_info.hpp)
   mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)
+  key_sequence.hpp                 Decode CSI/SS3 key sequences (decodeCsiKey, KeyPress)
   replace.hpp                      Find-and-replace helpers (findNextMatchInBuffer, replaceAllForward)
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
   regex_search.hpp                 Regex search/replace helpers (std::regex; per-line)
@@ -150,6 +151,7 @@ tests/
   test_shortcut.cpp                Shortcut table tests
   test_prompt_history.cpp          PromptHistory tests
   test_cli.cpp                     Command-line option parsing tests
+  test_key_sequence.cpp            CSI/SS3 key sequence decoding tests
   test_prompt_edit.cpp             Prompt line-editing (cursor, word moves) tests
   test_syntax.cpp                  Syntax highlighting tests
   test_md_table.cpp                Markdown table align/wrap tests

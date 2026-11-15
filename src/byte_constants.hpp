@@ -46,39 +46,11 @@ namespace ansi {
 /** @brief Byte after ESC that starts a CSI (Control Sequence Introducer). */
 constexpr char CsiIntro = '[';
 
-/** @name Final bytes of CSI cursor/arrow sequences (ESC [ X) */
-/** @{ */
-constexpr char UpArrow = 'A';
-constexpr char DownArrow = 'B';
-constexpr char RightArrow = 'C';
-constexpr char LeftArrow = 'D';
-constexpr char Home = 'H';
-constexpr char End = 'F';
-/** @} */
-
-/** @name Parameter bytes in extended key sequences */
-/** @{ */
-constexpr char ModifiedKey = '1'; /**< ESC[1;modX — modified arrow/home/end */
-constexpr char Insert = '2';      /**< ESC[2~ — Insert key */
-constexpr char Delete = '3';      /**< ESC[3~ — Delete key */
-constexpr char PageUp = '5';      /**< ESC[5~ — Page Up */
-constexpr char PageDown = '6';    /**< ESC[6~ — Page Down */
-constexpr char Separator = ';';   /**< Parameter separator in CSI sequences */
-constexpr char Terminator = '~';  /**< Final byte for extended key sequences */
-/** @} */
-
-/** @brief Modifier code (digit after ';' in ESC[1;modX) for the Ctrl key. */
-constexpr char ModCtrl = '5';
-
 /**
- * @brief Modifier code for Shift+Ctrl (ESC[1;6X).
- *
- * Distinct from ModCtrl at the byte level, so there is no conflict. Some
- * terminal and tmux configurations swallow these sequences before they
- * reach the application, which is why the actions they drive are also
- * reachable by name through Esc-x.
+ * @brief Byte after ESC that starts an SS3 sequence, which terminals in
+ *        application-cursor mode send for arrows and Home/End.
  */
-constexpr char ModCtrlShift = '6';
+constexpr char Ss3Intro = 'O';
 
 /**
  * @name Output escape sequences (CSI SGR and editing)

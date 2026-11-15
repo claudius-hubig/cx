@@ -6,6 +6,7 @@
 #include "byte_constants.hpp"
 #include "error_log.hpp"
 #include "fs_path.hpp"
+#include "key_sequence.hpp"
 #include "mouse.hpp"
 #include "regex_search.hpp"
 #include "replace.hpp"
@@ -745,25 +746,47 @@ void Screen::syncPrimarySelection() {
 }
 
 /**
- * @brief Read the remainder of a CSI sequence whose "ESC [" has already
- *        been consumed.
+ * @brief Read the remainder of a CSI sequence whose "ESC [" and first
+ *        byte @p first have already been consumed.
  *
  * Collects the parameter/intermediate bytes into @p params and stores the
  * final byte (0x40..0x7E) in @p final, so an unhandled sequence is
  * swallowed whole rather than leaking its tail (e.g. ";5C") as input.
  * @return False on EOF/error, or if the sequence is implausibly long.
  */
-static bool readCsi(std::string& params, char& final) {
+static bool readCsi(char first, std::string& params, char& final) {
   constexpr std::size_t kMaxCsiParams = 32;
-  while (readByte(final)) {
-    auto u = static_cast<unsigned char>(final);
-    if (u >= 0x40 && u <= 0x7E)
-      return true;
+  for (final = first; !isCsiFinal(final);) {
     if (params.size() == kMaxCsiParams)
       return false;
     params += final;
+    if (!readByte(final))
+      return false;
   }
-  return false;
+  // The Linux console sends F1..F5 as "ESC [ [ A" .. "ESC [ [ E": one
+  // more byte belongs to the key.
+  if (final == '[' && params.empty()) {
+    char letter;
+    return readByte(letter);
+  }
+  return true;
+}
+
+/**
+ * @brief The final byte of an SS3 sequence whose "ESC O" has already been
+ *        consumed, or nullopt if nothing follows.
+ *
+ * Byte-level conflict: "ESC O" is also what Alt-O sends, with nothing
+ * after it. As for a bare Esc, the two are told apart by timing: a byte
+ * that follows within the disambiguation window belongs to the sequence.
+ * No chord is bound to Esc-O, and one must not be without revisiting this.
+ */
+static std::optional<char> readSs3Final() {
+  struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+  char final;
+  if (poll(&pfd, 1, kEscDisambiguationMs) <= 0 || !readByte(final))
+    return std::nullopt;
+  return final;
 }
 
 void Screen::handlePromptInput(char c) {
@@ -790,10 +813,15 @@ void Screen::handlePromptInput(char c) {
       if (!readByte(next))
         return;
       std::string params;
-      char final;
+      char first, final;
       if (next == ansi::CsiIntro) {
-        if (readCsi(params, final))
-          handlePromptCsi(params, final);
+        if (readByte(first) && readCsi(first, params, final))
+          if (auto key = decodeCsiKey(params, final))
+            handlePromptKey(*key);
+      } else if (next == ansi::Ss3Intro) {
+        if (auto ss3 = readSs3Final())
+          if (auto key = decodeSs3Key(*ss3))
+            handlePromptKey(*key);
       } else if (auto action = handleShortcut(shortcutFromEscChar(next))) {
         handlePromptAction(*action, lastPaste);
       }
@@ -890,16 +918,14 @@ void Screen::handlePromptAction(Action action, std::optional<Prompt::Paste> last
   }
 }
 
-void Screen::handlePromptCsi(std::string_view params, char final) {
+void Screen::handlePromptKey(KeyPress key) {
   auto& p = *_prompt;
-  // Unmodified keys carry no parameters; Ctrl-modified cursor keys arrive
-  // as ESC[1;5X, Delete as ESC[3~ and Ctrl-Delete as ESC[3;5~.
-  bool plain = params.empty();
-  bool ctrl = params == "1;5";
+  bool plain = key.plain();
+  bool ctrl = key.ctrlOnly();
 
   // Up/Down browse history (the input is a single line, so they have no
   // cursor meaning). History replaces the input; the cursor goes to its end.
-  if (plain && final == ansi::UpArrow) {
+  if (plain && key.key == Key::Up) {
     auto* hist = _promptHistory.get(p.label);
     if (!hist)
       return;
@@ -915,7 +941,7 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
     runAutocomplete();
     return;
   }
-  if (plain && final == ansi::DownArrow) {
+  if (plain && key.key == Key::Down) {
     if (!p.historyIdx)
       return;
     if (*p.historyIdx == 0) {
@@ -937,8 +963,8 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
   if (!p.showInput)
     return;
   bool edited = false;
-  switch (final) {
-  case ansi::RightArrow:
+  switch (key.key) {
+  case Key::Right:
     if (ctrl)
       p.moveWordRight();
     else if (plain && !p.cursorAtEnd())
@@ -949,26 +975,28 @@ void Screen::handlePromptCsi(std::string_view params, char final) {
       p.inputReplaced();
     }
     break;
-  case ansi::LeftArrow:
+  case Key::Left:
     if (ctrl)
       p.moveWordLeft();
     else if (plain)
       p.moveLeft();
     break;
-  case ansi::Home:
+  case Key::Home:
     if (plain || ctrl)
       p.moveHome();
     break;
-  case ansi::End:
+  case Key::End:
     if (plain || ctrl)
       p.moveEnd();
     break;
-  case ansi::Terminator:
-    if (params == "3")
+  case Key::Delete:
+    if (plain)
       edited = p.mark ? p.deleteRegion() : p.deleteAt();
-    else if (params == "3;5")
+    else if (ctrl)
       edited = p.deleteChunkAt();
     break;
+  default:
+    break; // Other keys have no meaning inside a prompt.
   }
   if (edited) {
     p.historyIdx.reset();
@@ -2537,156 +2565,35 @@ void Screen::executePipeReplace(std::string command) {
 }
 
 void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
-  auto pcols = colsForBuffer();
   struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
   if (poll(&pfd, 1, 50) > 0) {
     // Escape sequence: read the next bytes to identify the key.
     char seq[2];
-    if (readByte(seq[0]) && seq[0] == ansi::CsiIntro) {
-      if (readByte(seq[1])) {
-        // SGR mouse: ESC[<b;col;row(M|m). Detected by '<' immediately
-        // after the CSI intro (no other CSI command starts with '<').
-        if (seq[1] == '<') {
-          auto body = collectSgrMouseBody([](char& out) { return readByte(out); });
-          if (auto e = parseSgrMouse(body))
-            handleMouseEvent(*e);
-          return;
-        }
-        switch (seq[1]) {
-        case ansi::UpArrow:
-          if (_buf) {
-            if (_view->wrap())
-              _view->moveUp(pcols);
-            else
-              _view->movePhysicalUp();
-            if (_view->point() < _view->viewFrom())
-              _view->scrollUp(_view->wrap());
-          }
-          break;
-        case ansi::DownArrow:
-          if (_buf) {
-            auto prev = _view->point();
-            if (_view->wrap())
-              _view->moveDown(pcols);
-            else
-              _view->movePhysicalDown();
-            if (_view->point() == prev)
-              _view->scrollViewNearEnd(rowsForBuffer());
-            else
-              _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
-          }
-          break;
-        case ansi::RightArrow:
-          if (_buf)
-            _view->moveRight();
-          break;
-        case ansi::LeftArrow:
-          if (_buf)
-            _view->moveLeft();
-          break;
-        case ansi::Home:
-          if (_buf)
-            _view->moveHome();
-          break;
-        case ansi::End:
-          if (_buf)
-            _view->moveEnd();
-          break;
-        case ansi::ModifiedKey: {
-          // Modified key: ESC[1;modX (e.g. Ctrl+Arrow = ESC[1;5X)
-          char semi, mod, dir;
-          if (readByte(semi) && semi == ansi::Separator && readByte(mod) && readByte(dir)) {
-            if (mod == ansi::ModCtrl && _buf) {
-              switch (dir) {
-              case ansi::RightArrow:
-                _view->moveWordRight();
-                break;
-              case ansi::LeftArrow:
-                _view->moveWordLeft();
-                break;
-              case ansi::UpArrow:
-                if (_view->wrap() && _view->currentLineWraps(pcols))
-                  _view->movePhysicalUp();
-                else
-                  _view->moveParagraphUp();
-                break;
-              case ansi::DownArrow:
-                if (_view->wrap() && _view->currentLineWraps(pcols))
-                  _view->movePhysicalDown();
-                else
-                  _view->moveParagraphDown();
-                break;
-              case ansi::Home:
-                _view->setPoint(0, 0);
-                break;
-              case ansi::End:
-                _view->setPoint(_buf->lineCount() - 1,
-                                _buf->lineContent(_buf->lineCount() - 1).size());
-                break;
-              }
-              _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
-            } else if (mod == ansi::ModCtrlShift && _buf) {
-              // Shift+Ctrl+Up/Down grow the cursor set by a column.
-              if (dir == ansi::UpArrow)
-                dispatchAction(Action::AddCursorUp);
-              else if (dir == ansi::DownArrow)
-                dispatchAction(Action::AddCursorDown);
-            }
-          }
-          break;
-        }
-        case ansi::Delete: {
-          char next;
-          if (readByte(next)) {
-            if (next == ansi::Terminator) {
-              // Plain Delete: ESC[3~
-              if (_buf && _view->mark()) {
-                _view->deleteRegion(_view->mark().value(), _view->point());
-                _pasteState.reset();
-              } else if (_buf) {
-                _view->deleteAtPoint();
-                _pasteState.reset();
-              }
-            } else if (next == ansi::Separator) {
-              // Modified Delete: ESC[3;mod~
-              char mod, tilde;
-              if (readByte(mod) && readByte(tilde) && tilde == ansi::Terminator) {
-                if (mod == ansi::ModCtrl && _buf)
-                  _view->deleteChunkAtPoint();
-              }
-            }
-          }
-          break;
-        }
-        case ansi::PageUp: {
-          char tilde;
-          if (readByte(tilde) && tilde == ansi::Terminator && _buf)
-            _view->pageUp(rowsForBuffer(), pcols, _view->wrap());
-          break;
-        }
-        case ansi::PageDown: {
-          char tilde;
-          if (readByte(tilde) && tilde == ansi::Terminator && _buf)
-            _view->pageDown(rowsForBuffer(), pcols, _view->wrap());
-          break;
-        }
-        case ansi::Insert: {
-          char tilde;
-          if (readByte(tilde) && tilde == ansi::Terminator && _buf)
-            dispatchAction(Action::ToggleOverwriteMode);
-          break;
-        }
-        default: {
-          // Drain remaining bytes of unrecognised escape sequence.
-          char discard;
-          struct pollfd dp = {STDIN_FILENO, POLLIN, 0};
-          while (poll(&dp, 1, 0) > 0)
-            if (!readByte(discard))
-              break;
-          break;
-        }
-        }
+    if (!readByte(seq[0]))
+      return;
+    if (seq[0] == ansi::CsiIntro) {
+      if (!readByte(seq[1]))
+        return;
+      // SGR mouse: ESC[<b;col;row(M|m). Detected by '<' immediately
+      // after the CSI intro (no other CSI command starts with '<').
+      if (seq[1] == '<') {
+        auto body = collectSgrMouseBody([](char& out) { return readByte(out); });
+        if (auto e = parseSgrMouse(body))
+          handleMouseEvent(*e);
+        return;
       }
+      // Read the sequence to its end whatever it is: a key cx has no use
+      // for (a function key, Ctrl-PgUp, ...) is then dropped whole instead
+      // of having its tail typed into the buffer.
+      std::string params;
+      char final;
+      if (readCsi(seq[1], params, final))
+        if (auto key = decodeCsiKey(params, final))
+          handleKeyPress(*key);
+    } else if (auto ss3 = seq[0] == ansi::Ss3Intro ? readSs3Final() : std::nullopt) {
+      // SS3: arrows and Home/End in application-cursor mode; F1..F4.
+      if (auto key = decodeSs3Key(*ss3))
+        handleKeyPress(*key);
     } else if (seq[0] == key::Escape) {
       // Esc-Esc arrived as a contiguous byte pair. The second Esc may
       // itself be the start of a real escape sequence the user pressed
@@ -2697,8 +2604,8 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
         setStatus("Esc-" + *name + " not recognised.");
       else
         handleBareEscEsc();
-    } else if (!handleEscChord(seq[0]) && seq[0] != ansi::CsiIntro) {
-      // Not a CSI sequence or known chord — insert the byte verbatim
+    } else if (!handleEscChord(seq[0])) {
+      // Not a key sequence or known chord — insert the byte verbatim
       // (e.g. Alt+key sends ESC followed by the key).
       if (_buf && static_cast<unsigned char>(seq[0]) >= key::PrintableMin)
         insertCharWithUtf8(*_view, seq[0]);
@@ -2752,6 +2659,103 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
       _statusMsg.clear();
       _statusExpiry.reset();
     }
+  }
+}
+
+void Screen::handleKeyPress(KeyPress key) {
+  if (!_buf)
+    return;
+  auto pcols = colsForBuffer();
+  if (key.plain()) {
+    switch (key.key) {
+    case Key::Up:
+      if (_view->wrap())
+        _view->moveUp(pcols);
+      else
+        _view->movePhysicalUp();
+      if (_view->point() < _view->viewFrom())
+        _view->scrollUp(_view->wrap());
+      break;
+    case Key::Down: {
+      auto prev = _view->point();
+      if (_view->wrap())
+        _view->moveDown(pcols);
+      else
+        _view->movePhysicalDown();
+      if (_view->point() == prev)
+        _view->scrollViewNearEnd(rowsForBuffer());
+      else
+        _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+      break;
+    }
+    case Key::Right:
+      _view->moveRight();
+      break;
+    case Key::Left:
+      _view->moveLeft();
+      break;
+    case Key::Home:
+      _view->moveHome();
+      break;
+    case Key::End:
+      _view->moveEnd();
+      break;
+    case Key::PageUp:
+      _view->pageUp(rowsForBuffer(), pcols, _view->wrap());
+      break;
+    case Key::PageDown:
+      _view->pageDown(rowsForBuffer(), pcols, _view->wrap());
+      break;
+    case Key::Insert:
+      dispatchAction(Action::ToggleOverwriteMode);
+      break;
+    case Key::Delete:
+      if (_view->mark())
+        _view->deleteRegion(_view->mark().value(), _view->point());
+      else
+        _view->deleteAtPoint();
+      _pasteState.reset();
+      break;
+    }
+  } else if (key.ctrlOnly()) {
+    switch (key.key) {
+    case Key::Right:
+      _view->moveWordRight();
+      break;
+    case Key::Left:
+      _view->moveWordLeft();
+      break;
+    case Key::Up:
+      if (_view->wrap() && _view->currentLineWraps(pcols))
+        _view->movePhysicalUp();
+      else
+        _view->moveParagraphUp();
+      break;
+    case Key::Down:
+      if (_view->wrap() && _view->currentLineWraps(pcols))
+        _view->movePhysicalDown();
+      else
+        _view->moveParagraphDown();
+      break;
+    case Key::Home:
+      _view->setPoint(0, 0);
+      break;
+    case Key::End:
+      _view->setPoint(_buf->lineCount() - 1, _buf->lineContent(_buf->lineCount() - 1).size());
+      break;
+    case Key::Delete:
+      _view->deleteChunkAtPoint();
+      break;
+    default:
+      break;
+    }
+    _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
+  } else if (key.ctrlShiftOnly()) {
+    // Shift+Ctrl+Up/Down grow the cursor set by a column.
+    if (key.key == Key::Up)
+      dispatchAction(Action::AddCursorUp);
+    else if (key.key == Key::Down)
+      dispatchAction(Action::AddCursorDown);
   }
 }
 

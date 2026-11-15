@@ -19,6 +19,7 @@
 #include "buffer/dir_buffer.hpp"
 #include "buffer/grep_buffer.hpp"
 #include "clipboard.hpp"
+#include "key_sequence.hpp"
 #include "panel_layout.hpp"
 #include "paste_ring.hpp"
 #include "prompt.hpp"
@@ -148,10 +149,10 @@ private:
   /** @{ */
   void handlePromptInput(char c);
   /**
-   * @brief Handle a CSI sequence (ESC [ @p params @p final) typed into the
-   *        active prompt: history, cursor movement, and forward deletion.
+   * @brief Handle a cursor or editing key typed into the active prompt:
+   *        history, cursor movement, and forward deletion.
    */
-  void handlePromptCsi(std::string_view params, char final);
+  void handlePromptKey(KeyPress key);
   /**
    * @brief Apply a shortcut-table action to the active prompt's input.
    *
@@ -166,6 +167,11 @@ private:
   /** @brief Push X11 CLIPBOARD onto the paste ring if it differs from the top entry. */
   void pullExternalClipboard();
   void handleEscapeInput(std::optional<char>& pendingChar);
+  /**
+   * @brief Apply a cursor or editing key (arrows, Home/End, PgUp/PgDn,
+   *        Insert, Delete, with their modifiers) to the focused view.
+   */
+  void handleKeyPress(KeyPress key);
   /**
    * @brief Bare Esc-Esc: dismiss a read-only overlay if active, otherwise
    *        clear the mark on the focused view.
