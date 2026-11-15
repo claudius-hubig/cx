@@ -2860,6 +2860,77 @@ BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
   BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
+// Closing a terminal normally sends SIGHUP, but only to a process the
+// terminal controls. Without it the editor just saw the end of its input
+// and exited, with every unsaved buffer lost.
+BOOST_AUTO_TEST_CASE(e2e_closed_input_without_sighup_writes_copies) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("text\n");
+  TempDir home; // the error log goes here: the terminal cannot be restored
+
+  // cx on a pty that is not its controlling terminal: closing the master
+  // ends its input (read() returns 0) and no signal is sent.
+  struct winsize ws{};
+  ws.ws_row = 24;
+  ws.ws_col = 80;
+  int masterFd = -1, slaveFd = -1;
+  BOOST_REQUIRE_EQUAL(openpty(&masterFd, &slaveFd, nullptr, nullptr, &ws), 0);
+  pid_t pid = fork();
+  BOOST_REQUIRE(pid >= 0);
+  if (pid == 0) {
+    setsid(); // a session of its own, and the open slave does not become its terminal
+    for (int fd : {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO})
+      dup2(slaveFd, fd);
+    close(slaveFd);
+    close(masterFd);
+    setenv("HOME", home.path().c_str(), 1);
+    std::string binCopy = bin, arg = tmp.path().string();
+    char* argv[] = {binCopy.data(), arg.data(), nullptr};
+    execv(bin.c_str(), argv);
+    _exit(127);
+  }
+  close(slaveFd);
+
+  // Wait for the file to be shown, type into it, give that time to arrive.
+  std::string shown;
+  char buf[4096];
+  for (int i = 0; i < 200 && shown.find("text") == std::string::npos; ++i) {
+    struct pollfd pfd{masterFd, POLLIN, 0};
+    if (poll(&pfd, 1, 10) > 0)
+      if (auto n = ::read(masterFd, buf, sizeof(buf)); n > 0)
+        shown.append(buf, static_cast<std::size_t>(n));
+  }
+  BOOST_REQUIRE(shown.find("text") != std::string::npos);
+  BOOST_REQUIRE_EQUAL(::write(masterFd, "X", 1), 1);
+  usleep(200000);
+  close(masterFd);
+
+  int status = 0;
+  bool exited = false;
+  for (int i = 0; i < 300 && !exited; ++i) {
+    exited = waitpid(pid, &status, WNOHANG) == pid;
+    if (!exited)
+      usleep(10000);
+  }
+  if (!exited) {
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+  }
+  BOOST_REQUIRE(exited);
+  BOOST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+  auto copies = unsavedCopies(tmp.path());
+  BOOST_REQUIRE_EQUAL(copies.size(), 1u);
+  BOOST_CHECK_EQUAL(readFile(copies[0]), "Xtext\n");
+  std::filesystem::remove(copies[0]);
+}
+
 // A crash, or a signal sent to end the editor at once, took every unsaved
 // buffer with it. The handler now writes the ones that have a file to
 // copies next to them and lists those, once the terminal is back.

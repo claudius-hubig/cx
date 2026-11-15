@@ -150,7 +150,9 @@ Key responsibilities:
   only counts; requests are acted on in the loop, so one that arrives
   while a command is running waits for it, as a key would.
 - **Emergency save**: `emergencySave()` is the way out when nobody can
-  be asked: after that second SIGTERM, and from the `FatalSignalHook`
+  be asked: after that second SIGTERM, when stdin is closed (`loop()`
+  returns `Exit::Emergency` for a `read()` of 0 bytes too: the terminal
+  went away, with or without a SIGHUP), and from the `FatalSignalHook`
   when the editor crashes or SIGHUP, SIGINT or SIGQUIT ends it. It never
   writes a buffer's own file, since nobody agreed to that and in a
   signal handler the buffer may be damaged or half updated. Every

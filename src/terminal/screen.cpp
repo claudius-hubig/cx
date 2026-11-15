@@ -712,7 +712,10 @@ Screen::Exit Screen::loop() {
       char c;
       ssize_t n = read(STDIN_FILENO, &c, 1);
       if (n == 0)
-        break; // clean EOF — stdin closed, exit loop
+        // EOF: the terminal is gone (normally SIGHUP says so first, but
+        // not to a process the terminal does not control). Nobody is
+        // left to ask about the unsaved buffers.
+        return Exit::Emergency;
       if (n < 0) {
         // EINTR: a signal, which the next wait finds. Anything else is a
         // transient error (e.g. EIO if the controlling tty is severed,

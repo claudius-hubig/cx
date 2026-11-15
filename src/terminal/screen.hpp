@@ -72,20 +72,24 @@ public:
 
   /** @brief How loop() ended. */
   enum class Exit {
-    Normal,    /**< The exit command, or stdin was closed. */
-    Emergency, /**< Told to terminate with the exit flow unanswered: emergencySave() is due. */
+    Normal, /**< The exit command: every modified buffer has been dealt with. */
+    /** Nobody is left to ask about the modified buffers: stdin was
+     *  closed, or SIGTERM came again with the exit flow unanswered.
+     *  emergencySave() is due. */
+    Emergency,
   };
 
   /**
    * @brief Run the main input loop.
    *
    * Reads keystrokes one character at a time, dispatches them, and redraws
-   * after each. Returns when stdin is closed or on the exit command.
+   * after each. Returns on the exit command or when stdin is closed.
    *
    * SIGTERM is taken as the exit command (Esc-c), whatever the editor is
    * waiting for: the modified buffers are asked about, one by one. A
    * second SIGTERM while that is still going on ends the loop with
-   * Exit::Emergency, for the caller to restore the terminal and call
+   * Exit::Emergency, and so does stdin being closed (the terminal went
+   * away): the caller is to restore the terminal and call
    * emergencySave(), which leaves the unsaved buffers in copies.
    */
   [[nodiscard]] Exit loop();
