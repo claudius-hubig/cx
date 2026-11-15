@@ -936,6 +936,41 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   emitLeftGutter(0, viewFromOffset == 0 ? viewFrom.line.value + 1 : 0);
   emitRowStart(0);
 
+  // Close the current visual row with the wrap indicator and start a
+  // continuation row of the same physical line. Returns false if the
+  // panel has no row left for it.
+  auto wrapToNextRow = [&](RenderState& rs) {
+    if (rs.bracketMatchActive) {
+      out += ansi::DefaultFg;
+      rs.bracketMatchActive = false;
+    }
+    if (rs.lastSynTok != SyntaxToken::Normal) {
+      out += kSynReset;
+      rs.lastSynTok = SyntaxToken::Normal;
+    }
+    if (rs.highlightActive) {
+      out += ansi::Reset;
+      rs.highlightActive = false;
+    }
+    if (rs.regionActive) {
+      out += ansi::Reset;
+      rs.regionActive = false;
+    }
+    emitEraseLineWithBg();
+    emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
+    ++row;
+    col = 0;
+    if (row >= rows.value)
+      return false;
+    // Continuation row: blank gutter so the line number stays
+    // anchored to the row that begins the physical line.
+    emitLeftGutter(row, 0);
+    emitRowStart(row);
+    if (curLineBg)
+      out += curLineBg;
+    return true;
+  };
+
   for (std::size_t lineIdx = viewFrom.line.value; lineIdx < _lines.size() && row < rows.value;
        ++lineIdx) {
     auto const& line = *_lines[lineIdx];
@@ -953,36 +988,9 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
       // Wrap if the representation doesn't fit on the current line.
       if ((col > 0 && col + info.width > cw) || pendingWrap) {
-        if (rs.bracketMatchActive) {
-          out += ansi::DefaultFg;
-          rs.bracketMatchActive = false;
-        }
-        if (rs.lastSynTok != SyntaxToken::Normal) {
-          out += kSynReset;
-          rs.lastSynTok = SyntaxToken::Normal;
-        }
-        if (rs.highlightActive) {
-          out += ansi::Reset;
-          rs.highlightActive = false;
-        }
-        if (rs.regionActive) {
-          out += ansi::Reset;
-          rs.regionActive = false;
-        }
-        emitEraseLineWithBg();
-        // We know there's more content — this is a true wrap.
-        emitGutter(row, row == cur_row && pointFound, "\xe2\x86\xb5"); // ↵
-        ++row;
-        col = 0;
         pendingWrap = false;
-        if (row >= rows.value)
+        if (!wrapToNextRow(rs))
           break;
-        // Continuation row: blank gutter so the line number stays
-        // anchored to the row that begins the physical line.
-        emitLeftGutter(row, 0);
-        emitRowStart(row);
-        if (curLineBg)
-          out += curLineBg;
       }
 
       if (lineIdx == point.line && i <= point.offset && point.offset < i + info.len &&
@@ -1002,23 +1010,21 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       i += info.len;
     }
 
+    // A line whose text fills its last row exactly ends on a continuation
+    // row of its own: the end-of-line position, and a cursor on it, need a
+    // cell. Every row computation counts that row (computeRowBounds(),
+    // screenRow(), ensureVisible()), so it is drawn whether or not the
+    // cursor is there; drawing the next line on it instead put the cursor
+    // on that line's first character.
+    if (pendingWrap && row < rows.value)
+      wrapToNextRow(rs);
+
     // Point at end of line (offset == line.size()).
-    // Must check before clearing pendingWrap: if the line ended exactly
-    // at cw, the cursor belongs on the next visual row.
     if (lineIdx == point.line && point.offset >= line.size() && !pointFound) {
-      if (pendingWrap) {
-        cur_row = row + 1;
-        cur_col = leftGutter;
-      } else {
-        cur_row = row;
-        cur_col = leftGutter + col;
-      }
+      cur_row = row;
+      cur_col = leftGutter + col;
       pointFound = true;
     }
-
-    // If the line ended exactly at cw, pendingWrap is true but there's
-    // no more content to wrap — clear it so the outer loop emits blank.
-    pendingWrap = false;
 
     // End of physical line — emit newline visual and gutter (no wrap
     // indicator).

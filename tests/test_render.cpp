@@ -132,6 +132,36 @@ BOOST_AUTO_TEST_CASE(render_wrap_exact_boundary_multiline) {
   BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{6}, buf.point(), buf.viewFromRaw(), true), row.value);
 }
 
+BOOST_AUTO_TEST_CASE(render_wrap_exact_boundary_gives_line_end_its_own_row) {
+  // "abcde" fills the 5 content columns, so its end is on a continuation
+  // row, as every row computation has it. render() drew the next line on
+  // that row instead: the cursor at the end of "abcde" sat on the 'f'.
+  TB<TextBuffer> buf("test");
+  insertString(buf, "abcde\nfg");
+  buf.gotoLine(1, RowIdx{10});
+  buf.moveEnd();
+  std::string out;
+  auto [row, col] = buf.render(out, RowIdx{5}, ColIdx{6}, renderParams(buf));
+  BOOST_CHECK_EQUAL(row.value, 1u);
+  BOOST_CHECK_EQUAL(col.value, 0u);
+  auto grid = renderToGrid(out, 5, 6);
+  BOOST_CHECK_EQUAL(grid[0].substr(0, 5), "abcde");
+  BOOST_CHECK_EQUAL(grid[1].substr(0, 5), "     ");
+  BOOST_CHECK_EQUAL(grid[2].substr(0, 2), "fg");
+
+  // The same holds with the cursor elsewhere, so rows and lines agree
+  // with screenRow() and with mouse clicks.
+  buf.gotoLine(2, RowIdx{10});
+  out.clear();
+  std::tie(row, col) = buf.render(out, RowIdx{5}, ColIdx{6}, renderParams(buf));
+  BOOST_CHECK_EQUAL(row.value, 2u);
+  BOOST_CHECK_EQUAL(buf.screenRow(ColIdx{6}, buf.point(), buf.viewFromRaw(), true), row.value);
+  grid = renderToGrid(out, 5, 6);
+  BOOST_CHECK_EQUAL(grid[2].substr(0, 2), "fg");
+  BOOST_CHECK(buf.view.pointForScreenRowCol(2, 0, ColIdx{6}, true) == (BufferPoint{1, 0}));
+  BOOST_CHECK(buf.view.pointForScreenRowCol(1, 0, ColIdx{6}, true) == (BufferPoint{0, 5}));
+}
+
 BOOST_AUTO_TEST_CASE(render_wrap_multi_wrap) {
   // A line that wraps multiple times.
   TB<TextBuffer> buf("test");
