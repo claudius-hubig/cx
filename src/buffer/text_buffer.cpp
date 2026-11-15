@@ -248,11 +248,13 @@ std::expected<void, std::string> TextBuffer::save() {
     if (!p->empty())
       file.write(p->data(), static_cast<std::streamsize>(p->size()));
   }
-  if (!file.good())
-    return std::unexpected("write error for " + _path->string());
-  // Close and flush before stat so the stamp reflects the bytes we just
-  // wrote rather than a still-buffered zero size or stale mtime.
+  // Close before checking for errors: a small file sits wholly in the
+  // stream buffer until close() flushes it, so a full disk or an exceeded
+  // quota is reported only there. Closing also has to come before the stat
+  // below, so the stamp reflects the bytes just written.
   file.close();
+  if (file.fail())
+    return std::unexpected("write error for " + _path->string());
   _modified = false;
   scanForConflicts();
   captureDiskStamp();

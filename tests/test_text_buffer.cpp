@@ -83,6 +83,21 @@ BOOST_AUTO_TEST_CASE(save_truncates_existing) {
   BOOST_CHECK_EQUAL(content, "X");
 }
 
+BOOST_AUTO_TEST_CASE(save_reports_a_write_that_fails_on_close) {
+  // Writes to /dev/full fail with ENOSPC, but a short text only reaches
+  // the device when the stream is closed. save() used to check the stream
+  // before closing it and reported success.
+  if (!std::filesystem::exists("/dev/full")) {
+    BOOST_WARN_MESSAGE(false, "/dev/full not available, skipping");
+    return;
+  }
+  TB<TextBuffer> buf("/dev/full", "/dev/full");
+  buf.insert('A');
+  auto res = buf.save();
+  BOOST_CHECK(!res);
+  BOOST_CHECK(buf.modified());
+}
+
 // --- changedOnDisk ---
 
 BOOST_AUTO_TEST_CASE(changedOnDisk_false_for_pathless) {
