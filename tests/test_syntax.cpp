@@ -11,6 +11,8 @@
 #include "buffer/text_buffer.hpp"
 #include "test_helpers.hpp"
 
+#include <algorithm>
+
 // Helper: create a line from a string literal.
 static std::string mkline(std::string_view s) { return std::string(s); }
 
@@ -1190,6 +1192,65 @@ BOOST_AUTO_TEST_CASE(md_unmatched_bracket_in_prose_stays_in_its_paragraph) {
   BOOST_CHECK(st.mdLink == MdLink::Url);
   tokenizeMarkdownLine(mkline(""), st, toks);
   BOOST_CHECK(st.mdLink == MdLink::None);
+}
+
+BOOST_AUTO_TEST_CASE(md_fenced_code_has_no_markup) {
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  auto normal = [&](std::string const& text) {
+    auto line = mkline(text);
+    tokenizeMarkdownLine(line, st, toks);
+    return toks.size() == line.size() && std::ranges::count(toks, SyntaxToken::Normal) ==
+                                             static_cast<std::ptrdiff_t>(toks.size());
+  };
+  BOOST_CHECK(normal("```sh")); // the fence line itself
+  BOOST_CHECK(st.fence.open());
+  BOOST_CHECK(normal("# a comment, not a heading"));
+  BOOST_CHECK(normal("echo **not bold** [not](a link)"));
+  BOOST_CHECK(normal("x=${arr[i")); // an unmatched '[' opens no link
+  BOOST_CHECK(st.mdLink == MdLink::None);
+  BOOST_CHECK(normal(""));
+  BOOST_CHECK(normal("~~~")); // the other fence character does not close it
+  BOOST_CHECK(st.fence.open());
+  BOOST_CHECK(normal("```"));
+  BOOST_CHECK(!st.fence.open());
+
+  // Markdown again after the block.
+  auto heading = mkline("# a heading");
+  tokenizeMarkdownLine(heading, st, toks);
+  BOOST_CHECK(allTokens(toks, 0, heading.size(), SyntaxToken::Heading));
+}
+
+BOOST_AUTO_TEST_CASE(md_fence_ends_an_open_link_and_an_unclosed_fence_runs_on) {
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(mkline("see [the"), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::Label);
+  tokenizeMarkdownLine(mkline("~~~~"), st, toks);
+  BOOST_CHECK(st.mdLink == MdLink::None);
+  BOOST_CHECK(st.fence.open());
+  // A shorter run does not close a four-tilde fence; nothing does here.
+  for (auto text : {"~~~", "link](url)", "# heading"}) {
+    auto line = mkline(text);
+    tokenizeMarkdownLine(line, st, toks);
+    BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
+    BOOST_CHECK(st.fence.open());
+  }
+}
+
+BOOST_AUTO_TEST_CASE(md_inline_triple_backticks_are_not_a_fence) {
+  // A backtick fence's info string cannot contain a backtick.
+  MdSyntaxState st;
+  std::vector<SyntaxToken> toks;
+  tokenizeMarkdownLine(mkline("```code``` and **bold**"), st, toks);
+  BOOST_CHECK(!st.fence.open());
+  BOOST_CHECK(allTokens(toks, 15, 23, SyntaxToken::Bold));
+}
+
+BOOST_AUTO_TEST_CASE(md_syntax_cache_entry_stays_32_bytes) {
+  // One entry per line of the buffer: the fence state must fit in the
+  // padding next to the link state.
+  BOOST_CHECK_EQUAL(sizeof(LineSyntax<MdSyntaxState>), 32u);
 }
 
 BOOST_AUTO_TEST_CASE(md_heading_suppressed_during_link_continuation) {

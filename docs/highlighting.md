@@ -106,6 +106,9 @@ The `SyntaxState` struct carries state between lines:
 - **mdLink** — a Markdown `[...](...)` link spanning the line boundary
   (`None` / `Label` / `Url`); a blank line ends an open one, so an
   unmatched `[` colours the rest of its paragraph at most
+- **fence** — inside a Markdown fenced code block (the fence character
+  and the length of its opening run); those lines, and the fence lines
+  themselves, get no markup tokens
 
 C/C++, Shell, Python, YAML, TOML and Markdown tokenisation each maintain
 multi-line state. Only the JSON and Diff tokenizers are stateless: they

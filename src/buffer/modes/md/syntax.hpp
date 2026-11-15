@@ -3,10 +3,11 @@
 /**
  * @file md/syntax.hpp
  * @brief Markdown tokenizer: headings, bold, and (possibly multi-line)
- *        links.
+ *        links, outside fenced code blocks.
  */
 
 #include "buffer/modes/c/syntax.hpp"
+#include "buffer/modes/md/fence.hpp"
 
 #include <cstdint>
 #include <string>
@@ -28,6 +29,7 @@ enum class MdLink : uint8_t { None, Label, Url };
 /** @brief Markdown tokenizer state carried between lines. */
 struct MdSyntaxState {
   MdLink mdLink = MdLink::None; /**< Cross-line link state (see MdLink). */
+  MdFence fence;                /**< The fenced code block the line is in, if any. */
 };
 
 /**
@@ -35,7 +37,9 @@ struct MdSyntaxState {
  *        values into @p out.
  *
  * @p out is resized/overwritten; reusing a vector avoids per-line heap
- * allocation. @p state carries the cross-line link state (see MdLink).
+ * allocation. @p state carries the cross-line link state (see MdLink) and
+ * the open code fence: the lines of a fenced code block, fence lines
+ * included, are not Markdown and get no markup tokens.
  */
 void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
                           std::vector<SyntaxToken>& out);

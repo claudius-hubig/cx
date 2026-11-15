@@ -790,6 +790,9 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   skipped so markup inside them is not tokenised — most importantly a
   stray `[` cannot open a link, which prevents an unbalanced bracket in
   code from carrying link highlighting onto the following lines.
+  Fenced code blocks get no markup tokens at all (a `# comment` in a
+  shell snippet is not a heading): `MdSyntaxState::fence` (an `MdFence`)
+  tracks the open fence from line to line.
 
 - **Markdown tables** (`modes/md/table.hpp/.cpp`): Pure functions
   with no buffer or view dependency. `findPipeRun()` returns the run of
@@ -812,10 +815,12 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   its logical cell and its non-blank-byte offset within that cell's
   text.
 
-- **Markdown fences** (`modes/md/fence.hpp/.cpp`):
-  `markdownFencedLines()` marks every line inside a fenced code block
-  (``` or ~~~, closing run at least as long). Reflow leaves those lines
-  untouched.
+- **Markdown fences** (`modes/md/fence.hpp/.cpp`): `MdFence` is the
+  line-by-line state of "which fenced code block am I in" (``` or ~~~,
+  closing run at least as long) and the only place that knows the rules.
+  `markdownFencedLines()` runs it over a whole buffer for reflow, which
+  leaves fenced lines untouched; the Markdown tokenizer carries one in
+  its per-line state.
 
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file

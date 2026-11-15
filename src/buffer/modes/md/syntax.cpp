@@ -6,6 +6,14 @@ void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
   std::size_t sz = line.size();
   std::size_t i = 0;
 
+  // Fenced code is not Markdown: without this a "# comment" in a shell
+  // snippet was a heading and an "arr[i" opened a link. The block also
+  // ends whatever link was open before it.
+  if (state.fence.advance(line)) {
+    state.mdLink = MdLink::None;
+    return;
+  }
+
   // A blank line ends the paragraph, and with it a link that is still
   // open: link text cannot span paragraphs. Otherwise an unmatched '[' in
   // prose, as in "the interval [0, 1)", would colour everything up to the
