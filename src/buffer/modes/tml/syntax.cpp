@@ -166,7 +166,7 @@ static bool isTomlLiteral(std::string_view w) {
   return k == v.size();
 }
 
-void tokenizeTomlLine(std::string const& line, SyntaxState& state,
+void tokenizeTomlLine(std::string const& line, TmlSyntaxState& state,
                       std::vector<SyntaxToken>& tokens) {
   std::size_t sz = line.size();
   tokens.assign(sz, SyntaxToken::Normal);

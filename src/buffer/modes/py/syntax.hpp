@@ -11,6 +11,17 @@
 #include <string>
 #include <vector>
 
+/** @brief Python tokenizer state carried between lines. */
+struct PySyntaxState {
+  /**
+   * @brief Python triple-quote: 0 = not inside; '\'' or '"' = the open
+   *        '''/""" quote character.
+   */
+  char pyTriple = 0;
+  /** @brief Suppresses backslash-escape handling for r"""..."""-style strings. */
+  bool pyTripleRaw = false;
+};
+
 /**
  * @brief Tokenize a single Python line, writing per-byte SyntaxToken values
  *        into @p out.
@@ -21,7 +32,7 @@
  * Multi-line state: @c state.pyTriple carries an open '''/""" string across
  * lines (it holds the quote char; @c state.pyTripleRaw suppresses
  * backslash-escape handling for r'''...''' forms). While set, lines are one
- * String span until the matching triple quote. No other SyntaxState field
- * is touched, matching the "one mode per buffer" invariant in c/syntax.hpp.
+ * String span until the matching triple quote.
  */
-void tokenizePythonLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
+void tokenizePythonLine(std::string const& line, PySyntaxState& state,
+                        std::vector<SyntaxToken>& out);

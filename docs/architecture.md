@@ -738,13 +738,13 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   the boolean/null literals `true`/`false`/`nullptr`, which are values
   rather than keywords and so share the numeric colour), operators, and
   brackets (parens, brackets, braces, angles). Maintains multi-line state
-  (`SyntaxState`) for block comments and raw string literals. Also
+  (`CSyntaxState`) for block comments and raw string literals. Also
   provides `findMatchingBracket()` for jump-to-matching-bracket
   support.
 
 - **Markdown mode** (`modes/md/syntax.hpp/.cpp`): Tokenizes headings
   (`# ...`), bold (`**...**`, single-line), and links (`[text](url)`).
-  Links may span lines: `state.mdLink` (`MdLink::Label`/`Url`) carries
+  Links may span lines: `MdSyntaxState::mdLink` (`MdLink::Label`/`Url`) carries
   an open `[...` label or `](...` destination across the boundary and
   is Link-coloured until it closes (optimistically to end of file if
   it never does). Headings are suppressed while a link continuation is
@@ -781,13 +781,14 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
 
 - **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
   based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file
-  headers), `@@` (hunk headers). No multi-line state needed.
+  headers), `@@` (hunk headers). No multi-line state needed, so the
+  tokenizer takes none.
 
 - **JSON mode** (`modes/jsn/syntax.hpp/.cpp`): Tokenizes strings,
   numbers, the value literals `true`/`false`/`null` (coloured as
   `Number`, like numeric literals — JSON emits no `Keyword`), and
-  brackets (`[]`, `{}`). No multi-line state needed (the `SyntaxState`
-  parameter is accepted for interface consistency only). Provides
+  brackets (`[]`, `{}`). No multi-line state needed, so the tokenizer
+  takes none. Provides
   `findMatchingBracketJson()` for jump-to-matching-bracket; only `[]`
   and `{}` are matched, brackets inside strings are skipped.
 
@@ -795,8 +796,8 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   single/double-quoted and backtick strings, the reserved word set
   (`if`/`then`/`fi`/`for`/`while`/`do`/`done`/…), `$VAR`/`${...}`/`$?`
   parameter expansions (the `Variable` token), brackets, and the `|`
-  `&` `;` `<` `>` `=` operators. Maintains multi-line state for
-  heredocs: `state.heredocTag` makes every following line one `String`
+  `&` `;` `<` `>` `=` operators. Maintains multi-line state
+  (`ShSyntaxState`) for heredocs: `state.heredocTag` makes every following line one `String`
   span until a line equal to the tag (leading tabs stripped for the
   `<<-` form, tracked by `state.heredocStripTabs`); `<<<` here-strings
   are not heredocs.
@@ -809,7 +810,7 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   `Keyword` — `: , -` and flow brackets, and node properties
   `&anchor`/`*alias`/`!tag` (`Preprocessor`). Directives (`%YAML`) and
   document markers (`---`/`...`) are `Preprocessor`. Maintains
-  multi-line state for `|`/`>` block scalars: `state.yamlBlockCol`
+  multi-line state (`YmlSyntaxState`) for `|`/`>` block scalars: `state.yamlBlockCol`
   holds the introducing line's indent; deeper-indented or blank lines
   are one `String` span until a non-blank line dedents back to it.
 
@@ -820,7 +821,7 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   multi-line forms, and the value literals — booleans, integers
   (`0x`/`0o`/`0b`, `_` groups), floats (`inf`/`nan`) and date/times —
   as `Number`. Inside inline tables `{...}` keys are recognised after
-  `{` and `,`. Maintains multi-line state: `state.tomlTriple` holds
+  `{` and `,`. Maintains multi-line state (`TmlSyntaxState`): `state.tomlTriple` holds
   the open triple-quote char, `state.tomlDepth` counts `[`/`{` left
   open by earlier lines so lines inside a multi-line array are parsed
   as values (no header or key detection).
@@ -833,7 +834,7 @@ Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
   the value literals `None`/`True`/`False` (coloured as `Number`, not
   `Keyword`),
   `@decorator` lines (`Preprocessor`), brackets, and `:` (`Operator`).
-  Maintains multi-line state for triple-quoted strings:
+  Maintains multi-line state (`PySyntaxState`) for triple-quoted strings:
   `state.pyTriple` holds the open quote char and `state.pyTripleRaw`
   suppresses escape handling for `r'''...'''`; f-string `{...}`
   interiors stay inside the `String` span (no recursion). Python is
@@ -859,7 +860,14 @@ The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 Tokens are mapped to ANSI colours in `Buffer::render()`.
 
 Per-line tokenisation results are cached in `Buffer::_synCache` and
-invalidated from the edited line forward. `Buffer::render()` extends
+invalidated from the edited line forward. Each entry holds the line's
+tokens and the tokenizer state after it, a `SyntaxState`
+(`buffer/syntax_state.hpp`): a `std::variant` of the per-mode state
+structs above, `std::monostate` for modes without one (txt, dif, jsn),
+so an entry is only as large as the largest mode's state (80 bytes in
+all, down from 136 with one struct holding every mode's fields).
+`ensureSynCache()` reaches the buffer mode's alternative with
+`syntaxStateFor<S>()`. `Buffer::render()` extends
 the cache up to just past the last visible line via `ensureSynCache()`;
 `Buffer::cachedLineTokens()` exposes this incrementally-extended cache
 to `findMatchingBracket()`, so jump-to-matching-bracket looks up

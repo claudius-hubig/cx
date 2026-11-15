@@ -30,7 +30,7 @@ static bool allTokens(std::vector<SyntaxToken> const& toks, std::size_t from, st
 
 BOOST_AUTO_TEST_CASE(double_quoted_string_is_string_token) {
   auto line = mkline(R"(x = "hello";)");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // "hello" is at positions 4..10 (including quotes).
@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(double_quoted_string_is_string_token) {
 
 BOOST_AUTO_TEST_CASE(char_literal_is_string_token) {
   auto line = mkline("char c = 'x';");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // 'x' is at positions 9..11.
@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(char_literal_is_string_token) {
 
 BOOST_AUTO_TEST_CASE(escaped_quote_in_string) {
   auto line = mkline(R"(s = "a\"b";)");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // The whole "a\"b" should be String.
@@ -59,7 +59,7 @@ BOOST_AUTO_TEST_CASE(escaped_quote_in_string) {
 
 BOOST_AUTO_TEST_CASE(thousand_separator_not_string) {
   auto line = mkline("int x = 1'000'000;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // 1'000'000 is one Number token spanning [8, 17); the ' digit
@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(thousand_separator_not_string) {
 
 BOOST_AUTO_TEST_CASE(raw_string_single_line) {
   auto line = mkline(R"__(s = R"(hello)";)__");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // R"(hello)" spans from position 4 to 13 inclusive.
@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_CASE(raw_string_single_line) {
 
 BOOST_AUTO_TEST_CASE(raw_string_with_delimiter) {
   auto line = mkline(R"__(s = R"foo(hello)foo";)__");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // R"foo(hello)foo" is all String.
@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(raw_string_with_delimiter) {
 // line of R"R"R"... quadratic.
 BOOST_AUTO_TEST_CASE(raw_string_needs_a_valid_delimiter) {
   auto line = mkline(R"__(a = R"x y"; f(1);)__");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 5, 10, SyntaxToken::String)); // "x y"
@@ -109,15 +109,15 @@ BOOST_AUTO_TEST_CASE(raw_string_needs_a_valid_delimiter) {
   BOOST_CHECK(!st.rawDelim.has_value());
 
   auto tooLong = mkline(R"__(R"abcdefghijklmnopq(x)abcdefghijklmnopq")__");
-  SyntaxState st2;
+  CSyntaxState st2;
   tokenizeLine(tooLong, st2, toks);
   BOOST_CHECK(!st2.rawDelim.has_value());
-  SyntaxState st3;
+  CSyntaxState st3;
   advanceBlockCommentState(tooLong, st3);
   BOOST_CHECK(!st3.rawDelim.has_value());
 
   auto longest = mkline(R"__(R"abcdefghijklmnop(x)__");
-  SyntaxState st4;
+  CSyntaxState st4;
   tokenizeLine(longest, st4, toks);
   BOOST_REQUIRE(st4.rawDelim.has_value());
   BOOST_CHECK_EQUAL(*st4.rawDelim, "abcdefghijklmnop");
@@ -128,18 +128,18 @@ BOOST_AUTO_TEST_CASE(raw_string_prefix_run_is_linear) {
   for (int i = 0; i < 200000; ++i)
     content += "R\"";
   auto line = mkline(content);
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks); // took ~10 s when quadratic
   BOOST_CHECK_EQUAL(toks.size(), line.size());
-  SyntaxState st2;
+  CSyntaxState st2;
   advanceBlockCommentState(line, st2);
   BOOST_CHECK(!st2.rawDelim.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(raw_string_multiline_start) {
   auto line = mkline(R"__(s = R"(hello)__");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // Everything from R onwards is String.
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(raw_string_multiline_end) {
   // Line content: world)";
   std::string content = "world)\";";
   auto line = mkline(content);
-  SyntaxState st;
+  CSyntaxState st;
   st.rawDelim = std::string(""); // continuing from previous line
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
@@ -165,7 +165,7 @@ BOOST_AUTO_TEST_CASE(raw_string_multiline_end) {
 
 BOOST_AUTO_TEST_CASE(raw_string_multiline_with_delim) {
   auto line1 = mkline(R"__(R"foo(start)__");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks1;
   tokenizeLine(line1, st, toks1);
   BOOST_CHECK(st.rawDelim.has_value());
@@ -203,7 +203,7 @@ BOOST_AUTO_TEST_CASE(string_render_uses_red_color) {
 
 BOOST_AUTO_TEST_CASE(shift_left_is_operator) {
   auto line = mkline("x = a << b;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // << at positions 6,7 should be Operator.
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(shift_left_is_operator) {
 
 BOOST_AUTO_TEST_CASE(shift_right_is_operator) {
   auto line = mkline("x = a >> b;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[6]), static_cast<int>(SyntaxToken::Operator));
@@ -222,7 +222,7 @@ BOOST_AUTO_TEST_CASE(shift_right_is_operator) {
 
 BOOST_AUTO_TEST_CASE(less_equal_is_operator) {
   auto line = mkline("if (a <= b)");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // <= at positions 6,7.
@@ -232,7 +232,7 @@ BOOST_AUTO_TEST_CASE(less_equal_is_operator) {
 
 BOOST_AUTO_TEST_CASE(greater_equal_is_operator) {
   auto line = mkline("if (a >= b)");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[6]), static_cast<int>(SyntaxToken::Operator));
@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE(greater_equal_is_operator) {
 
 BOOST_AUTO_TEST_CASE(spaced_less_than_is_operator) {
   auto line = mkline("if (a < b)");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // < at position 6 with spaces around it → Operator.
@@ -250,7 +250,7 @@ BOOST_AUTO_TEST_CASE(spaced_less_than_is_operator) {
 
 BOOST_AUTO_TEST_CASE(template_angle_is_angle) {
   auto line = mkline("vector<int> v;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // < at position 6 — no spaces → Angle.
@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(template_angle_is_angle) {
 
 BOOST_AUTO_TEST_CASE(spaceship_is_operator) {
   auto line = mkline("a <=> b");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // <=> at positions 2,3,4.
@@ -447,7 +447,7 @@ BOOST_AUTO_TEST_CASE(bracket_at_point_also_highlighted) {
 
 BOOST_AUTO_TEST_CASE(true_is_value_literal) {
   auto line = mkline("bool x = true;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // "true" occupies positions 9..12.
@@ -456,7 +456,7 @@ BOOST_AUTO_TEST_CASE(true_is_value_literal) {
 
 BOOST_AUTO_TEST_CASE(false_is_value_literal) {
   auto line = mkline("bool x = false;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // "false" occupies positions 9..13.
@@ -465,7 +465,7 @@ BOOST_AUTO_TEST_CASE(false_is_value_literal) {
 
 BOOST_AUTO_TEST_CASE(nullptr_is_value_literal) {
   auto line = mkline("return nullptr;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // "return" at 0..5 stays Keyword.
@@ -480,7 +480,7 @@ BOOST_AUTO_TEST_CASE(nullptr_is_value_literal) {
 
 BOOST_AUTO_TEST_CASE(cpp_integer_is_number) {
   auto line = mkline("int x = 42;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 8, 10, SyntaxToken::Number));                             // 42
@@ -489,7 +489,7 @@ BOOST_AUTO_TEST_CASE(cpp_integer_is_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_float_with_exponent_is_number) {
   auto line = mkline("double r = 3.14e-2;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // 3.14e-2 spans [11, 18).
@@ -498,7 +498,7 @@ BOOST_AUTO_TEST_CASE(cpp_float_with_exponent_is_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_hex_literal_is_number) {
   auto line = mkline("auto m = 0xFF00u;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // 0xFF00u spans [9, 16) — prefix, hex digits and the u suffix.
@@ -507,7 +507,7 @@ BOOST_AUTO_TEST_CASE(cpp_hex_literal_is_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_binary_and_suffix_is_number) {
   auto line = mkline("auto b = 0b1010'1100ULL;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // 0b1010'1100ULL spans [9, 23).
@@ -516,7 +516,7 @@ BOOST_AUTO_TEST_CASE(cpp_binary_and_suffix_is_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_leading_dot_float_is_number) {
   auto line = mkline("float f = .5f;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // .5f spans [10, 13).
@@ -525,7 +525,7 @@ BOOST_AUTO_TEST_CASE(cpp_leading_dot_float_is_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_hex_float_is_number) {
   auto line = mkline("double h = 0x1.8p3;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // 0x1.8p3 spans [11, 18).
@@ -534,7 +534,7 @@ BOOST_AUTO_TEST_CASE(cpp_hex_float_is_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_identifier_with_digits_is_not_number) {
   auto line = mkline("int x1 = y2;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // x1 and y2 are identifiers, not numbers.
@@ -546,7 +546,7 @@ BOOST_AUTO_TEST_CASE(cpp_identifier_with_digits_is_not_number) {
 
 BOOST_AUTO_TEST_CASE(cpp_number_does_not_swallow_following_operator) {
   auto line = mkline("n = 3+4;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[4]), static_cast<int>(SyntaxToken::Number));   // 3
@@ -571,7 +571,7 @@ BOOST_AUTO_TEST_CASE(cpp_number_render_uses_turquoise_color) {
 
 BOOST_AUTO_TEST_CASE(equals_is_operator) {
   auto line = mkline("x = 5;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[2]), static_cast<int>(SyntaxToken::Operator));
@@ -579,7 +579,7 @@ BOOST_AUTO_TEST_CASE(equals_is_operator) {
 
 BOOST_AUTO_TEST_CASE(not_equals_is_operator) {
   auto line = mkline("x != y");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // != at positions 2,3.
@@ -589,7 +589,7 @@ BOOST_AUTO_TEST_CASE(not_equals_is_operator) {
 
 BOOST_AUTO_TEST_CASE(logical_and_is_operator) {
   auto line = mkline("a && b");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[2]), static_cast<int>(SyntaxToken::Operator));
@@ -598,7 +598,7 @@ BOOST_AUTO_TEST_CASE(logical_and_is_operator) {
 
 BOOST_AUTO_TEST_CASE(logical_or_is_operator) {
   auto line = mkline("a || b");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[2]), static_cast<int>(SyntaxToken::Operator));
@@ -607,7 +607,7 @@ BOOST_AUTO_TEST_CASE(logical_or_is_operator) {
 
 BOOST_AUTO_TEST_CASE(ternary_is_operator) {
   auto line = mkline("x ? a : b");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[2]), static_cast<int>(SyntaxToken::Operator));
@@ -616,7 +616,7 @@ BOOST_AUTO_TEST_CASE(ternary_is_operator) {
 
 BOOST_AUTO_TEST_CASE(plus_minus_star_are_operators) {
   auto line = mkline("a + b - c * d");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[2]), static_cast<int>(SyntaxToken::Operator));
@@ -626,7 +626,7 @@ BOOST_AUTO_TEST_CASE(plus_minus_star_are_operators) {
 
 BOOST_AUTO_TEST_CASE(tilde_is_operator) {
   auto line = mkline("~x");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK_EQUAL(static_cast<int>(toks[0]), static_cast<int>(SyntaxToken::Operator));
@@ -649,7 +649,7 @@ BOOST_AUTO_TEST_CASE(operator_render_uses_purple_color) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_include) {
   auto line = mkline("#include <stdio.h>");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Preprocessor));
@@ -658,7 +658,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_include) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_define) {
   auto line = mkline("#define FOO 42");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Preprocessor));
@@ -666,7 +666,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_define) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_with_leading_whitespace) {
   auto line = mkline("  #ifdef BAR");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Preprocessor));
@@ -674,7 +674,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_with_leading_whitespace) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_continuation_backslash) {
   auto line1 = mkline("#define MULTI \\");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line1, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line1.size(), SyntaxToken::Preprocessor));
@@ -693,7 +693,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_continuation_backslash) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_not_triggered_by_normal_code) {
   auto line = mkline("int x = 5;");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   BOOST_CHECK(toks[0] != SyntaxToken::Preprocessor);
@@ -701,7 +701,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_not_triggered_by_normal_code) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_not_in_block_comment) {
   auto line = mkline("#define FOO");
-  SyntaxState st;
+  CSyntaxState st;
   st.inBlockComment = true;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
@@ -710,7 +710,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_not_in_block_comment) {
 
 BOOST_AUTO_TEST_CASE(preprocessor_advance_state_tracks_continuation) {
   auto line1 = mkline("#define X \\");
-  SyntaxState st;
+  CSyntaxState st;
   advanceBlockCommentState(line1, st);
   BOOST_CHECK(st.inPreprocessor);
 
@@ -741,7 +741,7 @@ BOOST_AUTO_TEST_CASE(preprocessor_bracket_not_matched) {
 
 BOOST_AUTO_TEST_CASE(advance_state_skips_raw_string) {
   auto line1 = mkline(R"__(R"(hello)__");
-  SyntaxState st;
+  CSyntaxState st;
   advanceBlockCommentState(line1, st);
   BOOST_CHECK(st.rawDelim.has_value());
   BOOST_CHECK_EQUAL(*st.rawDelim, "");
@@ -757,7 +757,7 @@ BOOST_AUTO_TEST_CASE(advance_state_skips_raw_string) {
 BOOST_AUTO_TEST_CASE(advance_state_block_comment_inside_raw_string_ignored) {
   // A /* inside a raw string should not start a block comment.
   auto line = mkline(R"__(R"(/* not a comment */)")__");
-  SyntaxState st;
+  CSyntaxState st;
   advanceBlockCommentState(line, st);
   BOOST_CHECK(!st.inBlockComment);
   BOOST_CHECK(!st.rawDelim.has_value());
@@ -942,7 +942,7 @@ BOOST_AUTO_TEST_CASE(findMatchingBracket_with_token_cache_backward) {
 // keeps the keyword from leaking out of a non-ASCII identifier.
 BOOST_AUTO_TEST_CASE(non_ascii_byte_does_not_split_identifier) {
   auto line = mkline("forπ"); // π is two UTF-8 bytes (0xCF 0x80)
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // `for` should NOT be highlighted as a keyword inside this identifier.
@@ -955,7 +955,7 @@ BOOST_AUTO_TEST_CASE(non_ascii_byte_does_not_split_identifier) {
 // operators top out at 3 chars (<<=, >>=, ->*); cap the merge there.
 BOOST_AUTO_TEST_CASE(operator_run_caps_at_three_characters) {
   auto line = mkline("a +++++++ b");
-  SyntaxState st;
+  CSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeLine(line, st, toks);
   // All seven '+' chars stay Operator-typed (visually the same), but the
@@ -973,7 +973,7 @@ BOOST_AUTO_TEST_CASE(operator_run_caps_at_three_characters) {
 
 BOOST_AUTO_TEST_CASE(md_heading_single_hash) {
   auto line = mkline("# Hello");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Heading));
@@ -981,7 +981,7 @@ BOOST_AUTO_TEST_CASE(md_heading_single_hash) {
 
 BOOST_AUTO_TEST_CASE(md_heading_multiple_hashes) {
   auto line = mkline("### Sub-heading");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Heading));
@@ -990,7 +990,7 @@ BOOST_AUTO_TEST_CASE(md_heading_multiple_hashes) {
 BOOST_AUTO_TEST_CASE(md_heading_hash_only) {
   // A line with just "#" (no space after) should still be a heading.
   auto line = mkline("#");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 1, SyntaxToken::Heading));
@@ -999,7 +999,7 @@ BOOST_AUTO_TEST_CASE(md_heading_hash_only) {
 BOOST_AUTO_TEST_CASE(md_not_heading_no_space) {
   // "#foo" — no space after '#' → not a heading.
   auto line = mkline("#foo");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
@@ -1007,7 +1007,7 @@ BOOST_AUTO_TEST_CASE(md_not_heading_no_space) {
 
 BOOST_AUTO_TEST_CASE(md_bold) {
   auto line = mkline("some **bold** text");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   // "**bold**" is at positions 5..12 (8 bytes).
@@ -1020,7 +1020,7 @@ BOOST_AUTO_TEST_CASE(md_bold) {
 BOOST_AUTO_TEST_CASE(md_bold_unclosed) {
   // Unclosed bold: **not closed — should remain Normal.
   auto line = mkline("**not closed");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
@@ -1028,7 +1028,7 @@ BOOST_AUTO_TEST_CASE(md_bold_unclosed) {
 
 BOOST_AUTO_TEST_CASE(md_link) {
   auto line = mkline("see [click](http://example.com) here");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   // "[click](http://example.com)" is at positions 4..30 (27 bytes).
@@ -1041,7 +1041,7 @@ BOOST_AUTO_TEST_CASE(md_link) {
 BOOST_AUTO_TEST_CASE(md_link_no_paren) {
   // "[text]" without "(url)" — not a link.
   auto line = mkline("just [text] here");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
@@ -1052,7 +1052,7 @@ BOOST_AUTO_TEST_CASE(md_code_span_suppresses_link) {
   // and must not carry MdLink state onto the next line. Without the
   // code-span skip, `arr[i` set MdLink::Label and painted "[i" as Link.
   auto line = mkline("`arr[i`");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(st.mdLink == MdLink::None);
@@ -1063,7 +1063,7 @@ BOOST_AUTO_TEST_CASE(md_code_span_then_link_still_highlights) {
   // A code span containing a stray '[' is skipped, but a real link
   // after it must still highlight.
   auto line = mkline("`a[b` [x](y)");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(st.mdLink == MdLink::None);
@@ -1074,7 +1074,7 @@ BOOST_AUTO_TEST_CASE(md_code_span_then_link_still_highlights) {
 
 BOOST_AUTO_TEST_CASE(md_empty_line) {
   auto line = mkline("");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(toks.empty());
@@ -1082,7 +1082,7 @@ BOOST_AUTO_TEST_CASE(md_empty_line) {
 
 BOOST_AUTO_TEST_CASE(md_bold_and_link_same_line) {
   auto line = mkline("**bold** and [link](url)");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 8, SyntaxToken::Bold));
@@ -1095,7 +1095,7 @@ BOOST_AUTO_TEST_CASE(md_bold_and_link_same_line) {
 // so a trailing link still highlights.
 BOOST_AUTO_TEST_CASE(md_unclosed_bold_does_not_eat_trailing_link) {
   auto line = mkline("**unfinished [link](url)");
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeMarkdownLine(line, st, toks);
   // The `**` itself stays Normal.
@@ -1105,7 +1105,7 @@ BOOST_AUTO_TEST_CASE(md_unclosed_bold_does_not_eat_trailing_link) {
 }
 
 BOOST_AUTO_TEST_CASE(md_link_label_spans_two_lines) {
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("see [an external");
   tokenizeMarkdownLine(l1, st, toks);
@@ -1121,7 +1121,7 @@ BOOST_AUTO_TEST_CASE(md_link_label_spans_two_lines) {
 }
 
 BOOST_AUTO_TEST_CASE(md_link_url_spans_two_lines) {
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("[text](http://");
   tokenizeMarkdownLine(l1, st, toks);
@@ -1136,7 +1136,7 @@ BOOST_AUTO_TEST_CASE(md_link_url_spans_two_lines) {
 }
 
 BOOST_AUTO_TEST_CASE(md_link_label_spans_three_lines) {
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("[abc");
   tokenizeMarkdownLine(l1, st, toks);
@@ -1153,7 +1153,7 @@ BOOST_AUTO_TEST_CASE(md_link_label_spans_three_lines) {
 }
 
 BOOST_AUTO_TEST_CASE(md_unterminated_link_colors_to_eof) {
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("[never closed");
   tokenizeMarkdownLine(l1, st, toks);
@@ -1165,7 +1165,7 @@ BOOST_AUTO_TEST_CASE(md_unterminated_link_colors_to_eof) {
 }
 
 BOOST_AUTO_TEST_CASE(md_heading_suppressed_during_link_continuation) {
-  SyntaxState st;
+  MdSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("[link text");
   tokenizeMarkdownLine(l1, st, toks);
@@ -1211,66 +1211,57 @@ BOOST_AUTO_TEST_CASE(md_render_bold_uses_bold) {
 // ============================================================
 
 BOOST_AUTO_TEST_CASE(json_string_is_string_token) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline(R"("hello")"), state, toks);
+  tokenizeJsonLine(mkline(R"("hello")"), toks);
   BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::String));
 }
 
 BOOST_AUTO_TEST_CASE(json_string_with_escape) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline(R"("a\"b")"), state, toks);
+  tokenizeJsonLine(mkline(R"("a\"b")"), toks);
   // All 6 bytes should be String: " a \ " b "
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::String));
 }
 
 BOOST_AUTO_TEST_CASE(json_true_is_value_literal) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("true"), state, toks);
+  tokenizeJsonLine(mkline("true"), toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_false_is_value_literal) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("false"), state, toks);
+  tokenizeJsonLine(mkline("false"), toks);
   BOOST_CHECK(allTokens(toks, 0, 5, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_null_is_value_literal) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("null"), state, toks);
+  tokenizeJsonLine(mkline("null"), toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_integer_is_number) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("42"), state, toks);
+  tokenizeJsonLine(mkline("42"), toks);
   BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_negative_is_number) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("-3"), state, toks);
+  tokenizeJsonLine(mkline("-3"), toks);
   BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_decimal_is_number) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("3.14"), state, toks);
+  tokenizeJsonLine(mkline("3.14"), toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_scientific_is_number) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("1.5e10"), state, toks);
+  tokenizeJsonLine(mkline("1.5e10"), toks);
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Number));
 }
 
@@ -1278,56 +1269,49 @@ BOOST_AUTO_TEST_CASE(json_scientific_is_number) {
 // stops the number token at the integer prefix rather than greedily
 // extending across an invalid suffix.
 BOOST_AUTO_TEST_CASE(json_trailing_dot_does_not_extend_number_token) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("1."), state, toks);
+  tokenizeJsonLine(mkline("1."), toks);
   BOOST_CHECK(allTokens(toks, 0, 1, SyntaxToken::Number));
   BOOST_CHECK(allTokens(toks, 1, 2, SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(json_empty_exponent_does_not_extend_number_token) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("1e"), state, toks);
+  tokenizeJsonLine(mkline("1e"), toks);
   BOOST_CHECK(allTokens(toks, 0, 1, SyntaxToken::Number));
   BOOST_CHECK(allTokens(toks, 1, 2, SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(json_scientific_negative_exp) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("2E-3"), state, toks);
+  tokenizeJsonLine(mkline("2E-3"), toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number));
 }
 
 BOOST_AUTO_TEST_CASE(json_brackets_are_bracket) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("[1]"), state, toks);
+  tokenizeJsonLine(mkline("[1]"), toks);
   BOOST_CHECK(toks[0] == SyntaxToken::Bracket);
   BOOST_CHECK(toks[2] == SyntaxToken::Bracket);
 }
 
 BOOST_AUTO_TEST_CASE(json_braces_are_brace) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("{}"), state, toks);
+  tokenizeJsonLine(mkline("{}"), toks);
   BOOST_CHECK(toks[0] == SyntaxToken::Brace);
   BOOST_CHECK(toks[1] == SyntaxToken::Brace);
 }
 
 BOOST_AUTO_TEST_CASE(json_no_comments) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline("// foo"), state, toks);
+  tokenizeJsonLine(mkline("// foo"), toks);
   // In JSON, // is NOT a comment — should remain Normal.
   BOOST_CHECK(allTokens(toks, 0, 6, SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(json_colon_comma_normal) {
-  SyntaxState state;
   std::vector<SyntaxToken> toks;
-  tokenizeJsonLine(mkline(": ,"), state, toks);
+  tokenizeJsonLine(mkline(": ,"), toks);
   BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Normal));
 }
 
@@ -1434,73 +1418,64 @@ BOOST_AUTO_TEST_CASE(json_bracket_match_highlight_in_render) {
 
 BOOST_AUTO_TEST_CASE(diff_add_line) {
   auto line = mkline("+added line");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffAdd));
 }
 
 BOOST_AUTO_TEST_CASE(diff_remove_line) {
   auto line = mkline("-removed line");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffRemove));
 }
 
 BOOST_AUTO_TEST_CASE(diff_meta_plus_line) {
   auto line = mkline("+++ b/src/main.cpp");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffMeta));
 }
 
 BOOST_AUTO_TEST_CASE(diff_meta_minus_line) {
   auto line = mkline("--- a/src/main.cpp");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffMeta));
 }
 
 BOOST_AUTO_TEST_CASE(diff_hunk_header) {
   auto line = mkline("@@ -10,5 +10,7 @@ void foo()");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::DiffHunk));
 }
 
 BOOST_AUTO_TEST_CASE(diff_context_line) {
   auto line = mkline(" unchanged context");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(diff_empty_line) {
   auto line = mkline("");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(toks.empty());
 }
 
 BOOST_AUTO_TEST_CASE(diff_header_line) {
   auto line = mkline("diff --git a/foo b/foo");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK(allTokens(toks, 0, line.size(), SyntaxToken::Normal));
 }
 
 BOOST_AUTO_TEST_CASE(diff_plus_only) {
   auto line = mkline("+");
-  SyntaxState st;
   std::vector<SyntaxToken> toks;
-  tokenizeDiffLine(line, st, toks);
+  tokenizeDiffLine(line, toks);
   BOOST_CHECK_EQUAL(toks.size(), 1u);
   BOOST_CHECK(toks[0] == SyntaxToken::DiffAdd);
 }
@@ -1604,7 +1579,7 @@ BOOST_AUTO_TEST_CASE(conflict_cleared_after_save) {
 
 BOOST_AUTO_TEST_CASE(sh_comment_after_space) {
   auto line = mkline("echo hi # note");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 8, line.size(), SyntaxToken::Comment));
@@ -1613,7 +1588,7 @@ BOOST_AUTO_TEST_CASE(sh_comment_after_space) {
 
 BOOST_AUTO_TEST_CASE(sh_hash_without_space_is_not_comment) {
   auto line = mkline("a#b");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Normal));
@@ -1621,7 +1596,7 @@ BOOST_AUTO_TEST_CASE(sh_hash_without_space_is_not_comment) {
 
 BOOST_AUTO_TEST_CASE(sh_single_quoted_string) {
   auto line = mkline("x='a b'");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 2, 7, SyntaxToken::String));
@@ -1630,7 +1605,7 @@ BOOST_AUTO_TEST_CASE(sh_single_quoted_string) {
 
 BOOST_AUTO_TEST_CASE(sh_double_quoted_string_with_escape) {
   auto line = mkline(R"(s="a\"b")");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   // Whole "a\"b" span (offsets 2..8) is String, escaped quote included.
@@ -1639,7 +1614,7 @@ BOOST_AUTO_TEST_CASE(sh_double_quoted_string_with_escape) {
 
 BOOST_AUTO_TEST_CASE(sh_backtick_is_string) {
   auto line = mkline("x=`date`");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 2, 8, SyntaxToken::String));
@@ -1647,7 +1622,7 @@ BOOST_AUTO_TEST_CASE(sh_backtick_is_string) {
 
 BOOST_AUTO_TEST_CASE(sh_keywords_if_then) {
   auto line = mkline("if true; then");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 2, SyntaxToken::Keyword));  // if
@@ -1658,7 +1633,7 @@ BOOST_AUTO_TEST_CASE(sh_keywords_if_then) {
 
 BOOST_AUTO_TEST_CASE(sh_variable_simple) {
   auto line = mkline("echo $HOME");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 5, 10, SyntaxToken::Variable));
@@ -1666,7 +1641,7 @@ BOOST_AUTO_TEST_CASE(sh_variable_simple) {
 
 BOOST_AUTO_TEST_CASE(sh_variable_braced) {
   auto line = mkline("echo ${HOME}");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 5, 12, SyntaxToken::Variable));
@@ -1674,14 +1649,14 @@ BOOST_AUTO_TEST_CASE(sh_variable_braced) {
 
 BOOST_AUTO_TEST_CASE(sh_variable_special_param) {
   auto line = mkline("echo $?");
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeShellLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 5, 7, SyntaxToken::Variable));
 }
 
 BOOST_AUTO_TEST_CASE(sh_heredoc_open_body_close) {
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> t1, t2, t3;
   auto l1 = mkline("cat <<EOF");
   tokenizeShellLine(l1, st, t1);
@@ -1701,7 +1676,7 @@ BOOST_AUTO_TEST_CASE(sh_heredoc_open_body_close) {
 }
 
 BOOST_AUTO_TEST_CASE(sh_heredoc_fake_terminator_inside_is_body) {
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> t;
   auto l1 = mkline("cat <<END");
   tokenizeShellLine(l1, st, t);
@@ -1712,7 +1687,7 @@ BOOST_AUTO_TEST_CASE(sh_heredoc_fake_terminator_inside_is_body) {
 }
 
 BOOST_AUTO_TEST_CASE(sh_heredoc_dash_strips_leading_tabs) {
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> t;
   auto l1 = mkline("cat <<-END");
   tokenizeShellLine(l1, st, t);
@@ -1724,7 +1699,7 @@ BOOST_AUTO_TEST_CASE(sh_heredoc_dash_strips_leading_tabs) {
 }
 
 BOOST_AUTO_TEST_CASE(sh_here_string_is_not_heredoc) {
-  SyntaxState st;
+  ShSyntaxState st;
   std::vector<SyntaxToken> t;
   auto line = mkline("cat <<<word");
   tokenizeShellLine(line, st, t);
@@ -1737,7 +1712,7 @@ BOOST_AUTO_TEST_CASE(sh_here_string_is_not_heredoc) {
 
 BOOST_AUTO_TEST_CASE(yml_key_and_string_value) {
   auto line = mkline(R"(name: "John")");
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeYamlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword)); // name
@@ -1746,7 +1721,7 @@ BOOST_AUTO_TEST_CASE(yml_key_and_string_value) {
 }
 
 BOOST_AUTO_TEST_CASE(yml_bool_and_number_scalars) {
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("enabled: true");
   tokenizeYamlLine(l1, st, toks);
@@ -1759,7 +1734,7 @@ BOOST_AUTO_TEST_CASE(yml_bool_and_number_scalars) {
 
 BOOST_AUTO_TEST_CASE(yml_comment_after_space) {
   auto line = mkline("port: 80 # http");
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeYamlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 9, line.size(), SyntaxToken::Comment));
@@ -1768,7 +1743,7 @@ BOOST_AUTO_TEST_CASE(yml_comment_after_space) {
 
 BOOST_AUTO_TEST_CASE(yml_sequence_bullet_is_operator) {
   auto line = mkline("  - item");
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeYamlLine(line, st, toks);
   BOOST_CHECK(toks[2] == SyntaxToken::Operator); // '-'
@@ -1776,7 +1751,7 @@ BOOST_AUTO_TEST_CASE(yml_sequence_bullet_is_operator) {
 }
 
 BOOST_AUTO_TEST_CASE(yml_anchor_and_doc_marker) {
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto doc = mkline("---");
   tokenizeYamlLine(doc, st, toks);
@@ -1787,7 +1762,7 @@ BOOST_AUTO_TEST_CASE(yml_anchor_and_doc_marker) {
 }
 
 BOOST_AUTO_TEST_CASE(yml_block_scalar_spans_until_dedent) {
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("script: |");
   tokenizeYamlLine(l1, st, toks);
@@ -1811,7 +1786,7 @@ BOOST_AUTO_TEST_CASE(yml_block_scalar_spans_until_dedent) {
 
 BOOST_AUTO_TEST_CASE(yml_colon_without_space_is_not_key) {
   auto line = mkline("http://example.com");
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeYamlLine(line, st, toks);
   // No "<key>: " so nothing is a Keyword; URL stays a plain scalar.
@@ -1823,7 +1798,7 @@ BOOST_AUTO_TEST_CASE(yml_colon_without_space_is_not_key) {
 // to stop the plain-scalar scan without consuming anything, hanging the
 // tokenizer (and the editor) forever.
 BOOST_AUTO_TEST_CASE(yml_hash_without_preceding_space_terminates) {
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   for (auto const* s : {"colors: [#fff, #000]", R"(a: "x"#y)", "a: {k: v}#c", "a: b,#c"}) {
     auto line = mkline(s);
@@ -1837,7 +1812,7 @@ BOOST_AUTO_TEST_CASE(yml_hash_without_preceding_space_terminates) {
 
 BOOST_AUTO_TEST_CASE(yml_hash_inside_key_is_not_comment) {
   auto line = mkline("c#sharp: 1");
-  SyntaxState st;
+  YmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeYamlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 7, SyntaxToken::Keyword));
@@ -1849,7 +1824,7 @@ BOOST_AUTO_TEST_CASE(yml_hash_inside_key_is_not_comment) {
 
 BOOST_AUTO_TEST_CASE(tml_key_value_and_comment) {
   auto line = mkline(R"(name = "cx" # editor)");
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeTomlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword));            // name
@@ -1860,7 +1835,7 @@ BOOST_AUTO_TEST_CASE(tml_key_value_and_comment) {
 
 BOOST_AUTO_TEST_CASE(tml_dotted_and_quoted_keys) {
   auto line = mkline(R"(site."google.com".x = 1)");
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeTomlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Keyword)); // site
@@ -1871,7 +1846,7 @@ BOOST_AUTO_TEST_CASE(tml_dotted_and_quoted_keys) {
 }
 
 BOOST_AUTO_TEST_CASE(tml_table_headers) {
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto t = mkline("[server.http] # main");
   tokenizeTomlLine(t, st, toks);
@@ -1889,7 +1864,7 @@ BOOST_AUTO_TEST_CASE(tml_table_headers) {
 }
 
 BOOST_AUTO_TEST_CASE(tml_literal_values) {
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   for (auto const* v :
        {"true", "false", "-17", "1_000", "0xDEAD_beef", "0o755", "0b1101", "+1.5e-3", "-inf", "nan",
@@ -1907,7 +1882,7 @@ BOOST_AUTO_TEST_CASE(tml_literal_values) {
 
 BOOST_AUTO_TEST_CASE(tml_hash_inside_string_is_not_comment) {
   auto line = mkline(R"(color = "#fff" # c)");
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeTomlLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 8, 14, SyntaxToken::String));
@@ -1916,7 +1891,7 @@ BOOST_AUTO_TEST_CASE(tml_hash_inside_string_is_not_comment) {
 
 BOOST_AUTO_TEST_CASE(tml_inline_table_keys) {
   auto line = mkline("p = { x = 1, y.z = 'a' }");
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizeTomlLine(line, st, toks);
   BOOST_CHECK(toks[4] == SyntaxToken::Brace);
@@ -1931,7 +1906,7 @@ BOOST_AUTO_TEST_CASE(tml_inline_table_keys) {
 }
 
 BOOST_AUTO_TEST_CASE(tml_multiline_array_is_not_header) {
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline("data = [");
   tokenizeTomlLine(l1, st, toks);
@@ -1953,7 +1928,7 @@ BOOST_AUTO_TEST_CASE(tml_multiline_array_is_not_header) {
 }
 
 BOOST_AUTO_TEST_CASE(tml_multiline_strings) {
-  SyntaxState st;
+  TmlSyntaxState st;
   std::vector<SyntaxToken> toks;
   auto l1 = mkline(R"(s = """first)");
   tokenizeTomlLine(l1, st, toks);
@@ -1980,7 +1955,7 @@ BOOST_AUTO_TEST_CASE(tml_multiline_strings) {
 
 BOOST_AUTO_TEST_CASE(py_comment_and_number) {
   auto line = mkline("x = 1  # note");
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizePythonLine(line, st, toks);
   BOOST_CHECK(toks[4] == SyntaxToken::Number); // 1
@@ -1989,7 +1964,7 @@ BOOST_AUTO_TEST_CASE(py_comment_and_number) {
 
 BOOST_AUTO_TEST_CASE(py_keyword_def_and_punctuation) {
   auto line = mkline("def foo():");
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizePythonLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 3, SyntaxToken::Keyword)); // def
@@ -1999,7 +1974,7 @@ BOOST_AUTO_TEST_CASE(py_keyword_def_and_punctuation) {
 
 BOOST_AUTO_TEST_CASE(py_value_literals_are_number) {
   auto line = mkline("x = None or True and False");
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizePythonLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 4, 8, SyntaxToken::Number));    // None
@@ -2011,7 +1986,7 @@ BOOST_AUTO_TEST_CASE(py_value_literals_are_number) {
 
 BOOST_AUTO_TEST_CASE(py_fstring_keeps_braces_in_string) {
   auto line = mkline(R"(f"a{x}b")");
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizePythonLine(line, st, toks);
   // Prefix, quotes and the {x} interior are all one String span.
@@ -2020,7 +1995,7 @@ BOOST_AUTO_TEST_CASE(py_fstring_keeps_braces_in_string) {
 
 BOOST_AUTO_TEST_CASE(py_number_hex_and_imaginary) {
   auto line = mkline("0xFF + 3j");
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizePythonLine(line, st, toks);
   BOOST_CHECK(allTokens(toks, 0, 4, SyntaxToken::Number)); // 0xFF
@@ -2028,7 +2003,7 @@ BOOST_AUTO_TEST_CASE(py_number_hex_and_imaginary) {
 }
 
 BOOST_AUTO_TEST_CASE(py_decorator_only_at_line_start) {
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   auto dec = mkline("@app.route");
   tokenizePythonLine(dec, st, toks);
@@ -2039,7 +2014,7 @@ BOOST_AUTO_TEST_CASE(py_decorator_only_at_line_start) {
 }
 
 BOOST_AUTO_TEST_CASE(py_triple_quoted_spans_lines_with_fake_close_inside) {
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
 
   auto l1 = mkline(R"(s = """start)");
@@ -2061,7 +2036,7 @@ BOOST_AUTO_TEST_CASE(py_triple_quoted_spans_lines_with_fake_close_inside) {
 
 BOOST_AUTO_TEST_CASE(py_prefix_letter_word_is_not_a_string) {
   auto line = mkline("understand = 1");
-  SyntaxState st;
+  PySyntaxState st;
   std::vector<SyntaxToken> toks;
   tokenizePythonLine(line, st, toks);
   // 'u' is a string prefix letter, but "understand" is an identifier.
@@ -2137,7 +2112,7 @@ BOOST_AUTO_TEST_CASE(every_c_keyword_is_highlighted) {
   };
   for (auto kw : kAll) {
     auto line = mkline(kw);
-    SyntaxState st;
+    CSyntaxState st;
     std::vector<SyntaxToken> toks;
     tokenizeLine(line, st, toks);
     BOOST_CHECK_MESSAGE(allTokens(toks, 0, kw.size(), SyntaxToken::Keyword), kw);

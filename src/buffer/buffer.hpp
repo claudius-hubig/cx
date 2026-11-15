@@ -12,6 +12,7 @@
 
 #include "line_store.hpp"
 #include "modes/c/syntax.hpp"
+#include "syntax_state.hpp"
 #include "types.hpp"
 
 #include <cstdint>
@@ -414,7 +415,8 @@ protected:
    *
    * Each entry stores the tokenisation result for a line and the
    * multi-line state at the *end* of that line (the state that feeds the
-   * next line). Lines [0, _synCacheValidUpto) have valid entries.
+   * next line). Lines [0, _synCacheValidUpto) have valid entries, all
+   * holding the current mode's SyntaxState alternative.
    */
   struct LineSyntaxCache {
     SyntaxState stateAfter;          /**< State at end of this line. */

@@ -11,6 +11,16 @@
 #include <string>
 #include <vector>
 
+/** @brief YAML tokenizer state carried between lines. */
+struct YmlSyntaxState {
+  /**
+   * @brief YAML block scalar: >= 0 = inside a `|`/`>` scalar introduced at
+   *        the given indent column (deeper/blank lines are String content
+   *        until indentation returns to <= this column); -1 = not in one.
+   */
+  int yamlBlockCol = -1;
+};
+
 /**
  * @brief Tokenize a single YAML line, writing per-byte SyntaxToken values
  *        into @p out.
@@ -21,8 +31,7 @@
  * Multi-line state: @c state.yamlBlockCol carries a `|`/`>` block scalar
  * across lines — while >= 0, every line indented strictly deeper than that
  * column (or blank) is one String span; the first non-blank line indented
- * back to <= that column ends the block and is tokenized normally. No other
- * SyntaxState field is touched, matching the "one mode per buffer"
- * invariant in c/syntax.hpp.
+ * back to <= that column ends the block and is tokenized normally.
  */
-void tokenizeYamlLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
+void tokenizeYamlLine(std::string const& line, YmlSyntaxState& state,
+                      std::vector<SyntaxToken>& out);

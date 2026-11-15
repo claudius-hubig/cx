@@ -14,8 +14,7 @@
 /**
  * @brief Tokenize a single line of unified diff output.
  *
- * Classifies the entire line based on its prefix character(s). The
- * @p state parameter is unused (diff has no multi-line constructs) but
- * kept for interface consistency with the C tokenizer.
+ * Classifies the entire line based on its prefix character(s). Diff has no
+ * multi-line constructs, so there is no state to carry between lines.
  */
-void tokenizeDiffLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
+void tokenizeDiffLine(std::string const& line, std::vector<SyntaxToken>& out);

@@ -19,7 +19,7 @@ static bool isWordChar(char c) {
   return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
 }
 
-void tokenizeShellLine(std::string const& line, SyntaxState& state,
+void tokenizeShellLine(std::string const& line, ShSyntaxState& state,
                        std::vector<SyntaxToken>& tokens) {
   std::size_t sz = line.size();
   tokens.assign(sz, SyntaxToken::Normal);

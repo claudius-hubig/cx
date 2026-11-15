@@ -218,7 +218,7 @@ static bool endsWithBackslash(std::string const& line) {
   return !line.empty() && line.back() == '\\';
 }
 
-void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& tokens) {
+void tokenizeLine(std::string const& line, CSyntaxState& state, std::vector<SyntaxToken>& tokens) {
   std::size_t sz = line.size();
 
   // Preprocessor directive: entire line highlighted when starting with #
@@ -520,7 +520,7 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
   }
 }
 
-void advanceBlockCommentState(std::string const& line, SyntaxState& state) {
+void advanceBlockCommentState(std::string const& line, CSyntaxState& state) {
   // State-only scan: maintains block-comment, raw-string, and
   // preprocessor continuation state while stepping over strings,
   // character literals, line comments, and raw string literals.
@@ -782,7 +782,7 @@ std::optional<BufferPoint> findMatchingBracket(LineStore const& lines, BufferPoi
     LineStore const& lines;
     std::vector<std::vector<SyntaxToken>> tokens;
     std::size_t validUpto = 0;
-    SyntaxState stateAfterValid{};
+    CSyntaxState stateAfterValid{};
 
     explicit LocalCache(LineStore const& l) : lines(l), tokens(l.size()) {}
 

@@ -3,12 +3,11 @@
 /**
  * @file c/syntax.hpp
  * @brief The C/C++ tokenizer plus the shared syntax vocabulary used by
- *        every mode: the SyntaxToken enum, the cross-line SyntaxState, and
- *        bracket matching.
+ *        every mode: the SyntaxToken enum and bracket matching.
  *
- * Each mode's tokenizer writes into the same SyntaxToken set and threads
- * the same SyntaxState across lines, so the buffer's per-line syntax cache
- * is mode-agnostic.
+ * Each mode's tokenizer writes into the same SyntaxToken set, and threads
+ * its own cross-line state type (here CSyntaxState) across lines; the
+ * buffer's per-line syntax cache holds any of them (see syntax_state.hpp).
  */
 
 #include "buffer/line_store.hpp"
@@ -46,66 +45,15 @@ enum class SyntaxToken : uint8_t {
 };
 
 /**
- * @brief State of a cross-line Markdown link.
+ * @brief C/C++ tokenizer state carried between lines.
  *
- * Tracks a `[text](url)` link that spans lines: @c Label while the `[...`
- * label is still open (no `]` yet), @c Url while the `](...` destination is
- * still open (no `)` yet). An unterminated link stays Link-coloured to end
- * of file, matching the optimistic behaviour of the raw-string / heredoc /
- * triple-string states.
+ * Invariant: at the start of any line at most one of {inBlockComment,
+ * rawDelim.has_value(), inPreprocessor} is true.
  */
-enum class MdLink : uint8_t { None, Label, Url };
-
-/**
- * @brief Multi-line tokenizer state carried between lines.
- *
- * One instance is cached per line. Invariant: at the start of any line at
- * most one of {inBlockComment, rawDelim.has_value(), inPreprocessor} is
- * true. Because a buffer has exactly one mode, the C/C++ fields and the
- * per-mode fields are never active simultaneously: a shell buffer only
- * sets @c heredocTag, a Python buffer only @c pyTriple, a YAML buffer only
- * @c yamlBlockCol, a TOML buffer only @c tomlTriple/@c tomlDepth, a Markdown
- * buffer only @c mdLink.
- */
-struct SyntaxState {
+struct CSyntaxState {
   bool inBlockComment = false;
   bool inPreprocessor = false; /**< Next line continues a \#directive (prior ended with '\'). */
   std::optional<std::string> rawDelim; /**< has_value() = inside R"delim(...)delim". */
-
-  /**
-   * @brief Shell heredoc tag: has_value() means subsequent lines are
-   *        heredoc body (String) until a line equal to the tag.
-   */
-  std::optional<std::string> heredocTag;
-  /** @brief Set for the `<<-` form, where leading tabs are stripped before the
-   *         terminator comparison. */
-  bool heredocStripTabs = false;
-
-  /**
-   * @brief Python triple-quote: 0 = not inside; '\'' or '"' = the open
-   *        '''/""" quote character.
-   */
-  char pyTriple = 0;
-  /** @brief Suppresses backslash-escape handling for r"""..."""-style strings. */
-  bool pyTripleRaw = false;
-
-  /**
-   * @brief YAML block scalar: >= 0 = inside a `|`/`>` scalar introduced at
-   *        the given indent column (deeper/blank lines are String content
-   *        until indentation returns to <= this column); -1 = not in one.
-   */
-  int yamlBlockCol = -1;
-
-  /**
-   * @brief TOML multi-line string: 0 = not inside; '\'' or '"' = the open
-   *        '''/""" quote character.
-   */
-  char tomlTriple = 0;
-  /** @brief TOML `[`/`{` still open at the end of the line (multi-line arrays). */
-  int tomlDepth = 0;
-
-  /** @brief Markdown cross-line link state (see MdLink). */
-  MdLink mdLink = MdLink::None;
 };
 
 /**
@@ -116,7 +64,7 @@ struct SyntaxState {
  * heap allocations. @p state is the multi-line state entering this line and
  * is updated on return to reflect the state after it.
  */
-void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
+void tokenizeLine(std::string const& line, CSyntaxState& state, std::vector<SyntaxToken>& out);
 
 /**
  * @brief Advance multi-line state across a line without producing tokens.
@@ -125,7 +73,7 @@ void tokenizeLine(std::string const& line, SyntaxState& state, std::vector<Synta
  * operator/bracket tagging, and the per-byte token vector allocation. Only
  * tracks block-comment and raw-string-literal state.
  */
-void advanceBlockCommentState(std::string const& line, SyntaxState& state);
+void advanceBlockCommentState(std::string const& line, CSyntaxState& state);
 
 /**
  * @brief Callable invoked by findMatchingBracket() to fetch tokens for a
@@ -148,7 +96,7 @@ std::optional<BufferPoint> findMatchingBracket(LineStore const& lines, BufferPoi
  *        for the call's lifetime.
  *
  * IMPORTANT: this overload always tokenizes from line 0 to the target line
- * on first access (to maintain the cross-line SyntaxState chain), so its
+ * on first access (to maintain the cross-line CSyntaxState chain), so its
  * cost is O(file size) — not just the scan distance. Intended for tests and
  * ad-hoc use; production hot paths should thread cachedLineTokens() through
  * the callback overload instead.

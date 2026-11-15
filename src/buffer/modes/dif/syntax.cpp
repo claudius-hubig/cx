@@ -1,7 +1,6 @@
 #include "syntax.hpp"
 
-void tokenizeDiffLine(std::string const& line, SyntaxState& /*state*/,
-                      std::vector<SyntaxToken>& out) {
+void tokenizeDiffLine(std::string const& line, std::vector<SyntaxToken>& out) {
   if (line.empty()) {
     out.clear();
     return;

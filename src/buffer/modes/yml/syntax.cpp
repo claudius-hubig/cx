@@ -82,7 +82,7 @@ static bool isYamlNumber(std::string_view w) {
   return i == w.size();
 }
 
-void tokenizeYamlLine(std::string const& line, SyntaxState& state,
+void tokenizeYamlLine(std::string const& line, YmlSyntaxState& state,
                       std::vector<SyntaxToken>& tokens) {
   std::size_t sz = line.size();
   tokens.assign(sz, SyntaxToken::Normal);

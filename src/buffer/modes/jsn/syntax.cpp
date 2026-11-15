@@ -11,8 +11,7 @@ static bool isJsonValueLiteral(std::string_view word) {
   return word == "true" || word == "false" || word == "null";
 }
 
-void tokenizeJsonLine(std::string const& line, SyntaxState& /*state*/,
-                      std::vector<SyntaxToken>& tokens) {
+void tokenizeJsonLine(std::string const& line, std::vector<SyntaxToken>& tokens) {
   tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t i = 0;
   std::size_t sz = line.size();
@@ -209,8 +208,7 @@ std::optional<BufferPoint> findMatchingBracketJson(LineStore const& lines, Buffe
   std::vector<bool> valid(lines.size(), false);
   auto getTokens = [&](std::size_t i) -> std::span<SyntaxToken const> {
     if (!valid[i]) {
-      SyntaxState s;
-      tokenizeJsonLine(*lines[i], s, cache[i]);
+      tokenizeJsonLine(*lines[i], cache[i]);
       valid[i] = true;
     }
     return cache[i];

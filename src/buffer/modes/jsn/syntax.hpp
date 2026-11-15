@@ -16,10 +16,10 @@
  *        into @p out.
  *
  * @p out is resized/overwritten; reusing a vector avoids per-line heap
- * allocation. @p state is unused (JSON has no multi-line constructs) but
- * kept for interface consistency with the C tokenizer.
+ * allocation. JSON has no multi-line constructs, so there is no state to
+ * carry between lines.
  */
-void tokenizeJsonLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
+void tokenizeJsonLine(std::string const& line, std::vector<SyntaxToken>& out);
 
 /**
  * @brief Find the matching bracket for the character at @p pos in a JSON

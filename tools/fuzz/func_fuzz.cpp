@@ -13,6 +13,7 @@
 #include "buffer/modes/sh/syntax.hpp"
 #include "buffer/modes/tml/syntax.hpp"
 #include "buffer/modes/yml/syntax.hpp"
+#include "buffer/syntax_state.hpp"
 #include "buffer/text_buffer.hpp"
 #include "buffer/version_history.hpp"
 #include "prompt.hpp"
@@ -565,7 +566,17 @@ static void fuzzUtf8() {
 }
 
 // --------------------------------------------------------------- tokenizers
+// Every tokenizer behind one signature: the mode's state lives in the
+// SyntaxState variant, as in the buffer's syntax cache.
 using TokFn = void (*)(std::string const&, SyntaxState&, std::vector<SyntaxToken>&);
+template <class S, void (*Fn)(std::string const&, S&, std::vector<SyntaxToken>&)>
+static void withState(std::string const& line, SyntaxState& st, std::vector<SyntaxToken>& out) {
+  Fn(line, syntaxStateFor<S>(st), out);
+}
+template <void (*Fn)(std::string const&, std::vector<SyntaxToken>&)>
+static void stateless(std::string const& line, SyntaxState&, std::vector<SyntaxToken>& out) {
+  Fn(line, out);
+}
 static void fuzzTokenizers() {
   struct M {
     char const* name;
@@ -578,37 +589,42 @@ static void fuzzTokenizers() {
                                      "-",  "+",  "|",  "&", "$",  "`",  "!",    "~",        "@",
                                      "%",  "^",  "?",  ";", "é",  "中", "\xff", "\xcc\x81", "\r"};
   std::vector<M> modes = {
-      {"c", tokenizeLine, {"/*",    "*/",       "//",       "R\"",       "R\"d(",    ")d\"",
-                           ")\"",   "#include", "#define",  "\\",        "u8R\"(",   "L'",
-                           "int",   "const",    "co_await", "'\\''",     "\"\\\"\"", "<<",
-                           "0b1'0", "?\?/",     "#if 0",    "template<", "::",       "->"}},
-      {"md", tokenizeMarkdownLine, {"# ",  "## ", "**", "__",    "*",       "_",  "`",
-                                    "```", "~~~", "[",  "](",    ")",       "![", "> ",
-                                    "- ",  "1. ", "<",  ">",     "http://", "\\", "|",
-                                    "---", "***", "  ", "[x]: ", "<!--",    "-->"}},
+      {"c",
+       withState<CSyntaxState, tokenizeLine>,
+       {"/*",       "*/", "//",     "R\"",  "R\"d(", ")d\"",      ")\"",      "#include",
+        "#define",  "\\", "u8R\"(", "L'",   "int",   "const",     "co_await", "'\\''",
+        "\"\\\"\"", "<<", "0b1'0",  "?\?/", "#if 0", "template<", "::",       "->"}},
+      {"md",
+       withState<MdSyntaxState, tokenizeMarkdownLine>,
+       {"# ",      "## ", "**", "__",  "*",   "_",  "`",     "```",  "~~~",
+        "[",       "](",  ")",  "![",  "> ",  "- ", "1. ",   "<",    ">",
+        "http://", "\\",  "|",  "---", "***", "  ", "[x]: ", "<!--", "-->"}},
       {"jsn",
-       tokenizeJsonLine,
+       stateless<tokenizeJsonLine>,
        {"{", "}", "[", "]", "\"", "\\\"", "\\u12", ":", ",", "true", "false", "null", "-1", "1e",
         "//", "/*"}},
       {"dif",
-       tokenizeDiffLine,
+       stateless<tokenizeDiffLine>,
        {"+", "-", "@@", "@@ -1,2 +3,4 @@", "diff --git", "index ", "--- ", "+++ ", " ",
         "\\ No newline", "<<<<<<<", "=======", ">>>>>>>"}},
-      {"sh", tokenizeShellLine, {"<<",  "<<-",  "<<<",   "EOF",  "'EOF'", "\"EOF\"", "$",
-                                 "${",  "}",    "$(",    ")",    "`",     "#",       "'",
-                                 "\"",  "\\",   "if",    "then", "fi",    "<<EOF",   "\tEOF",
-                                 "<< ", "<<''", "<<\\E", "$((",  "))",    ";;"}},
-      {"yml", tokenizeYamlLine, {"key:", ": ",    "- ",   "|",    ">",  "|-", ">+",
-                                 "|2",   "#",     "\"",   "'",    "&a", "*a", "!!t",
-                                 "---",  "...",   "{",    "}",    "[",  "]",  ", ",
-                                 "? ",   "%YAML", "true", "null", "~",  "  ", "    "}},
+      {"sh",
+       withState<ShSyntaxState, tokenizeShellLine>,
+       {"<<", "<<-",   "<<<",   "EOF", "'EOF'", "\"EOF\"", "$",   "${", "}",
+        "$(", ")",     "`",     "#",   "'",     "\"",      "\\",  "if", "then",
+        "fi", "<<EOF", "\tEOF", "<< ", "<<''",  "<<\\E",   "$((", "))", ";;"}},
+      {"yml",
+       withState<YmlSyntaxState, tokenizeYamlLine>,
+       {"key:", ": ", "- ",    "|",    ">",    "|-",  ">+", "|2",  "#", "\"",
+        "'",    "&a", "*a",    "!!t",  "---",  "...", "{",  "}",   "[", "]",
+        ", ",   "? ", "%YAML", "true", "null", "~",   "  ", "    "}},
       {"tml",
-       tokenizeTomlLine,
+       withState<TmlSyntaxState, tokenizeTomlLine>,
        {"[", "]", "[[", "]]", "=",    "\"\"\"",     "'''", "\"",  "'",   "\\",       "#",
         "{", "}", ",",  ".",  "true", "1979-05-27", "0x",  "inf", "nan", "\"\"\"\"", "''''"}},
-      {"py", tokenizePythonLine, {"\"\"\"", "'''", "r'", "f\"",  "rb'''",  "\"",     "'",
-                                  "\\",     "#",   "@",  "def ", "class ", "lambda", ":",
-                                  "0x_1",   "1j",  "{",  "}",    "\\\"",   "u'"}},
+      {"py",
+       withState<PySyntaxState, tokenizePythonLine>,
+       {"\"\"\"", "'''",    "r'",     "f\"", "rb'''", "\"", "'", "\\", "#",    "@",
+        "def ",   "class ", "lambda", ":",   "0x_1",  "1j", "{", "}",  "\\\"", "u'"}},
   };
   for (auto& m : modes) {
     for (unsigned long long it = 0; it < gIters; ++it) {

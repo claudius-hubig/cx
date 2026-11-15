@@ -10,6 +10,17 @@
 #include <string>
 #include <vector>
 
+/** @brief TOML tokenizer state carried between lines. */
+struct TmlSyntaxState {
+  /**
+   * @brief TOML multi-line string: 0 = not inside; '\'' or '"' = the open
+   *        '''/""" quote character.
+   */
+  char tomlTriple = 0;
+  /** @brief TOML `[`/`{` still open at the end of the line (multi-line arrays). */
+  int tomlDepth = 0;
+};
+
 /**
  * @brief Tokenize a single TOML line, writing per-byte SyntaxToken values
  *        into @p out.
@@ -21,8 +32,7 @@
  * across lines (it holds the quote char), and @c state.tomlDepth counts
  * `[`/`{` left open by earlier lines (multi-line arrays). Keys and table
  * headers are only recognised at line start while @c tomlDepth is 0, so
- * nested arrays on continuation lines are not mistaken for headers. No
- * other SyntaxState field is touched, matching the "one mode per buffer"
- * invariant in c/syntax.hpp.
+ * nested arrays on continuation lines are not mistaken for headers.
  */
-void tokenizeTomlLine(std::string const& line, SyntaxState& state, std::vector<SyntaxToken>& out);
+void tokenizeTomlLine(std::string const& line, TmlSyntaxState& state,
+                      std::vector<SyntaxToken>& out);

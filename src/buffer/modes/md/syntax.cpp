@@ -1,6 +1,6 @@
 #include "syntax.hpp"
 
-void tokenizeMarkdownLine(std::string const& line, SyntaxState& state,
+void tokenizeMarkdownLine(std::string const& line, MdSyntaxState& state,
                           std::vector<SyntaxToken>& tokens) {
   tokens.assign(line.size(), SyntaxToken::Normal);
   std::size_t sz = line.size();
@@ -119,7 +119,7 @@ void tokenizeMarkdownLine(std::string const& line, SyntaxState& state,
     }
 
     // Link: [text](url). The label and/or destination may run off the
-    // end of the line; carry the open part into SyntaxState so it
+    // end of the line; carry the open part into MdSyntaxState so it
     // resumes on the next line. Disallow nested '[' inside the label
     // so a mismatched outer '[' does not greedily consume a real link
     // further along the line.

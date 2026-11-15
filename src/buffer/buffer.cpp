@@ -298,24 +298,25 @@ void Buffer::ensureSynCache(std::size_t upToLine) const {
 
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
     auto const& line = *_lines[i];
+    auto& tokens = _synCache[i].tokens;
     if (_mode == BufferMode::Md)
-      tokenizeMarkdownLine(line, state, _synCache[i].tokens);
+      tokenizeMarkdownLine(line, syntaxStateFor<MdSyntaxState>(state), tokens);
     else if (_mode == BufferMode::Jsn)
-      tokenizeJsonLine(line, state, _synCache[i].tokens);
+      tokenizeJsonLine(line, tokens);
     else if (_mode == BufferMode::Dif)
-      tokenizeDiffLine(line, state, _synCache[i].tokens);
+      tokenizeDiffLine(line, tokens);
     else if (_mode == BufferMode::Cpp)
-      tokenizeLine(line, state, _synCache[i].tokens);
+      tokenizeLine(line, syntaxStateFor<CSyntaxState>(state), tokens);
     else if (_mode == BufferMode::Sh)
-      tokenizeShellLine(line, state, _synCache[i].tokens);
+      tokenizeShellLine(line, syntaxStateFor<ShSyntaxState>(state), tokens);
     else if (_mode == BufferMode::Yml)
-      tokenizeYamlLine(line, state, _synCache[i].tokens);
+      tokenizeYamlLine(line, syntaxStateFor<YmlSyntaxState>(state), tokens);
     else if (_mode == BufferMode::Tml)
-      tokenizeTomlLine(line, state, _synCache[i].tokens);
+      tokenizeTomlLine(line, syntaxStateFor<TmlSyntaxState>(state), tokens);
     else if (_mode == BufferMode::Py)
-      tokenizePythonLine(line, state, _synCache[i].tokens);
+      tokenizePythonLine(line, syntaxStateFor<PySyntaxState>(state), tokens);
     else
-      _synCache[i].tokens.assign(line.size(), SyntaxToken::Normal);
+      tokens.assign(line.size(), SyntaxToken::Normal);
     _synCache[i].stateAfter = state;
 
     if (_hasConflicts && isConflictMarker(line))

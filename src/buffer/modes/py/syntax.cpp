@@ -71,7 +71,7 @@ static bool scanTriple(std::string const& line, std::size_t sz, std::size_t& i, 
   return false;
 }
 
-void tokenizePythonLine(std::string const& line, SyntaxState& state,
+void tokenizePythonLine(std::string const& line, PySyntaxState& state,
                         std::vector<SyntaxToken>& tokens) {
   std::size_t sz = line.size();
   tokens.assign(sz, SyntaxToken::Normal);
