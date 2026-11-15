@@ -102,8 +102,9 @@ public:
    * the two to keep.
    *
    * The way out when nobody can be asked any more: on a second SIGTERM
-   * (see loop()) and when the editor crashes (see CrashHook), where it
-   * runs in a signal handler on whatever state the crash left behind.
+   * (see loop()), and when the editor crashes or SIGHUP, SIGINT or
+   * SIGQUIT ends it (see FatalSignalHook), where it runs in a signal
+   * handler on whatever state the editor was in.
    *
    * @pre The terminal has been restored, so the lines stay on the user's
    *      screen.

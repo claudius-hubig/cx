@@ -31,7 +31,8 @@ Entry point. Parses the command line with `cli::parse()`
 first two by printing `cli::usage()` or `versionText()`
 (`src/version.hpp/.cpp`) and exiting. Otherwise it constructs
 `SetupTerminal`, `Screen`, and `BufferManager` in the correct order, opens any files given on the command line, then calls
-`Screen::loop()` to run the editor. A `CrashHook` makes a crash call
+`Screen::loop()` to run the editor. A `FatalSignalHook` makes a crash,
+and a signal that ends the editor, call
 `Screen::emergencySave()`; `main` calls it itself, after
 `SetupTerminal::restore()`, when the loop ends with `Exit::Emergency`,
 and exits with status 1 if a buffer could not be written. Each path argument is parsed via
@@ -62,14 +63,17 @@ crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL. The handler runs
 on an alternate stack (`sigaltstack`), since a stack overflow leaves no
 room for it on the normal one.
 
-`CrashHook` (same files) registers what a crash does between restoring
-the terminal and dying: `main` uses it to save the modified buffers.
-The hook runs in the signal handler on whatever state the crash left,
-so it is best effort by nature. It is called at most once (a fault
-inside it ends the process) and SIGALRM ends a hook that has not
+`FatalSignalHook` (same files) registers what happens between
+restoring the terminal and dying, for every one of those signals:
+`main` uses it to save the modified buffers. The hook runs in the
+signal handler, after a fault or in the middle of whatever the editor
+was doing, so it is best effort by nature and must not replace anything
+the user still has. It is called at most once (a fault inside it, or a
+second signal, ends the process) and SIGALRM ends a hook that has not
 returned after a minute, for instance one waiting on the allocator lock
-that the crashed code holds. The other signals run no hook, so SIGHUP,
-SIGINT and SIGQUIT still lose unsaved buffers.
+that the interrupted code holds. SIGHUP, SIGINT and SIGQUIT are handled
+this way rather than in the input loop so that they also end an editor
+that is not responding.
 
 ---
 
@@ -146,9 +150,10 @@ Key responsibilities:
   only counts; requests are acted on in the loop, so one that arrives
   while a command is running waits for it, as a key would.
 - **Emergency save**: `emergencySave()` is the way out when nobody can
-  be asked: after that second SIGTERM, and from the `CrashHook` when the
-  editor crashes. It never writes a buffer's own file, since nobody
-  agreed to that and after a crash the buffer may be damaged. Every
+  be asked: after that second SIGTERM, and from the `FatalSignalHook`
+  when the editor crashes or SIGHUP, SIGINT or SIGQUIT ends it. It never
+  writes a buffer's own file, since nobody agreed to that and in a
+  signal handler the buffer may be damaged or half updated. Every
   modified buffer that has a file goes to a new file next to it
   (`Buffer::writeCopy()`): `<file>.unsaved-<UTC time>`, owner-only,
   never replacing a file. The file itself stays as it was last saved,

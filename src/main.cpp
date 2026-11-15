@@ -118,9 +118,10 @@ int main(int argc, char* argv[]) {
       screen.draw();
     }
 
-    // Should the editor crash, it saves what it can on the way out.
-    CrashHook saveOnCrash([](void* s) noexcept { static_cast<Screen*>(s)->emergencySave(); },
-                          &screen);
+    // Should the editor crash or be told to quit by a signal, it saves
+    // what it can on the way out.
+    FatalSignalHook saveOnSignal([](void* s) noexcept { static_cast<Screen*>(s)->emergencySave(); },
+                                 &screen);
 
     if (screen.loop() == Screen::Exit::Emergency) {
       // The list of what was saved belongs on the user's normal screen.

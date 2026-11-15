@@ -4,7 +4,6 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -35,7 +34,6 @@ namespace {
 // of the same kind.
 constexpr std::array kFatalSignals = {SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV,
                                       SIGABRT, SIGBUS, SIGFPE, SIGILL};
-constexpr std::array kCrashSignals = {SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL};
 
 // termios state for the signal handler. Written once, before the handlers
 // are installed, so the handler only ever reads it.
@@ -47,49 +45,47 @@ std::array<struct sigaction, kFatalSignals.size()> g_savedActions;
 // std::regex fails on a long line) arrives as SIGSEGV with no room left
 // on the stack it overflowed, so the handler could not run there. A fixed
 // size, as SIGSTKSZ is not a constant: the handler needs very little, the
-// crash hook it calls (which writes files) a good deal more.
+// hook it calls (which writes files) a good deal more.
 std::array<char, 256 * 1024> g_handlerStack;
 // The alternate stack that was set before, put back by restore().
 stack_t g_savedStack;
 
-// The CrashHook in effect. The hook is the one the handler looks at, so
-// it is set last and cleared first.
-std::atomic<CrashHook::Fn> g_crashHook = nullptr;
-void* g_crashContext = nullptr;
-// How long the crash hook gets before SIGALRM ends the process.
-constexpr unsigned kCrashHookSeconds = 60;
+// The FatalSignalHook in effect. The hook is the one the handler looks
+// at, so it is set last and cleared first.
+std::atomic<FatalSignalHook::Fn> g_hook = nullptr;
+void* g_hookContext = nullptr;
+// How long the hook gets before SIGALRM ends the process.
+constexpr unsigned kHookSeconds = 60;
 
-// Put the terminal back, then let the signal end the process as it would
-// have: the handler was installed with SA_RESETHAND, so the default action
-// is in place again and the re-raised signal is delivered when this
-// returns, with a core dump where the signal has one.
+// Put the terminal back, run the hook, then let the signal end the
+// process as it would have: the handler was installed with SA_RESETHAND,
+// so the default action is in place again and the re-raised signal is
+// delivered when this returns, with a core dump where the signal has one.
 //
-// Apart from the crash hook only async-signal-safe calls are made (write,
+// Apart from the hook only async-signal-safe calls are made (write,
 // tcsetattr, alarm, raise). The hook is taken out before it is called, so
-// a crash inside it cannot run it again: the same signal ends the process
-// at once, another one comes back here and skips it.
+// it runs once: a fault inside it, or another of these signals arriving
+// meanwhile, comes back here, finds no hook and ends the process.
 void restoreTerminalAndReraise(int signo) {
   if (write(STDOUT_FILENO, kAltScreenOff.data(), kAltScreenOff.size()) == -1) {
     // Nothing useful can be done about it from a signal handler.
   }
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_savedFlags);
-  if (std::ranges::find(kCrashSignals, signo) != kCrashSignals.end()) {
-    if (auto hook = g_crashHook.exchange(nullptr)) {
-      alarm(kCrashHookSeconds);
-      hook(g_crashContext);
-    }
+  if (auto hook = g_hook.exchange(nullptr)) {
+    alarm(kHookSeconds);
+    hook(g_hookContext);
   }
   raise(signo);
 }
 
 } // namespace
 
-CrashHook::CrashHook(Fn hook, void* context) {
-  g_crashContext = context;
-  g_crashHook = hook;
+FatalSignalHook::FatalSignalHook(Fn hook, void* context) {
+  g_hookContext = context;
+  g_hook = hook;
 }
 
-CrashHook::~CrashHook() { g_crashHook = nullptr; }
+FatalSignalHook::~FatalSignalHook() { g_hook = nullptr; }
 
 SetupTerminal::SetupTerminal() {
   // Throw before touching raw mode or the alternate screen so a failure

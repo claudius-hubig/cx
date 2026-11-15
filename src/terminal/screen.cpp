@@ -801,7 +801,7 @@ bool Screen::emergencySave() noexcept {
   };
   try {
     // One suffix for all the copies of this run, in UTC: looking up the
-    // local time zone is more than a crash handler should attempt.
+    // local time zone is more than a signal handler should attempt.
     auto const now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     auto const copySuffix = std::format(".unsaved-{:%Y%m%dT%H%M%SZ}", now);
     // A buffer whose history is being browsed shows an old version and
@@ -815,8 +815,8 @@ bool Screen::emergencySave() noexcept {
         report("discarded " + name + " (it has no file)");
         continue;
       }
-      // To a copy, never over the file: nobody was asked, and after a
-      // crash the buffer may be damaged.
+      // To a copy, never over the file: nobody was asked, and in a signal
+      // handler the buffer may be damaged or half updated.
       auto const copy = name + copySuffix;
       if (auto res = buf->writeCopy(copy)) {
         report("unsaved " + name + " written to " + copy);
@@ -827,7 +827,7 @@ bool Screen::emergencySave() noexcept {
       }
     }
   } catch (...) {
-    // Called from the crash handler too, where nothing may get out and
+    // Called from a signal handler too, where nothing may get out and
     // there is nobody left to report it to but the user.
     static constexpr std::string_view kFailed = "cx: saving the modified buffers failed\n";
     writeAll(STDOUT_FILENO, kFailed.data(), kFailed.size());

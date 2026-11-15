@@ -2860,10 +2860,10 @@ BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
   BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
-// A crash took every unsaved buffer with it. The crash handler now writes
-// the ones that have a file to copies next to them and lists those, once
-// the terminal is back.
-BOOST_AUTO_TEST_CASE(e2e_crash_writes_the_modified_files_to_copies) {
+// A crash, or a signal sent to end the editor at once, took every unsaved
+// buffer with it. The handler now writes the ones that have a file to
+// copies next to them and lists those, once the terminal is back.
+BOOST_AUTO_TEST_CASE(e2e_fatal_signal_writes_the_modified_files_to_copies) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
     BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
@@ -2871,7 +2871,7 @@ BOOST_AUTO_TEST_CASE(e2e_crash_writes_the_modified_files_to_copies) {
   }
 
   NoCoreDumps noCoreDumps;
-  for (int signo : {SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL}) {
+  for (int signo : {SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL}) {
     BOOST_TEST_CONTEXT("signal " << signo) {
       TempFile tmp("text\n");
       PtySession session(24, 80, bin, {tmp.path().string()});
@@ -2884,25 +2884,13 @@ BOOST_AUTO_TEST_CASE(e2e_crash_writes_the_modified_files_to_copies) {
       // The buffer may be damaged, so the file stays as it was last saved.
       checkUnsavedCopy(out, tmp.path(), "text\n", "Xtext\n");
 
-      // It is still the crash that ends the process.
+      // It is still the signal that ends the process.
       int status = 0;
       BOOST_REQUIRE_EQUAL(waitpid(session.childPid, &status, 0), session.childPid);
       session.childPid = -1;
       BOOST_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == signo);
     }
   }
-
-  // A signal sent to end the editor at once is not a crash: nothing is saved.
-  TempFile tmp("text\n");
-  PtySession session(24, 80, bin, {tmp.path().string()});
-  session.readUntil("text");
-  session.send("X");
-  session.readOutput(milliseconds{150});
-  kill(session.childPid, SIGINT);
-  auto out = session.readOutput(milliseconds{500});
-  BOOST_CHECK(out.find("cx: unsaved") == std::string::npos);
-  BOOST_CHECK(unsavedCopies(tmp.path()).empty());
-  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
 }
 
 // Replacing a match and piping a region used to delete and then insert:

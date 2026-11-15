@@ -3,7 +3,8 @@
 /**
  * @file setup_terminal.hpp
  * @brief SetupTerminal — RAII raw-mode and alternate-screen configuration,
- *        and CrashHook, the last thing run when the editor crashes.
+ *        and FatalSignalHook, the last thing run when a signal ends
+ *        the editor.
  */
 
 #include <termios.h>
@@ -16,10 +17,10 @@
  * terminal too before ending it as they would have, since the destructor
  * does not run for them: SIGTERM (until Screen takes it over), SIGHUP,
  * SIGINT and SIGQUIT, and the crashes SIGSEGV (a stack overflow included),
- * SIGABRT, SIGBUS, SIGFPE and SIGILL. A crash also runs the CrashHook, if
- * there is one; nothing else is done on a signal, so without a hook
- * unsaved buffers are lost. At most one instance may exist at a time (the
- * handler's state is per process).
+ * SIGABRT, SIGBUS, SIGFPE and SIGILL. Between the two the
+ * FatalSignalHook runs, if there is one; nothing else is done on a
+ * signal, so without a hook unsaved buffers are lost. At most one
+ * instance may exist at a time (the handler's state is per process).
  *
  * stdin file flags (fcntl F_GETFL) are intentionally NOT saved or restored
  * — cx relies on blocking reads with SIGWINCH-driven EINTR, and the
@@ -56,27 +57,31 @@ private:
 };
 
 /**
- * @brief While an instance exists, a crash under a SetupTerminal calls
- *        `hook(context)` once, after the terminal has been restored and
- *        before the signal ends the process.
+ * @brief While an instance exists, a signal that ends the process under a
+ *        SetupTerminal (see there for the list) calls `hook(context)`
+ *        once, after the terminal has been restored and before the signal
+ *        takes effect.
  *
- * The hook runs inside a signal handler, on the handler's stack, after a
- * fault of unknown cause, so nothing it does is safe in the strict sense:
- * the data it reads may be damaged, and a lock it needs (the allocator's)
- * may be held by the code that crashed. It is the last chance to save the
- * user's work, so it runs anyway. A second fault inside it ends the
- * process, and so does a hook that has not returned after a minute.
+ * The hook runs inside a signal handler, on the handler's stack: after a
+ * fault of unknown cause, or in the middle of whatever the editor was
+ * doing when the signal arrived. So nothing it does is safe in the strict
+ * sense: the data it reads may be damaged or half updated, and a lock it
+ * needs (the allocator's) may be held by the interrupted code. It is the
+ * last chance to save the user's work, so it runs anyway, and what it
+ * writes should not replace anything the user still has. A fault inside
+ * it, or a second such signal, ends the process, and so does a hook that
+ * has not returned after a minute.
  *
  * @p context must outlive the instance. At most one instance may exist at
  * a time.
  */
-class CrashHook {
+class FatalSignalHook {
 public:
   using Fn = void (*)(void* context) noexcept;
 
-  CrashHook(Fn hook, void* context);
-  ~CrashHook();
+  FatalSignalHook(Fn hook, void* context);
+  ~FatalSignalHook();
 
-  CrashHook(CrashHook const&) = delete;
-  CrashHook& operator=(CrashHook const&) = delete;
+  FatalSignalHook(FatalSignalHook const&) = delete;
+  FatalSignalHook& operator=(FatalSignalHook const&) = delete;
 };
