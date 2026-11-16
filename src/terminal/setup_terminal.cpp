@@ -54,8 +54,12 @@ stack_t g_savedStack;
 // at, so it is set last and cleared first.
 std::atomic<FatalSignalHook::Fn> g_hook = nullptr;
 void* g_hookContext = nullptr;
-// How long the hook gets before SIGALRM ends the process.
-constexpr unsigned kHookSeconds = 60;
+// How long the hook gets before SIGALRM ends the process. The other fatal
+// signals are blocked while it runs, so this is the only way out of one
+// that is stuck, typically on the allocator lock held by the code the
+// signal interrupted. Writing the copies of files the size cx is meant
+// for takes about a second.
+constexpr unsigned kHookSeconds = 10;
 
 // Put the terminal back, run the hook, then let the signal take the
 // course it would have taken without the editor: the disposition from
@@ -66,10 +70,14 @@ constexpr unsigned kHookSeconds = 60;
 //
 // Apart from the hook only async-signal-safe calls are made (write,
 // tcsetattr, alarm, sigaction, raise). The hook is taken out before it is
-// called, so it runs once: a fault inside it, or another of these signals
-// arriving meanwhile, comes back here, finds no hook and ends the process.
-// The handler was installed with SA_RESETHAND as well, so that a fault
-// before the old disposition is back cannot loop.
+// called, so it runs once, and a fault inside it ends the process. The
+// other signals of kFatalSignals are blocked while this runs (sa_mask):
+// with the terminal restored a Ctrl-C raises SIGINT again, and one typed
+// while the hook writes the emergency copies must not end it halfway.
+// Once the hook is done they are discarded, so that the process ends with
+// the signal it came here for. The handler was installed with
+// SA_RESETHAND as well, so that a fault before the old disposition is
+// back cannot loop.
 void restoreTerminalAndReraise(int signo) {
   if (write(STDOUT_FILENO, kAltScreenOff.data(), kAltScreenOff.size()) == -1) {
     // Nothing useful can be done about it from a signal handler.
@@ -79,9 +87,11 @@ void restoreTerminalAndReraise(int signo) {
     alarm(kHookSeconds);
     hook(g_hookContext);
   }
+  struct sigaction ignore = {};
+  sigemptyset(&ignore.sa_mask);
+  ignore.sa_handler = SIG_IGN;
   for (std::size_t i = 0; i < kFatalSignals.size(); ++i)
-    if (kFatalSignals[i] == signo)
-      sigaction(signo, &g_savedActions[i], nullptr);
+    sigaction(kFatalSignals[i], kFatalSignals[i] == signo ? &g_savedActions[i] : &ignore, nullptr);
   raise(signo);
 }
 
@@ -122,6 +132,8 @@ SetupTerminal::SetupTerminal() {
   sigaltstack(&stack, &g_savedStack);
   struct sigaction sa = {};
   sigemptyset(&sa.sa_mask);
+  for (int signo : kFatalSignals)
+    sigaddset(&sa.sa_mask, signo);
   sa.sa_handler = restoreTerminalAndReraise;
   sa.sa_flags = SA_RESETHAND | SA_ONSTACK;
   for (std::size_t i = 0; i < kFatalSignals.size(); ++i)

@@ -7,6 +7,7 @@
 #include "version.hpp"
 
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -124,6 +125,14 @@ int main(int argc, char* argv[]) {
                                  &screen);
 
     if (screen.loop() == Screen::Exit::Emergency) {
+      // Nothing may end the save halfway: once the terminal is restored a
+      // Ctrl-C raises SIGINT again. The editor exits right after, so the
+      // signals held back here are simply dropped.
+      sigset_t quit;
+      sigemptyset(&quit);
+      for (int signo : {SIGTERM, SIGHUP, SIGINT, SIGQUIT})
+        sigaddset(&quit, signo);
+      sigprocmask(SIG_BLOCK, &quit, nullptr);
       // The list of what was saved belongs on the user's normal screen.
       terminal.restore();
       return screen.emergencySave() ? 0 : 1;

@@ -69,8 +69,10 @@ private:
  * needs (the allocator's) may be held by the interrupted code. It is the
  * last chance to save the user's work, so it runs anyway, and what it
  * writes should not replace anything the user still has. A fault inside
- * it, or a second such signal, ends the process, and so does a hook that
- * has not returned after a minute.
+ * it ends the process, and so does a hook that has not returned after 10
+ * seconds. The other signals of the list are held back while it runs (a
+ * Ctrl-C typed once the terminal is restored must not cut the save short)
+ * and dropped afterwards, so the process ends with the original signal.
  *
  * @p context must outlive the instance. At most one instance may exist at
  * a time.

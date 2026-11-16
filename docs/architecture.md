@@ -68,10 +68,15 @@ restoring the terminal and dying, for every one of those signals:
 `main` uses it to save the modified buffers. The hook runs in the
 signal handler, after a fault or in the middle of whatever the editor
 was doing, so it is best effort by nature and must not replace anything
-the user still has. It is called at most once (a fault inside it, or a
-second signal, ends the process) and SIGALRM ends a hook that has not
-returned after a minute, for instance one waiting on the allocator lock
-that the interrupted code holds. SIGHUP, SIGINT and SIGQUIT are handled
+the user still has. It is called at most once (a fault inside it ends
+the process) and SIGALRM ends a hook that has not returned after 10
+seconds, for instance one waiting on the allocator lock that the
+interrupted code holds. The other fatal signals are blocked while it
+runs, since with the terminal restored a Ctrl-C raises SIGINT again and
+must not cut the save short; afterwards they are discarded, so the
+process still ends with the signal that started it. `main` blocks
+SIGTERM, SIGHUP, SIGINT and SIGQUIT around its own emergency save for
+the same reason. SIGHUP, SIGINT and SIGQUIT are handled
 this way rather than in the input loop so that they also end an editor
 that is not responding.
 
