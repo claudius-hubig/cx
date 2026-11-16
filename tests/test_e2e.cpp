@@ -2775,6 +2775,39 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_asks_and_a_second_one_writes_copies) {
   BOOST_CHECK_MESSAGE(afterTeardown(out, "cx: discarded *s*"), out);
 }
 
+// Found by the e2e fuzzer: waiting for the rest of an escape sequence
+// (or of a paste), the editor retried its read after every signal, so it
+// never got back to act on SIGTERM and could only be killed.
+BOOST_AUTO_TEST_CASE(e2e_sigterm_ends_the_wait_for_an_unfinished_escape_sequence) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  for (std::string_view unfinished : {"\x1b[1;", "\x1b[200~half a paste"}) {
+    BOOST_TEST_CONTEXT("input " << stripAnsi(std::string(unfinished))) {
+      TempFile tmp("text\n");
+      PtySession session(24, 80, bin, {tmp.path().string()});
+      session.readUntil("text");
+      session.send("X");
+      session.readOutput(milliseconds{150});
+      session.send(unfinished); // in one write: the editor reads it as a sequence
+      session.readOutput(milliseconds{200});
+
+      kill(session.childPid, SIGTERM);
+      auto asked = stripAnsi(session.readUntil("Exiting. Save", milliseconds{1500}));
+      BOOST_CHECK(asked.find("Exiting. Save") != std::string::npos);
+      kill(session.childPid, SIGTERM);
+      auto out = session.readOutput(milliseconds{500});
+      BOOST_CHECK_EQUAL(session.waitExit(), 0);
+      BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+      for (auto const& copy : unsavedCopies(tmp.path()))
+        std::filesystem::remove(copy);
+    }
+  }
+}
+
 BOOST_AUTO_TEST_CASE(e2e_sigterm_cancels_a_prompt_and_can_be_cancelled_itself) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

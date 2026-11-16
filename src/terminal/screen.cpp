@@ -189,15 +189,19 @@ static bool waitForInput() {
  * @brief Read a single byte from stdin, retrying on EINTR.
  *
  * Used by the escape-sequence and prompt input paths so a SIGWINCH mid-CSI
- * doesn't drop the next byte and corrupt arrow-key dispatch.
- * @return True on a successful 1-byte read, false on EOF or non-EINTR error.
+ * doesn't drop the next byte and corrupt arrow-key dispatch. A request to
+ * terminate (SIGTERM) does end the wait, as if the input had ended: the
+ * rest of an escape sequence, or of a paste, may never come, and the
+ * request is only acted on back in loop().
+ * @return True on a successful 1-byte read, false on EOF, a non-EINTR
+ *         error or a pending request to terminate.
  */
 static bool readByte(char& out) {
   for (;;) {
     ssize_t n = read(STDIN_FILENO, &out, 1);
     if (n == 1)
       return true;
-    if (n == -1 && errno == EINTR)
+    if (n == -1 && errno == EINTR && g_termRequests == 0)
       continue;
     return false;
   }
