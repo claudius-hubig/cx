@@ -186,7 +186,10 @@ Key responsibilities:
     disambiguation window. A bracketed paste (`ESC[200~ … ESC[201~`) is
     read whole and inserted with one `BufferView::insertText()` — one
     undo step, no auto-indent or Tab formatting; a prompt takes its
-    first line, and a read-only buffer or confirm prompt drops it
+    first line, and a read-only buffer or confirm prompt drops it. A
+    paste whose end marker is lost ends after `kPasteIdleMs` (2 s)
+    without input, with a status message, rather than taking every later
+    key as paste text
   - `handleNormalInput` — printable characters and control keys in normal
     editing mode
   - `handleMouseEvent` / `extendDragSelection` — left-press positions the

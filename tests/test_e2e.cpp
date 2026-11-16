@@ -2920,6 +2920,30 @@ BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
   BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
+// A bracketed paste whose end marker never came made the editor look
+// frozen: every key typed afterwards went into the paste, unseen, and was
+// inserted as text (control characters too) once a marker turned up.
+BOOST_AUTO_TEST_CASE(e2e_paste_without_end_marker_ends_after_a_pause) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("text\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("text");
+  session.send("\x1b[200~pasted");
+  auto out = stripAnsi(session.readUntil("end marker", milliseconds{4000}));
+  BOOST_CHECK_MESSAGE(out.find("Paste ended without its end marker") != std::string::npos, out);
+  BOOST_CHECK(out.find("pastedtext") != std::string::npos);
+
+  // Keys are keys again: X is typed, Ctrl-s saves.
+  session.send("X\x13");
+  session.readUntil("Saved to", milliseconds{1000});
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "pastedXtext\n");
+}
+
 // Every input byte used to be followed by a full redraw, so text pasted
 // into a terminal without bracketed paste wrote megabytes to it.
 BOOST_AUTO_TEST_CASE(e2e_burst_of_input_is_not_redrawn_per_byte) {

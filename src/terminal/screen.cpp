@@ -144,6 +144,10 @@ constexpr std::size_t kGrepMaxBytes = std::size_t{64} << 20;
 constexpr int kEscDisambiguationMs = 50;
 // Longest the screen goes without a redraw while input keeps arriving.
 constexpr auto kMaxDrawDelay = std::chrono::milliseconds(30);
+// A bracketed paste with no byte for this long is taken as cut short (its
+// end marker lost). A terminal sends a paste in one burst; only a stalled
+// link pauses one for this long.
+constexpr int kPasteIdleMs = 2000;
 } // namespace
 
 static void handle_sigwinch(int) { g_resized = 1; }
@@ -951,22 +955,44 @@ static std::string_view firstLine(std::string const& s) {
   return std::string_view(s).substr(0, s.find_first_of("\r\n"));
 }
 
+/** @brief What readBracketedPaste() read. */
+struct BracketedPaste {
+  std::string text;   /**< With its line breaks as '\n'. */
+  bool ended = false; /**< The end marker came; otherwise the paste was cut short. */
+};
+
 /**
  * @brief Read the text of a bracketed paste whose start marker has already
- *        been consumed, up to the end marker (or EOF), with its line
- *        breaks as '\n'.
+ *        been consumed, up to the end marker.
+ *
+ * A terminal sends a paste in one burst, end marker included. Should the
+ * marker be lost on the way (a garbled link), every key typed afterwards
+ * would go into the paste, unseen, until a marker happened to arrive: the
+ * editor looked frozen and then inserted the keys as text, control
+ * characters and all. So the paste also ends when no byte has come for
+ * kPasteIdleMs, at the end of input, and on a request to terminate.
  */
-static std::string readBracketedPaste() {
+static BracketedPaste readBracketedPaste() {
   std::string raw;
-  for (char c; readByte(c);) {
+  for (;;) {
+    struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+    int rc = poll(&pfd, 1, kPasteIdleMs);
+    if (rc < 0 && errno == EINTR && g_termRequests == 0)
+      continue;
+    char c;
+    if (rc <= 0 || !readByte(c))
+      break;
     raw += c;
     if (c == kPasteEnd.back() && raw.ends_with(kPasteEnd)) {
       raw.resize(raw.size() - kPasteEnd.size());
-      break;
+      return {normalizePastedText(raw), true};
     }
   }
-  return normalizePastedText(raw);
+  return {normalizePastedText(raw), false};
 }
+
+/** @brief Status line text for a paste whose end marker never came. */
+constexpr std::string_view kPasteCutShort = "Paste ended without its end marker";
 
 void Screen::handlePromptInput(char c) {
   auto& p = *_prompt;
@@ -999,9 +1025,11 @@ void Screen::handlePromptInput(char c) {
         if (isPasteStart(params, final)) {
           // Pasted text: its first line, as for a paste from the ring. A
           // confirm prompt takes no answer from a paste.
-          auto text = readBracketedPaste();
-          if (p.showInput && !text.empty()) {
-            p.insert(firstLine(text));
+          auto paste = readBracketedPaste();
+          if (!paste.ended)
+            setStatus(std::string(kPasteCutShort));
+          if (p.showInput && !paste.text.empty()) {
+            p.insert(firstLine(paste.text));
             p.historyIdx.reset();
             runAutocomplete();
           }
@@ -2811,9 +2839,11 @@ void Screen::handleEscapeInput(std::optional<char>& pendingChar) {
       if (isPasteStart(params, final)) {
         // Pasted text goes in as one edit. A read-only buffer drops it:
         // typed, its characters would have run as that buffer's commands.
-        auto text = readBracketedPaste();
-        if (_buf && !_buf->readonly() && !text.empty()) {
-          _view->insertText(text);
+        auto paste = readBracketedPaste();
+        if (!paste.ended)
+          setStatus(std::string(kPasteCutShort));
+        if (_buf && !_buf->readonly() && !paste.text.empty()) {
+          _view->insertText(paste.text);
           _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
           _pasteState.reset();
         }
