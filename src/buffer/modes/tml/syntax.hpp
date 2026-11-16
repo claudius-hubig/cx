@@ -19,6 +19,8 @@ struct TmlSyntaxState {
   char tomlTriple = 0;
   /** @brief TOML `[`/`{` still open at the end of the line (multi-line arrays). */
   int tomlDepth = 0;
+
+  bool operator==(TmlSyntaxState const&) const = default;
 };
 
 /**

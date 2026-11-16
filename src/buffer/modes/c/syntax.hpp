@@ -66,6 +66,7 @@ public:
     std::ranges::copy(d.substr(0, kMaxSize), _chars.begin());
   }
   std::string_view view() const { return {_chars.data(), _size}; }
+  bool operator==(RawDelimiter const& other) const { return view() == other.view(); }
 
 private:
   std::array<char, kMaxSize> _chars{};
@@ -82,6 +83,8 @@ struct CSyntaxState {
   bool inBlockComment = false;
   bool inPreprocessor = false; /**< Next line continues a \#directive (prior ended with '\'). */
   std::optional<RawDelimiter> rawDelim; /**< has_value() = inside R"delim(...)delim". */
+
+  bool operator==(CSyntaxState const&) const = default;
 };
 
 /**

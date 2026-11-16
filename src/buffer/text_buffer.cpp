@@ -184,7 +184,7 @@ void TextBuffer::normalizeLineEndings() {
   _lineEndingStyle = LineEndingStyle::Unix;
   _modified = true;
   ++_docVersion;
-  _synCacheValidUpto = 0;
+  resetSynCache();
   _history.capture(_lines, {0, 0});
 }
 
@@ -296,7 +296,7 @@ std::expected<void, std::string> TextBuffer::revert() {
   loadFromFile(*_path);
   _modified = false;
   ++_docVersion;
-  _synCacheValidUpto = 0;
+  resetSynCache();
   // Append (rather than clear) so the user can undo a revert.
   _history.capture(_lines, {0, 0});
   return {};
@@ -310,5 +310,5 @@ void TextBuffer::applySnapshot(LineStore lines) {
     _lines.push_back(makeLine());
   _modified = true;
   ++_docVersion;
-  _synCacheValidUpto = 0;
+  resetSynCache();
 }

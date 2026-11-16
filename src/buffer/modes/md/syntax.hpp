@@ -39,6 +39,8 @@ struct MdSyntaxState {
   MdLink mdLink = MdLink::None; /**< Cross-line link state (see MdLink). */
   MdTableScan table;            /**< Whether the line is in a table. */
   MdFence fence;                /**< The fenced code block the line is in, if any. */
+
+  bool operator==(MdSyntaxState const&) const = default;
 };
 
 /**

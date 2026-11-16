@@ -415,7 +415,8 @@ as `<count>@` (blank with one cursor, `***@` above 999). The count and the
 cursors are added or dropped.
 
 Caching:
-- `_synCache` — per-line syntax tokenisation cache, invalidated on edits.
+- `_synCache` — per-line syntax tokenisation cache; an edit invalidates
+  it from the edited line until the tokenizer state matches again.
   Exposed to other subsystems via `cachedLineTokens(line)` so e.g.
   bracket-match scans reuse the same tokens that the renderer already
   computed.
@@ -973,8 +974,18 @@ The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 `DiffHunk`, `ConflictMarker`, `Variable`) is shared across modes.
 Tokens are mapped to ANSI colours in `Buffer::render()`.
 
-Per-line tokenisation results are cached in `Buffer::_synCache` and
-invalidated from the edited line forward. Each entry, a `LineSyntax<S>`,
+Per-line tokenisation results are cached in `Buffer::_synCache`. An edit
+makes the entries from its first line on stale, but keeps those below it
+as the *tail* (`_synCacheTailFrom`/`_synCacheTailUpto`): the edit
+primitives report the lines they replace (`noteLinesEdited()`), and the
+entries below move with their lines. When `fillSynCache()` re-tokenizes
+its way down and a line ends in the state its entry already recorded,
+every line below it would get the same tokens again, so the rest of the
+tail is taken as valid. Typing at the top of a file while another panel
+shows its end thus costs a line or two of tokenizing, not the whole file
+(98 ms per key on 600K lines before). The price is moving the kept
+entries on an edit that changes the line count; that is bounded by how
+far the cache was filled. Each entry, a `LineSyntax<S>`,
 holds the line's tokens and the tokenizer state after it, where `S` is
 the buffer mode's state struct (above), or `std::monostate` for modes
 without one (txt, dif, jsn), which takes no space. The cache is a
@@ -1052,8 +1063,9 @@ The text storage model (a chunked `LineStore` of `LinePtr`s, one
   string on every keystroke. This is adequate for typical terminal sizes
   but may cause lag on very large terminals over slow connections.
 - **Syntax cache**: Per-line tokenisation results are cached and only
-  recomputed from the edited line forward, avoiding full-file retokenisation
-  on each keystroke.
+  recomputed from the edited line until the tokenizer state matches what
+  it was before the edit, avoiding full-file retokenisation on each
+  keystroke.
 
 For a production editor handling 100 MB+ files, a gap buffer, rope, or
 piece table would be more appropriate. The current model is chosen for

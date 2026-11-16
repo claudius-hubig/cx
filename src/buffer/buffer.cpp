@@ -19,7 +19,7 @@ Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 // --- Position-explicit editing methods ---
 
 BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
-  invalidateSynCache(at.line);
+  noteLinesEdited(at.line, 1, cp == '\n' ? 2 : 1);
   auto [n, enc] = encodeUtf8(cp);
 
   auto& line = mutLine(at.line);
@@ -57,14 +57,14 @@ BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
 BufferPoint Buffer::deleteAt(BufferPoint at) {
   std::size_t lineSz = lineContent(at.line).size();
   if (at.offset < lineSz) {
-    invalidateSynCache(at.line);
+    noteLinesEdited(at.line, 1, 1);
     auto& line = mutLine(at.line);
     auto end = nextClusterStart(line, at.offset); // a character with its marks
     line.erase(line.begin() + at.offset, line.begin() + end);
     _modified = true;
     ++_docVersion;
   } else if (at.line + 1 < _lines.size()) {
-    invalidateSynCache(at.line);
+    noteLinesEdited(at.line, 2, 1);
     // Take the next line's content out of the store first so the
     // mutLine call below operates on a stable index.
     std::string nextContent = lineContent(at.line + 1);
@@ -79,7 +79,7 @@ BufferPoint Buffer::deleteAt(BufferPoint at) {
 
 BufferPoint Buffer::deleteBefore(BufferPoint at) {
   if (at.offset > 0) {
-    invalidateSynCache(at.line);
+    noteLinesEdited(at.line, 1, 1);
     auto& line = mutLine(at.line);
     auto end = at.offset;
     at.offset = prevClusterStart(line, at.offset); // a character with its marks
@@ -87,7 +87,7 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
     _modified = true;
     ++_docVersion;
   } else if (at.line > 0) {
-    invalidateSynCache(at.line - 1);
+    noteLinesEdited(at.line - 1, 2, 1);
     std::string lineContentCopy = lineContent(at.line);
     _lines.erase(at.line);
     auto& prev = mutLine(at.line - 1);
@@ -102,7 +102,6 @@ BufferPoint Buffer::deleteBefore(BufferPoint at) {
 }
 
 BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
-  invalidateSynCache(at.line);
   if (text.empty())
     return at;
 
@@ -110,6 +109,7 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
   for (char c : text)
     if (c == '\n')
       ++newlineCount;
+  noteLinesEdited(at.line, 1, 1 + newlineCount);
 
   if (newlineCount == 0) {
     auto& line = mutLine(at.line);
@@ -154,13 +154,13 @@ BufferPoint Buffer::insertText(std::string_view text, BufferPoint at) {
 void Buffer::deleteRegion(BufferPoint from, BufferPoint to) {
   if (to < from)
     std::swap(from, to);
-  invalidateSynCache(from.line);
   if (from.line >= _lines.size())
     return;
 
   to.line = std::min(to.line, _lines.size() - 1);
   to.offset = std::min(to.offset, lineContent(to.line).size());
   from.offset = std::min(from.offset, lineContent(from.line).size());
+  noteLinesEdited(from.line, to.line - from.line + 1, 1);
 
   if (from.line == to.line) {
     mutLine(from.line).erase(from.offset, to.offset - from.offset);
@@ -270,9 +270,65 @@ void Buffer::scanForConflicts() {
   }
 }
 
-void Buffer::invalidateSynCache(std::size_t fromLine) {
-  if (fromLine < _synCacheValidUpto)
-    _synCacheValidUpto = fromLine;
+void Buffer::noteLinesEdited(std::size_t first, std::size_t oldCount, std::size_t newCount) {
+  auto& valid = _synCacheValidUpto;
+  auto& from = _synCacheTailFrom;
+  auto& upto = _synCacheTailUpto;
+  std::size_t const oldEnd = first + oldCount, newEnd = first + newCount;
+
+  // Move the entries below the edit along with their lines, as far down
+  // as the cache holds anything (the rest was never filled in). The entry
+  // of the last edited line goes too: it holds the state in which the
+  // first line below was tokenized, which is what the tail is checked
+  // against. What it costs is one move per entry below the edit, and
+  // only for an edit that changes the number of lines.
+  std::size_t const keptEnd = std::max(valid, upto);
+  bool const inStep = std::visit(
+      [&](auto& entries) {
+        if (entries.size() != _lines.size())
+          return false; // never filled, or lines replaced behind its back
+        auto const at = [&](std::size_t i) {
+          return entries.begin() + static_cast<std::ptrdiff_t>(i);
+        };
+        if (newCount > oldCount) {
+          entries.resize(entries.size() + (newCount - oldCount));
+          if (oldEnd <= keptEnd)
+            std::move_backward(at(oldEnd - 1), at(keptEnd), at(keptEnd + newCount - oldCount));
+        } else if (newCount < oldCount) {
+          if (oldEnd <= keptEnd)
+            std::move(at(oldEnd - 1), at(keptEnd), at(newEnd - 1));
+          entries.resize(entries.size() - (oldCount - newCount));
+        }
+        return true;
+      },
+      _synCache);
+
+  if (!inStep) {
+    from = upto = 0;
+  } else if (from == upto) {
+    // No tail yet: what was valid below the edit becomes one.
+    from = upto = 0;
+    if (oldEnd <= valid) {
+      from = newEnd;
+      upto = valid + newCount - oldCount;
+    }
+  } else if (oldEnd <= from) {
+    // Above the tail, which moves with its lines.
+    from = from + newCount - oldCount;
+    upto = upto + newCount - oldCount;
+  } else if (first >= upto) {
+    // Below the tail, which is not affected.
+  } else if (oldEnd <= upto) {
+    // In the tail: what is below the edit remains.
+    from = newEnd;
+    upto = upto + newCount - oldCount;
+  } else if (first > from) {
+    // Over the end of the tail: what is above the edit remains.
+    upto = first;
+  } else {
+    from = upto = 0;
+  }
+  valid = std::min(valid, first);
 }
 
 std::span<SyntaxToken const> Buffer::cachedLineTokens(std::size_t lineIdx) const {
@@ -324,12 +380,15 @@ void Buffer::fillSynCache(std::size_t upToLine, Tokenize tokenize) const {
   if (!cache) {
     cache = &_synCache.template emplace<Entries>();
     _synCacheValidUpto = 0;
+    _synCacheTailFrom = _synCacheTailUpto = 0;
   }
-  // Resize if _lines changed (insertions / deletions).
+  // Size it on first use, and again if the lines were replaced without
+  // the cache being told (the read-only buffers rebuild theirs).
   if (cache->size() != _lines.size()) {
     cache->resize(_lines.size());
     if (_synCacheValidUpto > _lines.size())
       _synCacheValidUpto = 0;
+    _synCacheTailFrom = _synCacheTailUpto = 0;
   }
   if (upToLine > _lines.size())
     upToLine = _lines.size();
@@ -341,16 +400,37 @@ void Buffer::fillSynCache(std::size_t upToLine, Tokenize tokenize) const {
   if (_synCacheValidUpto > 0)
     state = (*cache)[_synCacheValidUpto - 1].stateAfter;
 
+  std::size_t reached = upToLine;
   for (std::size_t i = _synCacheValidUpto; i < upToLine; ++i) {
     auto const& line = *_lines[i];
     auto& entry = (*cache)[i];
     tokenize(line, state, entry.tokens);
+    // From the last edited line on, the entry still has the state this
+    // line used to end in. Ending in it again means the lines below get
+    // what they got before, so their entries are valid as they stand.
+    bool const converged =
+        i + 1 >= _synCacheTailFrom && i < _synCacheTailUpto && state == entry.stateAfter;
     entry.stateAfter = state;
 
     if (_hasConflicts && isConflictMarker(line))
       entry.tokens.assign(line.size(), SyntaxToken::ConflictMarker);
+
+    if (converged) {
+      reached = std::max(reached, _synCacheTailUpto);
+      i = _synCacheTailUpto - 1; // carry on below the tail, if asked to
+      state = (*cache)[i].stateAfter;
+      _synCacheTailFrom = _synCacheTailUpto = 0;
+    }
   }
-  _synCacheValidUpto = upToLine;
+  _synCacheValidUpto = reached;
+  // Stopped inside the tail without getting back into step: the entry of
+  // the line just done now holds its new end state, not the one the next
+  // line was tokenized with. That line is redone next time and compared
+  // with its own entry, so the tail starts below it.
+  if (_synCacheValidUpto >= _synCacheTailFrom)
+    _synCacheTailFrom = _synCacheValidUpto + 1;
+  if (_synCacheTailFrom >= _synCacheTailUpto)
+    _synCacheTailFrom = _synCacheTailUpto = 0;
 }
 
 std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx cols,

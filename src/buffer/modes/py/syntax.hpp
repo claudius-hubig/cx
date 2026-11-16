@@ -20,6 +20,8 @@ struct PySyntaxState {
   char pyTriple = 0;
   /** @brief Suppresses backslash-escape handling for r"""..."""-style strings. */
   bool pyTripleRaw = false;
+
+  bool operator==(PySyntaxState const&) const = default;
 };
 
 /**

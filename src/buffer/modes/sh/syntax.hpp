@@ -26,6 +26,14 @@ struct ShSyntaxState {
   /** @brief Set for the `<<-` form, where leading tabs are stripped before the
    *         terminator comparison. */
   bool heredocStripTabs = false;
+
+  /** @brief Equal states tokenize a line alike: the tags are compared by
+   *         their text, not by which string object they share. */
+  bool operator==(ShSyntaxState const& other) const {
+    bool const sameTag = heredocTag == other.heredocTag ||
+                         (heredocTag && other.heredocTag && *heredocTag == *other.heredocTag);
+    return sameTag && heredocStripTabs == other.heredocStripTabs;
+  }
 };
 
 /**

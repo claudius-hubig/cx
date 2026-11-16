@@ -19,6 +19,8 @@ struct YmlSyntaxState {
    *        until indentation returns to <= this column); -1 = not in one.
    */
   int yamlBlockCol = -1;
+
+  bool operator==(YmlSyntaxState const&) const = default;
 };
 
 /**

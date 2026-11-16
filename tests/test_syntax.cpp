@@ -12,6 +12,7 @@
 #include "test_helpers.hpp"
 
 #include <algorithm>
+#include <random>
 
 // Helper: create a line from a string literal.
 static std::string mkline(std::string_view s) { return std::string(s); }
@@ -1332,6 +1333,120 @@ BOOST_AUTO_TEST_CASE(md_syntax_cache_entry_stays_32_bytes) {
   // One entry per line of the buffer: the table and fence state must fit
   // in the padding next to the link state.
   BOOST_CHECK_EQUAL(sizeof(LineSyntax<MdSyntaxState>), 32u);
+}
+
+// --- Syntax cache: entries kept across an edit ---
+
+namespace {
+
+std::string textOf(Buffer const& buf) {
+  std::string text;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i) {
+    if (i > 0)
+      text += '\n';
+    text += buf.lineContent(i);
+  }
+  return text;
+}
+
+// The tokens the cache has for line @p line against those of a buffer
+// that was given the same text in one go and tokenized from the top.
+bool sameAsFresh(TextBuffer const& buf, TextBuffer const& fresh, std::size_t line) {
+  return std::ranges::equal(buf.cachedLineTokens(line), fresh.cachedLineTokens(line));
+}
+
+} // namespace
+
+// After an edit the cache keeps the entries below it and takes them for
+// valid once the tokenizer is back in the state they were made in. Edits
+// of every kind, in text that keeps changing that state, with the cache
+// asked about lines here and there in between (so it is left partly
+// filled), must always give what tokenizing from scratch gives.
+BOOST_AUTO_TEST_CASE(syntax_cache_matches_a_fresh_tokenization_after_random_edits) {
+  struct Case {
+    BufferMode mode;
+    std::vector<std::string_view> pieces; // what moves the mode's tokenizer between states
+  };
+  std::vector<Case> const cases{
+      {BufferMode::Cpp,
+       {"/*", "*/", "\"", "R\"x(", ")x\"", "//", "#define A \\", "int a;", " ", "\n", "\\\n"}},
+      {BufferMode::Md,
+       {"```", "~~~", "[", "](", ")", "| a | b |", "|---|---|", "- ", "# ", "text", "\n", "\n\n"}},
+      {BufferMode::Sh, {"cat <<EOF", "EOF", "<<-X", "X", "'", "\"", "# c", "echo ", "\n"}},
+      {BufferMode::Py, {"\"\"\"", "'''", "r\"\"\"", "#", "def f():", "\\", "x = 1", "\n"}},
+      {BufferMode::Yml, {"key: |", "  text", "a: 1", "- x", " ", "\n"}},
+      {BufferMode::Tml, {"a = [", "]", "\"\"\"", "'''", "[t]", "x = 1", "{", "}", "\n"}},
+      {BufferMode::Jsn, {"{", "}", "\"a\": ", "1", ",", "\n"}},
+      {BufferMode::Txt, {"word ", "\n"}},
+  };
+
+  for (auto const& c : cases) {
+    BOOST_TEST_CONTEXT("mode " << static_cast<int>(c.mode)) {
+      std::mt19937 rng(12345);
+      auto upTo = [&](std::size_t n) {
+        return std::uniform_int_distribution<std::size_t>(0, n)(rng);
+      };
+      auto piece = [&] { return std::string(c.pieces[upTo(c.pieces.size() - 1)]); };
+      TextBuffer buf("edited");
+      buf.setMode(c.mode);
+      auto randomPoint = [&] {
+        auto line = upTo(buf.lineCount() - 1);
+        return BufferPoint{line, upTo(buf.lineContent(line).size())};
+      };
+
+      for (int step = 0; step < 3000; ++step) {
+        auto at = randomPoint();
+        switch (upTo(9)) {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+          buf.insertText(piece() + piece(), at);
+          break;
+        case 4:
+          buf.insertText(piece() + "\n" + piece() + "\n" + piece(), at);
+          break;
+        case 5:
+          buf.insertAt('\n', at);
+          break;
+        case 6:
+          buf.deleteAt(at);
+          break;
+        case 7:
+          buf.deleteBefore(at);
+          break;
+        default: {
+          // A region over up to three lines; a larger one when the text
+          // has grown long, so that it stays a few dozen lines.
+          auto span = buf.lineCount() > 60 ? 30 : upTo(3);
+          auto endLine = std::min(at.line + span, buf.lineCount() - 1);
+          buf.deleteRegion(at, {endLine, upTo(buf.lineContent(endLine).size())});
+        }
+        }
+
+        TextBuffer fresh("fresh");
+        fresh.setMode(c.mode);
+        fresh.insertText(textOf(buf), {0, 0});
+        BOOST_REQUIRE_EQUAL(fresh.lineCount(), buf.lineCount());
+        // Mostly one line somewhere, which fills the cache only that far;
+        // now and then all of them, from either end.
+        auto const kind = upTo(9);
+        if (kind < 7) {
+          auto line = upTo(buf.lineCount() - 1);
+          BOOST_REQUIRE_MESSAGE(sameAsFresh(buf, fresh, line),
+                                "step " << step << ", line " << line);
+        } else if (kind < 9) {
+          for (std::size_t line = 0; line < buf.lineCount(); ++line)
+            BOOST_REQUIRE_MESSAGE(sameAsFresh(buf, fresh, line),
+                                  "step " << step << ", line " << line);
+        } else {
+          for (std::size_t line = buf.lineCount(); line-- > 0;)
+            BOOST_REQUIRE_MESSAGE(sameAsFresh(buf, fresh, line),
+                                  "step " << step << ", line " << line);
+        }
+      }
+    }
+  }
 }
 
 BOOST_AUTO_TEST_CASE(md_heading_suppressed_during_link_continuation) {

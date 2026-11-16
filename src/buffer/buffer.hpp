@@ -167,7 +167,7 @@ public:
    */
   void setMode(BufferMode m) {
     _mode = m;
-    _synCacheValidUpto = 0;
+    resetSynCache();
   }
 
   /**
@@ -429,14 +429,46 @@ protected:
    * @brief Per-line tokens and end-of-line tokenizer state (see
    *        SyntaxCache). Lines [0, _synCacheValidUpto) have valid entries;
    *        ensureSynCache() switches the alternative to the buffer mode's.
+   *
+   * An edit makes the entries from its first line onwards stale, but
+   * mostly only in principle: a line's tokens depend on its text and on
+   * the state the tokenizer is in when it gets there, and an edit rarely
+   * changes that state for the lines below it. So the entries below the
+   * edit are kept as the *tail*, lines [_synCacheTailFrom,
+   * _synCacheTailUpto), each still holding the tokens and end state it
+   * had. When ensureSynCache() re-tokenizes its way down from
+   * _synCacheValidUpto and ends a line in the state that line's entry
+   * recorded, everything below it in the tail is valid as it stands.
+   * For this the entry of line _synCacheTailFrom - 1, the last edited
+   * one, keeps the end state of the line that used to precede the tail.
+   *
+   * Invariants: _synCacheValidUpto < _synCacheTailFrom <
+   * _synCacheTailUpto <= line count when there is a tail, and each tail
+   * entry was computed from the end state stored in the entry before it
+   * (which for the first one is a line still to be redone). Without a
+   * tail both are 0.
    */
   mutable SyntaxCache _synCache;
   mutable std::size_t _synCacheValidUpto = 0;
+  mutable std::size_t _synCacheTailFrom = 0;
+  mutable std::size_t _synCacheTailUpto = 0;
 
   /** @brief Scan lines for git merge-conflict markers and set _hasConflicts. */
   void scanForConflicts();
-  /** @brief Mark all cache entries from @p fromLine onwards as stale. */
-  void invalidateSynCache(std::size_t fromLine);
+  /**
+   * @brief Tell the syntax cache that the @p oldCount lines from @p first
+   *        are about to be replaced by @p newCount lines (both at least
+   *        1: an edit always leaves the line it starts on).
+   *
+   * Call before changing @c _lines. Entries below the edit move with
+   * their lines and become (or stay) the tail; see _synCache.
+   */
+  void noteLinesEdited(std::size_t first, std::size_t oldCount, std::size_t newCount);
+  /** @brief Drop the whole syntax cache: the lines were replaced wholesale. */
+  void resetSynCache() {
+    _synCacheValidUpto = 0;
+    _synCacheTailFrom = _synCacheTailUpto = 0;
+  }
   /** @brief Ensure the syntax cache covers lines [0, upToLine). Called by render(). */
   void ensureSynCache(std::size_t upToLine) const;
   /**
