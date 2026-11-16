@@ -15,6 +15,7 @@
 #include "syntax_cache.hpp"
 #include "types.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -465,16 +466,28 @@ protected:
    * For this the entry of line _synCacheTailFrom - 1, the last edited
    * one, keeps the end state of the line that used to precede the tail.
    *
+   * Edits do not move the tail's entries: an edit that adds or removes
+   * lines above them only adds to _synCacheTailShift, and the entry of
+   * line i (from _synCacheTailFrom - 1 on) sits in slot i -
+   * _synCacheTailShift until ensureSynCache() moves them all into place,
+   * once for any number of edits. (Moving them on every edit cost a
+   * replace-all inserting thousands of lines one move of the whole cache
+   * per line.) The valid lines keep slot = line.
+   *
    * Invariants: _synCacheValidUpto < _synCacheTailFrom <
    * _synCacheTailUpto <= line count when there is a tail, and each tail
    * entry was computed from the end state stored in the entry before it
    * (which for the first one is a line still to be redone). Without a
-   * tail both are 0.
+   * tail both are 0, and so is the shift. _synCacheLines is the line
+   * count the cache's layout belongs to; any other count means the lines
+   * changed without the cache being told.
    */
   mutable SyntaxCache _synCache;
   mutable std::size_t _synCacheValidUpto = 0;
   mutable std::size_t _synCacheTailFrom = 0;
   mutable std::size_t _synCacheTailUpto = 0;
+  mutable std::ptrdiff_t _synCacheTailShift = 0;
+  mutable std::size_t _synCacheLines = 0;
 
   /** @brief Scan lines for git merge-conflict markers and set _hasConflicts. */
   void scanForConflicts();
@@ -483,14 +496,15 @@ protected:
    *        are about to be replaced by @p newCount lines (both at least
    *        1: an edit always leaves the line it starts on).
    *
-   * Call before changing @c _lines. Entries below the edit move with
-   * their lines and become (or stay) the tail; see _synCache.
+   * Call before changing @c _lines. Entries below the edit become (or
+   * stay) the tail, in constant time; see _synCache.
    */
   void noteLinesEdited(std::size_t first, std::size_t oldCount, std::size_t newCount);
   /** @brief Drop the whole syntax cache: the lines were replaced wholesale. */
-  void resetSynCache() {
+  void resetSynCache() const {
     _synCacheValidUpto = 0;
     _synCacheTailFrom = _synCacheTailUpto = 0;
+    _synCacheTailShift = 0;
   }
   /** @brief Ensure the syntax cache covers lines [0, upToLine). Called by render(). */
   void ensureSynCache(std::size_t upToLine) const;

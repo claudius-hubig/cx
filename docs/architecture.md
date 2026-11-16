@@ -982,15 +982,19 @@ Tokens are mapped to ANSI colours in `Buffer::render()`.
 Per-line tokenisation results are cached in `Buffer::_synCache`. An edit
 makes the entries from its first line on stale, but keeps those below it
 as the *tail* (`_synCacheTailFrom`/`_synCacheTailUpto`): the edit
-primitives report the lines they replace (`noteLinesEdited()`), and the
-entries below move with their lines. When `fillSynCache()` re-tokenizes
+primitives report the lines they replace (`noteLinesEdited()`). The
+entries below stay where they are, with the tail recording how far their
+lines have moved (`_synCacheTailShift`), and `fillSynCache()` moves them
+to their lines' places once before it uses them, however many edits came
+in between. (Moving them on every edit made a replace-all that inserts
+thousands of lines move the whole cache once per line.) When `fillSynCache()` re-tokenizes
 its way down and a line ends in the state its entry already recorded,
 every line below it would get the same tokens again, so the rest of the
 tail is taken as valid. Typing at the top of a file while another panel
 shows its end thus costs a line or two of tokenizing, not the whole file
-(98 ms per key on 600K lines before). The price is moving the kept
-entries on an edit that changes the line count; that is bounded by how
-far the cache was filled. Each entry, a `LineSyntax<S>`,
+(98 ms per key on 600K lines before). The price is one move of the kept
+entries per redraw after edits that changed the line count, bounded by
+how far the cache was filled. Each entry, a `LineSyntax<S>`,
 holds the line's tokens and the tokenizer state after it, where `S` is
 the buffer mode's state struct (above), or `std::monostate` for modes
 without one (txt, dif, jsn), which takes no space. The cache is a

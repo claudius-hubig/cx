@@ -1395,33 +1395,37 @@ BOOST_AUTO_TEST_CASE(syntax_cache_matches_a_fresh_tokenization_after_random_edit
       };
 
       for (int step = 0; step < 3000; ++step) {
-        auto at = randomPoint();
-        switch (upTo(9)) {
-        case 0:
-        case 1:
-        case 2:
-        case 3:
-          buf.insertText(piece() + piece(), at);
-          break;
-        case 4:
-          buf.insertText(piece() + "\n" + piece() + "\n" + piece(), at);
-          break;
-        case 5:
-          buf.insertAt('\n', at);
-          break;
-        case 6:
-          buf.deleteAt(at);
-          break;
-        case 7:
-          buf.deleteBefore(at);
-          break;
-        default: {
-          // A region over up to three lines; a larger one when the text
-          // has grown long, so that it stays a few dozen lines.
-          auto span = buf.lineCount() > 60 ? 30 : upTo(3);
-          auto endLine = std::min(at.line + span, buf.lineCount() - 1);
-          buf.deleteRegion(at, {endLine, upTo(buf.lineContent(endLine).size())});
-        }
+        // Several edits before the cache is next asked: their line shifts
+        // pile up before it moves the entries.
+        for (auto edits = 1 + upTo(3); edits > 0; --edits) {
+          auto at = randomPoint();
+          switch (upTo(9)) {
+          case 0:
+          case 1:
+          case 2:
+          case 3:
+            buf.insertText(piece() + piece(), at);
+            break;
+          case 4:
+            buf.insertText(piece() + "\n" + piece() + "\n" + piece(), at);
+            break;
+          case 5:
+            buf.insertAt('\n', at);
+            break;
+          case 6:
+            buf.deleteAt(at);
+            break;
+          case 7:
+            buf.deleteBefore(at);
+            break;
+          default: {
+            // A region over up to three lines; a larger one when the text
+            // has grown long, so that it stays a few dozen lines.
+            auto span = buf.lineCount() > 60 ? 30 : upTo(3);
+            auto endLine = std::min(at.line + span, buf.lineCount() - 1);
+            buf.deleteRegion(at, {endLine, upTo(buf.lineContent(endLine).size())});
+          }
+          }
         }
 
         TextBuffer fresh("fresh");

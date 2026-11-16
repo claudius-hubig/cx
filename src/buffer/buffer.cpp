@@ -274,59 +274,53 @@ void Buffer::noteLinesEdited(std::size_t first, std::size_t oldCount, std::size_
   auto& valid = _synCacheValidUpto;
   auto& from = _synCacheTailFrom;
   auto& upto = _synCacheTailUpto;
+  auto& shift = _synCacheTailShift;
   std::size_t const oldEnd = first + oldCount, newEnd = first + newCount;
+  auto const delta = static_cast<std::ptrdiff_t>(newCount) - static_cast<std::ptrdiff_t>(oldCount);
 
-  // Move the entries below the edit along with their lines, as far down
-  // as the cache holds anything (the rest was never filled in). The entry
-  // of the last edited line goes too: it holds the state in which the
-  // first line below was tokenized, which is what the tail is checked
-  // against. What it costs is one move per entry below the edit, and
-  // only for an edit that changes the number of lines.
-  std::size_t const keptEnd = std::max(valid, upto);
-  bool const inStep = std::visit(
-      [&](auto& entries) {
-        if (entries.size() != _lines.size())
-          return false; // never filled, or lines replaced behind its back
-        auto const at = [&](std::size_t i) {
-          return entries.begin() + static_cast<std::ptrdiff_t>(i);
-        };
-        if (newCount > oldCount) {
-          entries.resize(entries.size() + (newCount - oldCount));
-          if (oldEnd <= keptEnd)
-            std::move_backward(at(oldEnd - 1), at(keptEnd), at(keptEnd + newCount - oldCount));
-        } else if (newCount < oldCount) {
-          if (oldEnd <= keptEnd)
-            std::move(at(oldEnd - 1), at(keptEnd), at(newEnd - 1));
-          entries.resize(entries.size() - (oldCount - newCount));
-        }
-        return true;
-      },
-      _synCache);
-
-  if (!inStep) {
+  // The entries below the edit stay where they are; the tail only notes
+  // that its lines have moved by `delta` (fillSynCache() moves them, once
+  // for any number of edits). The entry of the last edited line is kept
+  // too, at the slot just before the tail's first one: it holds the state
+  // in which the first line below was tokenized, which is what the tail
+  // is checked against.
+  if (_synCacheLines != _lines.size()) {
+    // Never filled, or the lines were replaced without the cache being
+    // told: nothing in it can be trusted.
+    valid = 0;
     from = upto = 0;
-  } else if (from == upto) {
+    shift = 0;
+    return;
+  }
+  _synCacheLines = _lines.size() + static_cast<std::size_t>(delta);
+
+  if (from == upto) {
     // No tail yet: what was valid below the edit becomes one.
     from = upto = 0;
+    shift = 0;
     if (oldEnd <= valid) {
       from = newEnd;
-      upto = valid + newCount - oldCount;
+      upto = valid + static_cast<std::size_t>(delta);
+      shift = delta;
     }
   } else if (oldEnd <= from) {
     // Above the tail, which moves with its lines.
-    from = from + newCount - oldCount;
-    upto = upto + newCount - oldCount;
+    from += static_cast<std::size_t>(delta);
+    upto += static_cast<std::size_t>(delta);
+    shift += delta;
   } else if (first >= upto) {
     // Below the tail, which is not affected.
   } else if (oldEnd <= upto) {
     // In the tail: what is below the edit remains.
     from = newEnd;
-    upto = upto + newCount - oldCount;
+    upto += static_cast<std::size_t>(delta);
+    shift += delta;
   } else if (first > from) {
     // Over the end of the tail: what is above the edit remains.
     upto = first;
   } else {
     from = upto = 0;
+    shift = 0;
   }
   valid = std::min(valid, first);
 }
@@ -379,17 +373,28 @@ void Buffer::fillSynCache(std::size_t upToLine, Tokenize tokenize) const {
   auto* cache = std::get_if<Entries>(&_synCache);
   if (!cache) {
     cache = &_synCache.template emplace<Entries>();
-    _synCacheValidUpto = 0;
-    _synCacheTailFrom = _synCacheTailUpto = 0;
+    resetSynCache();
   }
-  // Size it on first use, and again if the lines were replaced without
-  // the cache being told (the read-only buffers rebuild theirs).
-  if (cache->size() != _lines.size()) {
-    cache->resize(_lines.size());
-    if (_synCacheValidUpto > _lines.size())
-      _synCacheValidUpto = 0;
-    _synCacheTailFrom = _synCacheTailUpto = 0;
+  auto const slot = [&](std::ptrdiff_t i) { return cache->begin() + i; };
+  if (_synCacheLines != _lines.size()) {
+    // First use, or the lines were replaced without the cache being told
+    // (the read-only buffers rebuild theirs).
+    resetSynCache();
+  } else if (_synCacheTailFrom < _synCacheTailUpto && _synCacheTailShift != 0) {
+    // Put the tail, and the entry before it, at its lines' places again.
+    auto const shift = _synCacheTailShift;
+    auto const src = static_cast<std::ptrdiff_t>(_synCacheTailFrom - 1) - shift;
+    auto const count = static_cast<std::ptrdiff_t>(_synCacheTailUpto - _synCacheTailFrom + 1);
+    if (shift > 0) {
+      cache->resize(std::max(cache->size(), _lines.size()));
+      std::move_backward(slot(src), slot(src + count), slot(src + count + shift));
+    } else {
+      std::move(slot(src), slot(src + count), slot(src + shift));
+    }
   }
+  _synCacheTailShift = 0;
+  cache->resize(_lines.size());
+  _synCacheLines = _lines.size();
   if (upToLine > _lines.size())
     upToLine = _lines.size();
   if (_synCacheValidUpto >= upToLine)
