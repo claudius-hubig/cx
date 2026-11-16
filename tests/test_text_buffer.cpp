@@ -174,6 +174,35 @@ BOOST_AUTO_TEST_CASE(changedOnDisk_resets_after_save) {
   BOOST_CHECK(!buf.changedOnDisk());
 }
 
+BOOST_AUTO_TEST_CASE(noticeDiskChange_reports_each_change_once) {
+  TempFile tmp("hello");
+  TB<TextBuffer> buf(tmp.path().string(), tmp.path());
+  BOOST_CHECK(!buf.noticeDiskChange()); // unchanged
+
+  auto rewrite = [&](std::string const& text, std::chrono::seconds ahead) {
+    {
+      std::ofstream f(tmp.path(), std::ios::binary);
+      f << text;
+    }
+    // A distinct mtime, whatever the filesystem's resolution.
+    std::filesystem::last_write_time(tmp.path(),
+                                     std::filesystem::file_time_type::clock::now() + ahead);
+  };
+  rewrite("changed", std::chrono::seconds(2));
+  BOOST_CHECK(buf.noticeDiskChange());
+  BOOST_CHECK(!buf.noticeDiskChange()); // the same change again: not reported
+  BOOST_CHECK(buf.changedOnDisk());     // though the file still differs
+
+  rewrite("changed again", std::chrono::seconds(4));
+  BOOST_CHECK(buf.noticeDiskChange());
+
+  // Reloading sets a new baseline; the next change is reported again.
+  BOOST_REQUIRE(buf.revert());
+  BOOST_CHECK(!buf.noticeDiskChange());
+  rewrite("and once more", std::chrono::seconds(6));
+  BOOST_CHECK(buf.noticeDiskChange());
+}
+
 // --- Revert ---
 
 BOOST_AUTO_TEST_CASE(revert_no_path_returns_error) {

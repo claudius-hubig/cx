@@ -2925,6 +2925,47 @@ BOOST_AUTO_TEST_CASE(e2e_format_rewrites_the_changed_lines) {
   BOOST_CHECK_EQUAL(readFile(tmp.path()), good + "int untidy;\nint two;\n" + good);
 }
 
+// A file changed by another program was only noticed on save. Coming
+// back to its buffer now says so, once per change.
+BOOST_AUTO_TEST_CASE(e2e_focus_warns_when_the_file_changed_on_disk) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile a("alpha\n"), b("beta\n");
+  PtySession session(24, 80, bin, {a.path().string(), b.path().string()});
+  session.readUntil("beta");
+
+  // Change a.txt while b is shown, then switch back to a.
+  {
+    std::ofstream f(a.path(), std::ios::binary);
+    f << "rewritten by someone else\n";
+  }
+  std::filesystem::last_write_time(a.path(), std::filesystem::file_time_type::clock::now() +
+                                                 std::chrono::seconds(2));
+  auto switchTo = [&](std::filesystem::path const& p) {
+    session.send("\x0f"); // Ctrl-o
+    session.readOutput(milliseconds{150});
+    session.send(p.string() + "\r");
+    return stripAnsi(session.readOutput(milliseconds{400}));
+  };
+  auto const warning = "changed on disk since it was loaded or saved";
+  auto out = switchTo(a.path());
+  BOOST_CHECK_MESSAGE(out.find(warning) != std::string::npos, out);
+
+  // Away and back again: already reported. A status message stays up for
+  // a while, so put another one there first: save the unchanged b.
+  out = switchTo(b.path());
+  session.send("\x13"); // Ctrl-s
+  session.readUntil("Saved to");
+  out = switchTo(a.path());
+  BOOST_CHECK_MESSAGE(out.find(warning) == std::string::npos, out);
+  BOOST_CHECK(out.find("Saved to") != std::string::npos);
+  BOOST_CHECK_EQUAL(readFile(b.path()), "beta\n");
+}
+
 // Closing a terminal normally sends SIGHUP, but only to a process the
 // terminal controls. Without it the editor just saw the end of its input
 // and exited, with every unsaved buffer lost.

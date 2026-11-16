@@ -250,7 +250,8 @@ the saved cursor / mark / viewport). `handleBareEscEsc()` services the
 overlay-dismissal half of `Esc-Esc`; clearing the mark only happens when
 no overlay is up. `updateFocusPointers()` re-binds `_buf` / `_view` to
 the focused panel after layout changes — split, close, focus, kill, or
-overlay restoration.
+overlay restoration — and, as every change of focus passes through it,
+warns when the newly focused buffer's file changed on disk.
 
 **Helpers used across action handlers**: `bufferWorkDir()` returns the
 parent directory of the focused buffer's file (or the process working
@@ -575,6 +576,10 @@ now runs after `loadFromFile()` in the file constructor.
 after a successful `save()`) so `changedOnDisk()` can warn when the file
 has been modified by another process. `Screen::Save` checks that flag
 before overwriting and prompts the user when it is set.
+`noticeDiskChange()` is the same check reporting each state of the file
+only once (until the next load or save); `Screen::updateFocusPointers()`
+uses it to warn in the status line when a buffer whose file changed gets
+focus.
 
 Line-ending style is captured during `loadFromFile()` into a
 `LineEndingStyle` enum (`Unix`, `Crlf`, `Cr`, `Mixed`). `\r` bytes are

@@ -176,6 +176,16 @@ public:
    */
   bool changedOnDisk() const;
 
+  /**
+   * @brief changedOnDisk(), but true only once for each state of the file:
+   *        a change already reported is not reported again until the file
+   *        changes once more, or a load or save sets a new baseline.
+   *
+   * For a warning shown whenever the buffer gets focus, which would
+   * otherwise repeat on every switch back to it.
+   */
+  bool noticeDiskChange();
+
 private:
   /** @brief Set the BufferMode from the file extension or `#!` line. */
   void detectMode();
@@ -203,11 +213,17 @@ private:
   bool _browsingHistory = false;
   /** @brief modified() when history browsing began; see applyVersionAt(). */
   bool _modifiedBeforeBrowsing = false;
-  /**
-   * @brief mtime of the backing file at the last load/save; nullopt while
-   *        no baseline is known.
-   */
-  std::optional<std::filesystem::file_time_type> _diskMtime;
-  /** @brief Size of the backing file at the last load/save; nullopt if unknown. */
-  std::optional<std::uintmax_t> _diskSize;
+  /** @brief What changedOnDisk() compares: the backing file's mtime and size. */
+  struct DiskStamp {
+    std::filesystem::file_time_type mtime;
+    std::optional<std::uintmax_t> size; /**< nullopt if it could not be read. */
+    bool operator==(DiskStamp const&) const = default;
+  };
+  /** @brief The backing file's stamp now; nullopt without a path or on a stat error. */
+  std::optional<DiskStamp> statDisk() const;
+
+  /** @brief The stamp at the last load/save; nullopt while no baseline is known. */
+  std::optional<DiskStamp> _diskStamp;
+  /** @brief The changed stamp noticeDiskChange() last reported, if any. */
+  std::optional<DiskStamp> _noticedStamp;
 };

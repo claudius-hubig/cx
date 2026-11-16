@@ -117,39 +117,41 @@ void TextBuffer::loadFromFile(std::filesystem::path const& path) {
   captureDiskStamp();
 }
 
-void TextBuffer::captureDiskStamp() {
-  if (!_path) {
-    _diskMtime.reset();
-    _diskSize.reset();
-    return;
-  }
-  std::error_code ec;
-  auto mt = std::filesystem::last_write_time(*_path, ec);
-  if (ec) {
-    _diskMtime.reset();
-    _diskSize.reset();
-    return;
-  }
-  std::error_code ec2;
-  auto sz = std::filesystem::file_size(*_path, ec2);
-  _diskMtime = mt;
-  _diskSize = ec2 ? std::optional<std::uintmax_t>{} : std::optional<std::uintmax_t>{sz};
-}
-
-bool TextBuffer::changedOnDisk() const {
-  if (!_path || !_diskMtime)
-    return false;
+std::optional<TextBuffer::DiskStamp> TextBuffer::statDisk() const {
+  if (!_path)
+    return std::nullopt;
   std::error_code ec;
   auto mt = std::filesystem::last_write_time(*_path, ec);
   if (ec)
+    return std::nullopt;
+  auto sz = std::filesystem::file_size(*_path, ec);
+  return DiskStamp{mt, ec ? std::optional<std::uintmax_t>{} : std::optional<std::uintmax_t>{sz}};
+}
+
+void TextBuffer::captureDiskStamp() {
+  _diskStamp = statDisk();
+  _noticedStamp.reset();
+}
+
+bool TextBuffer::changedOnDisk() const {
+  if (!_diskStamp)
     return false;
-  if (mt != *_diskMtime)
+  auto now = statDisk();
+  if (!now)
+    return false;
+  if (now->mtime != _diskStamp->mtime)
     return true;
-  std::error_code ec2;
-  auto sz = std::filesystem::file_size(*_path, ec2);
-  if (ec2 || !_diskSize)
+  return now->size && _diskStamp->size && *now->size != *_diskStamp->size;
+}
+
+bool TextBuffer::noticeDiskChange() {
+  if (!changedOnDisk())
     return false;
-  return sz != *_diskSize;
+  auto now = statDisk();
+  if (!now || now == _noticedStamp)
+    return false;
+  _noticedStamp = now;
+  return true;
 }
 
 void TextBuffer::normalizeLineEndings() {

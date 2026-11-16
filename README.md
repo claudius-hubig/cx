@@ -57,7 +57,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Line wrapping** — toggle soft line wrap on/off
 - **Whitespace display** — toggle visible whitespace markers (spaces, tabs, newlines)
 - **Save / Save As** — write to the backing file or choose a new path. Saving prompts for confirmation if the file no longer exists on disk, or if its mtime/size has changed since load (external-modification guard).
-- **Revert** — reload a buffer's contents from disk with confirmation
+- **Revert** — reload a buffer's contents from disk with confirmation. When you switch to a buffer whose file another program changed since it was loaded or saved, the status line says so (once per change)
 - **Auto-indent** — pressing Enter in C/C++, JSON, or Python modes preserves the leading-spaces indent of the previous line.
 - **Overwrite mode** — the `Insert` key toggles between insert and overwrite editing (per buffer). In overwrite mode typing replaces the character under the cursor instead of pushing it right; at end of line it appends, and Enter always inserts a newline. The active mode shows as `I`/`O` on the modeline and as the cursor shape (steady block for insert, steady bar for overwrite).
 - **Line-ending detection** — files loaded with CRLF or lone-CR endings prompt to translate to `\n`; mixed-ending files surface a warning. Acknowledged once per load.

@@ -405,6 +405,15 @@ void Screen::updateFocusPointers() {
     _buf = nullptr;
     _view = nullptr;
   }
+  // Every change of focus comes through here: a buffer switch, a panel
+  // focused by key or mouse, a panel closed. The file may have been
+  // changed behind the editor's back while it was out of sight.
+  // Named, as a status message outlives a switch to another buffer.
+  if (auto* text = dynamic_cast<TextBuffer*>(_buf); text && text->noticeDiskChange()) {
+    auto name = _bufMgr ? _bufMgr->displayName(text->name()) : text->name();
+    setStatus(escapeNonPrintable(name) + " changed on disk since it was loaded or saved" +
+              " (Esc-r reloads it)");
+  }
 }
 
 void Screen::setBufferManager(BufferManager& mgr) { _bufMgr = &mgr; }
