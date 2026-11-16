@@ -18,6 +18,7 @@
 #include <random>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 static std::mt19937_64 rng;
@@ -33,6 +34,22 @@ static void onAbort(int) {
 [[noreturn]] static void fail(std::string const& w) {
   std::fprintf(stderr, "FAIL: %s (after: %s)\n", w.c_str(), last.c_str());
   std::exit(3);
+}
+
+// Delete the tree at @p p. The fuzzer makes directories unreadable on
+// purpose, and remove_all cannot delete what it cannot list, so every
+// directory gets its owner permissions back first.
+static void wipe(fs::path const& p) {
+  std::error_code ec;
+  if (fs::symlink_status(p, ec).type() == fs::file_type::directory) {
+    fs::permissions(p, fs::perms::owner_all, fs::perm_options::add, ec);
+    std::vector<fs::path> children;
+    for (fs::directory_iterator it(p, ec), end; !ec && it != end; it.increment(ec))
+      children.push_back(it->path());
+    for (auto const& child : children)
+      wipe(child);
+  }
+  fs::remove_all(p, ec);
 }
 
 struct Sink : BufferSink {
@@ -85,8 +102,7 @@ int main(int argc, char** argv) {
   for (unsigned long long it = 0; it < iters; ++it) {
     rng.seed(seed0 + it);
     std::error_code ec;
-    fs::permissions(top / "work" / "sub", fs::perms::owner_all, ec);
-    fs::remove_all(top, ec);
+    wipe(top);
     fs::path work = top / "outer" / "work";
     fs::create_directories(work / "sub" / "deep");
     std::ofstream(top / "outer" / "sentinel") << "keep";
@@ -306,6 +322,6 @@ int main(int argc, char** argv) {
   }
   std::error_code ec;
   fs::current_path("/", ec);
-  fs::remove_all(top, ec);
+  wipe(top);
   std::printf("ok %llu iterations from seed %llu\n", iters, seed0);
 }

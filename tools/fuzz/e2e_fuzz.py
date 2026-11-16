@@ -537,8 +537,15 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
                         if not alive():
                             break
         peak_rss = max(peak_rss, rss_mb(pid))
-    if alive():
+    # SIGTERM is cx's exit command: with modified buffers it asks about
+    # them, and a second SIGTERM while it asks writes them to copies and
+    # exits. Only an editor that survives both is unkillable.
+    term_sent = 0
+    for _ in range(2):
+        if not alive():
+            break
         os.kill(pid, signal.SIGTERM)
+        term_sent += 1
         for _ in range(30):
             drain(0.05)
             if not alive():
@@ -559,7 +566,9 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
                 verdict = "hang" if hung else "crash"
         elif os.WIFEXITED(status):
             det["exit"] = os.WEXITSTATUS(status)
-            if det["exit"] not in (0,):
+            # After the second SIGTERM, 1 means an emergency copy could not
+            # be written, which the tree changing behind cx's back allows.
+            if det["exit"] not in ((0, 1) if term_sent == 2 else (0,)):
                 verdict = "exit_nonzero"
     elif status == -9:
         verdict = "unkillable"
