@@ -857,7 +857,9 @@ bool Screen::emergencySave() noexcept {
         report("unsaved " + name + " written to " + copy);
       } else {
         report("could not save " + name + ": " + res.error());
-        logError(res.error());
+        // Escaped as on the terminal: a file name may hold a newline, which
+        // would split the entry in the log.
+        logError(escapeNonPrintable(res.error()));
         allSaved = false;
       }
     }
@@ -2355,6 +2357,11 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
 
   if (pid == 0) {
     // Child: wire up pipes and exec.
+    // A process group of its own, so that stopping the command stops what
+    // it started too: `sh -c 'sleep 60'` keeps sleep as a child of its
+    // own, and killing only the shell left it running with the output
+    // pipe open. (The parent sets it as well, whichever runs first.)
+    setpgid(0, 0);
     // Reset SIGWINCH to default — execvp() will reset it anyway, but if
     // we fail before exec the child should not run our handler against
     // its (separate) copy of g_resized.
@@ -2390,6 +2397,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   }
 
   // Parent: close child-side pipe ends.
+  setpgid(pid, pid);
   close(pipeIn[0]);
   close(pipeOut[1]);
   close(pipeErr[1]);
@@ -2419,7 +2427,11 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   };
 
   // Drain output pipes, close them, reap child, clear status, and return a killed result.
+  // The drain takes only what is there: a process that left the command's
+  // process group (setsid) may still hold the pipes open.
   auto killReturn = [&]() -> PipeResult {
+    for (int fd : {pipeOut[0], pipeErr[0]})
+      fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
     drainFd(pipeOut[0], stdoutData);
     drainFd(pipeErr[0], stderrData);
     close(pipeOut[0]);
@@ -2450,7 +2462,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   // Kill the command at the limit. No drain: the output is not wanted, and
   // a grandchild could hold the pipes open.
   auto limitReturn = [&]() -> PipeResult {
-    kill(pid, SIGKILL);
+    kill(-pid, SIGKILL);
     if (stdinOpen)
       close(pipeIn[1]);
     close(pipeOut[0]);
@@ -2474,6 +2486,48 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
   int status = 0;
   bool reaped = false;
   int childPollMs = 1;
+
+  // Stop the command and everything it started (its process group):
+  // SIGTERM, a second to clean up, then SIGKILL.
+  auto stopCommand = [&]() -> PipeResult {
+    kill(-pid, SIGTERM);
+    if (stdinOpen) {
+      close(pipeIn[1]);
+      stdinOpen = false;
+    }
+    for (int i = 0; i < 10; ++i) {
+      int wstatus;
+      pid_t wp;
+      while ((wp = waitpid(pid, &wstatus, WNOHANG)) < 0 && errno == EINTR) {
+      }
+      if (wp > 0)
+        return killReturn();
+      // A negative fd is ignored by poll(): skip pipes at EOF so
+      // the child really gets its 100 ms per round.
+      pollfd drain[] = {{outDone ? -1 : pipeOut[0], POLLIN, 0},
+                        {errDone ? -1 : pipeErr[0], POLLIN, 0}};
+      int pr = poll(drain, 2, 100);
+      if (pr < 0 && errno == EINTR) {
+        // SIGWINCH (or other) interrupted — surface a redraw and
+        // retry without trusting stale revents.
+        if (g_resized) {
+          g_resized = 0;
+          resize();
+          draw();
+        }
+        continue;
+      }
+      if (pr <= 0)
+        continue;
+      readPipe(pipeOut[0], drain[0].revents, stdoutData, outDone);
+      readPipe(pipeErr[0], drain[1].revents, stderrData, errDone);
+    }
+    kill(-pid, SIGKILL);
+    int wstatus;
+    while (waitpid(pid, &wstatus, 0) < 0 && errno == EINTR) {
+    }
+    return killReturn();
+  };
 
   for (;;) {
     // With every pipe closed only the child's exit is left to wait for,
@@ -2512,7 +2566,27 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
       childPollMs = std::min(childPollMs * 2, 50);
     }
 
-    int rc = poll(fds.data(), fds.size(), timeoutMs);
+    // Told to terminate: the editor is not to wait for a formatter or a
+    // search over a large tree first, so the command is stopped as if the
+    // kill prompt had been answered with y; the request is acted on back
+    // in loop(). SIGTERM is held back while the flag is checked and let
+    // in by ppoll() as it starts to wait, so it cannot slip in between
+    // and leave the wait to run its full time (forever, with the kill
+    // prompt up).
+    sigset_t termOnly, unblocked;
+    sigemptyset(&termOnly);
+    sigaddset(&termOnly, SIGTERM);
+    sigprocmask(SIG_BLOCK, &termOnly, &unblocked);
+    int rc = -1;
+    if (g_termRequests == 0) {
+      timespec ts{timeoutMs / 1000, (timeoutMs % 1000) * 1'000'000L};
+      rc = ppoll(fds.data(), fds.size(), timeoutMs < 0 ? nullptr : &ts, &unblocked);
+    }
+    int const pollErrno = errno;
+    sigprocmask(SIG_SETMASK, &unblocked, nullptr);
+    if (g_termRequests > 0)
+      return stopCommand();
+    errno = pollErrno;
     if (rc < 0) {
       if (errno == EINTR) {
         if (g_resized) {
@@ -2562,46 +2636,7 @@ std::optional<Screen::PipeResult> Screen::runPipeCommand(std::vector<std::string
         char ch;
         if (read(STDIN_FILENO, &ch, 1) == 1) {
           if (ch == 'y' || ch == 'Y') {
-            // Give the process 1s to clean up after SIGTERM before forcing SIGKILL.
-            kill(pid, SIGTERM);
-            if (stdinOpen) {
-              close(pipeIn[1]);
-              stdinOpen = false;
-            }
-            for (int i = 0; i < 10; ++i) {
-              int wstatus;
-              pid_t wp;
-              while ((wp = waitpid(pid, &wstatus, WNOHANG)) < 0 && errno == EINTR) {
-              }
-              if (wp > 0)
-                return killReturn();
-              // A negative fd is ignored by poll(): skip pipes at EOF so
-              // the child really gets its 100 ms per round.
-              pollfd drain[] = {{outDone ? -1 : pipeOut[0], POLLIN, 0},
-                                {errDone ? -1 : pipeErr[0], POLLIN, 0}};
-              int pr = poll(drain, 2, 100);
-              if (pr < 0 && errno == EINTR) {
-                // SIGWINCH (or other) interrupted — surface a redraw and
-                // retry without trusting stale revents.
-                if (g_resized) {
-                  g_resized = 0;
-                  resize();
-                  draw();
-                }
-                continue;
-              }
-              if (pr <= 0)
-                continue;
-              readPipe(pipeOut[0], drain[0].revents, stdoutData, outDone);
-              readPipe(pipeErr[0], drain[1].revents, stderrData, errDone);
-            }
-            kill(pid, SIGKILL);
-            {
-              int wstatus;
-              while (waitpid(pid, &wstatus, 0) < 0 && errno == EINTR) {
-              }
-            }
-            return killReturn();
+            return stopCommand();
           } else if (ch == 'n' || ch == 'N') {
             _statusMsg.clear();
             _statusExpiry.reset();

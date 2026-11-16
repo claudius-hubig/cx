@@ -151,8 +151,11 @@ Key responsibilities:
   that flow is open means nobody is answering: `loop()` returns
   `Exit::Emergency` and `main` calls `emergencySave()`. A cancelled
   exit flow resets this, so the next SIGTERM asks again. The handler
-  only counts; requests are acted on in the loop, so one that arrives
-  while a command is running waits for it, as a key would.
+  only counts; requests are acted on in the loop, and the waits that
+  could keep the editor from getting back to it give way to a pending
+  request: `readByte()` (the rest of an escape sequence or a paste never
+  comes), the Esc and C-x prefixes, and `runPipeCommand()`, which stops
+  the running command as the kill prompt's `y` does.
 - **Emergency save**: `emergencySave()` is the way out when nobody can
   be asked: after that second SIGTERM, when stdin is closed (`loop()`
   returns `Exit::Emergency` for a `read()` of 0 bytes too: the terminal
@@ -209,9 +212,14 @@ Key responsibilities:
 - **Subprocess execution**: `runPipeCommand()` is the unified subprocess
   runner used by Format (Esc-f), Tab-format (Cpp mode), and PipeReplace
   (Ctrl-p). It forks/execs an external command, pipes stdin/stdout/stderr,
-  and monitors the child with `poll()`. After 10 seconds of inactivity it
+  and monitors the child with `ppoll()`. The child runs in a process group
+  of its own, so stopping it stops what it started too (`sh -c 'sleep
+  60'` keeps `sleep` as a child of the shell, which held the output pipe
+  open after the shell was killed). After 10 seconds of inactivity it
   displays a kill prompt; the user can press `y` to SIGTERM/SIGKILL the
-  child or `n` to dismiss. SIGWINCH is handled during the poll loop so
+  process group or `n` to dismiss, and a SIGTERM to the editor does the
+  same as `y`. What is left in the pipes after a kill is drained without
+  blocking. SIGWINCH is handled during the poll loop so
   the terminal redraws correctly while a command is running. A pipe that
   reaches EOF leaves the poll set, and once every pipe is closed the loop
   polls for the child's exit instead of blocking in `waitpid()`, so a

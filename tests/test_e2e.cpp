@@ -2808,6 +2808,33 @@ BOOST_AUTO_TEST_CASE(e2e_sigterm_ends_the_wait_for_an_unfinished_escape_sequence
   }
 }
 
+// A SIGTERM used to wait for a command the editor was running (a pipe, a
+// formatter, a search) to end on its own.
+BOOST_AUTO_TEST_CASE(e2e_sigterm_stops_a_running_command) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("text\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("text");
+  // Pipe the line through a command that takes a minute: mark, End, Ctrl-P.
+  session.send(std::string_view("\x00\x1b[F\x10", 5));
+  session.readUntil("Shell command:", milliseconds{1000});
+  session.send("sleep 60\r");
+  session.readOutput(milliseconds{300});
+  BOOST_REQUIRE(running(session));
+
+  auto const t0 = std::chrono::steady_clock::now();
+  kill(session.childPid, SIGTERM);
+  // Nothing was modified, so the editor exits once the command is stopped.
+  BOOST_CHECK_EQUAL(session.waitExit(milliseconds{4000}), 0);
+  BOOST_CHECK_LT(std::chrono::steady_clock::now() - t0, std::chrono::seconds(4));
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "text\n");
+}
+
 BOOST_AUTO_TEST_CASE(e2e_sigterm_cancels_a_prompt_and_can_be_cancelled_itself) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {
