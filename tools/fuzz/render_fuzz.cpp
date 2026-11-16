@@ -340,15 +340,15 @@ int main(int argc, char** argv) {
       std::vector<GrepHit> hits;
       for (std::size_t n = R(10); n; --n) {
         GrepHit h;
-        h.displayPath = genLine(3);
-        h.path = "/r/" + h.displayPath;
+        auto display = genLine(3);
+        h.file = std::make_shared<GrepFile const>(GrepFile{"/r/" + display, display});
         h.line = R(3) ? R(100000) : static_cast<std::size_t>(-1);
         h.text = genLine(R(5) == 0 ? 200 : 8);
         hits.push_back(std::move(h));
       }
       gCtx = "seed " + std::to_string(seed) + " grep";
       GrepBuffer b;
-      b.refresh(genLine(3), "/r/" + genLine(2), std::move(hits));
+      b.refresh(genLine(3), "/r/" + genLine(2), std::move(hits), R(2) == 0);
       renderRandom(b, true);
       break;
     }

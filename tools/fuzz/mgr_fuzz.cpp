@@ -278,9 +278,12 @@ int main(int argc, char** argv) {
         break;
       case 22: {
         std::vector<GrepHit> hits;
-        for (std::size_t n = R(4); n; --n)
-          hits.push_back({work / rname(), rname(), R(9), rname()});
-        auto& g = mgr.grepBuffer(rname(), work, std::move(hits));
+        for (std::size_t n = R(4); n; --n) {
+          auto display = rname();
+          hits.push_back(
+              {std::make_shared<GrepFile const>(GrepFile{work / display, display}), R(9), rname()});
+        }
+        auto& g = mgr.grepBuffer(rname(), work, std::move(hits), R(2) == 0);
         (void)g.selectedHit({R(g.lineCount() + 1), 0});
         break;
       }
