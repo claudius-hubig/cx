@@ -57,15 +57,19 @@ void* g_hookContext = nullptr;
 // How long the hook gets before SIGALRM ends the process.
 constexpr unsigned kHookSeconds = 60;
 
-// Put the terminal back, run the hook, then let the signal end the
-// process as it would have: the handler was installed with SA_RESETHAND,
-// so the default action is in place again and the re-raised signal is
-// delivered when this returns, with a core dump where the signal has one.
+// Put the terminal back, run the hook, then let the signal take the
+// course it would have taken without the editor: the disposition from
+// before SetupTerminal is put back (the default action, unless something
+// that ran first installed a handler of its own, such as a crash
+// reporter) and the re-raised signal is delivered to it when this
+// returns, with a core dump where the signal has one.
 //
 // Apart from the hook only async-signal-safe calls are made (write,
-// tcsetattr, alarm, raise). The hook is taken out before it is called, so
-// it runs once: a fault inside it, or another of these signals arriving
-// meanwhile, comes back here, finds no hook and ends the process.
+// tcsetattr, alarm, sigaction, raise). The hook is taken out before it is
+// called, so it runs once: a fault inside it, or another of these signals
+// arriving meanwhile, comes back here, finds no hook and ends the process.
+// The handler was installed with SA_RESETHAND as well, so that a fault
+// before the old disposition is back cannot loop.
 void restoreTerminalAndReraise(int signo) {
   if (write(STDOUT_FILENO, kAltScreenOff.data(), kAltScreenOff.size()) == -1) {
     // Nothing useful can be done about it from a signal handler.
@@ -75,6 +79,9 @@ void restoreTerminalAndReraise(int signo) {
     alarm(kHookSeconds);
     hook(g_hookContext);
   }
+  for (std::size_t i = 0; i < kFatalSignals.size(); ++i)
+    if (kFatalSignals[i] == signo)
+      sigaction(signo, &g_savedActions[i], nullptr);
   raise(signo);
 }
 
