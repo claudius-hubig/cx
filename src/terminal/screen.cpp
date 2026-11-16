@@ -2673,11 +2673,21 @@ void Screen::executeFormat(std::optional<std::pair<std::size_t, std::size_t>> li
     return;
   }
 
-  auto savedLine = _view->point().line;
-  auto savedOffset = _view->point().offset;
-  _view->replaceRegion({0, 0}, endPt, res->stdoutData);
-  auto line = std::min(savedLine, _buf->lineCount() - 1);
-  auto offset = std::min(savedOffset, _buf->lineContent(line).size());
+  // A formatter usually changes a few lines of the file. Rewriting only
+  // those keeps the rest of the buffer's lines shared with the history
+  // (a version per Tab used to cost the size of the file) and their
+  // syntax cache valid.
+  std::vector<std::string> formatted;
+  for (std::string_view rest = res->stdoutData;;) {
+    auto nl = rest.find('\n');
+    formatted.emplace_back(rest.substr(0, nl));
+    if (nl == std::string_view::npos)
+      break;
+    rest.remove_prefix(nl + 1);
+  }
+  auto line = std::min(_view->point().line, formatted.size() - 1);
+  auto offset = std::min(_view->point().offset, formatted[line].size());
+  _view->replaceLines(0, _buf->lineCount() - 1, formatted, BufferPoint{line, offset});
   _view->setPoint(line, offset);
   _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
   setStatus("Formatted");

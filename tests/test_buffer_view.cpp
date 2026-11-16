@@ -715,6 +715,68 @@ BOOST_AUTO_TEST_CASE(replaceRegion_inserts_deletes_and_skips_no_ops) {
   view.exitHistoryModeCancel();
 }
 
+// What Tab-format relies on: the formatter returns the whole file, and
+// only the lines it changed may be rewritten.
+BOOST_AUTO_TEST_CASE(replaceLines_rewrites_only_the_lines_that_differ) {
+  std::string doc;
+  for (int i = 0; i < 2000; ++i)
+    doc += "line " + std::to_string(i) + "\n";
+  TempFile f(doc);
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  LineStore before = buf.lines(); // a snapshot: shares chunks and lines
+  auto versions = buf.history().size();
+
+  // The same text with two neighbouring lines changed and one added.
+  std::vector<std::string> lines;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i)
+    lines.push_back(buf.lineContent(i));
+  lines[1000] = "changed";
+  lines[1001] = "changed too";
+  lines.insert(lines.begin() + 1002, "added");
+
+  view.setMark({3, 0});
+  BOOST_CHECK(view.replaceLines(0, buf.lineCount() - 1, lines, BufferPoint{1000, 2}));
+  BOOST_CHECK_EQUAL(buf.lineCount(), lines.size());
+  for (std::size_t i = 0; i < lines.size(); ++i)
+    BOOST_REQUIRE_EQUAL(buf.lineContent(i), lines[i]);
+  // Same storage on either side of the change, not just the same text.
+  for (std::size_t i : {0u, 999u})
+    BOOST_CHECK(buf.lines()[i] == before[i]);
+  for (std::size_t i : {1002u, 1999u, 2000u})
+    BOOST_CHECK(buf.lines()[i + 1] == before[i]);
+  BOOST_CHECK(view.point() == (BufferPoint{1000, 2}));
+  BOOST_CHECK(!view.mark());
+  BOOST_CHECK_EQUAL(buf.history().size(), versions + 1);
+
+  // One step back is the text as it was.
+  BOOST_REQUIRE(view.enterHistoryMode());
+  view.stepHistory(-1);
+  BOOST_CHECK_EQUAL(buf.lineCount(), 2001u);
+  BOOST_CHECK_EQUAL(buf.lineContent(1000), "line 1000");
+  view.exitHistoryModeCancel();
+}
+
+BOOST_AUTO_TEST_CASE(replaceLines_with_the_same_text_changes_nothing) {
+  TempFile f("one\ntwo\nthree\n");
+  TextBuffer buf(f.path().string(), f.path());
+  BufferView view(buf);
+  auto versions = buf.history().size();
+  std::vector<std::string> same{"two", "three"};
+  BOOST_CHECK(!view.replaceLines(1, 2, same, BufferPoint{2, 1}));
+  BOOST_CHECK(!buf.modified());
+  BOOST_CHECK_EQUAL(buf.history().size(), versions);
+  BOOST_CHECK(view.point() == (BufferPoint{2, 1}));
+
+  // A range in the middle, and lines only removed.
+  std::vector<std::string> fewer{"TWO"};
+  BOOST_CHECK(view.replaceLines(1, 2, fewer));
+  BOOST_CHECK_EQUAL(buf.lineCount(), 3u); // one, TWO, and the empty last line
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "one");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "TWO");
+  BOOST_CHECK(view.point() == (BufferPoint{1, 3}));
+}
+
 BOOST_AUTO_TEST_CASE(cancel_history_restores_latest_and_keeps_every_version) {
   TempFile f("A\n");
   TextBuffer buf(f.path().string(), f.path());

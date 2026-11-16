@@ -2888,6 +2888,43 @@ BOOST_AUTO_TEST_CASE(e2e_burst_of_input_is_not_redrawn_per_byte) {
   BOOST_CHECK_EQUAL(readFile(tmp.path()), burst + "end\n");
 }
 
+// Formatting replaces only the lines the formatter changed (it used to
+// replace the whole buffer): the result and the cursor must be the same.
+BOOST_AUTO_TEST_CASE(e2e_format_rewrites_the_changed_lines) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+  if (std::system("clang-format --version >/dev/null 2>&1") != 0) {
+    BOOST_WARN_MESSAGE(false, "clang-format not found, skipping");
+    return;
+  }
+
+  std::string good;
+  for (int i = 0; i < 300; ++i)
+    good += "int v" + std::to_string(i) + ";\n";
+  TempFile tmp(good + "int   untidy;\nint  two  ;\n" + good, ".cpp");
+  PtySession session(24, 80, bin, {tmp.path().string() + ":301"});
+  session.readUntil("untidy");
+
+  session.send("\x1b"
+               "f"); // Esc-f: format the buffer
+  auto out = stripAnsi(session.readUntil("Formatted", milliseconds{5000}));
+  BOOST_CHECK(out.find("Formatted") != std::string::npos);
+  BOOST_CHECK(out.find("301:1") != std::string::npos); // the cursor stays on its line
+
+  // A second run has nothing to do.
+  session.send("\x1b"
+               "f");
+  out = stripAnsi(session.readUntil("Already formatted", milliseconds{5000}));
+  BOOST_CHECK(out.find("Already formatted") != std::string::npos);
+
+  session.send("\x13"); // Ctrl-s
+  session.readUntil("Saved to");
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), good + "int untidy;\nint two;\n" + good);
+}
+
 // Closing a terminal normally sends SIGHUP, but only to a process the
 // terminal controls. Without it the editor just saw the end of its input
 // and exited, with every unsaved buffer lost.

@@ -454,9 +454,14 @@ All user-facing movement, editing, and render operations are methods on
   single history entry however long the chunk is.
   `replaceRegion(from, to, text)` swaps a region for new text as one
   edit and one history entry; `Screen` uses it wherever text is replaced
-  (find-and-replace, formatting, piping a region, paste cycling), so
+  (find-and-replace, piping a region, paste cycling), so
   undoing never lands on a state with the old text gone and the new not
-  yet there.
+  yet there. `replaceLines(fromLine, toLine, lines, cursor)` is the same
+  for whole lines whose replacement was computed from all of them and
+  mostly equals them (reflow, the formatter's output for the whole
+  buffer): the equal lines at either end are left alone, so they stay
+  shared with earlier history versions and keep their syntax cache, and
+  only the span between them is rewritten.
 - **Case conversion**: `convertCase(CaseOp)` upper/lower/capitalizes the
   active region, or the word at/after the cursor when no mark is set. The
   transform is byte-wise ASCII (UTF-8-safe and length-preserving), applied

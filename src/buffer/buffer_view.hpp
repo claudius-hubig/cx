@@ -331,6 +331,29 @@ public:
    * @return The point after the inserted text.
    */
   BufferPoint replaceRegion(BufferPoint from, BufferPoint to, std::string_view text);
+
+  /**
+   * @brief Replace the whole lines [@p fromLine, @p toLine] with @p lines
+   *        as one edit and one history version, rewriting only the span
+   *        that differs.
+   *
+   * For a result computed from the whole range of which typically little
+   * has changed (a reflow, an external formatter run over the buffer).
+   * Lines that are equal at either end of the two ranges are left alone:
+   * they keep their storage, which earlier history versions share, and
+   * their syntax cache. Only the lines between them are rewritten. If
+   * nothing differs the buffer is not modified and no version is
+   * recorded.
+   *
+   * Collapses to a single cursor and clears the mark. The point is put at
+   * @p cursor, or at the end of the replacement if none is given.
+   *
+   * @pre @p lines is not empty; @p fromLine <= @p toLine < lineCount();
+   *      @p cursor is a position in the buffer as it is afterwards.
+   * @return True if the buffer was changed.
+   */
+  bool replaceLines(std::size_t fromLine, std::size_t toLine, std::span<std::string const> lines,
+                    std::optional<BufferPoint> cursor = std::nullopt);
   /** @} */
 
   /**

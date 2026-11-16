@@ -1353,53 +1353,12 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
     return *formatMarkdownTable(lines, cursor, targetWidth);
   };
 
-  // Replace lines [fromLine, toLine] with `lines` (never empty) as a
-  // single edit so undo restores it in one step, and place the cursor at
-  // `cursor` (default: the end of the replacement). Only the span that
-  // differs is rewritten: lines that are the same at either end keep
-  // their storage, which earlier undo snapshots share, and identical
-  // text leaves the buffer unmodified.
-  auto commit = [&](std::size_t fromLine, std::size_t toLine, std::vector<std::string> const& lines,
-                    std::optional<BufferPoint> cursor) {
-    _mark.reset();
-    _desiredCol.reset();
-    std::size_t const oldCount = toLine - fromLine + 1, newCount = lines.size();
-    std::size_t const common = std::min(oldCount, newCount);
-    std::size_t head = 0, tail = 0;
-    while (head < common && lines[head] == _buf.lineContent(fromLine + head))
-      ++head;
-    while (tail < common - head && lines[newCount - 1 - tail] == _buf.lineContent(toLine - tail))
-      ++tail;
-    BufferPoint const end{fromLine + newCount - 1, lines.back().size()};
-    if (head == oldCount && head == newCount) {
-      _point = cursor.value_or(end);
-      return;
-    }
-    // The edit is text-based, so both spans need a line: when lines were
-    // only added or only removed, take one unchanged neighbour along.
-    if (head + tail == oldCount || head + tail == newCount)
-      --(head > 0 ? head : tail);
-
-    std::string replacement;
-    for (std::size_t k = head; k < newCount - tail; ++k) {
-      if (k > head)
-        replacement += '\n';
-      replacement += lines[k];
-    }
-    std::size_t const first = fromLine + head, last = toLine - tail;
-    BufferPoint regionStart{first, 0};
-    _buf.deleteRegion(regionStart, {last, _buf.lineContent(last).size()});
-    _buf.insertText(replacement, regionStart);
-    syncAfterEdit();
-    _point = cursor.value_or(end);
-    _buf.recordVersion(_point);
-  };
-
   // No region, cursor in a table: align it and wrap the cursor's column.
   if (!_mark) {
     if (auto t = tableAt(_point.line)) {
       auto f = formatTable(*t, BufferPoint{_point.line - t->first, _point.offset});
-      commit(t->first, t->last, f.lines, BufferPoint{t->first + f.cursor->line, f.cursor->offset});
+      replaceLines(t->first, t->last, f.lines,
+                   BufferPoint{t->first + f.cursor->line, f.cursor->offset});
       return;
     }
   }
@@ -1584,7 +1543,7 @@ void BufferView::reflowParagraph(std::size_t targetWidth, ReflowTables tables) {
         std::ranges::move(reflowBlock(sub), std::back_inserter(out));
     }
   }
-  commit(fromLine, toLine, out, std::nullopt);
+  replaceLines(fromLine, toLine, out);
 }
 
 void BufferView::adjustCursorToIndent() {
@@ -1691,6 +1650,50 @@ BufferPoint BufferView::replaceRegion(BufferPoint from, BufferPoint to, std::str
 
   _buf.recordVersion(_point);
   return _point;
+}
+
+bool BufferView::replaceLines(std::size_t fromLine, std::size_t toLine,
+                              std::span<std::string const> lines,
+                              std::optional<BufferPoint> cursor) {
+  if (_buf.readonly())
+    return false;
+  if (_docVersion != _buf.docVersion())
+    clampToBuffer();
+  collapseCursors();
+  _mark.reset();
+  _desiredCol.reset();
+
+  std::size_t const oldCount = toLine - fromLine + 1, newCount = lines.size();
+  std::size_t const common = std::min(oldCount, newCount);
+  std::size_t head = 0, tail = 0;
+  while (head < common && lines[head] == _buf.lineContent(fromLine + head))
+    ++head;
+  while (tail < common - head && lines[newCount - 1 - tail] == _buf.lineContent(toLine - tail))
+    ++tail;
+  BufferPoint const end{fromLine + newCount - 1, lines.back().size()};
+  if (head == oldCount && head == newCount) {
+    _point = cursor.value_or(end);
+    return false;
+  }
+  // The edit is text-based, so both spans need a line: when lines were
+  // only added or only removed, take one unchanged neighbour along.
+  if (head + tail == oldCount || head + tail == newCount)
+    --(head > 0 ? head : tail);
+
+  std::string replacement;
+  for (std::size_t k = head; k < newCount - tail; ++k) {
+    if (k > head)
+      replacement += '\n';
+    replacement += lines[k];
+  }
+  std::size_t const first = fromLine + head, last = toLine - tail;
+  BufferPoint regionStart{first, 0};
+  _buf.deleteRegion(regionStart, {last, _buf.lineContent(last).size()});
+  _buf.insertText(replacement, regionStart);
+  syncAfterEdit();
+  _point = cursor.value_or(end);
+  _buf.recordVersion(_point);
+  return true;
 }
 
 // --- Multiple cursors ---
