@@ -546,7 +546,7 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
             break
         os.kill(pid, signal.SIGTERM)
         term_sent += 1
-        for _ in range(30):
+        for _ in range(60):
             drain(0.05)
             if not alive():
                 break
@@ -585,7 +585,13 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
     errf = os.path.join(workdir, ".cx-errors")
     if os.path.exists(errf):
         det["cx_errors"] = open(errf, errors="replace").read()[-4000:]
-        if verdict == "ok":
+        # An emergency copy that cannot be written next to its file (one
+        # in /proc, a directory the fuzzer removed) is logged, as it should
+        # be; it is not a finding.
+        expected = re.compile(r"(cannot create|write error for) .*\.unsaved-\d{8}T\d{6}Z$")
+        unexpected = [l for l in open(errf, errors="replace").read().splitlines()
+                      if l.strip() and not expected.search(l)]
+        if unexpected and verdict == "ok":
             verdict = "cx_error"
     if peak_rss > (2500 if ASAN else 1500) and verdict == "ok":
         verdict = "memory"
