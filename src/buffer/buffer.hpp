@@ -33,6 +33,29 @@
 enum class BufferMode { Txt, Cpp, Md, Jsn, Dif, Sh, Yml, Tml, Py };
 
 /**
+ * @brief What Esc-; puts in front of a line to comment it out in @p mode,
+ *        space included; std::nullopt for a mode without line comments
+ *        (plain text, Markdown, JSON, diffs).
+ */
+constexpr std::optional<std::string_view> lineCommentPrefix(BufferMode mode) {
+  switch (mode) {
+  case BufferMode::Cpp:
+    return "// ";
+  case BufferMode::Sh:
+  case BufferMode::Py:
+  case BufferMode::Yml:
+  case BufferMode::Tml:
+    return "# ";
+  case BufferMode::Txt:
+  case BufferMode::Md:
+  case BufferMode::Jsn:
+  case BufferMode::Dif:
+    break;
+  }
+  return std::nullopt;
+}
+
+/**
  * @brief True if @p line is a git merge-conflict marker (7 identical
  *        leading '<', '=', or '>' characters).
  */

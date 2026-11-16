@@ -3967,11 +3967,11 @@ void Screen::dispatchAction(Action action) {
     if (requireNotInHistoryMode())
       break;
     if (_buf && !_buf->readonly()) {
-      // Mode-defined line-comment prefix. Markdown / JSON / Diff lack a
-      // line-comment form so we surface a status hint instead of
-      // silently picking the wrong syntax.
-      if (_buf->mode() == BufferMode::Cpp) {
-        _view->toggleComment("// ");
+      // Mode-defined line-comment prefix. Plain text, Markdown, JSON and
+      // diffs lack a line-comment form, so we surface a status hint
+      // instead of silently picking the wrong syntax.
+      if (auto prefix = lineCommentPrefix(_buf->mode())) {
+        _view->toggleComment(*prefix);
         _view->ensureVisible(rowsForBuffer(), pcols, _view->wrap());
         _pasteState.reset();
       } else {

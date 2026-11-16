@@ -147,6 +147,27 @@ BOOST_AUTO_TEST_CASE(toggle_comment_keeps_point_on_code_point_boundary) {
   BOOST_CHECK_EQUAL(b->lineContent(0), "// \xc3\xa9\xc3\xa9Yx");
 }
 
+// Esc-; used to know only C++'s "// ".
+BOOST_AUTO_TEST_CASE(line_comment_prefix_per_mode) {
+  BOOST_CHECK(lineCommentPrefix(BufferMode::Cpp) == "// ");
+  for (auto mode : {BufferMode::Sh, BufferMode::Py, BufferMode::Yml, BufferMode::Tml})
+    BOOST_CHECK(lineCommentPrefix(mode) == "# ");
+  for (auto mode : {BufferMode::Txt, BufferMode::Md, BufferMode::Jsn, BufferMode::Dif})
+    BOOST_CHECK(!lineCommentPrefix(mode));
+}
+
+BOOST_AUTO_TEST_CASE(toggle_hash_comment_round_trips) {
+  auto b = makeBuf({"if true; then", "  echo hi", "", "fi"});
+  b->view.setMark({0, 0});
+  b->view.setPoint(3, 2);
+  b->view.toggleComment(*lineCommentPrefix(BufferMode::Sh));
+  BOOST_CHECK_EQUAL(allLines(*b), "# if true; then\n  # echo hi\n\n# fi");
+  b->view.setMark({0, 0});
+  b->view.setPoint(3, 4);
+  b->view.toggleComment(*lineCommentPrefix(BufferMode::Sh));
+  BOOST_CHECK_EQUAL(allLines(*b), "if true; then\n  echo hi\n\nfi");
+}
+
 BOOST_AUTO_TEST_CASE(toggle_comment_shifts_mark_on_every_line) {
   auto b = makeBuf({"ab", "cd", "ef"});
   b->view.setPoint(0, 1);

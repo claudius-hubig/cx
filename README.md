@@ -176,7 +176,7 @@ Two nearby cues are easy to mistake for part of it:
 | Esc-p      | Paste ring                            |
 | Esc-f      | Format buffer/region (C/C++)          |
 | Ctrl-p     | Pipe region through command           |
-| Esc-;      | Toggle line comment (C/C++)           |
+| Esc-;      | Toggle line comment (C/C++, sh, py, yml, tml) |
 | Esc-q      | Reflow paragraph / md table (80 cols) |
 | Esc-U      | Uppercase region/word                 |
 | Esc-L      | Lowercase region/word                 |
