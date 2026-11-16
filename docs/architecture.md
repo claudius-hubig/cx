@@ -140,6 +140,10 @@ Key responsibilities:
   SIGTERM, and dispatches to sub-handlers. It waits in `pselect()` with
   the two signals blocked just for the check of their flags, so a signal
   that arrives right before the wait is not left until the next key.
+  The redraw after a key is skipped while more input is already waiting
+  (text pasted without bracketed paste, a held key), but for at most
+  `kMaxDrawDelay` (30 ms), so a burst is drawn a few times rather than
+  once per byte.
 - **Termination**: SIGTERM is the exit command. The first one
   (`handleTerminationRequest()`) cancels an open prompt and starts the
   exit flow of Esc-c, which asks about each modified buffer; an exit

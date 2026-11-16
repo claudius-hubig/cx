@@ -142,10 +142,18 @@ constexpr std::size_t kGrepMaxBytes = std::size_t{64} << 20;
 // Initial poll timeout when distinguishing bare-Esc from the start of
 // an escape sequence on the input stream.
 constexpr int kEscDisambiguationMs = 50;
+// Longest the screen goes without a redraw while input keeps arriving.
+constexpr auto kMaxDrawDelay = std::chrono::milliseconds(30);
 } // namespace
 
 static void handle_sigwinch(int) { g_resized = 1; }
 static void handle_sigterm(int) { ++g_termRequests; }
+
+/** @brief True if a read() of stdin would not block. */
+static bool inputWaiting() {
+  struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+  return poll(&pfd, 1, 0) > 0;
+}
 
 /**
  * @brief Block until stdin is readable or a signal has been caught.
@@ -705,6 +713,7 @@ void Screen::draw() {
 
 Screen::Exit Screen::loop() {
   std::optional<char> pendingChar;
+  auto lastDraw = std::chrono::steady_clock::now();
   while (true) {
     // The next input byte; none if a signal was caught instead.
     std::optional<char> input = std::exchange(pendingChar, std::nullopt);
@@ -759,6 +768,16 @@ Screen::Exit Screen::loop() {
     // The exit flow a SIGTERM asked for is over once it has been cancelled.
     if (!_exitPending)
       _exitBySignal = false;
+
+    // A burst of input (text pasted into a terminal without bracketed
+    // paste, a key held down on a slow link) is not worth a redraw per
+    // byte: that wrote megabytes for a few kilobytes of paste. While more
+    // input is waiting the redraw is skipped, though never for longer
+    // than kMaxDrawDelay, so a long burst still shows its progress.
+    auto const now = std::chrono::steady_clock::now();
+    if (input && now - lastDraw < kMaxDrawDelay && (pendingChar || inputWaiting()))
+      continue;
+    lastDraw = now;
 
     if (input)
       syncPrimarySelection();

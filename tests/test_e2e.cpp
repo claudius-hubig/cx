@@ -2860,6 +2860,34 @@ BOOST_AUTO_TEST_CASE(e2e_emergency_save_reports_a_file_it_cannot_write) {
   BOOST_CHECK_EQUAL(session.waitExit(), 1);
 }
 
+// Every input byte used to be followed by a full redraw, so text pasted
+// into a terminal without bracketed paste wrote megabytes to it.
+BOOST_AUTO_TEST_CASE(e2e_burst_of_input_is_not_redrawn_per_byte) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  TempFile tmp("end\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("end");
+
+  // Fewer bytes than the terminal's input queue holds, in one write.
+  std::string const burst(3000, 'x');
+  session.send(burst);
+  auto out = session.readOutput(milliseconds{500});
+  // One redraw per byte is over a megabyte here; a redraw every 30 ms of
+  // a burst that takes a few milliseconds is a few kilobytes.
+  BOOST_CHECK_MESSAGE(out.size() < 200'000, out.size() << " bytes written");
+
+  // Nothing was dropped, and the last state is what is on the screen.
+  BOOST_CHECK(stripAnsi(out).find("1:3001") != std::string::npos);
+  session.send("\x13"); // Ctrl-s
+  session.readUntil("Saved to");
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), burst + "end\n");
+}
+
 // Closing a terminal normally sends SIGHUP, but only to a process the
 // terminal controls. Without it the editor just saw the end of its input
 // and exited, with every unsaved buffer lost.
