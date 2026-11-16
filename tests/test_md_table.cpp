@@ -245,6 +245,18 @@ BOOST_AUTO_TEST_CASE(formatting_is_idempotent) {
   }
 }
 
+// Found by func_fuzz: a backtick left open on one line of a wrapped cell
+// and a code span on the next were split into words line by line, then
+// joined. The second run paired the backticks differently, so the
+// spaces inside the old code span were collapsed.
+BOOST_AUTO_TEST_CASE(backtick_pairing_across_wrapped_lines_is_stable) {
+  auto once = format("| k | v |\n|---|---|\n| a | ` |\n|   | `y  z` |", 1);
+  BOOST_CHECK_EQUAL(once, "| k   | v       |\n"
+                          "| --- | ------- |\n"
+                          "| a   | ` `y z` |");
+  BOOST_CHECK_EQUAL(format(once, 1), once);
+}
+
 BOOST_AUTO_TEST_CASE(emoji_count_as_two_columns) {
   BOOST_CHECK_EQUAL(format("| Lang | Greeting |\n|---|---|\n| emoji | 👋🙂 |\n| en | hello |", -1),
                     "| Lang  | Greeting |\n"

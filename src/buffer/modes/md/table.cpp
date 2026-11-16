@@ -341,8 +341,15 @@ std::optional<FormattedTable> formatMarkdownTable(std::span<std::string const> l
     std::vector<std::vector<std::string>> words(logical.size());
     std::size_t floor = std::max(kMinColumnWidth, visualWidth(logical[0][curCol][0]));
     for (std::size_t r = 2; r < logical.size(); ++r) {
+      // The cell's text as one string, as the next run will see it once
+      // it has been filled into lines: split per line instead, a lone
+      // backtick on one line and a code span on the next are two words,
+      // which pair up differently once joined. Formatting twice then
+      // changed the text a second time.
+      std::string text;
       for (auto const& s : logical[r][curCol])
-        appendWords(s, words[r]);
+        text += (text.empty() ? "" : " ") + s;
+      appendWords(text, words[r]);
       std::size_t joined = 0;
       for (auto const& w : words[r]) {
         floor = std::max(floor, visualWidth(w));
