@@ -206,8 +206,13 @@ BOOST_AUTO_TEST_CASE(e2e_list_buffer_hides_cursor) {
   BOOST_CHECK(hide != std::string::npos);
   BOOST_CHECK(show == std::string::npos || hide > show);
 
+  // Quitting from there must give the shell its cursor back.
   session.send("\x1b"
                "c");
+  auto end = session.readOutput(std::chrono::milliseconds{300});
+  auto teardown = end.find("\x1b[?1049l");
+  BOOST_REQUIRE(teardown != std::string::npos);
+  BOOST_CHECK_MESSAGE(end.find("\x1b[?25h", teardown) != std::string::npos, "cursor left hidden");
   BOOST_CHECK_EQUAL(session.waitExit(), 0);
   std::filesystem::remove_all(dir);
 }
@@ -2678,6 +2683,7 @@ BOOST_AUTO_TEST_CASE(e2e_fatal_signal_restores_the_terminal) {
       BOOST_CHECK_MESSAGE(out.find("\x1b[?1049l") != std::string::npos, "alternate screen left on");
       BOOST_CHECK_MESSAGE(out.find("\x1b[?1000l") != std::string::npos, "mouse reporting left on");
       BOOST_CHECK_MESSAGE(out.find("\x1b[?2004l") != std::string::npos, "bracketed paste left on");
+      BOOST_CHECK_MESSAGE(out.find("\x1b[?25h") != std::string::npos, "cursor left hidden");
 
       // The process still dies of the signal, as it would have unhandled.
       int status = 0;

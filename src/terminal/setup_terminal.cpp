@@ -19,10 +19,12 @@
 // button down generate no input, keeping the byte volume low.
 // 2004: bracketed paste — pasted text arrives between ESC[200~ and
 // ESC[201~ rather than as keystrokes (see key_sequence.hpp).
+// Teardown also shows the cursor (25h): Screen::draw() hides it in prompts
+// and list buffers, and leaving the alternate screen does not undo that.
 static constexpr std::string_view kAltScreenOn =
     "\x1b[?1049h\x1b[H\x1b[?25h\x1b[2 q\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h";
 static constexpr std::string_view kAltScreenOff =
-    "\x1b[?2004l\x1b[0 q\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l";
+    "\x1b[?2004l\x1b[0 q\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l\x1b[?25h";
 
 namespace {
 
