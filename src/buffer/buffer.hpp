@@ -13,6 +13,7 @@
 #include "line_store.hpp"
 #include "modes/c/syntax.hpp"
 #include "syntax_cache.hpp"
+#include "theme.hpp"
 #include "types.hpp"
 
 #include <cstddef>
@@ -109,6 +110,7 @@ struct RenderParams {
    * (the diff cue matters more than the cursor cue).
    */
   bool highlightCurrentLine = false;
+  Theme theme = Theme::Dark; /**< Selects the colour palette. */
   /**
    * @brief Width (in screen columns) of the left line-number gutter to
    *        reserve at @c colOffset.
@@ -162,6 +164,16 @@ public:
    * line-number toggle silently no-ops on those overlays.
    */
   virtual bool supportsLineNumberGutter() const { return true; }
+
+  /**
+   * @brief Whether the cursor picks whole rows rather than characters.
+   *
+   * True for the list buffers (grep results, directory, buffer list),
+   * whose render() shows the cursor's row in reverse video across the
+   * panel. The terminal cursor would only punch a hole into that row, so
+   * Screen hides it while such a buffer has focus.
+   */
+  virtual bool selectsRows() const { return false; }
 
   /**
    * @brief True after any edit since the last save (or creation).

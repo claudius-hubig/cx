@@ -136,8 +136,8 @@ std::tuple<RowIdx, ColIdx> GrepBuffer::render(std::string& out, RowIdx rows, Col
     ansi::appendCursorTo(out, rowOffset + r, colOffset);
 
     if (lineIdx < _lines.size()) {
-      bool highlight = (lineIdx == curLine);
-      if (highlight)
+      bool selected = (lineIdx == curLine);
+      if (selected)
         out += ansi::ReverseVideo;
 
       // Clamp to the panel width, reserving the final column for the
@@ -151,7 +151,7 @@ std::tuple<RowIdx, ColIdx> GrepBuffer::render(std::string& out, RowIdx rows, Col
       // prefix length is a character boundary in the untruncated string,
       // so a clamp either keeps all of it or lands inside it.
       std::size_t prefixLen = std::min(_prefixLens[lineIdx], clipped.size());
-      if (prefixLen > 0 && !highlight) {
+      if (prefixLen > 0 && !selected) {
         out += ansi::Dim;
         out += clipped.substr(0, prefixLen);
         out += ansi::DimOff;
@@ -162,11 +162,17 @@ std::tuple<RowIdx, ColIdx> GrepBuffer::render(std::string& out, RowIdx rows, Col
       // A clamp may have cut between an escaped byte's colour-on and
       // colour-off; reset so styling never leaks into the cleared
       // remainder or the gutter cell.
-      if (clipped.size() < full.size())
+      if (clipped.size() < full.size()) {
         out += ansi::Reset;
-
-      if (highlight)
+        if (selected)
+          out += ansi::ReverseVideo;
+      }
+      // Pad the selected row out to the gutter with reverse-video spaces:
+      // terminals differ on whether EraseLine keeps reverse video.
+      if (selected) {
+        out.append(budget - visualWidth(clipped), ' ');
         out += ansi::Reset;
+      }
       out += ansi::EraseLine;
     } else {
       out += ansi::EraseLine;

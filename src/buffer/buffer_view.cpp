@@ -2255,6 +2255,7 @@ std::tuple<RowIdx, ColIdx> BufferView::render(std::string& out, RowIdx rows, Col
   params.focused = args.focused;
   params.rowOffset = args.rowOffset;
   params.colOffset = args.colOffset;
+  params.theme = args.theme;
   return _buf.render(out, rows, cols, params);
 }
 

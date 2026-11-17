@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
     std::fputs(versionText().c_str(), stdout);
     return 0;
   }
-  auto const& files = std::get<cli::OpenFiles>(*command).args;
+  auto const& [files, theme] = std::get<cli::OpenFiles>(*command);
 
   // If stdin is a pipe (no terminal attached), drain it before raw mode
   // takes over. Then dup /dev/tty over fd 0 so SetupTerminal's tcgetattr
@@ -87,6 +87,7 @@ int main(int argc, char* argv[]) {
   try {
     SetupTerminal terminal;
     Screen screen;
+    screen.setTheme(theme);
     BufferManager bufferManager(screen);
     screen.setBufferManager(bufferManager);
 

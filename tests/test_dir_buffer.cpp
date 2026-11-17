@@ -321,6 +321,22 @@ BOOST_AUTO_TEST_CASE(render_produces_output) {
   BOOST_CHECK_EQUAL(col.value, 0u);
 }
 
+BOOST_AUTO_TEST_CASE(selected_row_is_reverse_video_across_the_panel) {
+  TmpDir tmp;
+  tmp.createFile("aaa.txt");
+  tmp.createFile("bbb.txt");
+
+  TB<DirBuffer> buf(tmp.path);
+  auto const& entries = buf.entries();
+  // Select aaa.txt; bbb.txt stays unselected.
+  while (entries[buf.point().line].name != "aaa.txt")
+    buf.movePhysicalDown();
+  std::string out;
+  buf.render(out, RowIdx{24}, ColIdx{80}, renderParams(buf));
+  BOOST_CHECK_EQUAL(selectedRowError(out, 80, "aaa.txt", "bbb.txt"), "");
+  BOOST_CHECK(buf.selectsRows());
+}
+
 BOOST_AUTO_TEST_CASE(display_lines_have_del_prefix_area) {
   TmpDir tmp;
   tmp.createFile("file.txt");

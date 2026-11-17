@@ -2,6 +2,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "buffer/grep_buffer.hpp"
+#include "test_helpers.hpp"
 
 #include <string>
 
@@ -195,6 +196,19 @@ BOOST_AUTO_TEST_CASE(refresh_replaces_previous_results) {
   buf.refresh("second", "/r", {});
   BOOST_CHECK(buf.hits().empty());
   BOOST_CHECK_EQUAL(buf.lineCount(), 1u);
+}
+
+BOOST_AUTO_TEST_CASE(selected_row_is_reverse_video_across_the_panel) {
+  GrepBuffer buf;
+  buf.refresh(
+      "pat", "/r",
+      parseGrepOutput(gitRecord("a.cpp", "1", "one") + gitRecord("b.cpp", "2", "two"), "/r"));
+  RenderParams params;
+  params.point = {2, 0};
+  std::string out;
+  buf.render(out, RowIdx{5}, ColIdx{40}, params);
+  BOOST_CHECK_EQUAL(selectedRowError(out, 40, "b.cpp:2: two", "one"), "");
+  BOOST_CHECK(buf.selectsRows());
 }
 
 BOOST_AUTO_TEST_CASE(buffer_is_readonly) {

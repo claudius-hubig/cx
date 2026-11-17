@@ -3,6 +3,8 @@
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_sink.hpp"
 #include "buffer/buffer_view.hpp"
+#include "byte_constants.hpp"
+#include "theme.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
 
@@ -172,6 +174,37 @@ template <typename T>
 inline RenderParams renderParams(TB<T> const& buf, bool showWhitespace = false, bool wrap = true,
                                  std::size_t rowOffset = 0, std::size_t colOffset = 0) {
   return renderParams(buf.view, showWhitespace, wrap, rowOffset, colOffset);
+}
+
+// True if @p style was emitted before @p pos in @p out and no Reset has
+// cleared it since. Assumes the renderer ends every styled span with
+// ansi::Reset, as all the buffers' render() do.
+inline bool styleActiveAt(std::string const& out, std::string_view style, std::size_t pos) {
+  auto on = out.rfind(style, pos);
+  auto off = out.rfind(ansi::Reset, pos);
+  return on != std::string::npos && (off == std::string::npos || on > off);
+}
+
+// Check how a list buffer (grep, directory, buffer list) rendered @p cols
+// columns wide drew its rows: reverse video must be on where @p selected is
+// drawn and cover the whole row up to the gutter column, and must be off
+// where @p unselected is drawn. Returns what is wrong, or "" when all is
+// well, so the caller's BOOST_CHECK_EQUAL shows the reason.
+inline std::string selectedRowError(std::string const& out, std::size_t cols,
+                                    std::string_view selected, std::string_view unselected) {
+  auto sel = out.find(selected);
+  auto unsel = out.find(unselected);
+  if (sel == std::string::npos || unsel == std::string::npos)
+    return "row text not rendered";
+  if (!styleActiveAt(out, ansi::ReverseVideo, sel))
+    return "selected row not in reverse video";
+  auto on = out.rfind(ansi::ReverseVideo, sel);
+  auto off = out.find(ansi::Reset, sel);
+  if (off == std::string::npos || visualWidth(out.substr(on, off - on)) != cols - 1)
+    return "reverse video does not reach the gutter";
+  if (styleActiveAt(out, ansi::ReverseVideo, unsel))
+    return "unselected row in reverse video";
+  return {};
 }
 
 // Insert a string as UTF-8 codepoints through a BufferView.

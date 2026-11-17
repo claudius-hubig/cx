@@ -96,7 +96,8 @@ src/
   error_log.hpp/.cpp               Diagnostic logging to ~/.cx-errors
   file_arg.hpp                     parseFileArg — split `path:LINE` command-line argument
   fs_path.hpp                      Non-throwing canonicalPath / currentDir for user paths
-  cli.hpp                          cli::parse — -h/--help, --version, `--`, file arguments
+  cli.hpp                          cli::parse — -h/--help, --version, --theme, `--`, file arguments
+  theme.hpp                        Theme (dark/light) and the colour Palette each renders with
   version.hpp/.cpp                 versionText() for --version (cx only; uses generated build_info.hpp)
   mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)
   key_sequence.hpp                 Decode CSI/SS3 key sequences (decodeCsiKey, KeyPress)

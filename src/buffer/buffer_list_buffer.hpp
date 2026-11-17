@@ -31,6 +31,7 @@ public:
 
   bool readonly() const override { return true; }
   bool supportsLineNumberGutter() const override { return false; }
+  bool selectsRows() const override { return true; }
 
   /** @brief Render the list with reverse-video on the selected line. */
   std::tuple<RowIdx, ColIdx> render(std::string& out, RowIdx rows, ColIdx cols,

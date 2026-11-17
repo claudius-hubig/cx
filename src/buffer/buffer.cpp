@@ -458,64 +458,38 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     leftGutter = 0;
   std::size_t contentColOffset = colOffset + leftGutter;
   static constexpr auto kCtrlColor = ansi::CtrlColor;
-  static constexpr auto kWsFg = "\x1b[38;2;140;60;60m";
-  static constexpr auto kSpaceStyle = "\x1b[48;2;45;45;45m";
-  static constexpr auto kTabWsStyle = "\x1b[48;2;60;60;60m";
-  static constexpr auto kTabStyle = "\x1b[48;2;70;70;70m";
-  static constexpr auto kNlStyle = "\x1b[48;2;35;35;35m";
-
-  // Syntax highlighting foreground colors.
-  static constexpr auto kSynKeyword = "\x1b[38;2;80;130;200m";   // blue
-  static constexpr auto kSynComment = "\x1b[38;2;80;160;80m";    // green
-  static constexpr auto kSynString = "\x1b[38;2;200;80;80m";     // red
-  static constexpr auto kSynOperator = "\x1b[38;2;150;100;200m"; // purple
-  static constexpr auto kSynNumber = "\x1b[38;2;100;200;200m";   // light turquoise
-  static constexpr auto kSynPreproc = "\x1b[38;2;180;140;60m";   // amber
-  static constexpr auto kSynVariable = "\x1b[38;2;210;150;90m";  // orange (shell $VAR/${...})
-  static constexpr auto kSynReset = "\x1b[22;39m";               // bold off + default fg
-  // Bracket match: turquoise foreground (no bold/underline).
-  static constexpr auto kBracketMatch = "\x1b[38;2;60;170;170m";
-
-  // Diff / conflict line background colors.
-  static constexpr auto kDiffAddBg = "\x1b[48;2;30;60;30m";
-  static constexpr auto kDiffRemoveBg = "\x1b[48;2;70;30;30m";
-  static constexpr auto kDiffHunkFg = "\x1b[38;2;120;160;220m";
-  static constexpr auto kConflictOursBg = "\x1b[48;2;40;50;80m";
-  static constexpr auto kConflictDivBg = "\x1b[48;2;70;60;30m";
-  static constexpr auto kConflictTheirsBg = "\x1b[48;2;50;70;40m";
-  // Subtle current-line tint: dark blue-grey, distinct from the
-  // whitespace-marker greys (45/60/70) so an enabled cursor-line
-  // highlight is visually separate from any visible-whitespace styling.
-  static constexpr auto kCurrentLineBg = "\x1b[48;2;38;38;48m";
+  static constexpr auto kSynReset = "\x1b[22;39m"; // bold off + default fg
   static constexpr auto kBgReset = "\x1b[49m";
+  auto const& pal = palette(params.theme);
 
-  // Per-line background for diff/conflict lines.
-  char const* curLineBg = nullptr;
+  // Per-line background (diff/conflict line or current-line tint); empty
+  // for none.
+  std::string_view curLineBg;
   auto getLineBg = [&](std::span<SyntaxToken const> const& toks,
-                       std::string const& ln) -> char const* {
+                       std::string const& ln) -> std::string_view {
     if (toks.empty())
-      return nullptr;
+      return {};
     switch (toks[0]) {
     case SyntaxToken::DiffAdd:
-      return kDiffAddBg;
+      return pal.diffAddBg;
     case SyntaxToken::DiffRemove:
-      return kDiffRemoveBg;
+      return pal.diffRemoveBg;
     case SyntaxToken::DiffMeta:
-      return ansi::ReverseVideo.data();
+      return ansi::ReverseVideo;
     case SyntaxToken::DiffHunk:
-      return nullptr;
+      return {};
     case SyntaxToken::ConflictMarker:
       if (!ln.empty()) {
         if (ln[0] == '<')
-          return kConflictOursBg;
+          return pal.conflictOursBg;
         if (ln[0] == '=')
-          return kConflictDivBg;
+          return pal.conflictDivBg;
         if (ln[0] == '>')
-          return kConflictTheirsBg;
+          return pal.conflictTheirsBg;
       }
-      return nullptr;
+      return {};
     default:
-      return nullptr;
+      return {};
     }
   };
 
@@ -548,39 +522,39 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     if (u < 0x80) {
       if (*data == '\t') {
         if (showWhitespace) {
-          out += kTabWsStyle;
-          out += kWsFg;
+          out += pal.tabWsBg;
+          out += pal.wsFg;
           out += "\xe2\x96\xa0\xe2\x96\xba";
         } else {
-          out += kTabStyle;
+          out += pal.tabBg;
           out += "  ";
         }
         out += ansi::Reset;
         rs = {};
-        if (curLineBg)
+        if (!curLineBg.empty())
           out += curLineBg;
       } else if (*data == ' ' && showWhitespace) {
-        out += kSpaceStyle;
-        out += kWsFg;
+        out += pal.spaceBg;
+        out += pal.wsFg;
         out += "\xc2\xb7";
         out.append(data + 1, info.len - 1); // combining marks on the space
         out += ansi::Reset;
         rs = {};
-        if (curLineBg)
+        if (!curLineBg.empty())
           out += curLineBg;
       } else if (u == 0) {
         out += kCtrlColor;
         out += "\\0";
         out += ansi::Reset;
         rs = {};
-        if (curLineBg)
+        if (!curLineBg.empty())
           out += curLineBg;
       } else if (u == 0x7f) {
         out += kCtrlColor;
         out += "^?";
         out += ansi::Reset;
         rs = {};
-        if (curLineBg)
+        if (!curLineBg.empty())
           out += curLineBg;
       } else if (u < 0x20) {
         out += kCtrlColor;
@@ -588,7 +562,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         out += static_cast<char>('@' + u);
         out += ansi::Reset;
         rs = {};
-        if (curLineBg)
+        if (!curLineBg.empty())
           out += curLineBg;
       } else {
         out.append(data, info.len); // printable, with any combining marks
@@ -604,7 +578,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       out += nibble(u & 0xf);
       out += ansi::Reset;
       rs = {};
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     } else if (auto cp = decodeUtf8(data, info.len).first; isEscapedCodepoint(cp)) {
       // Invisible format character (ZWSP, ZWJ, BOM, bidi control, ...),
@@ -614,7 +588,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       out += codepointEscape(cp);
       out += ansi::Reset;
       rs = {};
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     } else {
       // A cluster starting with a mark has nothing to draw it onto.
@@ -676,9 +650,6 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     regionEnd = std::max(mark.value(), point);
   }
 
-  // Find highlight (light blue background).
-  static constexpr auto kHighlightOn = "\x1b[48;2;60;100;160m";
-
   // Helper: is position {lineIdx, byteOffset} within [regionStart, regionEnd)?
   auto inRegion = [&](std::size_t lineIdx, std::size_t byteOffset) -> bool {
     if (!hasRegion)
@@ -739,41 +710,38 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     }
   }
 
-  // Markdown-specific syntax highlight colors.
-  static constexpr auto kSynHeading = "\x1b[1;38;2;80;130;200m"; // bold + blue
-  static constexpr auto kSynLink = "\x1b[38;2;100;180;180m";     // teal
-
-  auto syntaxFg = [](SyntaxToken t) -> char const* {
+  // Foreground for a syntax token; empty for none.
+  auto syntaxFg = [&pal](SyntaxToken t) -> std::string_view {
     switch (t) {
     case SyntaxToken::Keyword:
-      return kSynKeyword;
+      return pal.keyword;
     case SyntaxToken::Comment:
-      return kSynComment;
+      return pal.comment;
     case SyntaxToken::String:
-      return kSynString;
+      return pal.string;
     case SyntaxToken::Operator:
-      return kSynOperator;
+      return pal.op;
     case SyntaxToken::Heading:
-      return kSynHeading;
+      return pal.heading;
     case SyntaxToken::Bold:
-      return ansi::Bold.data();
+      return ansi::Bold;
     case SyntaxToken::Link:
-      return kSynLink;
+      return pal.link;
     case SyntaxToken::Number:
-      return kSynNumber;
+      return pal.number;
     case SyntaxToken::Preprocessor:
-      return kSynPreproc;
+      return pal.preproc;
     case SyntaxToken::Variable:
-      return kSynVariable;
+      return pal.variable;
     case SyntaxToken::DiffHunk:
-      return kDiffHunkFg;
+      return pal.diffHunkFg;
     case SyntaxToken::DiffAdd:
     case SyntaxToken::DiffRemove:
     case SyntaxToken::DiffMeta:
     case SyntaxToken::ConflictMarker:
-      return nullptr;
+      return {};
     default:
-      return nullptr; // brackets and Normal have no special color
+      return {}; // brackets and Normal have no special color
     }
   };
 
@@ -786,15 +754,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       if (rs.regionActive) {
         out += ansi::Reset;
         rs.regionActive = false;
-        if (curLineBg)
+        if (!curLineBg.empty())
           out += curLineBg;
       }
-      out += kHighlightOn;
+      out += pal.findBg;
       rs.highlightActive = true;
     } else if (!wantHl && rs.highlightActive) {
       out += ansi::Reset;
       rs.highlightActive = false;
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     }
     if (wantRegion && !rs.regionActive) {
@@ -811,7 +779,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     } else if (!wantRegion && rs.regionActive) {
       out += ansi::Reset;
       rs.regionActive = false;
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     }
 
@@ -820,7 +788,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       SyntaxToken tok = (byteOff < lineTokens.size()) ? lineTokens[byteOff] : SyntaxToken::Normal;
       if (tok != rs.lastSynTok) {
         auto fg = syntaxFg(tok);
-        if (fg)
+        if (!fg.empty())
           out += fg;
         else if (rs.lastSynTok != SyntaxToken::Normal)
           out += kSynReset;
@@ -830,13 +798,13 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           matchBracket && ((lineIdx == matchBracket->line && byteOff == matchBracket->offset) ||
                            (lineIdx == point.line && byteOff == point.offset));
       if (wantMatch && !rs.bracketMatchActive) {
-        out += kBracketMatch;
+        out += pal.bracketMatch;
         rs.bracketMatchActive = true;
       } else if (!wantMatch && rs.bracketMatchActive) {
         // Restore the current syntax foreground instead of defaulting to
         // white — otherwise the DefaultFg clobbers the color we just set.
         auto restoreFg = syntaxFg(rs.lastSynTok);
-        out += restoreFg ? restoreFg : ansi::DefaultFg;
+        out += restoreFg.empty() ? ansi::DefaultFg : restoreFg;
         rs.bracketMatchActive = false;
       }
     }
@@ -874,22 +842,22 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     if (rs.highlightActive) {
       out += ansi::Reset;
       rs.highlightActive = false;
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     }
     if (rs.regionActive) {
       out += ansi::Reset;
       rs.regionActive = false;
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     }
     if (showWhitespace && lineIdx + 1 < _lines.size() && visCol < maxCol &&
         !inRegion(lineIdx, lineSize)) {
-      out += kNlStyle;
-      out += kWsFg;
+      out += pal.nlBg;
+      out += pal.wsFg;
       out += "\xe2\x86\xb5";
       out += ansi::Reset;
-      if (curLineBg)
+      if (!curLineBg.empty())
         out += curLineBg;
     }
   };
@@ -904,11 +872,11 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       lineTokens = synTokens(lineIdx);
       curLineBg = getLineBg(lineTokens, line);
     } else {
-      curLineBg = nullptr;
+      curLineBg = {};
     }
-    if (!curLineBg && params.highlightCurrentLine && lineIdx == point.line)
-      curLineBg = kCurrentLineBg;
-    if (curLineBg)
+    if (curLineBg.empty() && params.highlightCurrentLine && lineIdx == point.line)
+      curLineBg = pal.currentLineBg;
+    if (!curLineBg.empty())
       out += curLineBg;
   };
 
@@ -916,10 +884,10 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
   // of the row is painted in the line's diff/conflict colour rather
   // than reverting to the default. Used at every visual-row boundary.
   auto emitEraseLineWithBg = [&]() {
-    if (curLineBg)
+    if (!curLineBg.empty())
       out += curLineBg;
     out += ansi::EraseLine;
-    if (curLineBg)
+    if (!curLineBg.empty())
       out += kBgReset;
   };
 
@@ -1051,7 +1019,7 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
     // anchored to the row that begins the physical line.
     emitLeftGutter(row, 0);
     emitRowStart(row);
-    if (curLineBg)
+    if (!curLineBg.empty())
       out += curLineBg;
     return true;
   };

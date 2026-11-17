@@ -28,8 +28,9 @@ cmake --build build --target docs   # output in build/docs/html
 ```
 
 Options: `-h`/`--help` prints a short usage summary; `--version` prints the git commit (with `-dirty` for uncommitted
-changes), build date, compiler, build type and compile flags. `--` ends option parsing, so `cx -- -notes.txt` opens a
-file whose name starts with `-`; any other unrecognised option is an error.
+changes), build date, compiler, build type and compile flags. `--theme=dark` (the default) picks colours for a dark
+terminal background with light text, `--theme=light` for a light background with dark text. `--` ends option parsing,
+so `cx -- -notes.txt` opens a file whose name starts with `-`; any other unrecognised option is an error.
 
 Open one or more files for editing, or directories for browsing. With no arguments, cx starts with an empty scratch buffer.
 

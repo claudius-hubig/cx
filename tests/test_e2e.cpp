@@ -184,6 +184,34 @@ BOOST_AUTO_TEST_CASE(e2e_starts_and_exits) {
   BOOST_CHECK_EQUAL(exitCode, 0);
 }
 
+BOOST_AUTO_TEST_CASE(e2e_list_buffer_hides_cursor) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  auto dir =
+      std::filesystem::temp_directory_path() / ("cx_e2e_hide_cursor_" + std::to_string(::getpid()));
+  std::filesystem::create_directory(dir);
+  std::ofstream(dir / "file.txt") << "x\n";
+
+  // A directory listing shows its cursor as a reverse-video row, so the
+  // terminal cursor is hidden once the frame is drawn.
+  PtySession session(24, 80, bin, {dir.string()});
+  auto out = session.readUntil("file.txt", std::chrono::milliseconds{1000});
+  out += session.readOutput(std::chrono::milliseconds{200});
+  auto hide = out.rfind("\x1b[?25l");
+  auto show = out.rfind("\x1b[?25h");
+  BOOST_CHECK(hide != std::string::npos);
+  BOOST_CHECK(show == std::string::npos || hide > show);
+
+  session.send("\x1b"
+               "c");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+  std::filesystem::remove_all(dir);
+}
+
 BOOST_AUTO_TEST_CASE(e2e_type_and_display) {
   auto bin = cxBinary();
   if (!std::filesystem::exists(bin)) {

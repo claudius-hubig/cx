@@ -129,6 +129,17 @@ BOOST_AUTO_TEST_CASE(render_clamps_long_path_to_panel_width) {
   BOOST_CHECK(wide.find(std::string(120, 'x')) != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(selected_row_is_reverse_video_across_the_panel) {
+  TB<BufferListBuffer> buf(std::vector<std::string>{"*1*", "*2*"});
+  buf.movePhysicalDown();
+  auto selected = buf.selectedName(buf.point());
+  auto unselected = selected == "*1*" ? "*2*" : "*1*";
+  std::string out;
+  buf.render(out, RowIdx{10}, ColIdx{40}, renderParams(buf));
+  BOOST_CHECK_EQUAL(selectedRowError(out, 40, selected, unselected), "");
+  BOOST_CHECK(buf.selectsRows());
+}
+
 BOOST_AUTO_TEST_CASE(render_resets_style_cut_by_the_clamp) {
   // A control byte in a name is shown as a coloured escape; when the
   // clamp cuts inside it the colour must not leak into the rest of the row.

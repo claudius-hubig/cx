@@ -34,6 +34,7 @@ struct BufferRenderArgs {
   bool focused = true;       /**< Whether this panel has focus. */
   std::size_t rowOffset = 0; /**< Screen row at which the panel starts. */
   std::size_t colOffset = 0; /**< Screen column at which the panel starts. */
+  Theme theme = Theme::Dark; /**< Selects the colour palette. */
 };
 
 /**

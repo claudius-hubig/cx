@@ -368,10 +368,10 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
     ansi::appendCursorTo(out, rowOffset + r, colOffset);
 
     if (lineIdx < _displayLines.size()) {
-      bool highlight = (lineIdx == curLine);
+      bool selected = (lineIdx == curLine);
       bool marked = _markedForDelete.contains(lineIdx);
 
-      if (highlight)
+      if (selected)
         out += ansi::ReverseVideo;
       if (marked)
         out += kRedFg;
@@ -388,10 +388,16 @@ std::tuple<RowIdx, ColIdx> DirBuffer::render(std::string& out, RowIdx rows, ColI
       // A clamp may have cut between an escaped byte's colour-on and
       // colour-off; reset so styling never leaks into the cleared
       // remainder or the gutter cell.
-      if (clipped.size() < content.size())
+      if (clipped.size() < content.size()) {
         out += ansi::Reset;
-
-      if (marked || highlight)
+        if (selected)
+          out += ansi::ReverseVideo;
+      }
+      // Pad the selected row out to the gutter with reverse-video spaces:
+      // terminals differ on whether EraseLine keeps reverse video.
+      if (selected)
+        out.append(budget - visualWidth(clipped), ' ');
+      if (marked || selected)
         out += ansi::Reset;
       out += ansi::EraseLine;
     } else {

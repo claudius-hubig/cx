@@ -30,7 +30,9 @@ Entry point. Parses the command line with `cli::parse()`
 `OpenFiles` — before touching stdin or the terminal, and handles the
 first two by printing `cli::usage()` or `versionText()`
 (`src/version.hpp/.cpp`) and exiting. Otherwise it constructs
-`SetupTerminal`, `Screen`, and `BufferManager` in the correct order, opens any files given on the command line, then calls
+`SetupTerminal`, `Screen`, and `BufferManager` in the correct order, hands
+`OpenFiles::theme` (from `--theme=light|dark`) to `Screen::setTheme()`,
+opens any files given on the command line, then calls
 `Screen::loop()` to run the editor. A `FatalSignalHook` makes a crash,
 and a signal that ends the editor, call
 `Screen::emergencySave()`; `main` calls it itself, after
@@ -140,7 +142,10 @@ Key responsibilities:
   The cursor shape is emitted per frame from the focused buffer's
   overwrite flag via DECSCUSR — steady block (`ansi::CursorBlock`) for
   insert, steady bar (`ansi::CursorBar`) for overwrite — and reset to the
-  terminal default when the alternate screen is torn down.
+  terminal default when the alternate screen is torn down. The terminal
+  cursor is hidden while a prompt is open (the prompt draws its own) and
+  while the focused buffer's `selectsRows()` is true (list buffers show
+  the cursor as a reverse-video row).
 - **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH and
   SIGTERM, and dispatches to sub-handlers. It waits in `pselect()` with
   the two signals blocked just for the check of their flags, so a signal
@@ -373,7 +378,8 @@ Public API:
   syntax highlighting (via per-mode tokenizers), region highlighting
   (inverse video when a selection mark is active), and find highlighting.
   `RenderParams` bundles the view-state inputs (point, viewFrom, mark,
-  highlight, extraCursors, showWhitespace, wrap, row/col offsets).
+  highlight, extraCursors, showWhitespace, wrap, row/col offsets) and the
+  `Theme`, whose `Palette` (`src/theme.hpp`) supplies every colour.
   Returns the screen `{row, col}` of the cursor.
   `RenderParams::extraCursors` is a sorted span of secondary cursor
   positions (empty in single-cursor editing); each one that falls in the
@@ -503,7 +509,8 @@ All user-facing movement, editing, and render operations are methods on
   sub-position: `ByteOffset` in wrap mode (sub-line scroll), or
   `VisualCol` in no-wrap mode (horizontal scroll).
 - **Rendering**: `render()` builds a `RenderParams` from the view's
-  state and forwards to `Buffer::render()`.
+  state plus the per-frame `BufferRenderArgs` (focus, panel offsets,
+  theme) that `Screen::draw()` passes, and forwards to `Buffer::render()`.
 - **Highlight**: `setHighlight/clearHighlight` for find highlighting.
 - **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to
   the first non-space byte when it is in the leading whitespace.
@@ -632,8 +639,11 @@ display stays in sync with actual keybindings.
 ### `BufferListBuffer` (`src/buffer/buffer_list_buffer.hpp/.cpp`)
 
 Readonly buffer that displays open buffers as a trie-based directory tree
-with collapsed single-child nodes. Overrides `render()` to highlight the
-selected line with reverse video; rows are clipped to the panel width
+with collapsed single-child nodes. Overrides `render()` to draw the
+selected row in reverse video, padded with spaces up to the gutter so the
+whole row is highlighted; `selectsRows()` returns true, so `Screen::draw()`
+hides the terminal cursor while it has focus. The directory and grep
+buffers do both the same way. Rows are clipped to the panel width
 (`clipToVisualWidth()`), like those of the directory and grep buffers.
 `selectedName()` returns the buffer name
 under the cursor for use by `Screen` when the user presses Enter.
@@ -993,7 +1003,8 @@ The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
 `Operator`, `Paren`, `Bracket`, `Brace`, `Angle`, `Heading`, `Bold`,
 `Link`, `Number`, `Preprocessor`, `DiffAdd`, `DiffRemove`, `DiffMeta`,
 `DiffHunk`, `ConflictMarker`, `Variable`) is shared across modes.
-Tokens are mapped to ANSI colours in `Buffer::render()`.
+Tokens are mapped to ANSI colours in `Buffer::render()`, taken from the
+`Palette` for `RenderParams::theme`.
 
 Per-line tokenisation results are cached in `Buffer::_synCache`. An edit
 makes the entries from its first line on stale, but keeps those below it
@@ -1057,7 +1068,8 @@ token vector allocation.
 | `src/regex_search.hpp`                 | Regex search/replace helpers (`compileRegex`, `findFirstRegex`, `findNextRegexInBuffer`, `stepPastEmptyMatch`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y; mid-line searches keep the preceding text as context and scans step past empty matches; both replace-all helpers match each line once against its original text, rewrite it in one edit, and (bypassing BufferView) record one history version themselves |
 | `src/key_sequence.hpp`                 | `Key`, `KeyPress`, `decodeCsiKey`, `decodeSs3Key` — decode the CSI / SS3 sequences of cursor and editing keys (xterm, VT220/tmux and rxvt forms, with modifiers); anything else decodes to nothing. Also the bracketed-paste markers (`isPasteStart`, `kPasteEnd`) and `normalizePastedText` |
 | `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
-| `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`); `cli::usage` help text            |
+| `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`, which carries the `--theme`); `cli::usage` help text |
+| `src/theme.hpp`                        | `Theme` (`Dark` / `Light`, chosen by `--theme`) and `Palette` — the truecolor SGR sequences for syntax, whitespace markers, diff/conflict lines, find match and the Esc-_ current-line tint; `palette(Theme)` picks `kDarkPalette` or `kLightPalette` |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |
 | `src/file_arg.hpp`                     | `parseFileArg` — split a `path:LINE` command-line argument into a path and an optional line number                          |
 | `src/fs_path.hpp`                      | Non-throwing path helpers for user-supplied paths: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir` |

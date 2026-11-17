@@ -680,6 +680,7 @@ void Screen::draw() {
   RowIdx cur_row{0};
   ColIdx cur_col{0};
   bool focusedOverwrite = false;
+  bool focusedSelectsRows = false;
   bool cursorInPrompt = false;
 
   if (_layout) {
@@ -699,12 +700,14 @@ void Screen::draw() {
 
       view.ensureVisible(pr, pc, view.wrap());
       auto [cr, cc] = view.render(
-          _renderBuf, pr, pc, {.focused = focused, .rowOffset = rect.row, .colOffset = rect.col});
+          _renderBuf, pr, pc,
+          {.focused = focused, .rowOffset = rect.row, .colOffset = rect.col, .theme = _theme});
 
       if (focused) {
         cur_row = RowIdx{rect.row + cr.value};
         cur_col = ColIdx{rect.col + cc.value};
         focusedOverwrite = panel.buffer().overwriteMode();
+        focusedSelectsRows = panel.buffer().selectsRows();
       }
 
       if (auto col = drawModeline(panel, focused)) {
@@ -722,8 +725,10 @@ void Screen::draw() {
   _renderBuf += focusedOverwrite ? ansi::CursorBar : ansi::CursorBlock;
   // In a prompt the cursor is drawn by drawModeline() as a normal-video
   // cell; the terminal cursor on top of it would invert it back into the
-  // bar's colours, so it is parked there hidden.
-  _renderBuf += cursorInPrompt ? ansi::HideCursor : ansi::ShowCursor;
+  // bar's colours, so it is parked there hidden. A list buffer shows its
+  // cursor as a reverse-video row, which the terminal cursor would only
+  // break up at the first column, so it is hidden there too.
+  _renderBuf += (cursorInPrompt || focusedSelectsRows) ? ansi::HideCursor : ansi::ShowCursor;
 
   writeAll(STDOUT_FILENO, _renderBuf.data(), _renderBuf.size());
 }

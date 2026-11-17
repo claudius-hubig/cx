@@ -55,9 +55,43 @@ BOOST_AUTO_TEST_CASE(lone_dash_is_a_file) {
   BOOST_CHECK_EQUAL(files[0], "-");
 }
 
+static Theme themeOf(std::expected<cli::Command, std::string> const& c) {
+  BOOST_REQUIRE(c.has_value());
+  BOOST_REQUIRE(std::holds_alternative<cli::OpenFiles>(*c));
+  return std::get<cli::OpenFiles>(*c).theme;
+}
+
+BOOST_AUTO_TEST_CASE(theme_defaults_to_dark) {
+  BOOST_CHECK(themeOf(cli::parse({"a.cpp"})) == Theme::Dark);
+}
+
+BOOST_AUTO_TEST_CASE(theme_option_selects_palette) {
+  BOOST_CHECK(themeOf(cli::parse({"--theme=light", "a.cpp"})) == Theme::Light);
+  BOOST_CHECK(themeOf(cli::parse({"--theme=dark"})) == Theme::Dark);
+  // The last one wins, and it is not mistaken for a file.
+  auto c = cli::parse({"--theme=dark", "a.cpp", "--theme=light"});
+  BOOST_CHECK(themeOf(c) == Theme::Light);
+  BOOST_CHECK_EQUAL(filesOf(c).size(), 1u);
+}
+
+BOOST_AUTO_TEST_CASE(invalid_theme_is_an_error) {
+  for (std::string_view opt : {"--theme=blue", "--theme=", "--theme"}) {
+    auto c = cli::parse({opt});
+    BOOST_CHECK(!c.has_value());
+  }
+  BOOST_CHECK(cli::parse({"--theme=blue"}).error().find("'blue'") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(theme_after_double_dash_is_a_file) {
+  auto c = cli::parse({"--", "--theme=light"});
+  BOOST_CHECK(themeOf(c) == Theme::Dark);
+  BOOST_CHECK_EQUAL(filesOf(c).front(), "--theme=light");
+}
+
 BOOST_AUTO_TEST_CASE(usage_lists_options) {
   auto text = cli::usage("cx");
   BOOST_CHECK(text.starts_with("Usage: cx "));
   BOOST_CHECK(text.find("--help") != std::string::npos);
   BOOST_CHECK(text.find("--version") != std::string::npos);
+  BOOST_CHECK(text.find("--theme=") != std::string::npos);
 }

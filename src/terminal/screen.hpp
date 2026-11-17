@@ -63,6 +63,8 @@ public:
   void setBuffer(Buffer& buf) override;
   /** @brief Wire up the BufferManager used for buffer switching/killing. */
   void setBufferManager(BufferManager& mgr);
+  /** @brief Choose the colour palette for every panel (default dark). */
+  void setTheme(Theme theme) { _theme = theme; }
 
   /**
    * @brief Render the buffer to the terminal and place the hardware cursor
@@ -511,6 +513,8 @@ private:
   std::string _lastRegex;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
   /** @} */
+
+  Theme _theme = Theme::Dark;
 
   /** @brief Recenter (Ctrl-l) target slot. */
   enum class RecenterSlot { Middle, Top, Bottom };

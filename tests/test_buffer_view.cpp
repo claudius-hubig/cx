@@ -1251,19 +1251,36 @@ BOOST_AUTO_TEST_CASE(highlight_current_line_emits_background) {
   BufferView view(buf);
   view.setPoint(1, 0); // cursor on line "bbb"
 
-  // With current-line highlight off, the rendered output should not
-  // contain the dark blue-grey background sequence.
-  view.setHighlightCurrentLine(false);
-  std::string off;
-  view.render(off, RowIdx{4}, ColIdx{20});
-  BOOST_CHECK(off.find("\x1b[48;2;38;38;48m") == std::string::npos);
+  for (auto theme : {Theme::Dark, Theme::Light}) {
+    auto style = palette(theme).currentLineBg;
+    // With current-line highlight off, the cursor's line is drawn plain.
+    view.setHighlightCurrentLine(false);
+    std::string off;
+    view.render(off, RowIdx{4}, ColIdx{20}, {.theme = theme});
+    BOOST_CHECK(!styleActiveAt(off, style, off.find("bbb")));
 
-  // With it on, the same render should contain that background at
-  // least once (the cursor line).
-  view.setHighlightCurrentLine(true);
-  std::string on;
-  view.render(on, RowIdx{4}, ColIdx{20});
-  BOOST_CHECK(on.find("\x1b[48;2;38;38;48m") != std::string::npos);
+    // With it on, only the cursor's line carries the theme's style.
+    view.setHighlightCurrentLine(true);
+    std::string on;
+    view.render(on, RowIdx{4}, ColIdx{20}, {.theme = theme});
+    BOOST_CHECK(styleActiveAt(on, style, on.find("bbb")));
+    BOOST_CHECK(!styleActiveAt(on, style, on.find("aaa")));
+    BOOST_CHECK(!styleActiveAt(on, style, on.find("ccc")));
+  }
+}
+
+BOOST_AUTO_TEST_CASE(theme_selects_syntax_colours) {
+  TempFile f("return 0;\n"); // "return" is a keyword
+  TextBuffer buf(f.path().string(), f.path());
+  buf.setMode(BufferMode::Cpp);
+  BufferView view(buf);
+  for (auto theme : {Theme::Dark, Theme::Light}) {
+    auto const& other = palette(theme == Theme::Dark ? Theme::Light : Theme::Dark);
+    std::string out;
+    view.render(out, RowIdx{4}, ColIdx{40}, {.theme = theme});
+    BOOST_CHECK(out.find(palette(theme).keyword) != std::string::npos);
+    BOOST_CHECK(out.find(other.keyword) == std::string::npos);
+  }
 }
 
 BOOST_AUTO_TEST_CASE(recenter_clamps_at_buffer_start) {
