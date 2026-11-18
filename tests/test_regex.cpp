@@ -237,7 +237,10 @@ BOOST_AUTO_TEST_CASE(expand_templates) {
   BOOST_CHECK_EQUAL(x("$10"), "foo0"); // one digit only
   BOOST_CHECK_EQUAL(x("$3$9"), "");    // no such group: empty
   BOOST_CHECK_EQUAL(x("$x $"), "$x $");
-  BOOST_CHECK_EQUAL(x("\\n"), "\\n"); // backslashes are not special
+  // The escapes a pattern uses for these characters; any other backslash
+  // is literal.
+  BOOST_CHECK_EQUAL(x("a\\nb\\tc\\rd\\\\e"), "a\nb\tc\rd\\e");
+  BOOST_CHECK_EQUAL(x("\\q \\1 \\"), "\\q \\1 \\");
   auto opt = compiled("(a)|(b)");
   auto mb = opt.search("b", 0);
   BOOST_REQUIRE(mb);
@@ -307,4 +310,92 @@ BOOST_AUTO_TEST_CASE(pathological_patterns_take_linear_time) {
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     BOOST_TEST_CONTEXT(c.pattern) { BOOST_CHECK_LT(ms, 1000.0); }
   }
+}
+
+// --- Matching across lines ---
+
+namespace {
+
+struct Lines {
+  std::vector<std::string> v;
+  Regex::LineSource src() const {
+    return {[this](std::size_t i) { return std::string_view(v[i]); }, v.size()};
+  }
+};
+
+/** @brief The first match over @p lines as "line:off-line:off", or "<none>". */
+std::string firstOver(std::string_view pattern, Lines const& lines, BufferPoint from = {0, 0}) {
+  auto m = compiled(pattern).searchLines(lines.src(), from);
+  if (!m)
+    return "<none>";
+  return std::to_string(m->begin().line) + ":" + std::to_string(m->begin().offset) + "-" +
+         std::to_string(m->end().line) + ":" + std::to_string(m->end().offset);
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(which_patterns_span_lines) {
+  BOOST_CHECK(compiled("a\\nb").spansLines());
+  BOOST_CHECK(compiled("a\nb").spansLines()); // a pasted newline
+  BOOST_CHECK(compiled("\\s").spansLines());
+  BOOST_CHECK(compiled("[\\n]").spansLines());
+  BOOST_CHECK(compiled("[[:space:]]").spansLines());
+  BOOST_CHECK(!compiled("a.b").spansLines());
+  BOOST_CHECK(!compiled("[^a]").spansLines());
+  BOOST_CHECK(!compiled("\\D\\W\\S[\\D]").spansLines());
+  BOOST_CHECK(!compiled("[ \\t\\r]").spansLines());
+}
+
+BOOST_AUTO_TEST_CASE(line_breaks_match_newline_escapes) {
+  Lines l{{"x abc", "def y", "abc", "z"}};
+  BOOST_CHECK_EQUAL(firstOver("abc\\ndef", l), "0:2-1:3");
+  BOOST_CHECK_EQUAL(firstOver("abc\\ndef", l, {0, 3}), "<none>");
+  BOOST_CHECK_EQUAL(firstOver("c\\s+d", l), "0:4-1:1");
+  BOOST_CHECK_EQUAL(firstOver("y\\n\\w+\\nz", l), "1:4-3:1");
+  BOOST_CHECK_EQUAL(firstOver("\\n", l), "0:5-1:0");
+  BOOST_CHECK_EQUAL(firstOver("z\\n", l), "<none>"); // no break after the last line
+  // ^ and $ at every line start and end.
+  BOOST_CHECK_EQUAL(firstOver("$\\n^d", l), "0:5-1:1");
+}
+
+BOOST_AUTO_TEST_CASE(dot_and_negated_classes_stop_at_a_line_break) {
+  Lines l{{"ab", "cd"}};
+  BOOST_CHECK_EQUAL(firstOver("b.c", l), "<none>");
+  BOOST_CHECK_EQUAL(firstOver("b[^x]c", l), "<none>");
+  BOOST_CHECK_EQUAL(firstOver("b\\Dc", l), "<none>");
+  BOOST_CHECK_EQUAL(firstOver("b\\Wc", l), "<none>");
+  BOOST_CHECK_EQUAL(firstOver("b[\\D]c", l), "<none>");
+  BOOST_CHECK_EQUAL(firstOver("b\\n?c", l), "0:1-1:1");
+  // ... but they match tab and carriage return.
+  BOOST_CHECK_EQUAL(first("a[^x][^x]b", "a\t\rb"), "a\t\rb");
+  BOOST_CHECK_EQUAL(first("a..b", "a\t\rb"), "a\t\rb");
+}
+
+BOOST_AUTO_TEST_CASE(groups_and_replacements_across_lines) {
+  Lines l{{"key =", "  value;"}};
+  auto re = compiled("(\\w+) =\\s*(\\w+)");
+  auto m = re.searchLines(l.src(), {0, 0});
+  BOOST_REQUIRE(m);
+  BOOST_CHECK(m->end() == (BufferPoint{1, 7}));
+  BOOST_CHECK_EQUAL(Regex::expandLines("$2=$1", l.src(), *m), "value=key");
+  BOOST_CHECK_EQUAL(Regex::expandLines("[$&]", l.src(), *m), "[key =\n  value]");
+  BOOST_CHECK_EQUAL(Regex::expandLines("<$'>", l.src(), *m), "<;>");
+  BOOST_CHECK(re.matchAtLines(l.src(), {0, 0}).has_value());
+  BOOST_CHECK(!re.matchAtLines(l.src(), {0, 3}).has_value());
+}
+
+BOOST_AUTO_TEST_CASE(search_over_lines_can_be_cancelled) {
+  Lines l;
+  for (int i = 0; i < 30000; ++i)
+    l.v.push_back(std::string(60, 'x'));
+  l.v.push_back("end");
+  ScanCancel stop = [] { return true; };
+  bool cancelled = false;
+  auto m = compiled("x\\nend").searchLines(l.src(), {0, 0}, &stop, &cancelled);
+  BOOST_CHECK(!m);
+  BOOST_CHECK(cancelled);
+  ScanCancel go = [] { return false; };
+  m = compiled("x\\nend").searchLines(l.src(), {0, 0}, &go, &cancelled);
+  BOOST_CHECK(m);
+  BOOST_CHECK(!cancelled);
 }

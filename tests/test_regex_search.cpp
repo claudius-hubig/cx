@@ -336,3 +336,62 @@ BOOST_AUTO_TEST_CASE(scans_stop_when_cancelled) {
   BOOST_CHECK_EQUAL(buf.lineContent(0), "A line of text without the word we look for");
   BOOST_CHECK_EQUAL(buf.lineContent(39999), "a line of text without the word we look for");
 }
+
+// --- Patterns that can match a line break ---
+
+BOOST_AUTO_TEST_CASE(replace_all_removes_and_adds_newlines) {
+  TextBuffer buf("t");
+  buf.insertText("1 abc\ndef 2\nabc\ndef", BufferPoint{0, 0});
+  std::string err;
+  auto join = compileRegex("abc\\ndef", err);
+  BOOST_REQUIRE(join);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *join, "abc def").count, 2u);
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 2u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "1 abc def 2");
+  BOOST_CHECK_EQUAL(buf.lineContent(1), "abc def");
+
+  auto split = compileRegex("(a)(b)(c)", err);
+  BOOST_REQUIRE(split);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *split, "$1\\n$2\\n$3").count, 2u);
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 6u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "1 a");
+  BOOST_CHECK_EQUAL(buf.lineContent(2), "c def 2");
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_joins_lines_with_whitespace_classes) {
+  TextBuffer buf("t");
+  buf.insertText("a  \n  b\n\nc", BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex("\\s*\\n\\s*", err);
+  BOOST_REQUIRE(re);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, " ").count, 2u);
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 1u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "a b c");
+}
+
+BOOST_AUTO_TEST_CASE(find_and_substitute_across_lines) {
+  TextBuffer buf("t");
+  buf.insertText("int f(\n  int x)\n{", BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex("\\(\\s*(\\w+) (\\w+)\\)\\n\\{", err);
+  BOOST_REQUIRE(re);
+  auto m = findNextRegexInBuffer(buf, {0, 0}, *re).match;
+  BOOST_REQUIRE(m);
+  BOOST_CHECK(m->first == (BufferPoint{0, 5}));
+  BOOST_CHECK(m->second == (BufferPoint{2, 1}));
+  BOOST_CHECK_EQUAL(substituteCapturesInBuffer(buf, m->first, m->second, *re, "($1 $2) {"),
+                    "(int x) {");
+}
+
+BOOST_AUTO_TEST_CASE(empty_matches_over_lines_make_progress) {
+  TextBuffer buf("t");
+  buf.insertText("ab\ncd", BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex("\\n?", err);
+  BOOST_REQUIRE(re);
+  // Empty at 0:0 and 0:1, the line break itself, then empty at 1:0, 1:1
+  // and 1:2: as "ab\ncd".replace(/\n?/g, "|") in JavaScript.
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "|").count, 6u);
+  BOOST_REQUIRE_EQUAL(buf.lineCount(), 1u);
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "|a|b||c|d|");
+}

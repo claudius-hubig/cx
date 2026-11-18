@@ -42,10 +42,31 @@ struct PromptDisplay {
  * @param hint The text to echo.
  * @return The styled, width-measured display hint.
  */
+/**
+ * @brief Prompt text as shown on the modeline: escapeNonPrintable(), with a
+ *        newline shown as `\n` and a tab as `\t`, in the colour of the
+ *        other escapes, so a multi-line find pattern reads as one would
+ *        write it.
+ */
+inline std::string promptText(std::string_view s) {
+  std::string out;
+  for (std::size_t i = 0; i < s.size();) {
+    auto j = s.find_first_of("\n\t", i);
+    out += escapeNonPrintable(s.substr(i, j == std::string_view::npos ? j : j - i));
+    if (j == std::string_view::npos)
+      break;
+    out += ansi::CtrlColor;
+    out += s[j] == '\n' ? "\\n" : "\\t";
+    out += ansi::DefaultFg;
+    i = j + 1;
+  }
+  return out;
+}
+
 inline PromptDisplay buildDimHint(std::string const& hint) {
   if (hint.empty())
     return {"", 0};
-  auto escaped = escapeNonPrintable(hint);
+  auto escaped = promptText(hint);
   auto vw = visualWidth(escaped);
   return {std::string(ansi::Dim) + escaped + std::string(ansi::DimOff), vw};
 }
@@ -68,6 +89,15 @@ struct Prompt {
   std::string label;     /**< Prompt label, e.g. "Go to line: ", "Buffer: ". */
   std::string input;     /**< Current typed text. */
   bool showInput = true; /**< False for confirm prompts (label IS the display). */
+  /**
+   * @brief The input may hold newlines and tabs: a paste keeps all its
+   *        lines (other prompts take the first), and Tab inserts a tab
+   *        (if there is no @c onTab). For the find and replace prompts.
+   */
+  bool multiLine = false;
+  /** @brief Ctrl-q was pressed: the next key goes into @c input as it is
+   *         (Enter as a newline). */
+  bool quoteNext = false;
 
   /**
    * @brief Called after every input change; returns a display hint or an

@@ -45,11 +45,13 @@ Ranges normalized(Ranges r) {
   return out;
 }
 
-/** @brief The code points (up to U+10FFFF) not in @p r. */
-Ranges complement(Ranges const& r) {
+/** @brief The code points (up to U+10FFFF) not in @p r, a line break
+ *         excepted: `[\D]` matches no more line breaks than `\D` does. */
+Ranges complement(Ranges r) {
+  r.emplace_back('\n', '\n');
   Ranges out;
   std::uint32_t next = 0;
-  for (auto const& [lo, hi] : normalized(r)) {
+  for (auto const& [lo, hi] : normalized(std::move(r))) {
     if (lo > next)
       out.emplace_back(next, lo - 1);
     next = hi + 1;
@@ -721,6 +723,8 @@ struct RegexBuilder {
 bool Regex::CharClass::contains(std::uint32_t unit) const {
   if (unit >= kInvalidUnit)
     return negated;
+  if (unit == '\n' && negated)
+    return false; // a negated class never matches a line break
   auto it = std::upper_bound(ranges.begin(), ranges.end(), unit,
                              [](std::uint32_t u, auto const& r) { return u < r.first; });
   bool in = it != ranges.begin() && unit <= std::prev(it)->second;
@@ -757,34 +761,228 @@ std::expected<Regex, std::string> Regex::compile(std::string_view pattern) {
   } catch (PatternError const& e) {
     return std::unexpected(e.message + " (at " + std::to_string(e.at) + ")");
   }
+  for (auto const& in : re._prog)
+    if ((in.op == Op::Char && in.x == '\n') ||
+        (in.op == Op::Class && re._classes[in.x].contains('\n')))
+      re._spansLines = true;
+  re._prefixHead = re._prefix.substr(0, re._prefix.find('\n'));
   return re;
 }
+
+namespace {
+
+/**
+ * @brief One line as the text run() matches: positions are byte offsets
+ *        into it.
+ */
+class OneLine {
+public:
+  explicit OneLine(std::string_view line) : _line(line) {}
+  bool atEnd(std::size_t pos) const { return pos >= _line.size(); }
+  std::pair<std::uint32_t, std::size_t> unit(std::size_t pos) const { return unitAt(_line, pos); }
+  bool atLineStart(std::size_t pos) const { return pos == 0; }
+  bool atLineEnd(std::size_t pos) const { return pos == _line.size(); }
+  bool atWordBoundary(std::size_t pos) const { return ::atWordBoundary(_line, pos); }
+  std::size_t find(std::size_t pos, std::string_view lit) const { return _line.find(lit, pos); }
+  bool startsWith(std::size_t pos, std::string_view lit) const {
+    return _line.substr(pos).starts_with(lit);
+  }
+
+private:
+  std::string_view _line;
+};
+
+/**
+ * @brief Lines from a LineSource as one text, a line break between each
+ *        two: a position is a byte offset into that text counted from the
+ *        start of the first line, @p startLine.
+ *
+ * Positions only move forward while matching, so the current line is kept
+ * and advanced; the offsets of the lines passed are kept to turn positions
+ * back into points. @p cancel is asked once per megabyte of lines passed;
+ * once it says stop, the text ends there.
+ */
+class ManyLines {
+public:
+  ManyLines(Regex::LineSource const& src, std::size_t startLine, ScanCancel const* cancel)
+      : _src(src), _cancel(cancel), _first(startLine), _cur(startLine), _line(src.line(startLine)) {
+    _bases.push_back(0);
+  }
+
+  bool atEnd(std::size_t pos) {
+    locate(pos);
+    return _cancelled || (pos >= _base + _line.size() && _cur + 1 >= _src.count);
+  }
+  std::pair<std::uint32_t, std::size_t> unit(std::size_t pos) {
+    locate(pos);
+    if (pos >= _base + _line.size())
+      return {'\n', 1};
+    return unitAt(_line, pos - _base);
+  }
+  bool atLineStart(std::size_t pos) {
+    locate(pos);
+    return pos == _base;
+  }
+  bool atLineEnd(std::size_t pos) {
+    locate(pos);
+    return pos == _base + _line.size();
+  }
+  bool atWordBoundary(std::size_t pos) {
+    locate(pos);
+    std::size_t off = pos - _base;
+    bool before = off > 0 && isWordByte(_line[off - 1]);
+    bool after = off < _line.size() && isWordByte(_line[off]);
+    return before != after;
+  }
+  /** @brief The next occurrence of @p lit (no line break in it) at or after @p pos. */
+  std::size_t find(std::size_t pos, std::string_view lit) {
+    locate(pos);
+    for (;;) {
+      std::size_t off = pos > _base ? pos - _base : 0;
+      auto hit = _line.find(lit, off);
+      if (hit != std::string_view::npos)
+        return _base + hit;
+      if (_cancelled || _cur + 1 >= _src.count)
+        return std::string_view::npos;
+      advance();
+      pos = _base;
+    }
+  }
+  bool startsWith(std::size_t, std::string_view) { return true; } // not used to reject
+
+  bool cancelled() const { return _cancelled; }
+
+  /** @brief The point of position @p pos (one of the lines passed). */
+  BufferPoint point(std::size_t pos) const {
+    auto it = std::upper_bound(_bases.begin(), _bases.end(), pos);
+    std::size_t i = static_cast<std::size_t>(it - _bases.begin()) - 1;
+    return {_first + i, pos - _bases[i]};
+  }
+
+private:
+  void locate(std::size_t pos) {
+    while (pos > _base + _line.size() && _cur + 1 < _src.count && !_cancelled)
+      advance();
+  }
+  void advance() {
+    _scanned += _line.size() + 1;
+    if (_scanned >= kCheckBytes) {
+      _scanned = 0;
+      if (_cancel && *_cancel && (*_cancel)()) {
+        _cancelled = true;
+        return;
+      }
+    }
+    _base += _line.size() + 1;
+    ++_cur;
+    _line = _src.line(_cur);
+    _bases.push_back(_base);
+  }
+
+  static constexpr std::size_t kCheckBytes = std::size_t{1} << 20;
+  Regex::LineSource const& _src;
+  ScanCancel const* _cancel;
+  std::size_t _first;
+  std::size_t _cur;
+  std::string_view _line;
+  std::size_t _base = 0;
+  std::vector<std::size_t> _bases;
+  std::size_t _scanned = 0;
+  bool _cancelled = false;
+};
+
+/** @brief A ManyLines passed by value to run(): the state stays with the
+ *         caller, who reads it afterwards. */
+class ManyLinesRef {
+public:
+  explicit ManyLinesRef(ManyLines& lines) : _l(&lines) {}
+  bool atEnd(std::size_t pos) { return _l->atEnd(pos); }
+  std::pair<std::uint32_t, std::size_t> unit(std::size_t pos) { return _l->unit(pos); }
+  bool atLineStart(std::size_t pos) { return _l->atLineStart(pos); }
+  bool atLineEnd(std::size_t pos) { return _l->atLineEnd(pos); }
+  bool atWordBoundary(std::size_t pos) { return _l->atWordBoundary(pos); }
+  std::size_t find(std::size_t pos, std::string_view lit) { return _l->find(pos, lit); }
+  bool startsWith(std::size_t pos, std::string_view lit) { return _l->startsWith(pos, lit); }
+
+private:
+  ManyLines* _l;
+};
+
+} // namespace
 
 std::optional<Regex::Match> Regex::search(std::string_view line, std::size_t from) const {
   if (from > line.size())
     return std::nullopt;
-  return run(line, from, false);
+  // Every match contains _required and starts with _prefix: a line
+  // without them has none. Checked here, before run() sets up; the
+  // longer, rarer literal first.
+  if (!_required.empty() && line.find(_required, from) == npos)
+    return std::nullopt;
+  std::size_t start = from;
+  if (!_prefixHead.empty()) {
+    start = line.find(_prefixHead, from);
+    if (start == npos)
+      return std::nullopt;
+  }
+  return run(OneLine(line), from, false, start);
 }
 
 std::optional<Regex::Match> Regex::matchAt(std::string_view line, std::size_t at) const {
   if (at > line.size())
     return std::nullopt;
-  return run(line, at, true);
+  return run(OneLine(line), at, true);
 }
 
-std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
-                                       bool anchored) const {
-  // Every match contains _required: a line without it has none.
-  if (!_required.empty() && line.find(_required, from) == npos)
+namespace {
+template <class Text> Regex::LinesMatch toLinesMatch(Regex::Match const& m, Text const& text) {
+  Regex::LinesMatch out;
+  for (std::size_t g = 0; g < Regex::kReportedGroups; ++g)
+    if (m.groups[g].matched())
+      out.groups[g] = std::pair{text.point(m.groups[g].begin), text.point(m.groups[g].end)};
+  return out;
+}
+} // namespace
+
+std::optional<Regex::LinesMatch> Regex::searchLines(LineSource const& src, BufferPoint from,
+                                                    ScanCancel const* cancel,
+                                                    bool* cancelled) const {
+  if (cancelled)
+    *cancelled = false;
+  if (from.line >= src.count || from.offset > src.line(from.line).size())
     return std::nullopt;
-  // Every match starts with _prefix: skip to where it occurs.
+  ManyLines text(src, from.line, cancel);
+  auto m = run(ManyLinesRef(text), from.offset, false);
+  if (cancelled)
+    *cancelled = text.cancelled();
+  if (!m || text.cancelled())
+    return std::nullopt;
+  return toLinesMatch(*m, text);
+}
+
+std::optional<Regex::LinesMatch> Regex::matchAtLines(LineSource const& src, BufferPoint at) const {
+  if (at.line >= src.count || at.offset > src.line(at.line).size())
+    return std::nullopt;
+  ManyLines text(src, at.line, nullptr);
+  auto m = run(ManyLinesRef(text), at.offset, true);
+  if (!m)
+    return std::nullopt;
+  return toLinesMatch(*m, text);
+}
+
+template <class Text>
+std::optional<Regex::Match> Regex::run(Text text, std::size_t from, bool anchored,
+                                       std::size_t start) const {
+  // Every match starts with _prefix (up to its first line break): skip to
+  // where it occurs, unless the caller already has (start).
   std::size_t pos = from;
-  if (!_prefix.empty()) {
+  if (start != npos) {
+    pos = start;
+  } else if (!_prefixHead.empty()) {
     if (anchored) {
-      if (line.substr(from).substr(0, _prefix.size()) != _prefix)
+      if (!text.startsWith(from, _prefixHead))
         return std::nullopt;
     } else {
-      pos = line.find(_prefix, from);
+      pos = text.find(from, _prefixHead);
       if (pos == npos)
         return std::nullopt;
     }
@@ -804,7 +1002,7 @@ std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
   };
   s.cur.assign(ns, npos);
 
-  // Follow the instructions that consume nothing from pc0 at pos and add
+  // Follow the instructions that consume nothing from pc0 at `at` and add
   // the threads they lead to (consuming instructions and Match) to list,
   // in priority order. Iterative, with capture writes undone on the way
   // back, so a long chain of Splits cannot overflow the stack.
@@ -841,16 +1039,16 @@ std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
           ++pc;
           continue;
         case Op::Bol:
-          follow = at == 0;
+          follow = text.atLineStart(at);
           break;
         case Op::Eol:
-          follow = at == line.size();
+          follow = text.atLineEnd(at);
           break;
         case Op::WordB:
-          follow = atWordBoundary(line, at);
+          follow = text.atWordBoundary(at);
           break;
         case Op::NotWordB:
-          follow = !atWordBoundary(line, at);
+          follow = !text.atWordBoundary(at);
           break;
         default: // consuming, or Match: a thread
           list.pcs.push_back(pc);
@@ -879,11 +1077,11 @@ std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
       addThread(*clist, 0, pos);
     }
     if (clist->pcs.empty()) {
-      if (best || anchored || pos >= line.size())
+      if (best || anchored || text.atEnd(pos))
         break;
-      pos += unitAt(line, pos).second;
-      if (!_prefix.empty()) {
-        pos = line.find(_prefix, pos);
+      pos += text.unit(pos).second;
+      if (!_prefixHead.empty()) {
+        pos = text.find(pos, _prefixHead);
         if (pos == npos)
           break;
       }
@@ -893,9 +1091,9 @@ std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
 
     std::uint32_t unit = 0;
     std::size_t len = 0;
-    bool more = pos < line.size();
+    bool more = !text.atEnd(pos);
     if (more)
-      std::tie(unit, len) = unitAt(line, pos);
+      std::tie(unit, len) = text.unit(pos);
 
     nlist->pcs.clear();
     nlist->caps.clear();
@@ -919,7 +1117,7 @@ std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
         step = more && unit == in.x;
         break;
       case Op::Any:
-        step = more;
+        step = more && unit != '\n'; // `.` stops at a line break
         break;
       case Op::Class:
         step = more && _classes[in.x].contains(unit);
@@ -940,30 +1138,49 @@ std::optional<Regex::Match> Regex::run(std::string_view line, std::size_t from,
   return best;
 }
 
-std::string Regex::expand(std::string_view replacement, std::string_view line, Match const& m) {
+namespace {
+
+/**
+ * @brief The replacement for a match: @p replacement with its `$` and `\`
+ *        references substituted. @p group appends group g's text (if it
+ *        took part), @p before / @p after the text of the line before /
+ *        after the match.
+ */
+template <class Group, class Before, class After>
+std::string expandTemplate(std::string_view replacement, Group group, Before before, After after) {
   std::string out;
   out.reserve(replacement.size());
-  auto group = [&](std::size_t g) {
-    if (m.groups[g].matched())
-      out.append(line.substr(m.groups[g].begin, m.groups[g].end - m.groups[g].begin));
-  };
   for (std::size_t i = 0; i < replacement.size(); ++i) {
     char c = replacement[i];
-    if (c != '$' || i + 1 >= replacement.size()) {
+    if ((c != '$' && c != '\\') || i + 1 >= replacement.size()) {
       out += c;
       continue;
     }
     char n = replacement[i + 1];
-    if (n == '&') {
-      group(0);
+    if (c == '\\') {
+      // The escapes the pattern uses for the same characters.
+      if (n == 'n')
+        out += '\n';
+      else if (n == 't')
+        out += '\t';
+      else if (n == 'r')
+        out += '\r';
+      else if (n == '\\')
+        out += '\\';
+      else {
+        out += c; // any other backslash is literal
+        continue;
+      }
+    } else if (n == '&') {
+      group(out, 0);
     } else if (n >= '0' && n <= '9') {
-      group(static_cast<std::size_t>(n - '0'));
+      group(out, static_cast<std::size_t>(n - '0'));
     } else if (n == '$') {
       out += '$';
     } else if (n == '`') {
-      out.append(line.substr(0, m.begin()));
+      before(out);
     } else if (n == '\'') {
-      out.append(line.substr(m.end()));
+      after(out);
     } else {
       out += c; // a literal '$'; the next character is read on its own
       continue;
@@ -971,4 +1188,40 @@ std::string Regex::expand(std::string_view replacement, std::string_view line, M
     ++i;
   }
   return out;
+}
+
+} // namespace
+
+std::string Regex::expand(std::string_view replacement, std::string_view line, Match const& m) {
+  return expandTemplate(
+      replacement,
+      [&](std::string& out, std::size_t g) {
+        if (m.groups[g].matched())
+          out.append(line.substr(m.groups[g].begin, m.groups[g].end - m.groups[g].begin));
+      },
+      [&](std::string& out) { out.append(line.substr(0, m.begin())); },
+      [&](std::string& out) { out.append(line.substr(m.end())); });
+}
+
+std::string Regex::expandLines(std::string_view replacement, LineSource const& src,
+                               LinesMatch const& m) {
+  // The text between two points, a line break between each two lines.
+  auto appendRange = [&](std::string& out, BufferPoint from, BufferPoint to) {
+    for (std::size_t li = from.line; li <= to.line; ++li) {
+      auto line = src.line(li);
+      std::size_t b = li == from.line ? from.offset : 0;
+      std::size_t e = li == to.line ? to.offset : line.size();
+      out.append(line.substr(b, e - b));
+      if (li != to.line)
+        out += '\n';
+    }
+  };
+  return expandTemplate(
+      replacement,
+      [&](std::string& out, std::size_t g) {
+        if (m.groups[g])
+          appendRange(out, m.groups[g]->first, m.groups[g]->second);
+      },
+      [&](std::string& out) { out.append(src.line(m.begin().line).substr(0, m.begin().offset)); },
+      [&](std::string& out) { out.append(src.line(m.end().line).substr(m.end().offset)); });
 }

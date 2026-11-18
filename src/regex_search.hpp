@@ -7,14 +7,16 @@
  * Kept separate from the smart-find helpers in search.hpp because regex
  * matching uses anchors, character classes and groups that smart-find
  * deliberately avoids, and regex replace honours group substitution ($1,
- * $&, …) so a plain replacement loop is the wrong primitive. Matches do not
- * span line boundaries — the same convention as the rest of the editor's
- * search/replace infrastructure. The engine is Regex (regex.hpp), which
- * takes time linear in the length of a line whatever the pattern.
+ * $&, …) so a plain replacement loop is the wrong primitive. A pattern
+ * that cannot match a line break is matched line by line; one that can
+ * (`\n`, `\s`, …; Regex::spansLines()) is matched over the buffer's lines
+ * as one text. The engine is Regex (regex.hpp), which takes time linear in
+ * the length of the text whatever the pattern.
  */
 
 #include "buffer/buffer.hpp"
 #include "regex.hpp"
+#include "replace.hpp"
 #include "types.hpp"
 #include "utf8.hpp"
 
@@ -41,14 +43,11 @@ inline std::optional<Regex> compileRegex(std::string const& pattern, std::string
   return std::move(*re);
 }
 
-/**
- * @brief Asked now and then by the scans over the whole buffer; true stops
- *        the scan.
- *
- * The engine is linear, but tens of megabytes still take a while, and the
- * editor is single-threaded: this is how a search can be cancelled.
- */
-using ScanCancel = std::function<bool()>;
+/** @brief The lines of @p buf as a Regex::LineSource (valid while @p buf is
+ *         not edited). */
+inline Regex::LineSource bufferLines(Buffer const& buf) {
+  return {[&buf](std::size_t i) { return std::string_view(buf.lineContent(i)); }, buf.lineCount()};
+}
 
 /**
  * @brief Counts the text a scan has gone through and asks its ScanCancel
@@ -126,14 +125,27 @@ struct RegexScan {
   bool cancelled = false;                                   ///< the ScanCancel stopped the scan
 };
 
+/** @brief findNextRegexInBuffer() for a pattern that can match a line break. */
+inline RegexScan findNextRegexOverLines(Buffer const& buf, BufferPoint start, Regex const& re,
+                                        ScanCancel const& cancel) {
+  bool cancelled = false;
+  auto m = re.searchLines(bufferLines(buf), start, &cancel, &cancelled);
+  if (!m)
+    return {std::nullopt, cancelled};
+  return {std::pair{m->begin(), m->end()}};
+}
+
 /**
  * @brief Find the next regex match in the buffer at or after @p start.
  *
- * Scans line by line and never wraps. @p cancel is asked once per
+ * Scans to the end of the buffer and never wraps; a match spans lines only
+ * if the pattern can match a line break. @p cancel is asked once per
  * megabyte scanned.
  */
 inline RegexScan findNextRegexInBuffer(Buffer const& buf, BufferPoint start, Regex const& re,
                                        ScanCancel const& cancel = {}) {
+  if (re.spansLines())
+    return findNextRegexOverLines(buf, start, re, cancel);
   ScanBudget budget(cancel);
   std::size_t lineCount = buf.lineCount();
   for (std::size_t li = start.line; li < lineCount; ++li) {
@@ -168,8 +180,32 @@ inline std::optional<BufferPoint> stepPastEmptyMatch(Buffer const& buf, BufferPo
 }
 
 /**
+ * @brief The replacement for the match [@p from, @p to) found in @p buf, with
+ *        its group references and escapes substituted (Regex::expand()).
+ *
+ * Matches again at @p from so groups and context-dependent parts (\b, ^,
+ * $) resolve; falls back to @p replacement as it is if that does not give
+ * the same match (it should).
+ */
+inline std::string substituteCapturesInBuffer(Buffer const& buf, BufferPoint from, BufferPoint to,
+                                              Regex const& re, std::string_view replacement) {
+  if (re.spansLines()) {
+    auto lines = bufferLines(buf);
+    auto m = re.matchAtLines(lines, from);
+    if (!m || m->end() != to)
+      return std::string(replacement);
+    return Regex::expandLines(replacement, lines, *m);
+  }
+  auto const& line = buf.lineContent(from.line);
+  auto m = re.matchAt(line, from.offset);
+  if (!m || to.line != from.line || m->end() != to.offset)
+    return std::string(replacement);
+  return Regex::expand(replacement, line, *m);
+}
+
+/**
  * @brief Substitute a single match's region with @p replacement,
- *        honouring group references ($0..$9, $&, $$, $`, $').
+ *        honouring group references ($0..$9, $&, $$, $`, $') and escapes.
  *
  * The caller has already located the match's [from, to) and verified the
  * line.
@@ -190,6 +226,41 @@ struct ReplaceAllResult {
   std::size_t count = 0;  ///< replacements made
   bool cancelled = false; ///< the ScanCancel stopped it (what was replaced stays)
 };
+
+/**
+ * @brief replaceAllRegexForward() for a pattern that can match a line
+ *        break: the matches are collected over the original text, then
+ *        rewritten together (applyRewrites()).
+ */
+inline ReplaceAllResult replaceAllRegexForwardLines(Buffer& buf, BufferPoint start, Regex const& re,
+                                                    std::string const& replacement,
+                                                    ScanCancel const& cancel) {
+  ReplaceAllResult result;
+  auto lines = bufferLines(buf);
+  std::vector<Rewrite> rewrites;
+  for (BufferPoint at = start;;) {
+    bool cancelled = false;
+    auto m = re.searchLines(lines, at, &cancel, &cancelled);
+    if (cancelled)
+      result.cancelled = true;
+    if (!m)
+      break;
+    rewrites.push_back({m->begin(), m->end(), Regex::expandLines(replacement, lines, *m)});
+    at = m->end();
+    if (m->begin() == m->end()) {
+      auto next = stepPastEmptyMatch(buf, at);
+      if (!next)
+        break;
+      at = *next;
+    }
+  }
+  result.count = rewrites.size();
+  if (!rewrites.empty()) {
+    applyRewrites(buf, rewrites);
+    buf.recordVersion(start);
+  }
+  return result;
+}
 
 /**
  * @brief Replace every forward regex match of @p re with the result of
@@ -219,13 +290,24 @@ inline ReplaceAllResult replaceAllRegexForward(Buffer& buf, BufferPoint start, R
   ReplaceAllResult result;
   if (buf.readonly())
     return result;
+  if (re.spansLines())
+    return replaceAllRegexForwardLines(buf, start, re, replacement, cancel);
   ScanBudget budget(cancel);
   for (std::size_t li = start.line; li < buf.lineCount(); ++li) {
-    std::string const line = buf.lineContent(li); // a copy: the buffer's line is replaced below
-    std::size_t pos = li == start.line ? std::min(start.offset, line.size()) : 0;
+    std::string_view const view = buf.lineContent(li);
+    std::size_t pos = li == start.line ? std::min(start.offset, view.size()) : 0;
+    auto first = re.search(view, pos);
+    if (!first) {
+      if (!budget.charge(view.size() + 1)) {
+        result.cancelled = true;
+        break;
+      }
+      continue;
+    }
+    std::string const line(view); // a copy: the buffer's line is replaced below
     std::string out(line, 0, pos);
     std::size_t before = result.count;
-    while (auto m = re.search(line, pos)) {
+    for (auto m = first; m; m = re.search(line, pos)) {
       bool empty = m->begin() == m->end();
       out.append(line, pos, m->begin() - pos);
       out += Regex::expand(replacement, line, *m);

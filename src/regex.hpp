@@ -14,21 +14,35 @@
  * The dialect is the subset of ECMAScript that needs no backtracking; see
  * docs/regex-dialect.md. Back-references in the pattern and lookaround are
  * refused when compiling. Matching works on code points: an invalid UTF-8
- * byte is a unit of its own that only `.` and negated classes match. Like
+ * byte is a unit of its own that only `.` and negated classes match. A
+ * pattern that can match a line break (`\n`, `\s`, a class listing one;
+ * never `.` or a negated class) is matched over lines with searchLines().
+ * Like
  * ECMAScript (and std::regex), the leftmost match wins, and among the
  * matches starting there the first by priority: alternatives left to
  * right, greedy quantifiers preferring more repetitions, lazy ones fewer.
  */
 
+#include "types.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+/**
+ * @brief Asked now and then by a scan over many lines; true stops it.
+ *
+ * Matching is linear, but tens of megabytes still take a while, and the
+ * editor is single-threaded: this is how a search can be cancelled.
+ */
+using ScanCancel = std::function<bool()>;
 
 class Regex {
 public:
@@ -84,8 +98,10 @@ public:
    * @brief The replacement for @p match in @p line: @p replacement with
    *        `$&` / `$0` (the match), `$1`..`$9` (groups; empty if the group
    *        did not take part), `$$` (a `$`), `` $` `` / `$'` (the line before /
-   *        after the match) substituted. Any other `$` is literal, and one
-   *        digit is read at most: `$10` is group 1 and a `0`.
+   *        after the match) substituted, and the escapes `\n`, `\t`, `\r`
+   *        and `\\` (newline, tab, carriage return, backslash), as in a
+   *        pattern. Any other `$` or `\` is literal, and one digit is read at
+   *        most: `$10` is group 1 and a `0`.
    */
   static std::string expand(std::string_view replacement, std::string_view line,
                             Match const& match);
@@ -93,6 +109,49 @@ public:
   /** @brief Number of capturing groups in the pattern (any number; only
    *         1..9 are reported). */
   std::size_t groupCount() const { return _groups; }
+
+  /**
+   * @brief True if a match can contain a line break: the pattern has `\n`
+   *        (or a literal newline), `\s` or a class that lists a line break.
+   *        Such a pattern must be matched with searchLines() to find
+   *        matches that span lines.
+   */
+  bool spansLines() const { return _spansLines; }
+
+  /** @brief Lines to match across, a line break between each two. */
+  struct LineSource {
+    std::function<std::string_view(std::size_t)> line; ///< line i, without its break
+    std::size_t count = 0;                             ///< at least one
+  };
+
+  /** @brief Groups 0..9 of a match over lines, as [from, to) points. */
+  struct LinesMatch {
+    std::array<std::optional<std::pair<BufferPoint, BufferPoint>>, kReportedGroups> groups;
+    BufferPoint begin() const { return groups[0]->first; }
+    BufferPoint end() const { return groups[0]->second; }
+  };
+
+  /**
+   * @brief The first match at or after @p from in the lines of @p src,
+   *        which may span lines (a line break matches `\n`).
+   *
+   * `^` and `$` match at every line start and end. The text before @p from
+   * is context. Scans to the end of the lines; @p cancel, if given, is
+   * asked once per megabyte and stops the scan, which then reports no
+   * match and sets @p *cancelled.
+   */
+  std::optional<LinesMatch> searchLines(LineSource const& src, BufferPoint from,
+                                        ScanCancel const* cancel = nullptr,
+                                        bool* cancelled = nullptr) const;
+
+  /** @brief The match over lines that starts exactly at @p at, if any. */
+  std::optional<LinesMatch> matchAtLines(LineSource const& src, BufferPoint at) const;
+
+  /** @brief expand() for a match over lines: groups may span lines; `` $` ``
+   *         and `$'` are the text of the first line before the match and of
+   *         the last line after it. */
+  static std::string expandLines(std::string_view replacement, LineSource const& src,
+                                 LinesMatch const& match);
 
   // Program representation, public for the compiler in regex.cpp.
   /** @brief Instruction opcodes of the Pike VM. */
@@ -124,12 +183,19 @@ public:
   };
 
 private:
-  std::optional<Match> run(std::string_view line, std::size_t from, bool anchored) const;
+  /** @brief The VM over a text (one line, or lines; see regex.cpp). */
+  /// @p start, if not npos, is where the first match can start at the
+  /// earliest (the caller found _prefix there).
+  template <class Text>
+  std::optional<Match> run(Text text, std::size_t from, bool anchored,
+                           std::size_t start = npos) const;
 
   std::vector<Inst> _prog;
   std::vector<CharClass> _classes;
-  std::string _prefix;    ///< UTF-8 literal every match starts with, for skipping ahead
-  std::string _required;  ///< longer UTF-8 literal every match contains, to reject a line
+  std::string _prefix;     ///< UTF-8 literal every match starts with, for skipping ahead
+  std::string _prefixHead; ///< _prefix up to its first line break
+  std::string _required;   ///< longer UTF-8 literal every match contains, to reject a line
+  bool _spansLines = false;
   std::size_t _slots = 2; ///< capture slots tracked: 2 per reported group
   std::size_t _groups = 0;
 

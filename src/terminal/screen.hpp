@@ -513,6 +513,11 @@ private:
   void blockNext();
   void blockPrev();
   void onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd, bool wrapped);
+  /** @brief Select the match [@p from, @p to), which may span lines: point
+   *         at its end, highlighted. */
+  void onFindMatch(BufferPoint from, BufferPoint to, bool wrapped);
+  /** @brief Clear the find highlight and say "Not found". */
+  void notFound();
   std::string _lastSearch;
   /**
    * @brief Last regex pattern (raw source; recompiled per search).

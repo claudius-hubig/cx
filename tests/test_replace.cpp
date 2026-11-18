@@ -190,3 +190,74 @@ BOOST_AUTO_TEST_CASE(replaceAll_without_matches_records_nothing) {
   replaceAllForward(*bufPtr, {0, 0}, "zzz", "b");
   BOOST_CHECK_EQUAL(bufPtr->history().size(), before);
 }
+
+// --- Patterns with a newline match across lines ---
+
+BOOST_AUTO_TEST_CASE(pattern_lines_split_at_newlines) {
+  BOOST_CHECK((patternLines("abc") == std::vector<std::string_view>{"abc"}));
+  BOOST_CHECK((patternLines("a\nb\nc") == std::vector<std::string_view>{"a", "b", "c"}));
+  BOOST_CHECK((patternLines("\n") == std::vector<std::string_view>{"", ""}));
+}
+
+BOOST_AUTO_TEST_CASE(multi_line_pattern_ends_a_line_and_starts_the_next) {
+  auto buf = makeBuffer({"x abc", "def y", "abc", "mid", "def"});
+  auto m = findNextMatchInBuffer(*buf, {0, 0}, "abc\ndef");
+  BOOST_REQUIRE(m);
+  BOOST_CHECK(m->first == (BufferPoint{0, 2}));
+  BOOST_CHECK(m->second == (BufferPoint{1, 3}));
+  // "abc" on line 2 is followed by "mid", not by a line starting "def".
+  BOOST_CHECK(!findNextMatchInBuffer(*buf, m->second, "abc\ndef"));
+  // A middle piece must be a whole line.
+  auto m3 = findNextMatchInBuffer(*buf, {0, 0}, "abc\nmid\nde");
+  BOOST_REQUIRE(m3);
+  BOOST_CHECK(m3->first == (BufferPoint{2, 0}));
+  BOOST_CHECK(m3->second == (BufferPoint{4, 2}));
+  BOOST_CHECK(!findNextMatchInBuffer(*buf, {0, 0}, "abc\nmi\ndef"));
+  // The start may not be before `start`.
+  BOOST_CHECK(!findNextMatchInBuffer(*buf, {0, 3}, "abc\ndef\n"));
+}
+
+BOOST_AUTO_TEST_CASE(find_previous_multi_line_match) {
+  auto buf = makeBuffer({"a", "b", "a", "b"});
+  auto last = findPrevMatchInBuffer(*buf, {4, 0}, "a\nb");
+  BOOST_REQUIRE(last);
+  BOOST_CHECK(last->first == (BufferPoint{2, 0}));
+  // The point at the end of that match: the one before it.
+  auto prev = findPrevMatchInBuffer(*buf, last->second, "a\nb");
+  BOOST_REQUIRE(prev);
+  BOOST_CHECK(prev->first == (BufferPoint{0, 0}));
+  BOOST_CHECK(!findPrevMatchInBuffer(*buf, prev->second, "a\nb"));
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_removes_and_adds_newlines) {
+  auto buf = makeBuffer({"1 abc", "def 2", "abc", "def"});
+  BOOST_CHECK_EQUAL(replaceAllForward(*buf, {0, 0}, "abc\ndef", "abc def"), 2u);
+  BOOST_CHECK_EQUAL(allLines(*buf), "1 abc def 2\nabc def");
+
+  auto buf2 = makeBuffer({"xabcx"});
+  BOOST_CHECK_EQUAL(replaceAllForward(*buf2, {0, 0}, "abc", "a\nb\nc"), 1u);
+  BOOST_CHECK_EQUAL(allLines(*buf2), "xa\nb\ncx");
+
+  // Every line break, joined into one line, as one history version.
+  auto buf3 = makeBuffer({"a", "b", "", "c"});
+  auto versions = buf3->history().size();
+  BOOST_CHECK_EQUAL(replaceAllForward(*buf3, {0, 0}, "\n", " "), 3u);
+  BOOST_CHECK_EQUAL(allLines(*buf3), "a b  c");
+  BOOST_CHECK_EQUAL(buf3->history().size(), versions + 1);
+}
+
+BOOST_AUTO_TEST_CASE(replace_all_multi_line_never_rematches_replacements) {
+  auto buf = makeBuffer({"x", "x", "x", "x"});
+  BOOST_CHECK_EQUAL(replaceAllForward(*buf, {0, 0}, "x\nx", "x\nx\nx"), 2u);
+  BOOST_CHECK_EQUAL(allLines(*buf), "x\nx\nx\nx\nx\nx");
+}
+
+// Lines between separate rewrites keep their storage, which earlier
+// history versions share.
+BOOST_AUTO_TEST_CASE(replace_all_multi_line_leaves_lines_between_alone) {
+  auto buf = makeBuffer({"a", "b", "keep", "a", "b"});
+  auto const* before = &buf->lineContent(2);
+  BOOST_CHECK_EQUAL(replaceAllForward(*buf, {0, 0}, "a\nb", "ab"), 2u);
+  BOOST_CHECK_EQUAL(allLines(*buf), "ab\nkeep\nab");
+  BOOST_CHECK_EQUAL(&buf->lineContent(1), before);
+}

@@ -487,7 +487,7 @@ std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
       auto pos = std::min(_prompt->cursorPos(), in.size());
       auto cellEnd = pos < in.size() ? pos + charInfoAt(in.data() + pos, in.size() - pos).len : pos;
       auto widthOf = [&](std::size_t from, std::size_t to) {
-        return visualWidth(escapeNonPrintable(in.substr(from, to - from)));
+        return visualWidth(promptText(in.substr(from, to - from)));
       };
       auto cellWidth = cellEnd > pos ? widthOf(pos, cellEnd) : 1;
       // Keep the cursor on screen: drop input from the front, behind an
@@ -533,7 +533,7 @@ std::optional<std::size_t> Screen::drawModeline(Panel& panel, bool focused) {
           status += ansi::ReverseVideoOff;
         if (selected)
           status += ansi::Underline;
-        status += escapeNonPrintable(in.substr(from, to - from));
+        status += promptText(in.substr(from, to - from));
         if (selected)
           status += ansi::UnderlineOff;
         if (inCell || selected)
@@ -962,6 +962,12 @@ static std::string_view firstLine(std::string const& s) {
   return std::string_view(s).substr(0, s.find_first_of("\r\n"));
 }
 
+/** @brief What a paste of @p s puts into prompt @p p: all of it where the
+ *         input may span lines (Prompt::multiLine), else its first line. */
+static std::string_view pastedIntoPrompt(Prompt const& p, std::string const& s) {
+  return p.multiLine ? std::string_view(s) : firstLine(s);
+}
+
 /** @brief What readBracketedPaste() read. */
 struct BracketedPaste {
   std::string text;   /**< With its line breaks as '\n'. */
@@ -1008,6 +1014,26 @@ void Screen::handlePromptInput(char c) {
   auto& p = *_prompt;
   // Only a paste-cycle immediately after a paste may replace it.
   auto lastPaste = std::exchange(p.lastPaste, std::nullopt);
+  // Ctrl-q: the next key is input as it is, so a newline (Enter) or tab
+  // can go into a find pattern or replacement. A printable key needs no
+  // quoting and is handled below as usual.
+  if (std::exchange(p.quoteNext, false) && p.showInput &&
+      (static_cast<unsigned char>(c) < key::PrintableMin || c == key::Backspace)) {
+    p.insert(c == key::Enter ? std::string_view("\n") : std::string_view(&c, 1));
+    p.historyIdx.reset();
+    runAutocomplete();
+    return;
+  }
+  if (c == key::CtrlQ && p.showInput) {
+    p.quoteNext = true;
+    return;
+  }
+  if (c == key::Tab && !p.onTab && p.multiLine) {
+    p.insert("\t");
+    p.historyIdx.reset();
+    runAutocomplete();
+    return;
+  }
   if (c == key::Enter || c == key::Newline) {
     if (!p.showInput)
       return; // Enter is ignored on confirm prompts
@@ -1039,7 +1065,7 @@ void Screen::handlePromptInput(char c) {
           if (!paste.ended)
             setStatus(std::string(kPasteCutShort));
           if (p.showInput && !paste.text.empty()) {
-            p.insert(firstLine(paste.text));
+            p.insert(pastedIntoPrompt(p, paste.text));
             p.historyIdx.reset();
             runAutocomplete();
           }
@@ -1112,7 +1138,7 @@ void Screen::handlePromptAction(Action action, std::optional<Prompt::Paste> last
     pullExternalClipboard();
     if (!_pasteRing.empty()) {
       auto start = p.cursorPos();
-      p.insert(firstLine(_pasteRing.at(0)));
+      p.insert(pastedIntoPrompt(p, _pasteRing.at(0)));
       p.lastPaste = Prompt::Paste{start, p.cursorPos(), 0};
       edited = true;
     }
@@ -1121,7 +1147,7 @@ void Screen::handlePromptAction(Action action, std::optional<Prompt::Paste> last
     if (lastPaste && !_pasteRing.empty()) {
       auto idx = (lastPaste->ringIdx + 1) % _pasteRing.size();
       p.erase(lastPaste->start, lastPaste->end);
-      p.insert(firstLine(_pasteRing.at(idx)));
+      p.insert(pastedIntoPrompt(p, _pasteRing.at(idx)));
       p.lastPaste = Prompt::Paste{lastPaste->start, p.cursorPos(), idx};
       edited = true;
     }
@@ -1485,6 +1511,7 @@ void Screen::openFindPrompt(bool backward) {
   }
   _prompt = Prompt{
       .label = "Find: ",
+      .multiLine = true,
       .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
         if (input.empty())
           return buildDimHint(_lastSearch);
@@ -1650,6 +1677,7 @@ void Screen::openReplacePrompt() {
   }
   _prompt = Prompt{
       .label = "Replace: ",
+      .multiLine = true,
       .onResult =
           [this](std::string const& pattern) {
             if (pattern.empty() || !_buf)
@@ -1657,7 +1685,8 @@ void Screen::openReplacePrompt() {
             _prompt = Prompt{
                 // Escaped: the pattern may be pasted text holding control
                 // bytes, which the label would write to the terminal raw.
-                .label = "Replace '" + escapeNonPrintable(pattern) + "' with: ",
+                .label = "Replace '" + promptText(pattern) + "' with: ",
+                .multiLine = true,
                 .onResult =
                     [this, pattern](std::string const& replacement) {
                       replacePump(pattern, replacement, 0);
@@ -1752,45 +1781,32 @@ void Screen::regexFindNext() {
     setStatus("Bad regex: " + escapeNonPrintable(err));
     return;
   }
-  std::size_t lineCount = _buf->lineCount();
-  std::size_t startLine = _view->point().line;
-  std::size_t startOff = _view->point().offset;
-  bool wrapped = false;
+  auto start = _view->point();
   auto cancel = searchCancel();
-  ScanBudget budget(cancel);
-  for (std::size_t count = 0; count < lineCount; ++count) {
-    std::size_t li = (startLine + count) % lineCount;
-    if (count > 0 && li <= startLine)
-      wrapped = true;
-    std::size_t from = (count == 0) ? startOff : 0;
-    auto const& line = _buf->lineContent(li);
-    if (!budget.charge(line.size() + 1)) {
-      setStatus("Search cancelled");
-      return;
-    }
-    auto m = findFirstRegex(line, from, *re);
-    // An empty match at the cursor is the one just found (onFindMatch puts
-    // the cursor at the match end): skip it, or find-next never advances.
-    if (m && count == 0 && m->first == m->second && m->first == startOff)
-      m = startOff < line.size()
-              ? findFirstRegex(
-                    line, startOff + utf8SeqLen(static_cast<unsigned char>(line[startOff])), *re)
-              : std::nullopt;
-    if (m) {
-      onFindMatch(li, m->first, m->second, wrapped);
-      return;
-    }
+  auto scan = findNextRegexInBuffer(*_buf, start, *re, cancel);
+  // An empty match at the cursor is the one just found (onFindMatch puts
+  // the cursor at the match end): skip it, or find-next never advances.
+  if (scan.match && scan.match->first == scan.match->second && scan.match->first == start) {
+    auto next = stepPastEmptyMatch(*_buf, start);
+    scan = next ? findNextRegexInBuffer(*_buf, *next, *re, cancel) : RegexScan{};
   }
-  // Wrap-around tail: check the start of the original line.
-  if (auto m = findFirstRegex(_buf->lineContent(startLine), 0, *re)) {
-    if (m->first < startOff) {
-      onFindMatch(startLine, m->first, m->second, true);
-      return;
-    }
+  bool wrapped = false;
+  if (!scan.match && !scan.cancelled) {
+    // Wrap around: a match from the top that starts before the cursor.
+    scan = findNextRegexInBuffer(*_buf, {0, 0}, *re, cancel);
+    if (scan.match && !(scan.match->first < start))
+      scan.match.reset();
+    wrapped = true;
   }
-  _view->clearHighlight();
-  _highlightExpiry.reset();
-  setStatus("Not found");
+  if (scan.cancelled) {
+    setStatus("Search cancelled");
+    return;
+  }
+  if (!scan.match) {
+    notFound();
+    return;
+  }
+  onFindMatch(scan.match->first, scan.match->second, wrapped);
 }
 
 ScanCancel Screen::searchCancel() {
@@ -1818,6 +1834,7 @@ void Screen::openRegexFindPrompt() {
     regexFindNext();
   _prompt = Prompt{
       .label = "Regex find: ",
+      .multiLine = true,
       .autocomplete = [this](std::string const& input) -> Prompt::AutocompleteResult {
         if (input.empty())
           return buildDimHint(_lastRegex);
@@ -1841,6 +1858,7 @@ void Screen::openRegexReplacePrompt() {
   }
   _prompt = Prompt{
       .label = "Regex pattern: ",
+      .multiLine = true,
       .onResult =
           [this](std::string const& pattern) {
             if (pattern.empty() || !_buf)
@@ -1856,7 +1874,8 @@ void Screen::openRegexReplacePrompt() {
             _lastRegex = pattern;
             _prompt = Prompt{
                 // Escaped for the same reason as in openReplacePrompt().
-                .label = "Replace /" + escapeNonPrintable(pattern) + "/ with: ",
+                .label = "Replace /" + promptText(pattern) + "/ with: ",
+                .multiLine = true,
                 .onResult =
                     [this, pattern](std::string const& replacement) {
                       regexReplacePump(pattern, replacement, 0);
@@ -1927,9 +1946,8 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
                 setStatus("Bad regex: " + escapeNonPrintable(err));
                 return;
               }
-              auto& line = _buf->lineContent(matchStart.line);
               std::string rendered =
-                  substituteCaptures(line, matchStart.offset, matchEnd.offset, *re, replacement);
+                  substituteCapturesInBuffer(*_buf, matchStart, matchEnd, *re, replacement);
               _view->replaceRegion(matchStart, matchEnd, rendered);
               ++newReplaced;
             } else {
@@ -3577,9 +3595,19 @@ bool Screen::tryExit() {
 
 void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t matchEnd,
                          bool wrapped) {
-  _view->setPoint(line, matchEnd);
+  onFindMatch({line, matchStart}, {line, matchEnd}, wrapped);
+}
+
+void Screen::notFound() {
+  _view->clearHighlight();
+  _highlightExpiry.reset();
+  setStatus("Not found");
+}
+
+void Screen::onFindMatch(BufferPoint from, BufferPoint to, bool wrapped) {
+  _view->setPoint(to.line, to.offset);
   _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
-  _view->setHighlight({line, matchStart}, {line, matchEnd});
+  _view->setHighlight(from, to);
   _highlightExpiry = std::chrono::steady_clock::now() + kHighlightTtl;
   _pasteState.reset();
   if (wrapped)
@@ -3593,6 +3621,17 @@ void Screen::onFindMatch(std::size_t line, std::size_t matchStart, std::size_t m
 void Screen::findNext() {
   if (!_buf || _lastSearch.empty())
     return;
+  if (_lastSearch.find('\n') != std::string::npos) {
+    // A multi-line pattern matches exactly, as Replace does.
+    auto start = _view->point();
+    if (auto m = findNextMatchInBuffer(*_buf, start, _lastSearch))
+      onFindMatch(m->first, m->second, false);
+    else if (auto w = findNextMatchInBuffer(*_buf, {0, 0}, _lastSearch); w && w->first < start)
+      onFindMatch(w->first, w->second, true);
+    else
+      notFound();
+    return;
+  }
   FindFlags f(_lastSearch);
 
   std::size_t lineCount = _buf->lineCount();
@@ -3620,14 +3659,26 @@ void Screen::findNext() {
     }
   }
 
-  _view->clearHighlight();
-  _highlightExpiry.reset();
-  setStatus("Not found");
+  notFound();
 }
 
 void Screen::findPrev() {
   if (!_buf || _lastSearch.empty())
     return;
+  if (_lastSearch.find('\n') != std::string::npos) {
+    // A multi-line pattern matches exactly, as Replace does. The point
+    // sits at the end of the match found last, so that one ends at it
+    // and is skipped.
+    auto start = _view->point();
+    if (auto m = findPrevMatchInBuffer(*_buf, start, _lastSearch))
+      onFindMatch(m->first, m->second, false);
+    else if (auto w = findPrevMatchInBuffer(*_buf, {_buf->lineCount(), 0}, _lastSearch);
+             w && start < w->second)
+      onFindMatch(w->first, w->second, true);
+    else
+      notFound();
+    return;
+  }
   FindFlags f(_lastSearch);
 
   std::size_t lineCount = _buf->lineCount();
@@ -3665,9 +3716,7 @@ void Screen::findPrev() {
     }
   }
 
-  _view->clearHighlight();
-  _highlightExpiry.reset();
-  setStatus("Not found");
+  notFound();
 }
 
 /**

@@ -101,7 +101,7 @@ src/
   version.hpp/.cpp                 versionText() for --version (cx only; uses generated build_info.hpp)
   mouse.hpp                        SGR mouse parser (parseSgrMouse, MouseEvent)
   key_sequence.hpp                 Decode CSI/SS3 key sequences (decodeCsiKey, KeyPress)
-  replace.hpp                      Find-and-replace helpers (findNextMatchInBuffer, replaceAllForward)
+  replace.hpp                      Exact find/replace helpers, multi-line patterns, applyRewrites
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
   regex.hpp/.cpp                   Regex: own linear-time regex engine (Pike VM, docs/regex-dialect.md)
   regex_search.hpp                 Regex search/replace helpers on Regex (per-line, cancellable scans)

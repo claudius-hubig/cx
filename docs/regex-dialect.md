@@ -18,10 +18,15 @@ affected: it runs `git grep` / `grep`, which have their own syntax.
 
 ## Scope of a match
 
-Unchanged from today:
-
-- A match never spans lines. The pattern is matched against one line at a time, without
-  its line break.
+- A match spans lines only where the pattern matches a line break. A line break is
+  matched by `\n` (or a literal newline in the pattern, typed with Ctrl-q Enter or
+  pasted), by `\s` and `[[:space:]]`, and by a class that lists it (`[\n ]`). Nothing else
+  matches one: not `.`, and not a negated class (`[^…]`, `\D`, `\W`, `\S`, `[\D]`), which
+  do match tab and `\r`. (ECMAScript lets negated classes match a line break.)
+- A pattern that cannot match a line break is matched line by line; one that can is
+  matched over the buffer's lines as one text, a line break between each two
+  (`Regex::spansLines()`, `Regex::searchLines()`).
+- `^` and `$` match at the start and end of every line.
 - A search that starts mid-line still sees the text before the start position, so `^` only
   matches at a real line start and `\b` sees the previous character.
 - Matching is case-sensitive.
@@ -50,12 +55,13 @@ close anything.
 | Escape | Meaning |
 |---|---|
 | `\` + any ASCII punctuation | that character literally (`\.`, `\*`, `\\`, `\/`, …) |
-| `\t` | tab (also `\n`, `\r`, `\f`, `\v`, for ECMAScript compatibility) |
+| `\n` | a line break |
+| `\t`, `\r` | tab, carriage return (also `\f`, `\v`, for ECMAScript compatibility) |
 | `\xHH` | the code point U+00HH |
 | `\uHHHH`, `\u{H…}` | the code point U+HHHH (braces: 1–6 hex digits, up to U+10FFFF) |
-| `\d` / `\D` | ASCII digit `[0-9]` / anything else |
-| `\w` / `\W` | ASCII word character `[A-Za-z0-9_]` / anything else |
-| `\s` / `\S` | ASCII whitespace (space, tab, `\v`, `\f`, `\r`) / anything else |
+| `\d` / `\D` | ASCII digit `[0-9]` / anything else but a line break |
+| `\w` / `\W` | ASCII word character `[A-Za-z0-9_]` / anything else but a line break |
+| `\s` / `\S` | ASCII whitespace (space, tab, line break, `\v`, `\f`, `\r`) / anything else but a line break |
 | `\b` / `\B` | at a word boundary / not at one (word = `\w`) |
 
 An escaped space or non-ASCII character is that character. Any other escape (of a
@@ -133,7 +139,9 @@ Limits:
 
 - Any other `$` is inserted literally (`$x`, a trailing `$`).
 - `$1` through `$9` take one digit only: `$10` is group 1 followed by `0`.
-- Backslashes are not special in templates, as today.
+- `\n`, `\t`, `\r` and `\\` insert a line break, tab, carriage return and backslash: the
+  characters these escapes match in a pattern. Any other backslash is literal (`\q`, `\1`,
+  a trailing `\`).
 
 ## Errors
 
@@ -161,6 +169,9 @@ and acted on after the search.
 | a group in a repetition is reset each iteration (`((a)\|b)+` on `ab` leaves `$2` empty) | keeps its last iteration (`$2` = `a`), as Perl and RE2 |
 | `\b` in a class is backspace | error |
 | `[]` is an empty class, `[^]` any character | `]` first in a class is literal: `[]a]` is `]` or `a` |
+| a negated class or `\D`/`\W` matches a line break | never |
+| `^` / `$` at line breaks only with the `m` flag | always at every line start / end |
+| the replacement takes no backslash escapes | `\n \t \r \\` |
 | unknown escapes such as `\q` mean `q` | error |
 | unlimited `{n,m}` | n, m ≤ 1000 |
 | exponential / quadratic time on some patterns | O(n·m) |
@@ -180,6 +191,10 @@ and acted on after the search.
   - `Split` (with priority), `Jmp`, `Save`;
   - `AssertBol`, `AssertEol`, `AssertWordB`, `AssertNotWordB`;
   - `Match`.
+- **Text adapters:** the VM runs over one line (`search`, `matchAt`) or over a
+  `LineSource` (`searchLines`, `matchAtLines`), which presents lines as one text with a
+  line break between each two; positions are byte offsets into it, turned back into
+  points at the end. Only patterns that can match a line break take the second path.
 - **Pike VM:** one pass over the line, one code point per step, with thread lists in
   priority order and per-thread capture slots. An unanchored search adds a fresh thread at
   each position until the first match is found.
@@ -215,17 +230,18 @@ space always separates them from the description:
 
 ```
 Regex (Esc-X, Esc-Y):
-                Within one line, case-sensitive
-  .             Any one character (code point)
+                Case-sensitive; spans lines only
+                where \n, \s or [\n] match one
+  .             Any character but a line break
   [abc] [^abc]  One of / none of the listed
   [a-z]         A range of characters
   \d \D         Digit 0-9 / anything else
   \w \W         Letter, digit or _ (ASCII) / else
-  \s \S         Space, tab, \v \f \r / else
+  \s \S         Space, tab, line break... / else
   [[:alpha:]]   POSIX class (ASCII); also digit
                 alnum upper lower space punct
                 xdigit word
-  ^ $           Start / end of line
+  ^ $           Start / end of a line
   \b \B         At a word boundary / not at one
   x*            x 0+ times, as many as fit
   x+            x 1+ times, as many as fit
@@ -238,12 +254,13 @@ Regex (Esc-X, Esc-Y):
   (x)           Group, captured as $1..$9
   (?:x)         Group, not captured
   \. \* \\ ...  Punctuation taken literally
-  \t            Tab
+  \n \t \r      Line break, tab, carriage return
   \xHH \uHHHH   Character by hex code point
   \u{10FFFF}    Character by code point, 1-6 digits
   $& or $0      Replacement: the whole match
   $1 .. $9      Replacement: group 1..9
   $$ $` $'      Replacement: $ / text before / after
+  \n \t \r \\   Replacement: those characters
   Unsupported   \1 in a pattern, (?= (?! (?<= (?<!
 ```
 

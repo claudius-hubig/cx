@@ -1500,6 +1500,63 @@ BOOST_AUTO_TEST_CASE(e2e_regex_search_can_be_cancelled_and_keeps_typed_keys) {
   }
 }
 
+// Newlines and tabs in find and replace: Ctrl-q Enter puts a newline into
+// a prompt, Tab a tab, a paste keeps all its lines; a pattern with a
+// newline matches across lines; a regex replacement turns \n into one.
+BOOST_AUTO_TEST_CASE(e2e_find_and_replace_across_lines) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  {
+    TempFile tmp("abc\ndef\nx abc\ndef y\n");
+    PtySession session(24, 80, bin, {tmp.path().string()});
+    session.readUntil("abc", std::chrono::milliseconds{1000});
+    session.send("\x1b%");
+    session.readUntil("Replace:", std::chrono::milliseconds{1000});
+    session.send("abc\x11\rdef\r"); // Ctrl-q Enter: a newline in the pattern
+    auto out = stripAnsi(session.readUntil("with:", std::chrono::milliseconds{1000}));
+    BOOST_CHECK_MESSAGE(out.find("Replace 'abc\\ndef' with:") != std::string::npos, out);
+    session.send("abc def\r");
+    session.readUntil("Replace this", std::chrono::milliseconds{1000});
+    session.send("!");
+    out = stripAnsi(session.readUntil("Replaced 2", std::chrono::milliseconds{1000}));
+    BOOST_CHECK_MESSAGE(out.find("Replaced 2") != std::string::npos, out);
+    session.send("\x13");
+    session.readUntil("Saved", std::chrono::milliseconds{1000});
+    BOOST_CHECK_EQUAL(readFile(tmp.path()), "abc def\nx abc def y\n");
+  }
+  {
+    TempFile tmp("one\ntwo\tthree\nfour\n");
+    PtySession session(24, 80, bin, {tmp.path().string()});
+    session.readUntil("one", std::chrono::milliseconds{1000});
+    // A pasted multi-line pattern: the cursor lands at the match end, 2:2.
+    session.send("\x06\x1b[200~ne\rt\x1b[201~\r");
+    auto out = stripAnsi(session.readUntil("2:2", std::chrono::milliseconds{1000}));
+    BOOST_CHECK_MESSAGE(out.find("2:2") != std::string::npos, "multi-line find: " + out);
+    // A typed Tab in the find prompt is a tab: "o\tt" ends at byte 5.
+    session.send("\x06o\tt\r");
+    out = stripAnsi(session.readUntil("2:6", std::chrono::milliseconds{1000}));
+    BOOST_CHECK_MESSAGE(out.find("2:6") != std::string::npos, "tab find: " + out);
+    // Regex replace from the top: \n in the replacement is a newline.
+    session.send("\x1b[1;5H"); // Ctrl-Home
+    session.readOutput(std::chrono::milliseconds{200});
+    session.send("\x1bY");
+    session.readUntil("Regex pattern", std::chrono::milliseconds{1000});
+    session.send("\\t\r");
+    session.readUntil("with:", std::chrono::milliseconds{1000});
+    session.send("\\n\r");
+    session.readUntil("Replace this", std::chrono::milliseconds{1000});
+    session.send("!");
+    session.readUntil("Replaced", std::chrono::milliseconds{1000});
+    session.send("\x13");
+    session.readUntil("Saved", std::chrono::milliseconds{1000});
+    BOOST_CHECK_EQUAL(readFile(tmp.path()), "one\ntwo\nthree\nfour\n");
+  }
+}
+
 // --- Bookmarks (C-x b / C-x j) ---
 
 BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {
@@ -2658,13 +2715,22 @@ BOOST_AUTO_TEST_CASE(e2e_bracketed_paste_in_prompt_and_read_only_buffer) {
   PtySession session(24, 80, bin, {std::string(tmp.path())});
   session.readUntil("needle", std::chrono::milliseconds{500});
 
-  // Find prompt: only "needle" is taken, and Enter finds it.
+  // A single-line prompt takes only the first line of a paste.
+  session.send("\x07");
+  session.readUntil("Go to line:", std::chrono::milliseconds{1000});
+  session.send("\x1b[200~1\rsecond line\x1b[201~");
+  auto out = stripAnsi(session.readUntil("Go to line: 1", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Go to line: 1") != std::string::npos, "prompt: " + out);
+  BOOST_CHECK_MESSAGE(out.find("second") == std::string::npos, "prompt took a second line: " + out);
+  session.send("\x1b");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  // Find prompt: the pasted text is the pattern, and Enter finds it.
   session.send("\x06");
   session.readUntil("Find:", std::chrono::milliseconds{1000});
-  session.send("\x1b[200~needle\rsecond line\x1b[201~");
-  auto out = stripAnsi(session.readUntil("Find: needle", std::chrono::milliseconds{1000}));
+  session.send("\x1b[200~needle\x1b[201~");
+  out = stripAnsi(session.readUntil("Find: needle", std::chrono::milliseconds{1000}));
   BOOST_CHECK_MESSAGE(out.find("Find: needle") != std::string::npos, "prompt: " + out);
-  BOOST_CHECK_MESSAGE(out.find("second") == std::string::npos, "prompt took a second line: " + out);
   session.send("\r");
   out = stripAnsi(session.readUntil("1:11", std::chrono::milliseconds{1000}));
   BOOST_CHECK_MESSAGE(out.find("1:11") != std::string::npos, "cursor after the match: " + out);

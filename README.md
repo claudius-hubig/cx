@@ -45,6 +45,7 @@ If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffe
 - **Buffer list** — interactive tree view of open buffers (collapsed single-child directories)
 - **Find** — smart search: case-insensitive when the pattern is all lowercase; digits and special characters in the buffer are transparently skipped unless they appear in the search pattern. The search runs on Enter (highlight visible for ~3 s); Ctrl-F again advances to the next match while re-prompting for a new search string. Inside the prompt Ctrl-F / Ctrl-R also advance the previous search forward/backward without leaving the prompt. An empty prompt re-uses the last pattern (shown as a dim hint).
 - **Find and replace** — `Esc-%` prompts for a pattern and replacement, then walks forward through matches asking `y`/`n`/`!`/`q` per hit. `!` finishes the rest without prompting. Matching is exact (case-sensitive, no fuzzy skipping) — unlike Find, which uses smart matching for navigation.
+- **Newlines and tabs in find and replace** — in the Find, Replace and regex prompts, Ctrl-q followed by Enter inserts a newline (Ctrl-q quotes any key), Tab inserts a tab, and a paste keeps all its lines; a newline shows as `\n`, a tab as `\t`. A pattern with a newline matches across lines: replacing `abc` Ctrl-q Enter `def` with `abc def` joins those lines, and a newline in the replacement splits one. Find and Replace match such a pattern the same, exact way: its first line must end a line, its middle lines must be whole lines and its last line must start the next one.
 - **Find in files** — `Esc-g` searches a whole tree and lists the hits in a read-only `*grep*` buffer as `path:line: text`. Inside a git work tree it runs `git grep` from the repository root, so `.gitignore` is honoured and build output stays out of the results (matches are limited to tracked files); otherwise it runs `grep -r` from the current buffer's directory, or from the browsed directory when a directory buffer is open. `Enter` on a result opens that file at that line in the other panel — splitting vertically first if only one panel is open — so the result list stays visible while you walk the matches. Searches over 10 s offer the same "Kill? y/n" prompt as other external commands.
 - **Mark and region** — set/clear mark, cut/copy/paste with a multi-entry paste ring and paste cycling
 - **Terminal paste** — text pasted by the terminal (Ctrl-Shift-V, Shift-Insert) is inserted as it is, as a single edit and one undo step: no auto-indent or Tab formatting is applied to it. A prompt takes the first line of a paste; read-only buffers ignore it. This uses bracketed paste, which every current terminal supports; without it a paste still arrives as typed keys. Should the terminal's end-of-paste marker get lost, the paste ends after 2 s without input and the status line says so.
@@ -209,10 +210,16 @@ Two nearby cues are easy to mistake for part of it:
 
 Esc-X and Esc-Y take patterns in a subset of ECMAScript (JavaScript) syntax that
 needs no backtracking, matched by cx's own engine: a search takes time linear in
-the length of a line whatever the pattern, so no pattern can freeze the editor.
-Esc or Ctrl-g cancels a long search over a big buffer.
+the length of the text whatever the pattern, so no pattern can freeze the
+editor. Esc or Ctrl-g cancels a long search over a big buffer.
 
-A match lies within one line. Matching is case-sensitive and works on
+A line break matches `\n` (also a newline typed with Ctrl-q Enter or pasted),
+`\s` and a class that lists it, such as `[\n ]`; never `.`, a negated class
+(`[^…]`, `\D`, `\W`, `\S`) or anything else, so a match spans lines only
+where the pattern says so. `abc\ndef` finds `abc` at the end of a line and
+`def` at the start of the next; `\s*\n\s*` replaced by a space joins lines.
+`^` and `$` match at every line start and end. Matching is case-sensitive and
+works on
 characters (Unicode code points) of the UTF-8 text: `.` matches `é` or `中`
 whole, never one byte of it. A byte that is not valid UTF-8 is matched only by
 `.` and negated classes. A search that starts mid-line treats the text before
@@ -223,14 +230,15 @@ replace-all.
 | Pattern | Matches |
 |---|---|
 | `a`, `中`, `\.` `\*` `\\` … | the character itself (punctuation after `\` is literal) |
-| `.` | any one character |
-| `[abc]`, `[^abc]`, `[a-z]`, `[à-ÿ]` | one character of / not of the set; ranges by code point |
+| `.` | any one character but a line break |
+| `[abc]`, `[^abc]`, `[a-z]`, `[à-ÿ]` | one character of / not of the set (never a line break); ranges by code point |
 | `\d` `\D` | an ASCII digit / any other character |
 | `\w` `\W` | an ASCII letter, digit or `_` / any other character |
-| `\s` `\S` | space, tab, `\v`, `\f`, `\r` / any other character |
+| `\s` `\S` | space, tab, line break, `\v`, `\f`, `\r` / any other character but a line break |
 | `[[:alpha:]]` | POSIX class (ASCII), also `digit` `alnum` `upper` `lower` `space` `punct` `xdigit` `word` |
-| `\t`, `\xHH`, `\uHHHH`, `\u{H…}` | tab; the character with that hex code point |
-| `^` `$` | start / end of the line |
+| `\n`, `\t`, `\r` | a line break, tab, carriage return |
+| `\xHH`, `\uHHHH`, `\u{H…}` | the character with that hex code point |
+| `^` `$` | start / end of a line |
 | `\b` `\B` | at a word boundary / not at one |
 | `x*` `x+` `x?` | `x` 0 or more / 1 or more / 0 or 1 times |
 | `x{n}` `x{n,}` `x{n,m}` | `x` n times / n or more / n to m times (n, m ≤ 1000) |
@@ -245,7 +253,10 @@ first by these priorities wins (alternatives left to right), as in ECMAScript.
 
 In a replacement, `$&` or `$0` inserts the whole match, `$1`…`$9` a group
 (one digit: `$10` is group 1 and a `0`), `$$` a `$`, `` $` `` and `$'` the text
-of the line before and after the match. Backslashes are not special there.
+of the line before and after the match. `\n`, `\t`, `\r` and `\\` insert a
+line break, tab, carriage return and backslash, as they match in a pattern:
+replacing `(a)(b)` with `$1\n$2` splits the match over two lines. Any other
+backslash is literal.
 
 Not supported, and refused with a message: back-references in the pattern
 (`(.)\1`) and lookahead or lookbehind (`(?=`, `(?!`, `(?<=`, `(?<!`), which
@@ -385,5 +396,7 @@ When a prompt is active (Find, Save As, Switch Buffer, Go to line, …):
 | Right arrow | Accept current completion (and descend into directory if any)  |
 | Bksp        | Remove one character (full UTF-8 codepoint)                    |
 | `y/n/!/q`   | Replace prompt: yes / skip / all-rest / quit                   |
+| Ctrl-q      | Insert the next key as it is (Enter: a newline)                |
+| Tab         | Find, Replace and regex prompts: insert a tab                  |
 | Ctrl-f      | Find prompt: advance forward without leaving the prompt        |
 | Ctrl-r      | Find prompt: advance backward without leaving the prompt       |

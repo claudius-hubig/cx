@@ -87,20 +87,25 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("\xe2\x86\x91/\xe2\x86\x93", "Previous/next input"));
     v.push_back(formatRawLine("Tab, \xe2\x86\x92 at end", "Cycle / accept completion"));
     v.push_back(formatRawLine("Ctrl-Space", "+ move: select; Ctrl-W/Esc-w/Ctrl-Y/Esc-y"));
+    v.push_back(formatRawLine("Ctrl-q key", "Insert key as is (Enter: newline)"));
+    v.push_back(formatRawLine("Tab", "Find/replace prompts: a tab"));
+    v.push_back(formatRawLine("", "A newline in a find or replace"));
+    v.push_back(formatRawLine("", "pattern matches across lines"));
     v.emplace_back("");
     // The regex dialect (docs/regex-dialect.md); Regex in src/regex.hpp.
     v.emplace_back("Regex (Esc-X, Esc-Y):"); // a section header ends in ':'
-    v.push_back(formatRawLine("", "Within one line, case-sensitive"));
-    v.push_back(formatRawLine(".", "Any one character (code point)"));
+    v.push_back(formatRawLine("", "Case-sensitive; spans lines only"));
+    v.push_back(formatRawLine("", "where \\n, \\s or [\\n] match one"));
+    v.push_back(formatRawLine(".", "Any character but a line break"));
     v.push_back(formatRawLine("[abc] [^abc]", "One of / none of the listed"));
     v.push_back(formatRawLine("[a-z]", "A range of characters"));
     v.push_back(formatRawLine("\\d \\D", "Digit 0-9 / anything else"));
     v.push_back(formatRawLine("\\w \\W", "Letter, digit or _ (ASCII) / else"));
-    v.push_back(formatRawLine("\\s \\S", "Space, tab, \\v \\f \\r / else"));
+    v.push_back(formatRawLine("\\s \\S", "Space, tab, line break... / else"));
     v.push_back(formatRawLine("[[:alpha:]]", "POSIX class (ASCII); also digit"));
     v.push_back(formatRawLine("", "alnum upper lower space punct"));
     v.push_back(formatRawLine("", "xdigit word"));
-    v.push_back(formatRawLine("^ $", "Start / end of line"));
+    v.push_back(formatRawLine("^ $", "Start / end of a line"));
     v.push_back(formatRawLine("\\b \\B", "At a word boundary / not at one"));
     v.push_back(formatRawLine("x*", "x 0+ times, as many as fit"));
     v.push_back(formatRawLine("x+", "x 1+ times, as many as fit"));
@@ -113,12 +118,13 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("(x)", "Group, captured as $1..$9"));
     v.push_back(formatRawLine("(?:x)", "Group, not captured"));
     v.push_back(formatRawLine("\\. \\* \\\\ ...", "Punctuation taken literally"));
-    v.push_back(formatRawLine("\\t", "Tab"));
+    v.push_back(formatRawLine("\\n \\t \\r", "Line break, tab, carriage return"));
     v.push_back(formatRawLine("\\xHH \\uHHHH", "Character by hex code point"));
     v.push_back(formatRawLine("\\u{10FFFF}", "Character by code point, 1-6 digits"));
     v.push_back(formatRawLine("$& or $0", "Replacement: the whole match"));
     v.push_back(formatRawLine("$1 .. $9", "Replacement: group 1..9"));
     v.push_back(formatRawLine("$$ $` $'", "Replacement: $ / text before / after"));
+    v.push_back(formatRawLine("\\n \\t \\r \\\\", "Replacement: those characters"));
     v.push_back(formatRawLine("Unsupported", "\\1 in a pattern, (?= (?! (?<= (?<!"));
     return v;
   }();

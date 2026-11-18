@@ -28,6 +28,7 @@ constexpr char Enter = '\r';
 constexpr char Newline = '\n';
 constexpr char Escape = '\x1b';
 constexpr char CtrlF = '\x06'; /**< Find */
+constexpr char CtrlQ = '\x11'; /**< Quoted insert in prompts */
 constexpr char CtrlR = '\x12'; /**< Reverse find */
 constexpr char CtrlX = '\x18'; /**< Prefix for the C-x chord */
 /** @} */
