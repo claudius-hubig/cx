@@ -64,3 +64,16 @@ BOOST_AUTO_TEST_CASE(help_describes_the_regex_dialect) {
         "x{n,m}", "Lazy", "(?:x)", "$1 .. $9", "$&", "\\u{10FFFF}", "Unsupported"})
     BOOST_CHECK_MESSAGE(all.find(s) != std::string::npos, std::string("missing ") + s);
 }
+
+// The key column is 16 wide; a longer key ran into its description
+// ("Ctrl-Spc + moveSelect").
+BOOST_AUTO_TEST_CASE(every_key_is_separated_from_its_description) {
+  TB<HelpBuffer> buf;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i) {
+    auto const& line = buf.lineContent(i);
+    if (!line.starts_with("  ") || visualWidth(line) <= 16)
+      continue;
+    auto key = clipToVisualWidth(line, 16);
+    BOOST_CHECK_MESSAGE(key.ends_with(' '), "key runs into its description: " + line);
+  }
+}

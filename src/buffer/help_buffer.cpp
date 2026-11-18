@@ -23,7 +23,11 @@ static std::string formatHelpLine(Action a) {
   return line;
 }
 
-/** @brief Build a help line for a hardcoded key/description, same padding. */
+/**
+ * @brief Build a help line for a hardcoded key/description, same padding.
+ * @pre @p key is at most 13 columns wide, so a space separates it from
+ *      @p desc (checked by test_help_buffer).
+ */
 static std::string formatRawLine(std::string_view key, std::string_view desc) {
   std::string line = "  ";
   line += key;
@@ -82,7 +86,7 @@ static std::vector<std::string> const& leftColumn() {
     v.push_back(formatRawLine("Bksp/Delete", "Delete char (Ctrl: chunk)"));
     v.push_back(formatRawLine("\xe2\x86\x91/\xe2\x86\x93", "Previous/next input"));
     v.push_back(formatRawLine("Tab, \xe2\x86\x92 at end", "Cycle / accept completion"));
-    v.push_back(formatRawLine("Ctrl-Spc + move", "Select; Ctrl-W/Esc-w/Ctrl-Y/Esc-y"));
+    v.push_back(formatRawLine("Ctrl-Space", "+ move: select; Ctrl-W/Esc-w/Ctrl-Y/Esc-y"));
     v.emplace_back("");
     // The regex dialect (docs/regex-dialect.md); Regex in src/regex.hpp.
     v.emplace_back("Regex (Esc-X, Esc-Y):"); // a section header ends in ':'
