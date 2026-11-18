@@ -29,6 +29,7 @@
 #include <functional>
 #include <memory>
 #include <random>
+#include <regex>
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -970,7 +971,7 @@ static void fuzzReplace() {
     if (!re)
       continue;
     auto b = mkbuf(content);
-    auto n = replaceAllRegexForward(*b, {0, 0}, *re, rep);
+    auto n = replaceAllRegexForward(*b, {0, 0}, *re, rep).count;
     auto got = bufText(*b);
     bool ascii = std::all_of(content.begin(), content.end(),
                              [](char c) { return static_cast<unsigned char>(c) < 0x80; });
@@ -982,7 +983,7 @@ static void fuzzReplace() {
         auto le = content.find('\n', ls);
         std::string line =
             content.substr(ls, le == std::string::npos ? std::string::npos : le - ls);
-        model += std::regex_replace(line, *re, rep);
+        model += std::regex_replace(line, std::regex(pat, std::regex::ECMAScript), rep);
         if (le == std::string::npos)
           break;
         model += '\n';

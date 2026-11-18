@@ -19,7 +19,7 @@ cmake -S "$root" -B "$out/rel" -DCMAKE_BUILD_TYPE=Release -DCX_BUILD_TESTS=OFF >
 cmake --build "$out/rel" -j "$jobs"
 
 # Correctness harnesses: sanitizer build.
-for h in view_fuzz func_fuzz parse_fuzz render_fuzz mgr_fuzz roundtrip; do
+for h in view_fuzz func_fuzz parse_fuzz render_fuzz mgr_fuzz roundtrip regex_fuzz; do
   g++ -std=c++23 -g $san -I"$root/src" "$here/$h.cpp" "$out/san/libcx_core.a" -o "$out/bin/$h" &
 done
 # Timing harnesses and the table minimiser: release build.

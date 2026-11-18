@@ -38,6 +38,11 @@ static void glog(const char* what, const char* path) {
 static int inside(int dirfd, const char* path) {
   if (!path)
     return 0;
+  // Device files are fine to write (/dev/null), except the terminals: a
+  // buffer saved to /dev/pts/N or /dev/tty (the directory browser goes
+  // there) would write raw text into the fuzzer's terminal stream.
+  if (!strncmp(path, "/dev/pts/", 9) || !strcmp(path, "/dev/tty"))
+    return 0;
   if (!strncmp(path, "/dev/", 5))
     return 1;
   if (!rootLen)

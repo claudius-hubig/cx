@@ -37,7 +37,8 @@ operations.
 | `render_fuzz.cpp` | san | Hostile content in every buffer type and mode, in either theme; the bytes sent to the terminal must be valid UTF-8 with no C0/C1 controls and no escape sequence other than a well-formed CSI, and replayed on a model terminal nothing may be printed outside the panel. Panels narrower than `RF_MINCOLS` (default 2) skip the second check | `render_fuzz SEED ITERS` |
 | `mgr_fuzz.cpp` | san | `BufferManager` and `DirBuffer` on a private tree that changes behind their back; a sentinel outside the working directory must survive | `mgr_fuzz SEED ITERS` |
 | `func_fuzz.cpp` | san | Property fuzz of Markdown tables and fences, UTF-8 layout, tokenizers, prompt editing, panel layout, version history, plain/regex replace-all. Sections run in forked children with a timeout. `FF_SIMPLE=0..n` restricts the table alphabet | `func_fuzz SEED ITERS [section-letters]` |
-| `parse_fuzz.cpp` | san | Targeted probes of regex/plain replace termination, grep output parser, CLI (against a model, `--theme` included) and `path:LINE` arguments, SGR mouse sequences, CSI/SS3 key decoding (every key and modifier round-trips) and bracketed-paste line breaks. Silent on success; reports the known regex backtracking freeze (#12) as `HANG` | `parse_fuzz` |
+| `parse_fuzz.cpp` | san | Targeted probes of regex/plain replace termination, grep output parser, CLI (against a model, `--theme` included) and `path:LINE` arguments, SGR mouse sequences, CSI/SS3 key decoding (every key and modifier round-trips) and bracketed-paste line breaks; the regex patterns that froze std::regex must now finish. Silent on success | `parse_fuzz` |
+| `regex_fuzz.cpp` | san | `Regex` (cx's regex engine) against `std::regex` on random patterns of the subset both accept, on ASCII lines, from random offsets (group 0 and the groups outside repetitions must agree; quantifiers only on items that cannot match empty, where libstdc++ departs from ECMAScript). Random byte patterns compile or are refused; matches on random UTF-8 lie on code-point boundaries and `matchAt` reproduces them. Random patterns with nullable loops on 20,000-character lines must stay under `SLOW_MS` (2000) | `regex_fuzz SEED ITERS` |
 | `roundtrip.cpp` | san | 30,000 small files loaded and saved unchanged must be byte-identical | `roundtrip` |
 | `perf_probe.cpp` | rel | 25 operations on 15 large or pathological files, each in a forked child; flags anything slower than `SLOW_MS` (default 300) or above 1.5 GB RSS | `perf_probe [SLOW_MS]` |
 | `table_min.cpp` | rel | Finds and minimises `formatMarkdownTable` idempotence violations | `table_min SEED ITERS KIND LEVEL` |
@@ -63,7 +64,9 @@ tools/fuzz/e2e_fuzz.py --replay CASE.json build/fuzz/san/cx OUTDIR
 `guard.c` is built into `guard.so` and preloaded into every fuzzed `cx`
 (`FUZZ_GUARD` overrides its path). It refuses mutating filesystem calls outside the run
 directory, restricts `exec` to a whitelist, and writes a backtrace on fatal signals. A call
-whose parent directory does not exist is let through, as it fails on its own. `DENY mkdir`
+whose parent directory does not exist is let through, as it fails on its own. Writes to
+the terminals (`/dev/pts/*`, `/dev/tty`) are refused, as a buffer saved there would put
+raw text into the stream the fuzzer checks. `DENY mkdir`
 and `DENY rename` lines are not reported as findings: the directory browser legitimately
 tries those wherever the fuzzer navigated it. Neither is a denied emergency copy
 (`DENY fopen ….unsaved-…`), which goes next to its file wherever that was opened.

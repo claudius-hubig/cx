@@ -118,11 +118,11 @@ def ctrl(c):
 
 SEARCH_TERMS = ["a", "x", "the", "", " ", "中", "😀", "\\", ".", "e\u0301", "aaaa", "(", "#", "\t", "Ab",
                 "ab" * 50, "\x7f", "é", "[", "\"\"\"", "key"]
-REGEXES = ["a", ".", ".*", "^", "$", "^$", "(a*)*b", "(x+x+)+y", "[", "(", "\\", "a{1000}", "\\b",
+REGEXES = ["a", ".", ".*", "^", "$", "^$", "(a*)*b", "(x+x+)+y", "[", "(", "\\", "a{1000}", "a{1001}", "<.*?>", "\\u{1F600}", "[à-ÿ]+", "[[:punct:]]", "\\b",
            "(?=a)", "\\1", "(a)|b", "[^\\n]", "", "x*", "\\w+", ".{0}", "(.)\\1", "[[:alpha:]]", "a|",
            "*", "+?", "(?:", "\\d{2,}"]
 REGEX_REPLACE = ["a", ".", "(a)|b", "[^\\n]", "\\w+", "(.)\\1", "[[:alpha:]]", "\\d{2,}", "(\\w)(\\w)", "é", "[", "("]
-REGEX_FIND_SAFE = [r for r in REGEXES if r not in ("(a*)*b", "(x+x+)+y", "a{1000}")]
+REGEX_FIND_SAFE = REGEXES  # the engine is linear: no pattern needs to be left out
 REPLACEMENTS = ["", "b", "$1", "\\1", "&", "$&", "$0", "$$", "$9", "\\n", "\n", "中文😀", "x" * 200, "$`",
                 "$'", "\\", "$"]
 GOTO = ["1", "0", "-1", "99999999999999999999999", "abc", "", "5", "100000", "1:5", " 3", "+2", "2x", "18446744073709551616"]
@@ -691,7 +691,8 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
         # on "\nDENY ": a file name may hold a newline, NEL or U+2028, which
         # splitlines() would also split on.
         expected_deny = ("DENY mkdir ", "DENY mkdirat ", "DENY rename ", "DENY renameat", "DENY fopen /proc/",
-                         "DENY open /proc/", "DENY openat /proc/")
+                         "DENY open /proc/", "DENY openat /proc/", "DENY fopen /dev/", "DENY open /dev/",
+                         "DENY openat /dev/")
         unsaved_copy = re.compile(r"DENY fopen .*\.unsaved-\d{8}T\d{6}Z", re.S)
         entries = re.split(r"\n(?=DENY )", det["guardlog"].rstrip("\n"))
         interesting = [e for e in entries

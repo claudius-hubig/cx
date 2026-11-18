@@ -68,7 +68,7 @@ int main() {
                                                                                     {"^", "> "},
                                                                                     {"$", ";"},
                                                                                     {"\\b", "|"},
-                                                                                    {"(?=a)", "-"},
+                                                                                    {"(?:)", "-"},
                                                                                     {"a", "a"},
                                                                                     {"a", "aa"}}) {
     std::string name = std::string("replaceAllRegexForward /") + pat + "/ -> \"" + rep + "\"";
@@ -76,7 +76,7 @@ int main() {
       auto b = mkbuf("abc\nbab\n");
       std::string err;
       auto re = compileRegex(pat, err);
-      auto n = replaceAllRegexForward(*b, {0, 0}, *re, rep);
+      auto n = replaceAllRegexForward(*b, {0, 0}, *re, rep).count;
       std::printf("        %-46s replaced %zu, line0=[%s]\n", "", n,
                   b->lineContent(0).substr(0, 40).c_str());
     });
@@ -102,13 +102,13 @@ int main() {
                 m ? ("match at " + std::to_string(m->first)).c_str() : "none");
   });
   // ---------------- regex: substituteCaptures with context-dependent match
-  probe("substituteCaptures with lookahead", 3, [] {
+  probe("substituteCaptures with an end anchor", 3, [] {
     std::string err;
-    auto re = compileRegex("(a)(?=b)", err);
-    std::string line = "ab";
+    auto re = compileRegex("(a)b$", err);
+    std::string line = "abab";
     auto m = findFirstRegex(line, 0, *re);
     auto out = substituteCaptures(line, m->first, m->second, *re, "[$1]");
-    std::printf("        /(a)(?=b)/ on \"ab\" with \"[$1]\" -> \"%s\" (expected \"[a]\")\n",
+    std::printf("        /(a)b$/ on \"abab\" with \"[$1]\" -> \"%s\" (expected \"[a]\")\n",
                 out.c_str());
   });
   // ---------------- regex: deep recursion / catastrophic patterns on long lines
@@ -120,7 +120,9 @@ int main() {
                                                                   {"(x+x+)+y", 30},
                                                                   {"a{1000}", 2000},
                                                                   {"(.)*", 100000},
-                                                                  {"[a-z]*z", 200000}}) {
+                                                                  {"[a-z]*z", 200000},
+                                                                  {"(a|aa)*b", 200000},
+                                                                  {"(?:a?){1000}a{1000}", 1000}}) {
     std::string name =
         std::string("findFirstRegex /") + pat + "/ on " + std::to_string(len) + " chars";
     probe(name.c_str(), 5, [pat, len] {

@@ -248,7 +248,7 @@ int main(int argc, char** argv) {
        [&](BufferView&, TextBuffer& b) {
          std::string e;
          auto re = compileRegex("z{3}", e);
-         (void)findNextRegexInBuffer(b, {0, 0}, *re);
+         (void)findNextRegexInBuffer(b, {0, 0}, *re).match;
        }},
       {"replace-all 'e' -> 'E'",
        [&](BufferView&, TextBuffer& b) { (void)replaceAllForward(b, {0, 0}, "e", "E"); }},
