@@ -17,7 +17,9 @@
  * terminal too before ending it as they would have, since the destructor
  * does not run for them: SIGTERM (until Screen takes it over), SIGHUP,
  * SIGINT and SIGQUIT, and the crashes SIGSEGV (a stack overflow included),
- * SIGABRT, SIGBUS, SIGFPE and SIGILL. Between the two the
+ * SIGABRT, SIGBUS, SIGFPE and SIGILL. One that was ignored on entry stays
+ * ignored (nohup, a command started in the background by a script).
+ * Between restoring the terminal and ending the process the
  * FatalSignalHook runs, if there is one; nothing else is done on a
  * signal, so without a hook unsaved buffers are lost. At most one
  * instance may exist at a time (the handler's state is per process).

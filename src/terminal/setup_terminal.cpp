@@ -138,8 +138,17 @@ SetupTerminal::SetupTerminal() {
     sigaddset(&sa.sa_mask, signo);
   sa.sa_handler = restoreTerminalAndReraise;
   sa.sa_flags = SA_RESETHAND | SA_ONSTACK;
-  for (std::size_t i = 0; i < kFatalSignals.size(); ++i)
-    sigaction(kFatalSignals[i], &sa, &g_savedActions[i]);
+  for (std::size_t i = 0; i < kFatalSignals.size(); ++i) {
+    sigaction(kFatalSignals[i], nullptr, &g_savedActions[i]);
+    // A signal ignored on entry stays ignored: nohup ignores SIGHUP, and
+    // a shell ignores SIGINT and SIGQUIT for a command a script starts in
+    // the background. It would not have ended the process, so the handler
+    // would hand it on to be ignored and return into an editor that went
+    // on running with the terminal already restored, until the hook's
+    // alarm ended it.
+    if (g_savedActions[i].sa_handler != SIG_IGN)
+      sigaction(kFatalSignals[i], &sa, nullptr);
+  }
 }
 
 SetupTerminal::~SetupTerminal() { restore(); }

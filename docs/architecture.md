@@ -61,7 +61,9 @@ ends the process would skip the destructor, so while an instance exists
 a handler puts the terminal back first and then re-raises the signal
 with its default action (core dump included). This covers SIGTERM
 (until `Screen` takes it over), SIGHUP, SIGINT and SIGQUIT, and the
-crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL. The handler runs
+crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL, except a signal
+that was ignored on entry (nohup's SIGHUP; SIGINT and SIGQUIT for a
+command a script starts in the background), which stays ignored. The handler runs
 on an alternate stack (`sigaltstack`), since a stack overflow leaves no
 room for it on the normal one.
 

@@ -2741,6 +2741,45 @@ BOOST_AUTO_TEST_CASE(e2e_fatal_signal_restores_the_terminal) {
   }
 }
 
+// A signal ignored when cx starts (nohup's SIGHUP, SIGINT and SIGQUIT for
+// a command a script starts in the background) was taken over all the
+// same: it restored the terminal and wrote the copies, was then handed on
+// to be ignored, and the editor ran on in a restored terminal until the
+// emergency save's alarm ended it ten seconds later.
+BOOST_AUTO_TEST_CASE(e2e_signal_ignored_on_entry_stays_ignored) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  for (int signo : {SIGHUP, SIGINT, SIGQUIT}) {
+    BOOST_TEST_CONTEXT("signal " << signo) {
+      // Ignored in this process while cx is started, so cx inherits it.
+      struct sigaction ignore{}, saved{};
+      sigemptyset(&ignore.sa_mask);
+      ignore.sa_handler = SIG_IGN;
+      sigaction(signo, &ignore, &saved);
+      PtySession session(24, 80, bin);
+      sigaction(signo, &saved, nullptr);
+      session.readOutput(std::chrono::milliseconds{300});
+
+      kill(session.childPid, signo);
+      auto out = session.readOutput(std::chrono::milliseconds{300});
+      BOOST_CHECK_MESSAGE(out.find("\x1b[?1049l") == std::string::npos, "terminal restored");
+      session.send("typed");
+      out = stripAnsi(session.readUntil("typed", std::chrono::milliseconds{1000}));
+      BOOST_CHECK_MESSAGE(out.find("typed") != std::string::npos, "editor gone: " + out);
+
+      session.send("\x1b"
+                   "c");
+      session.readUntil("Exiting. Save", std::chrono::milliseconds{1000});
+      session.send("n");
+      BOOST_CHECK_EQUAL(session.waitExit(), 0);
+    }
+  }
+}
+
 namespace {
 
 using std::chrono::milliseconds;
