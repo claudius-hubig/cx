@@ -58,13 +58,13 @@ BOOST_AUTO_TEST_CASE(find_in_buffer_walks_lines) {
   auto re = compileRegex("\\d+", err);
   BOOST_REQUIRE(re.has_value());
 
-  auto m = findNextRegexInBuffer(buf, BufferPoint{0, 0}, *re);
+  auto m = findNextRegexInBuffer(buf, BufferPoint{0, 0}, *re).match;
   BOOST_REQUIRE(m.has_value());
   BOOST_CHECK_EQUAL(m->first.line, 1u);
   BOOST_CHECK_EQUAL(m->first.offset, 0u);
 
   // Continue past the first match.
-  auto m2 = findNextRegexInBuffer(buf, m->second, *re);
+  auto m2 = findNextRegexInBuffer(buf, m->second, *re).match;
   BOOST_REQUIRE(m2.has_value());
   BOOST_CHECK_EQUAL(m2->first.line, 2u);
   BOOST_CHECK_EQUAL(m2->first.offset, 4u);
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(replace_all_forward_terminates_on_self_matching_replacement
 
   // Replacement contains "aaa" as a substring; the scan must skip the
   // inserted text rather than re-match it.
-  auto count = replaceAllRegexForward(buf, BufferPoint{0, 0}, *re, "aaa-aaa");
+  auto count = replaceAllRegexForward(buf, BufferPoint{0, 0}, *re, "aaa-aaa").count;
   BOOST_CHECK_EQUAL(count, 3u);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "aaa-aaa aaa-aaa aaa-aaa");
 }
@@ -100,7 +100,7 @@ BOOST_AUTO_TEST_CASE(replace_all_with_back_references) {
   auto re = compileRegex("(\\w+)=(\\d+)", err);
   BOOST_REQUIRE(re.has_value());
 
-  auto count = replaceAllRegexForward(buf, BufferPoint{0, 0}, *re, "$1:$2");
+  auto count = replaceAllRegexForward(buf, BufferPoint{0, 0}, *re, "$1:$2").count;
   BOOST_CHECK_EQUAL(count, 2u);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "foo:1, bar:2");
 }
@@ -116,7 +116,7 @@ BOOST_AUTO_TEST_CASE(replace_all_records_one_version) {
   auto re = compileRegex("a", err);
   BOOST_REQUIRE(re.has_value());
   auto before = buf.history().size();
-  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "b"), 3u);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "b").count, 3u);
   BOOST_CHECK_EQUAL(buf.history().size(), before + 1);
   view.clampToBuffer();
   view.setPoint(2, 0);
@@ -158,13 +158,14 @@ BOOST_AUTO_TEST_CASE(find_last_caret_only_at_line_start) {
   BOOST_CHECK_EQUAL(m->first, 0u);
 }
 
-BOOST_AUTO_TEST_CASE(substitute_captures_with_lookahead) {
+BOOST_AUTO_TEST_CASE(substitute_captures_with_end_anchor) {
   std::string err;
-  auto re = compileRegex("(a)(?=b)", err);
+  auto re = compileRegex("(a)b$", err);
   BOOST_REQUIRE(re);
-  std::string line = "ab";
+  std::string line = "abab";
   auto m = findFirstRegex(line, 0, *re);
   BOOST_REQUIRE(m);
+  BOOST_CHECK_EQUAL(m->first, 2u);
   BOOST_CHECK_EQUAL(substituteCaptures(line, m->first, m->second, *re, "[$1]"), "[a]");
 }
 
@@ -185,7 +186,7 @@ BOOST_AUTO_TEST_CASE(replace_all_caret_only_replaces_line_starts) {
   BOOST_REQUIRE(re);
   TextBuffer buf("t");
   buf.insertText("aaa\naba", BufferPoint{0, 0});
-  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "X"), 2u);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "X").count, 2u);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "Xaa");
   BOOST_CHECK_EQUAL(buf.lineContent(1), "Xba");
 }
@@ -197,7 +198,7 @@ std::size_t replaceAllIn(TextBuffer& buf, char const* pattern, char const* repla
   std::string err;
   auto re = compileRegex(pattern, err);
   BOOST_REQUIRE(re);
-  return replaceAllRegexForward(buf, {0, 0}, *re, replacement);
+  return replaceAllRegexForward(buf, {0, 0}, *re, replacement).count;
 }
 } // namespace
 
@@ -246,7 +247,7 @@ BOOST_AUTO_TEST_CASE(replace_all_matches_the_original_line_only) {
   std::string err;
   auto re = compileRegex("^a", err);
   BOOST_REQUIRE(re);
-  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, ""), 2u);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "").count, 2u);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "axa");
   BOOST_CHECK_EQUAL(buf.lineContent(1), "a");
 
@@ -256,7 +257,7 @@ BOOST_AUTO_TEST_CASE(replace_all_matches_the_original_line_only) {
   buf2.insertText("abab", BufferPoint{0, 0});
   auto ab = compileRegex("^ab|b", err);
   BOOST_REQUIRE(ab);
-  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf2, {0, 2}, *ab, "X"), 1u);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf2, {0, 2}, *ab, "X").count, 1u);
   BOOST_CHECK_EQUAL(buf2.lineContent(0), "abaX");
 }
 
@@ -266,7 +267,7 @@ BOOST_AUTO_TEST_CASE(replace_all_with_newline_replacement_continues_after_it) {
   std::string err;
   auto re = compileRegex(",", err);
   BOOST_REQUIRE(re);
-  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "\n"), 2u);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "\n").count, 2u);
   BOOST_REQUIRE_EQUAL(buf.lineCount(), 4u);
   BOOST_CHECK_EQUAL(buf.lineContent(0), "a");
   BOOST_CHECK_EQUAL(buf.lineContent(1), "b");
@@ -285,7 +286,7 @@ BOOST_AUTO_TEST_CASE(replace_all_is_linear_in_matches_per_line) {
   std::string err;
   auto re = compileRegex("a", err);
   BOOST_REQUIRE(re);
-  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "xyz"), 200000u);
+  BOOST_CHECK_EQUAL(replaceAllRegexForward(buf, {0, 0}, *re, "xyz").count, 200000u);
   BOOST_CHECK_EQUAL(buf.lineContent(0).size(), line.size() + 400000u);
 }
 
@@ -297,4 +298,41 @@ BOOST_AUTO_TEST_CASE(step_past_empty_match_moves_forward) {
   BOOST_CHECK(stepPastEmptyMatch(buf, {0, 3}) == (BufferPoint{1, 0}));
   BOOST_CHECK(stepPastEmptyMatch(buf, {1, 0}) == (BufferPoint{1, 1}));
   BOOST_CHECK(!stepPastEmptyMatch(buf, {1, 1}).has_value());
+}
+
+// A whole-buffer scan asks its ScanCancel once per megabyte and stops.
+BOOST_AUTO_TEST_CASE(scans_stop_when_cancelled) {
+  TextBuffer buf("t");
+  std::string text;
+  for (int i = 0; i < 40000; ++i)
+    text += "a line of text without the word we look for\n";
+  text += "needle";
+  buf.insertText(text, BufferPoint{0, 0});
+  std::string err;
+  auto re = compileRegex("needle", err);
+  BOOST_REQUIRE(re);
+  int asked = 0;
+  ScanCancel never = [&] {
+    ++asked;
+    return false;
+  };
+  auto found = findNextRegexInBuffer(buf, {0, 0}, *re, never);
+  BOOST_CHECK(found.match.has_value());
+  BOOST_CHECK(!found.cancelled);
+  BOOST_CHECK_GE(asked, 1);
+  ScanCancel always = [] { return true; };
+  auto stopped = findNextRegexInBuffer(buf, {0, 0}, *re, always);
+  BOOST_CHECK(!stopped.match.has_value());
+  BOOST_CHECK(stopped.cancelled);
+
+  auto a = compileRegex("a", err);
+  BOOST_REQUIRE(a);
+  auto before = buf.history().size();
+  auto partial = replaceAllRegexForward(buf, {0, 0}, *a, "A", always);
+  BOOST_CHECK(partial.cancelled);
+  BOOST_CHECK_GT(partial.count, 0u);
+  BOOST_CHECK_LT(partial.count, 40000u * 3);
+  BOOST_CHECK_EQUAL(buf.history().size(), before + 1); // what was done is one version
+  BOOST_CHECK_EQUAL(buf.lineContent(0), "A line of text without the word we look for");
+  BOOST_CHECK_EQUAL(buf.lineContent(39999), "a line of text without the word we look for");
 }

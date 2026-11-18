@@ -38,6 +38,7 @@ set(SYNTAX_SOURCES
 # references, so small tests link just what they use.
 add_library(cx_core STATIC
     src/utf8.cpp
+    src/regex.cpp
     ${SYNTAX_SOURCES}
     src/buffer/modes/md/fence.cpp
     src/buffer/modes/md/table.cpp
@@ -170,6 +171,7 @@ if(CX_BUILD_TESTS AND Boost_FOUND)
     cx_test(mouse)
     cx_test(key_sequence)
     cx_test(replace)
+    cx_test(regex)
     cx_test(regex_search)
     cx_test(panel_layout)
     cx_test(bookmarks)

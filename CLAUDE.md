@@ -103,7 +103,8 @@ src/
   key_sequence.hpp                 Decode CSI/SS3 key sequences (decodeCsiKey, KeyPress)
   replace.hpp                      Find-and-replace helpers (findNextMatchInBuffer, replaceAllForward)
   search.hpp                       Smart-find helpers (matchAt, FindFlags, findFirstMatch)
-  regex_search.hpp                 Regex search/replace helpers (std::regex; per-line)
+  regex.hpp/.cpp                   Regex: own linear-time regex engine (Pike VM, docs/regex-dialect.md)
+  regex_search.hpp                 Regex search/replace helpers on Regex (per-line, cancellable scans)
   terminal/
     setup_terminal.hpp/.cpp        RAII raw mode + alternate screen
     screen.hpp/.cpp                Terminal I/O, input loop, action dispatch, drawing
@@ -164,6 +165,7 @@ tests/
   test_paste_ring_buffer.cpp       PasteRingBuffer display tests
   test_clipboard.cpp               Clipboard PATH probe and detection tests
   test_search.cpp                  Smart-find matching logic tests
+  test_regex.cpp                   Regex engine syntax/semantics/error/linear-time tests
   test_multi_cursor.cpp            Multiple-cursor creation/edit/undo tests
   bench_history.cpp                Version-history capture/prune latency (CLAUDE.md gate)
   bench_suite.cpp                  Broad latency/memory suite across file shapes and cursor counts

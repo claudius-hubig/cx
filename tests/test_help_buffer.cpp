@@ -49,3 +49,18 @@ BOOST_AUTO_TEST_CASE(help_contains_set_mode_shortcut) {
   }
   BOOST_CHECK(found);
 }
+
+// The regex dialect is described in the help: every class escape, the
+// POSIX classes, the quantifiers and the replacement references.
+BOOST_AUTO_TEST_CASE(help_describes_the_regex_dialect) {
+  TB<HelpBuffer> buf;
+  std::string all;
+  for (std::size_t i = 0; i < buf.lineCount(); ++i)
+    all += buf.lineContent(i) + "\n";
+  // A section header (dimmed) is a line of its own ending in ':'.
+  BOOST_CHECK(all.find("\nRegex (Esc-X, Esc-Y):\n") != std::string::npos);
+  for (char const* s :
+       {"\\d \\D", "\\w \\W", "\\s \\S", "\\b \\B", "[[:alpha:]]", "xdigit", "x*", "x+", "x?",
+        "x{n,m}", "Lazy", "(?:x)", "$1 .. $9", "$&", "\\u{10FFFF}", "Unsupported"})
+    BOOST_CHECK_MESSAGE(all.find(s) != std::string::npos, std::string("missing ") + s);
+}

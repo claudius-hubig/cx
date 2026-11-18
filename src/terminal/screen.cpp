@@ -739,6 +739,8 @@ Screen::Exit Screen::loop() {
   while (true) {
     // The next input byte; none if a signal was caught instead.
     std::optional<char> input = std::exchange(pendingChar, std::nullopt);
+    if (!input)
+      input = std::exchange(_typedAhead, std::nullopt);
     if (!input && waitForInput()) {
       char c;
       ssize_t n = read(STDIN_FILENO, &c, 1);
@@ -1754,12 +1756,18 @@ void Screen::regexFindNext() {
   std::size_t startLine = _view->point().line;
   std::size_t startOff = _view->point().offset;
   bool wrapped = false;
+  auto cancel = searchCancel();
+  ScanBudget budget(cancel);
   for (std::size_t count = 0; count < lineCount; ++count) {
     std::size_t li = (startLine + count) % lineCount;
     if (count > 0 && li <= startLine)
       wrapped = true;
     std::size_t from = (count == 0) ? startOff : 0;
     auto const& line = _buf->lineContent(li);
+    if (!budget.charge(line.size() + 1)) {
+      setStatus("Search cancelled");
+      return;
+    }
     auto m = findFirstRegex(line, from, *re);
     // An empty match at the cursor is the one just found (onFindMatch puts
     // the cursor at the match end): skip it, or find-next never advances.
@@ -1783,6 +1791,26 @@ void Screen::regexFindNext() {
   _view->clearHighlight();
   _highlightExpiry.reset();
   setStatus("Not found");
+}
+
+ScanCancel Screen::searchCancel() {
+  return [this] {
+    if (g_termRequests > 0)
+      return true; // acted on back in loop()
+    if (_typedAhead || !inputWaiting())
+      return false;
+    char c;
+    if (!readByte(c))
+      return false;
+    if (c == key::Escape) {
+      (void)drainEscapeTail(); // an arrow key or a mouse report cancels too, whole
+      return true;
+    }
+    if (c == '\x07') // Ctrl-g
+      return true;
+    _typedAhead = c;
+    return false;
+  };
 }
 
 void Screen::openRegexFindPrompt() {
@@ -1847,11 +1875,13 @@ void Screen::regexReplacePump(std::string pattern, std::string replacement, std:
     setStatus("Bad regex: " + escapeNonPrintable(err));
     return;
   }
-  auto m = findNextRegexInBuffer(*_buf, _view->point(), *re);
+  auto scan = findNextRegexInBuffer(*_buf, _view->point(), *re, searchCancel());
+  auto const& m = scan.match;
   if (!m) {
     _view->clearHighlight();
     _highlightExpiry.reset();
-    setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)");
+    setStatus("Replaced " + std::to_string(replaced) + " occurrence(s)" +
+              (scan.cancelled ? "; search cancelled" : ""));
     return;
   }
   _view->setPoint(m->first.line, m->first.offset);
@@ -1923,13 +1953,15 @@ void Screen::openRegexReplaceConfirmPrompt(std::string pattern, std::string repl
                 setStatus("Bad regex: " + escapeNonPrintable(err));
                 return;
               }
-              auto extra = replaceAllRegexForward(*_buf, _view->point(), *re, replacement);
-              newReplaced += extra;
+              auto all =
+                  replaceAllRegexForward(*_buf, _view->point(), *re, replacement, searchCancel());
+              newReplaced += all.count;
               _view->clampToBuffer();
               _view->ensureVisible(rowsForBuffer(), colsForBuffer(), _view->wrap());
               _view->clearHighlight();
               _highlightExpiry.reset();
-              setStatus("Replaced " + std::to_string(newReplaced) + " occurrence(s)");
+              setStatus("Replaced " + std::to_string(newReplaced) + " occurrence(s)" +
+                        (all.cancelled ? "; cancelled" : ""));
               return;
             }
             regexReplacePump(pattern, replacement, newReplaced);

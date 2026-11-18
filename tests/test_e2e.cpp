@@ -1386,6 +1386,12 @@ BOOST_AUTO_TEST_CASE(e2e_filesystem_errors_do_not_end_session) {
   BOOST_CHECK_MESSAGE(out.find("Saved") != std::string::npos, "Expected save: " + out);
 }
 
+// Whole content of the file at @p path.
+static std::string readFile(std::filesystem::path const& path) {
+  std::ifstream f(path, std::ios::binary);
+  return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+
 BOOST_AUTO_TEST_CASE(e2e_regex_find_next_advances_past_empty_match) {
   // The cursor lands at the match end, which for an empty match is its
   // start: the next search used to find the same match forever.
@@ -1452,6 +1458,46 @@ BOOST_AUTO_TEST_CASE(e2e_regex_replace_skip_and_all_with_empty_matches) {
   BOOST_CHECK_MESSAGE(out.find("Replaced 2") != std::string::npos,
                       "Expected 2 replacements: " + out);
   BOOST_CHECK(out.find("xxabxx") != std::string::npos);
+}
+
+// A regex search over a big buffer asks once per megabyte whether to stop:
+// Esc waiting then cancels it; any other key waiting is kept and typed
+// after the search.
+BOOST_AUTO_TEST_CASE(e2e_regex_search_can_be_cancelled_and_keeps_typed_keys) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  std::string text;
+  for (int i = 0; i < 40000; ++i)
+    text += std::string(80, 'x') + "\n";
+  text += "y1\n"; // line 40001, past 3 MB of text
+  TempFile tmp(text);
+
+  {
+    PtySession session(24, 80, bin, {tmp.path().string()});
+    session.readUntil("xxxx", std::chrono::milliseconds{2000});
+    session.send("\x1bX");
+    session.readUntil("Regex find", std::chrono::milliseconds{1000});
+    session.send("y\\d\r\x1b"); // Esc already waiting when the search starts
+    auto out = stripAnsi(session.readUntil("Search cancelled", std::chrono::milliseconds{3000}));
+    BOOST_CHECK_MESSAGE(out.find("Search cancelled") != std::string::npos, out);
+    BOOST_CHECK_MESSAGE(out.find("40001:") == std::string::npos, "the search went on: " + out);
+  }
+  {
+    PtySession session(24, 80, bin, {tmp.path().string()});
+    session.readUntil("xxxx", std::chrono::milliseconds{2000});
+    session.send("\x1bX");
+    session.readUntil("Regex find", std::chrono::milliseconds{1000});
+    session.send("y\\d\rZ");
+    auto out = stripAnsi(session.readUntil("40001:4", std::chrono::milliseconds{3000}));
+    BOOST_CHECK_MESSAGE(out.find("40001:4") != std::string::npos, "Z not typed after: " + out);
+    session.send("\x13"); // save
+    session.readUntil("Saved", std::chrono::milliseconds{2000});
+    BOOST_CHECK(readFile(tmp.path()).ends_with("\ny1Z\n"));
+  }
 }
 
 // --- Bookmarks (C-x b / C-x j) ---
@@ -2303,12 +2349,6 @@ BOOST_AUTO_TEST_CASE(e2e_replace_label_escapes_control_characters) {
                  "c");
     session.waitExit();
   }
-}
-
-// Whole content of the file at @p path.
-static std::string readFile(std::filesystem::path const& path) {
-  std::ifstream f(path, std::ios::binary);
-  return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
 }
 
 // Help and README promise that Esc-Esc leaves history mode without

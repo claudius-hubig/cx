@@ -23,6 +23,7 @@
 #include "panel_layout.hpp"
 #include "paste_ring.hpp"
 #include "prompt.hpp"
+#include "regex_search.hpp"
 #include "shortcut.hpp"
 #include "types.hpp"
 
@@ -342,7 +343,7 @@ private:
   /**
    * @brief Esc-X: regex find.
    *
-   * Prompts for an ECMAScript pattern, highlights the next match, and
+   * Prompts for a pattern (docs/regex-dialect.md), highlights the next match, and
    * leaves @c _lastRegex set so a subsequent Esc-X with empty input reuses
    * it.
    */
@@ -361,6 +362,15 @@ private:
                                      BufferPoint matchEnd);
   /** @brief Forward regex search using @c _lastRegex; mirrors findNext(). */
   void regexFindNext();
+  /**
+   * @brief The ScanCancel for a regex scan over the buffer: true on a
+   *        pending request to terminate, or when Esc or Ctrl-g is waiting
+   *        (and then read, with the rest of an escape sequence).
+   *
+   * Any other key waiting is read into @c _typedAhead, the next input of
+   * loop(), and stops the checks: one byte can be kept, no more.
+   */
+  ScanCancel searchCancel();
   void openConfirmPrompt(std::string question, std::function<void(std::string const&)> onResult,
                          std::function<void()> onAbort);
   /** @brief Confirm-kill prompt shared by KillBuffer and tryExit. */
@@ -511,6 +521,9 @@ private:
    * other's history.
    */
   std::string _lastRegex;
+  /** @brief A key searchCancel() read that was not Esc or Ctrl-g; loop()
+   *         takes it before reading stdin again. */
+  std::optional<char> _typedAhead;
   std::optional<std::chrono::steady_clock::time_point> _highlightExpiry;
   /** @} */
 

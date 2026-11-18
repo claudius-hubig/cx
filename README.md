@@ -191,8 +191,8 @@ Two nearby cues are easy to mistake for part of it:
 | Ctrl-f          | Find forward                                               |
 | Ctrl-r          | Find backward                                              |
 | Esc-%           | Find and replace                                           |
-| Esc-X           | Regex find forward (ECMAScript / `std::regex` syntax)      |
-| Esc-Y           | Regex find and replace (`$0..$9`/`$&` back-references)     |
+| Esc-X           | Regex find forward (see [Regular expressions](#regular-expressions)) |
+| Esc-Y           | Regex find and replace (`$0..$9`/`$&` in the replacement)  |
 | Esc-g           | Find in files (grep)                                       |
 | Arrows          | Move cursor                                                |
 | Ctrl-Left/Right | Move by word                                               |
@@ -205,16 +205,52 @@ Two nearby cues are easy to mistake for part of it:
 | Home / End      | Start / end of line                                        |
 | Ctrl-Home/End   | Start / end of file                                        |
 
-Regex search matches within a single line and treats the text before the
-cursor as context, so `^` only matches at a real line start. Patterns that
+### Regular expressions
+
+Esc-X and Esc-Y take patterns in a subset of ECMAScript (JavaScript) syntax that
+needs no backtracking, matched by cx's own engine: a search takes time linear in
+the length of a line whatever the pattern, so no pattern can freeze the editor.
+Esc or Ctrl-g cancels a long search over a big buffer.
+
+A match lies within one line. Matching is case-sensitive and works on
+characters (Unicode code points) of the UTF-8 text: `.` matches `é` or `中`
+whole, never one byte of it. A byte that is not valid UTF-8 is matched only by
+`.` and negated classes. A search that starts mid-line treats the text before
+the cursor as context, so `^` only matches at a real line start. Patterns that
 can match empty text (`x*`, `^`, `$`, `\b`) work for find, skip and
 replace-all.
 
-**Known limitation:** `std::regex` backtracks, and a regex search cannot be
-interrupted. Nested quantifiers such as `(a*)*b`, or `.*x` on a very long
-line, can take exponential or quadratic time and freeze the editor, and
-the only way out is killing it (which loses unsaved changes). Save before
-running an untested pattern on a large file.
+| Pattern | Matches |
+|---|---|
+| `a`, `中`, `\.` `\*` `\\` … | the character itself (punctuation after `\` is literal) |
+| `.` | any one character |
+| `[abc]`, `[^abc]`, `[a-z]`, `[à-ÿ]` | one character of / not of the set; ranges by code point |
+| `\d` `\D` | an ASCII digit / any other character |
+| `\w` `\W` | an ASCII letter, digit or `_` / any other character |
+| `\s` `\S` | space, tab, `\v`, `\f`, `\r` / any other character |
+| `[[:alpha:]]` | POSIX class (ASCII), also `digit` `alnum` `upper` `lower` `space` `punct` `xdigit` `word` |
+| `\t`, `\xHH`, `\uHHHH`, `\u{H…}` | tab; the character with that hex code point |
+| `^` `$` | start / end of the line |
+| `\b` `\B` | at a word boundary / not at one |
+| `x*` `x+` `x?` | `x` 0 or more / 1 or more / 0 or 1 times |
+| `x{n}` `x{n,}` `x{n,m}` | `x` n times / n or more / n to m times (n, m ≤ 1000) |
+| `x*?` `x+?` `x??` `x{n,m}?` | the same, lazy |
+| `a\|b` | `a` or `b` |
+| `(x)` / `(?:x)` | a group, captured as `$1`…`$9` / not captured |
+
+Quantifiers are greedy: they take as many repetitions as still let the rest of
+the pattern match. The lazy forms take as few: on `<a><b>`, `<.*>` matches
+`<a><b>` but `<.*?>` matches `<a>`. Of the matches that start leftmost, the
+first by these priorities wins (alternatives left to right), as in ECMAScript.
+
+In a replacement, `$&` or `$0` inserts the whole match, `$1`…`$9` a group
+(one digit: `$10` is group 1 and a `0`), `$$` a `$`, `` $` `` and `$'` the text
+of the line before and after the match. Backslashes are not special there.
+
+Not supported, and refused with a message: back-references in the pattern
+(`(.)\1`) and lookahead or lookbehind (`(?=`, `(?!`, `(?<=`, `(?<!`), which
+need backtracking; named groups; escapes of letters other than those above. The
+full specification is in `docs/regex-dialect.md`.
 
 ### Multiple cursors
 

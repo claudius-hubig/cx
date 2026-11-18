@@ -45,8 +45,8 @@
 #include "search.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <chrono>
+#include <cmath>
 #include <concepts>
 #include <cstdio>
 #include <fstream>
@@ -627,7 +627,7 @@ void benchSearch(Ctx& c) {
   series(c, "search.exact.absent", 1, scans,
          [&] { g_sink = findNextMatchInBuffer(b, {0, 0}, "zqxjv").has_value(); });
   series(c, "search.regex.absent", 1, scans,
-         [&] { g_sink = findNextRegexInBuffer(b, {0, 0}, *absentRe).has_value(); });
+         [&] { g_sink = findNextRegexInBuffer(b, {0, 0}, *absentRe).match.has_value(); });
 
   // Step through successive matches, as repeated find-next does.
   BufferPoint at{0, 0};
@@ -638,7 +638,7 @@ void benchSearch(Ctx& c) {
   series(c, "search.smart.dense-next", 1, c.prof.iters, stepSmart("ipsum"));
   at = {0, 0};
   series(c, "search.regex.sparse-next", 1, c.prof.iters, [&] {
-    auto m = findNextRegexInBuffer(b, at, *needleRe);
+    auto m = findNextRegexInBuffer(b, at, *needleRe).match;
     at = m ? m->second : BufferPoint{0, 0}; // no wrap in the helper: restart at the top
   });
 }
@@ -662,9 +662,9 @@ void benchReplace(Ctx& c) {
   series(c, "replace.all.newline", 1, n, fresh,
          [&] { g_sink = replaceAllForward(s->buf, {0, 0}, "needle", "nee\ndle"); });
   series(c, "replace.regex.sparse", 1, n, fresh,
-         [&] { g_sink = replaceAllRegexForward(s->buf, {0, 0}, *needleRe, "pin"); });
+         [&] { g_sink = replaceAllRegexForward(s->buf, {0, 0}, *needleRe, "pin").count; });
   series(c, "replace.regex.dense", 1, n, fresh,
-         [&] { g_sink = replaceAllRegexForward(s->buf, {0, 0}, *ipsumRe, "$1"); });
+         [&] { g_sink = replaceAllRegexForward(s->buf, {0, 0}, *ipsumRe, "$1").count; });
 
   // Interactive replace, one 'y' answer per call (Screen::replacePump plus
   // the confirm prompt): find, delete, insert. Replacing "needle" with
