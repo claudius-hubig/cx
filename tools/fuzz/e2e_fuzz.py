@@ -118,12 +118,12 @@ def ctrl(c):
 
 SEARCH_TERMS = ["a", "x", "the", "", " ", "中", "😀", "\\", ".", "e\u0301", "aaaa", "(", "#", "\t", "Ab",
                 "ab" * 50, "\x7f", "é", "[", "\"\"\"", "key"]
-REGEXES = ["a", ".", ".*", "^", "$", "^$", "(a*)*b", "(x+x+)+y", "[", "(", "\\", "a{1000}", "a{1001}", "<.*?>", "\\u{1F600}", "[à-ÿ]+", "[[:punct:]]", "\\b",
+REGEXES = ["a", ".", ".*", "^", "$", "^$", "\\n", "c\\nd", "\\s+", "(a*)*b", "(x+x+)+y", "[", "(", "\\", "a{1000}", "a{1001}", "<.*?>", "\\u{1F600}", "[à-ÿ]+", "[[:punct:]]", "\\b",
            "(?=a)", "\\1", "(a)|b", "[^\\n]", "", "x*", "\\w+", ".{0}", "(.)\\1", "[[:alpha:]]", "a|",
            "*", "+?", "(?:", "\\d{2,}"]
-REGEX_REPLACE = ["a", ".", "(a)|b", "[^\\n]", "\\w+", "(.)\\1", "[[:alpha:]]", "\\d{2,}", "(\\w)(\\w)", "é", "[", "("]
+REGEX_REPLACE = ["\\n", "a\\nb", "\\s*\\n\\s*", "$\\n^", "[\\n ]+", "\\t", "a", ".", "(a)|b", "[^\\n]", "\\w+", "(.)\\1", "[[:alpha:]]", "\\d{2,}", "(\\w)(\\w)", "é", "[", "("]
 REGEX_FIND_SAFE = REGEXES  # the engine is linear: no pattern needs to be left out
-REPLACEMENTS = ["", "b", "$1", "\\1", "&", "$&", "$0", "$$", "$9", "\\n", "\n", "中文😀", "x" * 200, "$`",
+REPLACEMENTS = ["", "b", "$1", "\\1", "&", "$&", "$0", "$$", "$9", "\\n", "\n", "\\t\\r\\\\", "a\\nb\\n", "中文😀", "x" * 200, "$`",
                 "$'", "\\", "$"]
 GOTO = ["1", "0", "-1", "99999999999999999999999", "abc", "", "5", "100000", "1:5", " 3", "+2", "2x", "18446744073709551616"]
 MODES = ["txt", "c", "cpp", "md", "jsn", "json", "dif", "sh", "yml", "tml", "toml", "py", "zz", "", "C"]
@@ -162,7 +162,8 @@ def prompt_edit(rng):
     """Random line-editing keys inside a prompt."""
     keys = [CSI + "D", CSI + "C", CSI + "H", CSI + "F", "\x7f", ctrl("a"), ctrl("e"), ctrl("k"), ctrl("w"),
             ctrl("y"), ctrl(" "), ESC + "w", CSI + "1;5D", CSI + "1;5C", CSI + "3~", CSI + "A", CSI + "B",
-            "\t", ctrl("u"), ESC + "b", ESC + "f", ESC + "\x7f", ctrl("h"), ctrl("d")]
+            "\t", ctrl("u"), ESC + "b", ESC + "f", ESC + "\x7f", ctrl("h"), ctrl("d"),
+            ctrl("q") + "\r", ctrl("q") + "\t", ctrl("q") + ctrl("q"), ctrl("q") + ESC, ctrl("q")]
     return "".join(rng.choice(keys) for _ in range(rng.randrange(0, 4)))
 
 

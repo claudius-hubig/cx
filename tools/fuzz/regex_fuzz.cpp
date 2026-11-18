@@ -6,16 +6,19 @@
 //     cannot match empty (libstdc++ does not implement ECMAScript's rule
 //     for empty iterations) and groups inside repetitions are not compared
 //     (ECMAScript resets them per iteration, libstdc++ and Regex do not).
-//  2. Robustness: random bytes as a pattern compile or are refused; on
+//  2. Over lines: searchLines() on random lines finds what search() finds
+//     in the same lines joined by '\n', for patterns with \n but no ^ $.
+//  3. Robustness: random bytes as a pattern compile or are refused; on
 //     random UTF-8 lines a match starts at or after its search offset,
 //     lies on code-point boundaries, and matchAt() at its start gives it
 //     again.
-//  3. Time: random patterns, nullable loops included, on long lines must
+//  4. Time: random patterns, nullable loops included, on long lines must
 //     stay fast; anything over SLOW_MS (default 2000) is reported.
 // usage: regex_fuzz SEED ITERS
 #include "regex.hpp"
 #include "utf8.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -59,6 +62,8 @@ static unsigned long long gSeed;
 
 // ------------------------------------------------------- pattern generator
 struct Gen {
+  bool lineBreaks = false; // may use \n (for overLines())
+  bool anchors = true;     // may use ^ and $
   int groups = 0;
   std::vector<bool> inRepeat; // per group number (index 0 unused)
   int repeatDepth = 0;
@@ -83,10 +88,12 @@ struct Gen {
       return {cls[R(std::size(cls))], false};
     }
     case 5: {
-      static char const* zw[] = {"^", "$", "\\b", "\\B"};
-      return {zw[R(4)], true};
+      static char const* zw[] = {"\\b", "\\B", "^", "$"};
+      return {zw[R(anchors ? 4 : 2)], true};
     }
     case 6:
+      if (lineBreaks && R(2))
+        return {R(3) ? "\\n" : "[\\n ]", false};
       return {std::string(1, " _1-"[R(4)]), false};
     case 7:
       return {"\\-", false};
@@ -232,6 +239,58 @@ static void differential() {
   }
 }
 
+// --------------------------------------------------------------- over lines
+// searchLines() over lines must find what search() finds in the same lines
+// joined with '\n' into one string (patterns without ^ and $, which match
+// at every line start and end over lines but only at the ends of a
+// string).
+static void overLines() {
+  Gen g;
+  g.lineBreaks = true;
+  g.anchors = false;
+  std::string pat = g.alternation(0).text;
+  if (pat.empty())
+    return;
+  auto re = Regex::compile(pat);
+  if (!re)
+    return;
+  std::vector<std::string> lines(1 + R(4));
+  for (auto& l : lines)
+    l = randAsciiLine(R(8));
+  std::string joined;
+  std::vector<std::size_t> base;
+  for (auto const& l : lines) {
+    if (!base.empty())
+      joined += '\n';
+    base.push_back(joined.size());
+    joined += l;
+  }
+  auto point = [&](std::size_t off) {
+    std::size_t i = std::upper_bound(base.begin(), base.end(), off) - base.begin() - 1;
+    return BufferPoint{i, off - base[i]};
+  };
+  Regex::LineSource src{[&](std::size_t i) { return std::string_view(lines[i]); }, lines.size()};
+  std::size_t li = R(lines.size());
+  BufferPoint from{li, R(lines[li].size() + 1)};
+  auto a = re->searchLines(src, from);
+  auto b = re->search(joined, base[li] + from.offset);
+  auto where = [&] {
+    return "/" + pat + "/ on \"" + esc(joined) + "\" from " + std::to_string(from.line) + ":" +
+           std::to_string(from.offset);
+  };
+  if (a.has_value() != b.has_value())
+    fail("searchLines and search on the joined text disagree on a match: " + where());
+  if (!a)
+    return;
+  for (std::size_t i = 0; i < Regex::kReportedGroups; ++i) {
+    bool same = a->groups[i].has_value() == b->groups[i].matched() &&
+                (!a->groups[i] || (a->groups[i]->first == point(b->groups[i].begin) &&
+                                   a->groups[i]->second == point(b->groups[i].end)));
+    if (!same)
+      fail("group " + std::to_string(i) + " differs over lines: " + where());
+  }
+}
+
 // ---------------------------------------------------------------- robustness
 static void robustness() {
   static char const alphabet[] = "ab.()[]{}*+?|^$\\-,0123456789:dDwWsSbBxu=!<>&";
@@ -293,6 +352,7 @@ int main(int argc, char** argv) {
     gSeed = seed0 + it;
     rng.seed(gSeed);
     differential();
+    overLines();
     robustness();
     if (it % 50 == 0)
       timing(slowMs);

@@ -975,7 +975,11 @@ static void fuzzReplace() {
     auto got = bufText(*b);
     bool ascii = std::all_of(content.begin(), content.end(),
                              [](char c) { return static_cast<unsigned char>(c) < 0x80; });
-    if (ascii && rep.find('\n') == std::string::npos) {
+    // A pattern that can match a line break (\s) spans lines, which the
+    // per-line model cannot follow; nor can it a \n, \t, \r or \\ in the
+    // replacement, which std::regex_replace leaves alone.
+    if (ascii && rep.find('\n') == std::string::npos && rep.find('\\') == std::string::npos &&
+        !re->spansLines()) {
       // Per-line std::regex_replace is the reference for a single pass.
       std::string model;
       std::size_t ls = 0;

@@ -38,10 +38,11 @@ static void glog(const char* what, const char* path) {
 static int inside(int dirfd, const char* path) {
   if (!path)
     return 0;
-  // Device files are fine to write (/dev/null), except the terminals: a
-  // buffer saved to /dev/pts/N or /dev/tty (the directory browser goes
-  // there) would write raw text into the fuzzer's terminal stream.
-  if (!strncmp(path, "/dev/pts/", 9) || !strcmp(path, "/dev/tty"))
+  // Device files are fine to write (/dev/null), except the terminals by
+  // name: a buffer saved to /dev/pts/N (the directory browser goes there)
+  // would write raw text into the fuzzer's terminal stream. /dev/tty stays
+  // open to cx, which reads keys from it when stdin is a pipe.
+  if (!strncmp(path, "/dev/pts/", 9))
     return 0;
   if (!strncmp(path, "/dev/", 5))
     return 1;

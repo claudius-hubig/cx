@@ -65,8 +65,9 @@ tools/fuzz/e2e_fuzz.py --replay CASE.json build/fuzz/san/cx OUTDIR
 (`FUZZ_GUARD` overrides its path). It refuses mutating filesystem calls outside the run
 directory, restricts `exec` to a whitelist, and writes a backtrace on fatal signals. A call
 whose parent directory does not exist is let through, as it fails on its own. Writes to
-the terminals (`/dev/pts/*`, `/dev/tty`) are refused, as a buffer saved there would put
-raw text into the stream the fuzzer checks. `DENY mkdir`
+the terminals by name (`/dev/pts/*`) are refused, as a buffer saved there would put raw
+text into the stream the fuzzer checks; `/dev/tty` stays open to cx, which reads keys from
+it when stdin is a pipe. `DENY mkdir`
 and `DENY rename` lines are not reported as findings: the directory browser legitimately
 tries those wherever the fuzzer navigated it. Neither is a denied emergency copy
 (`DENY fopen ….unsaved-…`), which goes next to its file wherever that was opened.
