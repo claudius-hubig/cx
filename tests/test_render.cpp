@@ -768,3 +768,33 @@ BOOST_AUTO_TEST_CASE(point_snaps_to_cluster_start) {
   buf.setPoint(0, 6);
   BOOST_CHECK_EQUAL(buf.point().offset, 6u);
 }
+
+// A cluster cut by the left edge of a horizontally scrolled row was drawn
+// whole from column 0, which pushed everything after it right by the part
+// scrolled away, and the end of the row past the panel's right edge.
+BOOST_AUTO_TEST_CASE(render_nowrap_blanks_a_cluster_cut_by_the_left_edge) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "a\xe2\x80\x8b"
+                    "bcdefghijkl"); // U+200B is drawn as the 6 columns "​"
+  auto p = renderParams(buf, false, false);
+  p.point = {0, 0};
+  p.viewFrom = ViewFrom{RowIdx{0}, VisualCol{5}}; // two columns of the escape left
+  std::string out;
+  buf.render(out, RowIdx{1}, ColIdx{6}, p);
+  auto grid = renderToGrid(out, 1, 20);
+  BOOST_CHECK_EQUAL(grid[0].substr(0, 5), "  bcd");
+  BOOST_CHECK(out.find('e') == std::string::npos);
+}
+
+// A cluster wider than the whole row (an escape in a panel a few columns
+// wide) was drawn whole, into the gutter and the panel next to it.
+BOOST_AUTO_TEST_CASE(render_wrap_cuts_a_cluster_wider_than_the_row) {
+  TB<TextBuffer> buf("test");
+  insertString(buf, "\xe2\x80\x8bx");
+  std::string out;
+  buf.render(out, RowIdx{3}, ColIdx{4}, renderParams(buf)); // 3 content columns
+  BOOST_CHECK(out.find("\\u2") != std::string::npos);
+  BOOST_CHECK(out.find("\\u20") == std::string::npos);
+  auto grid = renderToGrid(out, 3, 4);
+  BOOST_CHECK_EQUAL(grid[1][0], 'x');
+}

@@ -385,6 +385,12 @@ Public API:
   positions (empty in single-cursor editing); each one that falls in the
   viewport reverse-videos its character cell — a space at end-of-line —
   while the hardware terminal cursor stays on `point`.
+  Nothing is drawn outside the panel: a cluster cut by the left edge of
+  a horizontally scrolled row is drawn as blanks, and one wider than a
+  whole wrapped row (an escape in a panel a few columns wide) is cut to
+  fit. In no-wrap mode the part of a line scrolled off to the left is
+  measured in a loop of its own, which is where a long line scrolled far
+  right spends its time.
 - **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
   reports where a given point sits relative to a viewport start, used
   by `BufferView::ensureVisible` and similar.

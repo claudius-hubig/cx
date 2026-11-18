@@ -16,6 +16,25 @@
 
 Buffer::Buffer(std::string name) : _name(std::move(name)) {}
 
+namespace {
+
+/**
+ * @brief Cut what was drawn into @p out from byte @p from on to @p avail
+ *        columns, and reset the style the cut may have left on.
+ *
+ * For a cluster wider than a whole row (an escape such as "\u{e0001}",
+ * or a wide character, in a panel a few columns wide), which must not
+ * spill into the gutter or the panel next to it.
+ */
+void clipDrawn(std::string& out, std::size_t from, std::size_t avail) {
+  std::string drawn = out.substr(from);
+  out.resize(from);
+  out += clipToVisualWidth(drawn, avail);
+  out += ansi::Reset;
+}
+
+} // namespace
+
 // --- Position-explicit editing methods ---
 
 BufferPoint Buffer::insertAt(uint32_t cp, BufferPoint at) {
@@ -920,7 +939,26 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
 
       setupLine(lineIdx, line);
 
-      for (std::size_t i = 0; i < line.size();) {
+      // The part scrolled off to the left, in a loop of its own: a long
+      // line scrolled far right spends nearly all its time here. A point
+      // in it is drawn at the left edge.
+      std::size_t i = 0;
+      bool pointOnLine = lineIdx == point.line && !pointFound;
+      while (i < line.size()) {
+        auto info = charInfoAt(line.data() + i, line.size() - i);
+        if (vcol + info.width > hScroll)
+          break;
+        if (pointOnLine && point.offset < i + info.len) {
+          cur_row = row;
+          cur_col = leftGutter;
+          pointFound = true;
+          pointOnLine = false;
+        }
+        vcol += info.width;
+        i += info.len;
+      }
+
+      while (i < line.size()) {
         auto info = charInfoAt(line.data() + i, line.size() - i);
 
         if (lineIdx == point.line && i <= point.offset && point.offset < i + info.len &&
@@ -930,12 +968,6 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
           pointFound = true;
         }
 
-        if (vcol + info.width <= hScroll) {
-          // Before visible area.
-          vcol += info.width;
-          i += info.len;
-          continue;
-        }
         if (vcol + info.width > hScroll + cw) {
           // Past or overflows visible area.
           overflows = true;
@@ -943,7 +975,15 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
         }
 
         updateStyle(lineIdx, i, rs);
-        emitChar(line.data() + i, info, rs);
+        if (vcol < hScroll) {
+          // Cut by the left edge: drawing it whole would push every later
+          // character right of the column vcol puts it in, and the last
+          // ones past the panel. Blank its visible part instead, as a
+          // terminal does with half a wide character.
+          out.append(vcol + info.width - hScroll, ' ');
+        } else {
+          emitChar(line.data() + i, info, rs);
+        }
         vcol += info.width;
         i += info.len;
       }
@@ -1054,7 +1094,14 @@ std::tuple<RowIdx, ColIdx> Buffer::render(std::string& out, RowIdx rows, ColIdx 
       }
 
       updateStyle(lineIdx, i, rs);
+      std::size_t drawnFrom = out.size();
       emitChar(line.data() + i, info, rs);
+      if (info.width > cw) { // a row of its own (col is 0 here), and still too narrow
+        clipDrawn(out, drawnFrom, cw);
+        rs = {};
+        if (!curLineBg.empty())
+          out += curLineBg;
+      }
       col += info.width;
 
       if (col >= cw)
