@@ -3,6 +3,8 @@
 // to the terminal must be "terminal safe" — valid UTF-8, no C0/C1 control
 // characters, and no escape sequence other than a well-formed CSI — so file
 // content, file names and grep output can never drive the terminal.
+// A second oracle replays the output on a model terminal: nothing may be
+// printed outside the panel's rectangle.
 // usage: render_fuzz SEED ITERS
 #include "buffer/buffer.hpp"
 #include "buffer/buffer_list_buffer.hpp"
@@ -21,6 +23,7 @@
 #include <execinfo.h>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <string>
 #include <unistd.h>
@@ -49,10 +52,17 @@ static std::string esc(std::string_view s) {
 }
 
 static std::string gCtx;
+// Panels narrower than this skip checkInsidePanel (RF_MINCOLS overrides).
+// In a one-column panel the content and the right gutter share the column,
+// and the end of a line may take two cells there (an extra cursor's cell
+// and the whitespace newline marker).
+static std::size_t gMinGeomCols =
+    std::getenv("RF_MINCOLS") ? std::strtoull(std::getenv("RF_MINCOLS"), nullptr, 10) : 2;
 [[noreturn]] static void fail(std::string const& what, std::string const& out, std::size_t at) {
-  std::size_t from = at > 80 ? at - 80 : 0;
-  std::fprintf(stderr, "FAIL %s\n  %s\n  output around byte %zu: [%s]\n", gCtx.c_str(),
-               what.c_str(), at, esc(std::string_view(out).substr(from, 160)).c_str());
+  std::size_t from = at > 240 ? at - 240 : 0;
+  std::fprintf(stderr, "FAIL %s\n  %s\n  output around byte %zu: [%s] >>> [%s]\n", gCtx.c_str(),
+               what.c_str(), at, esc(std::string_view(out).substr(from, at - from)).c_str(),
+               esc(std::string_view(out).substr(at, 80)).c_str());
   std::exit(3);
 }
 
@@ -90,6 +100,55 @@ static void checkTerminalSafe(std::string const& out) {
     if (cp == 0x2028 || cp == 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
         (cp >= 0x2066 && cp <= 0x2069) || cp == 0x200e || cp == 0x200f || cp == 0x061c)
       fail("raw bidi / line-separator format character", out, i);
+    i += len;
+  }
+}
+
+/// Replays the output on a model terminal: every printed cell must fall
+/// inside the panel's rectangle, or the panel bleeds into its neighbours
+/// (or wraps onto the next row). Only cursor positioning (CUP) moves the
+/// cursor other than printing; any other cursor-moving CSI is a failure,
+/// since this model would not know where it leaves the cursor.
+/// Assumes checkTerminalSafe() passed.
+static void checkInsidePanel(std::string const& out, std::size_t row0, std::size_t rows,
+                             std::size_t col0, std::size_t cols) {
+  std::optional<std::size_t> row, col; // unknown until the first CUP
+  for (std::size_t i = 0; i < out.size();) {
+    if (out[i] == '\x1b') {
+      std::size_t j = i + 2;
+      while (static_cast<unsigned char>(out[j]) < 0x40)
+        ++j;
+      char fin = out[j];
+      std::string_view params(out.data() + i + 2, j - i - 2);
+      if (fin == 'H') {
+        auto semi = params.find(';');
+        std::size_t r = std::strtoull(std::string(params.substr(0, semi)).c_str(), nullptr, 10);
+        std::size_t c =
+            semi == std::string_view::npos
+                ? 1
+                : std::strtoull(std::string(params.substr(semi + 1)).c_str(), nullptr, 10);
+        row = (r ? r : 1) - 1;
+        col = (c ? c : 1) - 1;
+      } else if (fin != 'm' && fin != 'K') {
+        fail("CSI with final '" + std::string(1, fin) + "' the panel model does not know", out, i);
+      }
+      i = j + 1;
+      continue;
+    }
+    auto [cp, len] = decodeUtf8(out.data() + i, out.size() - i);
+    std::size_t w = cp < 0x80 ? 1 : isCombiningMark(cp) ? 0 : codepointWidth(cp);
+    if (!row)
+      fail("text printed before the cursor was positioned", out, i);
+    if (*row < row0 || *row >= row0 + rows)
+      fail("text printed on row " + std::to_string(*row) + " outside the panel rows [" +
+               std::to_string(row0) + "," + std::to_string(row0 + rows) + ")",
+           out, i);
+    if (w > 0 && (*col < col0 || *col + w > col0 + cols))
+      fail("cell [" + std::to_string(*col) + "," + std::to_string(*col + w) +
+               ") printed outside the panel columns [" + std::to_string(col0) + "," +
+               std::to_string(col0 + cols) + ")",
+           out, i);
+    *col += w;
     i += len;
   }
 }
@@ -263,6 +322,7 @@ static void renderRandom(Buffer const& b, bool wholeFile) {
     p.showWhitespace = R(3) == 0;
     p.focused = R(4) != 0;
     p.highlightCurrentLine = R(4) == 0;
+    p.theme = R(2) ? Theme::Dark : Theme::Light;
     if (b.supportsLineNumberGutter() && R(3) == 0)
       p.leftGutter = std::to_string(b.lineCount()).size() + 1;
     p.rowOffset = R(3) ? 0 : R(50);
@@ -275,6 +335,8 @@ static void renderRandom(Buffer const& b, bool wholeFile) {
       p.leftGutter = 0;
     auto [r, c] = b.render(out, RowIdx{rows}, ColIdx{cols}, p);
     checkTerminalSafe(out);
+    if (cols >= gMinGeomCols)
+      checkInsidePanel(out, p.rowOffset, rows, p.colOffset, cols);
     (void)r;
     (void)c;
     (void)b.screenRow(ColIdx{cols}, p.point, p.viewFrom, p.wrap);

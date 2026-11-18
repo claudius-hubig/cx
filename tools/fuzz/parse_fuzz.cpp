@@ -1,12 +1,14 @@
 // Targeted probes and random fuzzing of the small parsing helpers (regex and
 // plain replace-all termination, grep output parser, CLI and path:LINE
-// arguments, SGR mouse sequences, UTF-8 helpers). Each probe runs in a forked
+// arguments, SGR mouse sequences, key escape sequences and bracketed paste,
+// UTF-8 helpers). Each probe runs in a forked
 // child with a timeout so hangs and crashes are reported rather than fatal.
 // usage: parse_fuzz
 #include "buffer/grep_buffer.hpp"
 #include "buffer/text_buffer.hpp"
 #include "cli.hpp"
 #include "file_arg.hpp"
+#include "key_sequence.hpp"
 #include "mouse.hpp"
 #include "regex_search.hpp"
 #include "replace.hpp"
@@ -206,15 +208,139 @@ int main() {
       }
     }
   });
-  probe("random fuzz: cli::parse", 30, [] {
-    char const* toks[] = {"-h", "--help", "--version", "--",       "-",  "f",
-                          "-x", "--x",    "",          "--help=1", "-hv"};
+  probe("random fuzz: cli::parse against a model", 30, [] {
+    char const* toks[] = {"-h",
+                          "--help",
+                          "--version",
+                          "--",
+                          "-",
+                          "f",
+                          "-x",
+                          "--x",
+                          "",
+                          "--help=1",
+                          "-hv",
+                          "--theme=dark",
+                          "--theme=light",
+                          "--theme=",
+                          "--theme",
+                          "--theme=Light",
+                          "--theme=dark=",
+                          "f:3",
+                          "--theme=light "};
     for (int it = 0; it < 100000; ++it) {
       std::vector<std::string_view> a;
-      for (std::size_t k = R(5); k; --k)
+      for (std::size_t k = R(6); k; --k)
         a.push_back(toks[R(std::size(toks))]);
       auto r = cli::parse(a);
-      (void)r;
+      // The model: options until "--"; the first help/version/bad option
+      // decides; otherwise every other argument is a file and the last
+      // theme wins.
+      enum { Files, Help, Version, Error } want = Files;
+      std::vector<std::string> files;
+      Theme theme = Theme::Dark;
+      bool done = false;
+      for (auto t : a) {
+        if (!done && t.size() > 1 && t[0] == '-') {
+          if (t == "--") {
+            done = true;
+            continue;
+          }
+          if (t == "-h" || t == "--help")
+            want = Help;
+          else if (t == "--version")
+            want = Version;
+          else if (t == "--theme=dark")
+            theme = Theme::Dark;
+          else if (t == "--theme=light")
+            theme = Theme::Light;
+          else
+            want = Error;
+          if (want != Files)
+            break;
+          continue;
+        }
+        files.emplace_back(t);
+      }
+      bool ok = want == Error     ? !r
+                : want == Help    ? r && std::holds_alternative<cli::ShowHelp>(*r)
+                : want == Version ? r && std::holds_alternative<cli::ShowVersion>(*r)
+                                  : r && std::holds_alternative<cli::OpenFiles>(*r) &&
+                                        std::get<cli::OpenFiles>(*r).args == files &&
+                                        std::get<cli::OpenFiles>(*r).theme == theme;
+      if (!ok) {
+        std::printf("        cli::parse disagrees with the model for:");
+        for (auto t : a)
+          std::printf(" [%.*s]", static_cast<int>(t.size()), t.data());
+        std::printf("\n");
+        std::fflush(stdout);
+        _exit(4);
+      }
+    }
+  });
+  probe("key sequences: every key and modifier round-trips; random bytes are safe", 30, [] {
+    struct Shape {
+      Key key;
+      char final;
+      char const* number; // "" for the letter form
+    };
+    Shape shapes[] = {{Key::Up, 'A', ""},      {Key::Down, 'B', ""},     {Key::Right, 'C', ""},
+                      {Key::Left, 'D', ""},    {Key::Home, 'H', ""},     {Key::End, 'F', ""},
+                      {Key::Home, '~', "1"},   {Key::Home, '~', "7"},    {Key::Insert, '~', "2"},
+                      {Key::Delete, '~', "3"}, {Key::End, '~', "4"},     {Key::End, '~', "8"},
+                      {Key::PageUp, '~', "5"}, {Key::PageDown, '~', "6"}};
+    for (auto const& sh : shapes) {
+      for (unsigned m = 1; m <= 8; ++m) {
+        std::string params = *sh.number ? sh.number : "1";
+        if (m > 1 || R(2))
+          params += ";" + std::to_string(m);
+        else if (!*sh.number && R(2))
+          params.clear(); // ESC [ A
+        KeyPress want{sh.key, ((m - 1) & 1) != 0, ((m - 1) & 2) != 0, ((m - 1) & 4) != 0};
+        auto got = decodeCsiKey(params, sh.final);
+        if (!got || !(*got == want)) {
+          std::printf("        decodeCsiKey(\"%s\", '%c') is wrong\n", params.c_str(), sh.final);
+          std::fflush(stdout);
+          _exit(4);
+        }
+      }
+    }
+    for (int it = 0; it < 300000; ++it) {
+      auto params = randBytes(R(10), "0123456789;:?<>~ -");
+      char fin = static_cast<char>(0x40 + R(0x3f));
+      auto k = decodeCsiKey(params, fin);
+      // Anything outside the two documented shapes must be refused.
+      if (k && fin != '~' && std::string_view("ABCDHF").find(fin) == std::string_view::npos) {
+        std::printf("        decodeCsiKey accepted final '%c' with [%s]\n", fin, params.c_str());
+        std::fflush(stdout);
+        _exit(4);
+      }
+      if (k && params.find_first_not_of("0123456789;") != std::string::npos) {
+        std::printf("        decodeCsiKey accepted parameters [%s]\n", params.c_str());
+        std::fflush(stdout);
+        _exit(4);
+      }
+      (void)decodeSs3Key(fin);
+      (void)isPasteStart(params, fin);
+    }
+  });
+  probe("bracketed paste: normalizePastedText", 30, [] {
+    for (int it = 0; it < 300000; ++it) {
+      auto raw = randBytes(R(20), "ab\r\n\t\x1b[~2\xc3\xa9");
+      auto t = normalizePastedText(raw);
+      // Each "\r\n", lone '\r' and lone '\n' is one line break, and nothing
+      // else changes.
+      std::string want;
+      for (std::size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] == '\r' && i + 1 < raw.size() && raw[i + 1] == '\n')
+          continue;
+        want += raw[i] == '\r' ? '\n' : raw[i];
+      }
+      if (t != want) {
+        std::printf("        normalizePastedText(%s) is wrong\n", raw.c_str());
+        std::fflush(stdout);
+        _exit(4);
+      }
     }
   });
   probe("random fuzz: parseGrepOutput", 30, [] {

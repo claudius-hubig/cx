@@ -68,7 +68,9 @@ static int inside(int dirfd, const char* path) {
   char* leaf = basename(tmp2);
   char rdir[PATH_MAX];
   if (!realpath(dir, rdir))
-    return 0;
+    // A parent that does not exist (or is no directory) makes the call
+    // fail on its own: nothing can be created or changed there.
+    return errno == ENOENT || errno == ENOTDIR;
   if (!strcmp(leaf, ".."))
     return 0;
   char res[PATH_MAX * 2];

@@ -5,7 +5,9 @@ Each run: fresh dir (FUZZ_ROOT + HOME), random input file(s), random terminal
 size, random key-macro sequence with random pacing and resizes. Detects:
 crash signals, UBSan / libstdc++-debug aborts, uncaught exceptions
 (~/.cx-errors), hangs (sustained CPU after input stops -> SIGABRT for a
-backtrace), runaway memory, and guard denials. Saves a replayable JSON case
+backtrace), runaway memory, guard denials, and a terminal left in a mode
+cx set (alternate screen, mouse reporting, bracketed paste, hidden cursor)
+when it exits or a signal ends it. Saves a replayable JSON case
 for every finding.
 
 usage: e2e_fuzz.py CX_BINARY OUTDIR SECONDS [SEED]
@@ -18,6 +20,8 @@ GUARD = os.path.abspath(os.environ.get("FUZZ_GUARD") or os.path.join(HERE, "..",
 ASAN = os.environ.get("FUZZ_ASAN") == "1"
 ASAN_LIB = "/usr/lib/gcc/x86_64-linux-gnu/16/libasan.so"
 RSS_LIMIT_MB = 3500
+# How long each of the two SIGTERMs at the end gets before the next step.
+TERM_WAIT = float(os.environ.get("FUZZ_TERM_WAIT", "3"))
 BIG = os.environ.get("FUZZ_BIG") == "1"  # favour large / long-line / many-line files
 BIG_WEIGHTS = [10, 5, 15, 20, 0, 0, 5, 5, 15, 15, 10]
 
@@ -162,6 +166,26 @@ def prompt_edit(rng):
     return "".join(rng.choice(keys) for _ in range(rng.randrange(0, 4)))
 
 
+PASTE_START = CSI + "200~"
+PASTE_END = CSI + "201~"
+
+
+def bracketed_paste(rng):
+    """A terminal paste between the bracketed-paste markers: text with line
+    breaks as the terminal sends them, key sequences and control bytes that
+    must arrive as text, a start marker inside the paste, and sometimes no
+    end marker at all (cx ends such a paste after a pause)."""
+    parts = []
+    for _ in range(rng.randrange(0, 12)):
+        parts.append(rng.choice([
+            rand_text(rng), "\r", "\r\n", "\n", "\t", "    ", ctrl("x") + ctrl("c"), ESC + "c", ctrl("q"),
+            CSI + "A", CSI + "3~", ESC, ESC + "[", PASTE_START, CSI + "201", CSI + "20", "\x7f", "\x00",
+            "| a | b |\r|---|---|\r", "<<<<<<< a\r", "\u0085", "\u202e", rand_text(rng, rng.randrange(100, 3000)),
+        ]))
+    end = rng.choices([PASTE_END, "", CSI + "201", PASTE_END + PASTE_END], [85, 6, 4, 5])[0]
+    return PASTE_START + "".join(parts) + end
+
+
 def mouse(rng, rows, cols):
     b = rng.choice([0, 1, 2, 3, 32, 33, 34, 35, 64, 65, 66, 67, 4, 8, 16, 96, 128, 255, 999999])
     x = rng.choice([1, cols, cols + 1, rng.randrange(1, max(2, cols + 5)), 0, 99999, 2**31])
@@ -179,11 +203,18 @@ def macro(rng, rows, cols):
         "text", "nav", "edit", "ctrl", "esc", "cx", "find", "rfind", "replace", "regex", "rreplace",
         "goto", "mode", "pipe", "cmd", "open", "dir", "grep", "history", "mouse", "garbage_csi",
         "paste_burst", "region", "multicursor", "bookmark", "split", "quit", "savas", "kill", "random_bytes", "table", "undo",
-    ], [30, 25, 12, 6, 6, 5, 5, 2, 4, 3, 3, 3, 2, 1, 2, 2, 2, 1, 2, 4, 2, 1, 5, 3, 1, 3, 0.4, 1, 0.05, 2, 6, 4])[0]
+        "bpaste", "prompt_bpaste",
+    ], [30, 25, 12, 6, 6, 5, 5, 2, 4, 3, 3, 3, 2, 1, 2, 2, 2, 1, 2, 4, 2, 1, 5, 3, 1, 3, 0.4, 1, 0.05, 2, 6, 4, 4, 2])[0]
     r = rng
     if m == "table":
         return r.choice(["", "|", "| a | b |\r|---|---|\r| ", "\r|x|y|\r|-|-|\r||" + rand_text(r, 30) + "|\r", ctrl(" ") + CSI + "B" * r.randrange(1, 9)]) + \
             "".join(r.choice([CSI + "A", CSI + "B", CSI + "C" * r.randrange(1, 30), CSI + "1;5C", ESC + "q", ESC + "q", ESC + "f"]) for _ in range(r.randrange(1, 8))) + ESC + "q"
+    if m == "bpaste":
+        return bracketed_paste(r)
+    if m == "prompt_bpaste":
+        # A paste into a prompt: one line, or several (only the first is kept).
+        return r.choice([ctrl("f"), ctrl("r"), ctrl("o"), ctrl("g"), ESC + "x", ESC + "%", ESC + "X", ESC + "g", ctrl("p"), ESC + "m"]) + \
+            bracketed_paste(r) + prompt_edit(r) + prompt_end(r)
     if m == "undo":
         return ctrl("u") + "[" * r.randrange(0, 12) + "]" * r.randrange(0, 5) + r.choice([ctrl("u"), "\r", "q", ESC, ""])
     r = rng
@@ -291,6 +322,28 @@ def term_leak(stream):
     return repr(body[max(0, b.start() - 60):b.start() + 40]) if b else None
 
 
+# What cx must undo on the way out, as (sequence that sets the mode,
+# sequence that resets it). Checked on the output's tail: the last of
+# each pair must be the reset.
+TERM_MODES = [("alternate screen", b"\x1b[?1049h", b"\x1b[?1049l"),
+              ("mouse reporting", b"\x1b[?1000h", b"\x1b[?1000l"),
+              ("button-event mouse reporting", b"\x1b[?1002h", b"\x1b[?1002l"),
+              ("SGR mouse coordinates", b"\x1b[?1006h", b"\x1b[?1006l"),
+              ("bracketed paste", b"\x1b[?2004h", b"\x1b[?2004l"),
+              ("hidden cursor", b"\x1b[?25l", b"\x1b[?25h")]
+
+
+def term_left_set(tail, whole):
+    """For an editor that is gone: the terminal modes it set and left set,
+    or None. One that never set up the terminal (it exited on a bad
+    argument, say) has nothing to undo."""
+    if b"\x1b[?1049h" not in whole:
+        return None
+    tail = bytes(tail)
+    left = [name for name, on, off in TERM_MODES if tail.rfind(on) > tail.rfind(off) or tail.rfind(off) < 0]
+    return ", ".join(left) or None
+
+
 def set_winsize(fd, rows, cols):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
@@ -338,6 +391,9 @@ def make_case(rng, run_seed):
     first = next(iter(files))
     args = {"file": [first], "line": [first + ":" + rng.choice(["0", "1", "5", "999999", "-1", "", "abc", "99999999999999999999999"])],
             "multi": list(files), "none": [], "dir": ["."], "stdin": [], "missing": ["nope/" + first]}[argv_kind]
+    theme = rng.choices([None, "--theme=light", "--theme=dark"], [60, 30, 10])[0]
+    if theme:
+        args = [theme] + args
     steps = []
     for _ in range(rng.randrange(5, 120)):
         if rng.random() < 0.04:
@@ -348,6 +404,13 @@ def make_case(rng, run_seed):
         else:
             delay = rng.choices([0, 0.002, 0.07], [60, 30, 10])[0]
             steps.append({"keys": macro(rng, rows, cols), "delay": delay})
+    if rng.random() < 0.05:
+        # A signal from outside: a closed terminal window, kill -INT or -QUIT
+        # (raw mode keeps the keyboard from sending them). It ends cx, after
+        # its emergency save, with the terminal restored; the steps after it
+        # are wasted, so it comes late and in few cases.
+        steps.insert(rng.randrange(len(steps) // 2, len(steps) + 1),
+                     {"signal": rng.choice(["SIGHUP", "SIGINT", "SIGQUIT"])})
     return {"seed": run_seed, "files": {k: v.decode("latin-1") for k, v in files.items()}, "rows": rows, "cols": cols,
             "args": args, "stdin": argv_kind == "stdin", "steps": steps, "weird_names": rng.random() < 0.3}
 
@@ -430,6 +493,11 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
     if pid == 0:
         try:
             os.chdir(workdir)
+            # cx keeps a signal ignored that was ignored when it started, and
+            # a shell ignores SIGINT and SIGQUIT for a script's background
+            # jobs: start it with the defaults, however the fuzzer was run.
+            for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
+                signal.signal(sig, signal.SIG_DFL)
             if not ASAN:
                 resource.setrlimit(resource.RLIMIT_AS, (3 << 30, 3 << 30))
             resource.setrlimit(resource.RLIMIT_FSIZE, (512 << 20, 512 << 20))
@@ -496,6 +564,7 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
 
     drain(0.15)
     hung = False
+    signals_sent = set()
     step_idx = -1
     for step_idx, st in enumerate(case["steps"]):
         if not alive():
@@ -507,6 +576,18 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
         if "fs" in st:
             fs_mutate(workdir, st["fs"], st["target"])
             drain(0.01)
+            continue
+        if "signal" in st:
+            sig = getattr(signal, st["signal"])
+            signals_sent.add(sig)
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+            for _ in range(100):  # the emergency save may take a while
+                drain(0.05)
+                if not alive():
+                    break
             continue
         send(st["keys"])
         drain(st["delay"])
@@ -539,14 +620,17 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
         peak_rss = max(peak_rss, rss_mb(pid))
     # SIGTERM is cx's exit command: with modified buffers it asks about
     # them, and a second SIGTERM while it asks writes them to copies and
-    # exits. Only an editor that survives both is unkillable.
+    # exits. A running command (a formatter on a big file) takes one more:
+    # the first SIGTERM stops it, and keys typed while it ran, still
+    # queued, can then cancel the exit prompt (Esc). Only an editor that
+    # survives three is unkillable.
     term_sent = 0
-    for _ in range(2):
+    for _ in range(3):
         if not alive():
             break
         os.kill(pid, signal.SIGTERM)
         term_sent += 1
-        for _ in range(60):
+        for _ in range(int(TERM_WAIT / 0.05)):
             drain(0.05)
             if not alive():
                 break
@@ -562,13 +646,17 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
         if os.WIFSIGNALED(status):
             sig = os.WTERMSIG(status)
             det["signal"] = sig
-            if sig != signal.SIGTERM:
+            if sig == signal.SIGALRM and signals_sent:
+                # The emergency save's alarm: the save was stuck, typically
+                # on the allocator lock the interrupted code held.
+                verdict = "save_timeout"
+            elif sig != signal.SIGTERM and sig not in signals_sent:
                 verdict = "hang" if hung else "crash"
         elif os.WIFEXITED(status):
             det["exit"] = os.WEXITSTATUS(status)
-            # After the second SIGTERM, 1 means an emergency copy could not
+            # After a second SIGTERM, 1 means an emergency copy could not
             # be written, which the tree changing behind cx's back allows.
-            if det["exit"] not in ((0, 1) if term_sent == 2 else (0,)):
+            if det["exit"] not in ((0, 1) if term_sent >= 2 else (0,)):
                 verdict = "exit_nonzero"
     elif status == -9:
         verdict = "unkillable"
@@ -596,9 +684,26 @@ def run_case(cx, case, workdir, hang_cpu=1.0, keep=False, quiet_after=0.3):
     if peak_rss > (2500 if ASAN else 1500) and verdict == "ok":
         verdict = "memory"
     if "guardlog" in det:
-        interesting = [l for l in det["guardlog"].splitlines() if "sh-replaced" not in l and "exec-refused" not in l]
+        # The directory browser legitimately tries mkdir and rename wherever
+        # the fuzzer navigated it, which can be outside the run directory; an
+        # emergency copy goes next to its file, wherever that is; and the
+        # fuzzer itself types /proc paths to open and save. Entries are split
+        # on "\nDENY ": a file name may hold a newline, NEL or U+2028, which
+        # splitlines() would also split on.
+        expected_deny = ("DENY mkdir ", "DENY mkdirat ", "DENY rename ", "DENY renameat", "DENY fopen /proc/",
+                         "DENY open /proc/", "DENY openat /proc/")
+        unsaved_copy = re.compile(r"DENY fopen .*\.unsaved-\d{8}T\d{6}Z", re.S)
+        entries = re.split(r"\n(?=DENY )", det["guardlog"].rstrip("\n"))
+        interesting = [e for e in entries
+                       if "sh-replaced" not in e and "exec-refused" not in e and not e.startswith(expected_deny)
+                       and not unsaved_copy.fullmatch(e)]
         if interesting and verdict == "ok":
             verdict = "guard"
+    if verdict == "ok" and status is not None and status != -9:
+        left = term_left_set(out_tail, out_all)
+        if left:
+            verdict = "termstate"
+            det["termstate"] = left
     if verdict == "ok":
         leak = term_leak(out_all)
         if leak:

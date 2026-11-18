@@ -190,6 +190,9 @@ static uint32_t randCp() {
   return cps[R(std::size(cps))];
 }
 
+static bool gHighlightLine = false;
+static Theme gTheme = Theme::Dark;
+
 /// Render through the buffer with explicit params, so a second buffer can
 /// be rendered with exactly the same view state.
 static std::string renderWith(Buffer const& b, BufferView const& v, std::size_t rows,
@@ -201,6 +204,8 @@ static std::string renderWith(Buffer const& b, BufferView const& v, std::size_t 
   p.extraCursors = v.extraCursors();
   p.wrap = v.wrap();
   p.leftGutter = v.lineNumberGutterWidth();
+  p.highlightCurrentLine = gHighlightLine;
+  p.theme = gTheme;
   std::string out;
   b.render(out, RowIdx{rows}, ColIdx{cols}, p);
   return out;
@@ -264,7 +269,7 @@ int main(int argc, char** argv) {
       std::size_t a0 = p0.line < buf.lineCount() ? absOff(buf, p0) : 0;
       std::size_t rows = 1 + R(40), cols = 1 + R(120);
       bool wrap = R(2);
-      int k = static_cast<int>(R(52));
+      int k = static_cast<int>(R(56));
       std::string desc = std::string(vn) + " op" + std::to_string(k);
       if (std::getenv("VF_DUMPHIST") &&
           op >= std::strtoull(std::getenv("VF_DUMPHIST"), nullptr, 10)) {
@@ -277,10 +282,16 @@ int main(int argc, char** argv) {
           std::fprintf(stderr, " [lines=%zu chunks=%zu]", sn.lines.size(), sn.lines.chunkCount());
         std::fprintf(stderr, "\n");
       }
-      if (std::getenv("VF_TRACE"))
-        std::fprintf(stderr, "PRE %zu %s point=%zu:%zu lines=%zu rows=%zu cols=%zu wrap=%d\n", op,
+      if (std::getenv("VF_TRACE")) {
+        std::fprintf(stderr, "PRE %zu %s point=%zu:%zu lines=%zu rows=%zu cols=%zu wrap=%d", op,
                      desc.c_str(), v.point().line, v.point().offset, buf.lineCount(), rows, cols,
                      (int)wrap);
+        if (auto m = v.mark())
+          std::fprintf(stderr, " mark=%zu:%zu", m->line, m->offset);
+        std::fprintf(stderr, " mode=%d cursors=%zu\n", static_cast<int>(mode), v.cursorCount());
+        if (std::getenv("VF_TEXT"))
+          std::fprintf(stderr, "TEXT [%s]\n", text(buf).c_str());
+      }
       std::size_t hsz0 = buf.history().size();
       bool browsing0 = va.inHistoryMode() || vb.inHistoryMode();
       std::optional<std::string> expect;
@@ -553,7 +564,75 @@ int main(int argc, char** argv) {
       case 51:
         v.insert('\n');
         desc += " enter";
-        break; /* auto-indent: not modelled */
+        break;   /* auto-indent: not modelled */
+      case 52: { // replace / paste-ring cycling: one edit, one version
+        auto rp = [&] {
+          std::size_t l = R(buf.lineCount());
+          auto const& line = buf.lineContent(l);
+          return BufferPoint{l, clusterStart(line, R(line.size() + 1))};
+        };
+        auto a = rp(), b = rp();
+        auto t = randText(R(8), false);
+        std::erase(t, '\r');
+        desc += " replaceRegion " + std::to_string(a.line) + ":" + std::to_string(a.offset) + "-" +
+                std::to_string(b.line) + ":" + std::to_string(b.offset) + " [" + t + "]";
+        if (full && editable) {
+          auto lo = absOff(buf, std::min(a, b)), hi = absOff(buf, std::max(a, b));
+          expect = before.substr(0, lo) + t + before.substr(hi);
+        }
+        v.replaceRegion(a, b, t);
+        if (full && editable && expect != before && buf.history().size() != hsz0 + 1)
+          fail(desc + ": replaceRegion recorded " + std::to_string(buf.history().size() - hsz0) +
+               " versions, not one");
+        break;
+      }
+      case 53: { // formatter / reflow result: rewrite only the lines that differ
+        std::size_t lc = buf.lineCount();
+        std::size_t from = R(lc), to = from + R(std::min<std::size_t>(lc - from, 6));
+        std::vector<std::string> repl;
+        for (std::size_t i = from; i <= to && R(4); ++i)
+          repl.push_back(R(3) ? buf.lineContent(i) : randText(R(6), false));
+        if (repl.empty() || R(5) == 0)
+          repl.push_back(randText(R(6), false));
+        for (auto& r : repl)
+          std::erase(r, '\n'), std::erase(r, '\r');
+        desc += " replaceLines " + std::to_string(from) + "-" + std::to_string(to) + " with " +
+                std::to_string(repl.size());
+        if (full && editable) {
+          std::string e;
+          for (std::size_t i = 0; i < from; ++i)
+            e += buf.lineContent(i) + "\n";
+          for (auto const& r : repl)
+            e += r + "\n";
+          for (std::size_t i = to + 1; i < lc; ++i)
+            e += buf.lineContent(i) + "\n";
+          e.pop_back();
+          expect = e;
+        }
+        bool changed = v.replaceLines(from, to, repl);
+        if (full && editable && changed != (*expect != before))
+          fail(desc + ": replaceLines returned " + std::to_string(changed) + " for a text that " +
+               (*expect != before ? "changed" : "did not change"));
+        break;
+      }
+      case 54: { // Esc-Esc in history mode: back to the text from before browsing
+        bool mine = v.inHistoryMode();
+        desc += " cancelHistory";
+        v.exitHistoryModeCancel();
+        if (mine && full && text(buf) != states.back())
+          fail(desc + ": cancelling history mode did not restore the text\n  expect=[" +
+               states.back().substr(0, 1500) + "]\n  actual=[" + text(buf).substr(0, 1500) + "]");
+        if (mine && buf.history().size() != hsz0)
+          fail(desc + ": cancelling history mode changed the number of versions");
+        break;
+      }
+      case 55:
+        if (v.inHistoryMode())
+          v.stepHistory(static_cast<int>(R(3)) - 1);
+        else
+          v.enterHistoryMode();
+        desc += " history-step-or-enter";
+        break;
       }
       if (std::getenv("VF_TRACE"))
         std::fprintf(stderr, "TRACE %zu %s hist=%zu->%zu\n", op, desc.c_str(), hsz0,
@@ -566,8 +645,10 @@ int main(int argc, char** argv) {
       if (expect && after != *expect)
         fail(desc + ": model mismatch\n  before=[" + before + "]\n  expect=[" + *expect +
              "]\n  actual=[" + after + "]");
+      // History steps show older texts, which may hold invalid bytes.
+      bool historyOp = (k >= 36 && k <= 38) || k == 54 || k == 55;
       if (full && validUtf8(before) && !validUtf8(after) && k != 8 && k != 45 && k != 44 && k > 2 &&
-          (k < 36 || k > 38))
+          !historyOp)
         fail(desc + ": valid UTF-8 text became invalid\n  before=[" + before + "]\n  after=[" +
              after + "]");
 
@@ -608,6 +689,8 @@ int main(int argc, char** argv) {
         std::ofstream(path2, std::ios::binary) << after;
         TextBuffer fresh("g", path2);
         fresh.setMode(mode);
+        gHighlightLine = R(3) == 0;
+        gTheme = R(2) ? Theme::Dark : Theme::Light;
         auto r1 = renderWith(buf, v, rows, cols);
         auto r2 = renderWith(fresh, v, rows, cols);
         // Conflict markers are only detected on load (by design), and a
