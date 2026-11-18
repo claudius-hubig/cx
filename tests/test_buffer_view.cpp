@@ -1283,6 +1283,29 @@ BOOST_AUTO_TEST_CASE(theme_selects_syntax_colours) {
   }
 }
 
+// Enter moves the text after the cursor behind the new line's auto-indent;
+// a mark on that text must move with it. Py buffers are auto-indented too
+// but were left out, so the mark ended `indent` bytes early, here inside
+// the bytes of "中".
+BOOST_AUTO_TEST_CASE(enter_keeps_the_mark_on_its_text_in_every_auto_indenting_mode) {
+  for (auto mode : {BufferMode::Cpp, BufferMode::Jsn, BufferMode::Py, BufferMode::Txt}) {
+    BOOST_TEST_CONTEXT("mode " << static_cast<int>(mode)) {
+      TempFile f("    ab\xe4\xb8\xadxyz\n");
+      TextBuffer buf(f.path().string(), f.path());
+      buf.setMode(mode);
+      BufferView view(buf);
+      view.setPoint(0, 11); // in front of "z"
+      view.toggleMark();
+      view.setPoint(0, 5); // between "a" and "b"
+      view.insert('\n');
+      auto const& line = buf.lineContent(1);
+      BOOST_REQUIRE(view.mark().has_value());
+      BOOST_CHECK_EQUAL(view.mark()->line, 1u);
+      BOOST_CHECK_EQUAL(line.substr(view.mark()->offset), "z");
+    }
+  }
+}
+
 BOOST_AUTO_TEST_CASE(recenter_clamps_at_buffer_start) {
   std::string body;
   for (int i = 0; i < 5; ++i)

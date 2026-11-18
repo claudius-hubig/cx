@@ -909,15 +909,10 @@ void BufferView::insert(uint32_t cp) {
   _point = _buf.insertAt(cp, _point);
   syncAfterEdit();
 
-  // A mark on the text that Enter moves to the new line moves with it: in
-  // Cpp and Jsn buffers that text now sits behind the new line's
-  // auto-indent, so the mark is shifted by it. Buffer::insertAt()
-  // auto-indents Py buffers as well, but they are not listed here: there
-  // such a mark keeps its distance from the line start and so ends up
-  // `indent` bytes before the text it was on.
-  std::size_t autoIndent = 0;
-  if (cp == '\n' && (_buf.mode() == BufferMode::Cpp || _buf.mode() == BufferMode::Jsn))
-    autoIndent = _point.offset;
+  // A mark on the text that Enter moves to the new line moves with it, past
+  // the auto-indent Buffer::insertAt() put in front of that text: the
+  // point is left at the end of it (0 in modes without auto-indent).
+  std::size_t autoIndent = cp == '\n' ? _point.offset : 0;
 
   // Adjust mark.
   if (_mark) {
