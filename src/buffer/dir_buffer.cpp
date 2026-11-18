@@ -176,6 +176,8 @@ DirBuffer::ChangeResult DirBuffer::renameEntry(BufferPoint p, std::string const&
     return {false, "invalid name", refresh(entry.name)};
   if (newName.find('/') != std::string::npos)
     return {false, "name may not contain '/'", refresh(entry.name)};
+  if (holdsNul(newName))
+    return {false, "name may not contain a NUL byte", refresh(entry.name)};
   auto target = _dir / newName;
   std::error_code ec;
   if (std::filesystem::exists(target, ec))
@@ -192,6 +194,8 @@ DirBuffer::ChangeResult DirBuffer::makeSubdir(std::string const& newName) {
     return {false, "invalid name", refresh()};
   if (newName.find('/') != std::string::npos)
     return {false, "name may not contain '/'", refresh()};
+  if (holdsNul(newName))
+    return {false, "name may not contain a NUL byte", refresh()};
   auto target = _dir / newName;
   std::error_code ec;
   if (std::filesystem::exists(target, ec))

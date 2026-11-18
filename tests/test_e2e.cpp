@@ -2646,6 +2646,48 @@ BOOST_AUTO_TEST_CASE(e2e_bracketed_paste_in_prompt_and_read_only_buffer) {
   BOOST_CHECK_EQUAL(readFile(tmp.path()), "one needle here\n");
 }
 
+// A file name ends at its first NUL for the system calls, so a pasted
+// "\0" opened the working directory as a text buffer, whose emergency
+// copy then went next to that directory, and Save as renamed the buffer
+// to the directory.
+BOOST_AUTO_TEST_CASE(e2e_file_name_with_a_nul_is_refused) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  PtySession session(24, 80, bin, {});
+  session.readOutput(std::chrono::milliseconds{300});
+  session.send("hi");
+  session.readOutput(std::chrono::milliseconds{200});
+
+  session.send("\x0f");
+  session.readUntil("Buffer:", std::chrono::milliseconds{1000});
+  session.send(std::string("\x1b[200~") + '\0' + "\x1b[201~\r");
+  auto out = stripAnsi(session.readUntil("NUL byte", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("A file name cannot contain a NUL byte") != std::string::npos,
+                      "open: " + out);
+
+  session.send("\x13");
+  session.readUntil("Save as:", std::chrono::milliseconds{1000});
+  session.send(std::string("\x1b[200~x") + '\0' + "y\x1b[201~\r");
+  out = stripAnsi(session.readUntil("NUL byte", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("A file name cannot contain a NUL byte") != std::string::npos,
+                      "save as: " + out);
+  BOOST_CHECK(!std::filesystem::exists("x"));
+
+  // Still the scratch buffer, still modified.
+  session.send("\x1b"
+               "c");
+  out = stripAnsi(session.readUntil("Exiting. Save", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Exiting. Save temporary buffer?") != std::string::npos &&
+                          out.find("*1* [txt] +") != std::string::npos,
+                      "exit: " + out);
+  session.send("n");
+  BOOST_CHECK_EQUAL(session.waitExit(), 0);
+}
+
 // While one exists, a child that a test crashes on purpose leaves no core
 // file behind.
 struct NoCoreDumps {

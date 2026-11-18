@@ -95,7 +95,7 @@ src/
   clipboard.hpp/.cpp               X11 PRIMARY/CLIPBOARD integration via xclip/xsel
   error_log.hpp/.cpp               Diagnostic logging to ~/.cx-errors
   file_arg.hpp                     parseFileArg — split `path:LINE` command-line argument
-  fs_path.hpp                      Non-throwing canonicalPath / currentDir for user paths
+  fs_path.hpp                      Non-throwing canonicalPath / currentDir / holdsNul for user paths
   cli.hpp                          cli::parse — -h/--help, --version, --theme, `--`, file arguments
   theme.hpp                        Theme (dark/light) and the colour Palette each renders with
   version.hpp/.cpp                 versionText() for --version (cx only; uses generated build_info.hpp)

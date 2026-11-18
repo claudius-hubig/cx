@@ -1078,7 +1078,7 @@ token vector allocation.
 | `src/theme.hpp`                        | `Theme` (`Dark` / `Light`, chosen by `--theme`) and `Palette` — the truecolor SGR sequences for syntax, whitespace markers, diff/conflict lines, find match and the Esc-_ current-line tint; `palette(Theme)` picks `kDarkPalette` or `kLightPalette` |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |
 | `src/file_arg.hpp`                     | `parseFileArg` — split a `path:LINE` command-line argument into a path and an optional line number                          |
-| `src/fs_path.hpp`                      | Non-throwing path helpers for user-supplied paths: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir` |
+| `src/fs_path.hpp`                      | Non-throwing path helpers for user-supplied paths: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir`, `holdsNul` (a typed name with a NUL byte is refused by the open and Save as prompts and the directory browser's rename and mkdir, as the system calls would cut it short) |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
 ---

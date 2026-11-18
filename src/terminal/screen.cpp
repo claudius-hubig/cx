@@ -996,6 +996,9 @@ static BracketedPaste readBracketedPaste() {
   return {normalizePastedText(raw), false};
 }
 
+/** @brief Status line text for a file name with a NUL byte (see holdsNul()). */
+constexpr std::string_view kNulInFileName = "A file name cannot contain a NUL byte";
+
 /** @brief Status line text for a paste whose end marker never came. */
 constexpr std::string_view kPasteCutShort = "Paste ended without its end marker";
 
@@ -1304,6 +1307,12 @@ void Screen::openSaveAsPrompt() {
               resolved.pop_back();
             if (resolved.empty())
               return;
+            if (holdsNul(resolved)) {
+              setStatus(std::string(kNulInFileName));
+              _killPending = false;
+              _exitPending = false;
+              return;
+            }
             // An exists() error (e.g. untraversable parent) falls through to
             // the save, which reports the real failure.
             std::error_code existsEc;
@@ -1423,6 +1432,8 @@ void Screen::openSwitchBufferPrompt() {
                 setBuffer(*target);
               else
                 setBuffer(_bufMgr->create(name));
+            } else if (holdsNul(value)) {
+              setStatus(std::string(kNulInFileName));
             } else {
               std::error_code fec;
               if (std::filesystem::is_directory(value, fec))

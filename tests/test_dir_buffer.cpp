@@ -585,6 +585,29 @@ BOOST_AUTO_TEST_CASE(mkdir_rejects_slash_in_name) {
   BOOST_CHECK(!r.ok);
 }
 
+// The system calls stop at a NUL, so "b\0x" named "b" and a leading NUL
+// named the directory itself.
+BOOST_AUTO_TEST_CASE(rename_and_mkdir_reject_a_nul_in_the_name) {
+  using namespace std::string_literals;
+  TmpDir tmp;
+  tmp.createFile("a.txt");
+  TB<DirBuffer> buf(tmp.path);
+  std::size_t idx = 0;
+  for (std::size_t i = 2; i < buf.entries().size(); ++i)
+    if (buf.entries()[i].name == "a.txt")
+      idx = i;
+  BOOST_REQUIRE_GT(idx, 0u);
+  for (auto const& bad : {"b\0x"s, "\0"s, "\0b"s}) {
+    auto r = buf.renameEntry({idx, 0}, bad);
+    BOOST_CHECK(!r.ok);
+    BOOST_CHECK(fs::exists(tmp.path / "a.txt"));
+    BOOST_CHECK(!fs::exists(tmp.path / "b"));
+    auto m = buf.makeSubdir(bad);
+    BOOST_CHECK(!m.ok);
+    BOOST_CHECK(!fs::exists(tmp.path / "b"));
+  }
+}
+
 // --- sanitizeNssField ---
 //
 // Owner / group strings come from NSS lookups (getpwuid, getgrgid),

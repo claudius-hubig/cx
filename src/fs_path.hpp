@@ -10,7 +10,18 @@
  */
 
 #include <filesystem>
+#include <string_view>
 #include <system_error>
+
+/**
+ * @brief True if @p name holds a NUL byte, which no file name can.
+ *
+ * The system calls take a name only up to its first NUL, so such a name
+ * would silently stand for another file: the part before the NUL, or the
+ * directory it is relative to if the NUL comes first. A name typed into a
+ * prompt can hold one, pasted or yanked from a buffer.
+ */
+inline bool holdsNul(std::string_view name) { return name.find('\0') != std::string_view::npos; }
 
 /**
  * @brief Absolute, symlink-resolved form of @p path, as used for buffer keys.
