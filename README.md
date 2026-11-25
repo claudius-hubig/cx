@@ -33,12 +33,7 @@ scratch buffer.
 Add `:LINE` to a path argument (e.g. `cx src/foo.cpp:42`) to open the file at that 1-based line. cx uses the line
 number of the last argument only.
 
-If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffer.
-
-cx reads a pipe or FIFO argument the same way. For example, `cx <(cmd)` opens the output of `cmd` in a scratch
-buffer named after its path, such as `*/dev/fd/63*`. A FIFO that you open with Ctrl-o goes into a scratch buffer
-too. While it waits, the status line shows "Opening fifo <path>...". After 2 s with no data, cx asks whether to
-abort the open.
+cx opens a file or the output of a command. `cx file`, `cmd | cx` and `cx <(cmd)` all work.
 
 Options:
 
@@ -83,6 +78,10 @@ Any other unrecognised option is an error.
   file no longer exists on disk, or if its mtime or size changed since load.
 - Revert reloads a buffer from disk after you confirm. If another program changed a buffer's file since cx loaded
   or saved it, the status line says so when you switch to that buffer (once per change).
+- cx reads a pipe or FIFO whole into a scratch buffer. Piped stdin goes into `*stdin*`. A FIFO argument such as
+  `<(cmd)` goes into a buffer named after its path, such as `*/dev/fd/63*`. Ctrl-o opens a FIFO the same way. While
+  it waits, the status line shows "Opening fifo <path>...". After 2 s with no data, cx asks whether to abort the
+  open.
 - When a file has CRLF or lone-CR line endings, cx asks whether to translate them to `\n`. A file with mixed endings
   gets a warning. cx asks once per load.
 
