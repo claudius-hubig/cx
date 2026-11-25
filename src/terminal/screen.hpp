@@ -28,6 +28,7 @@
 #include "types.hpp"
 
 #include <chrono>
+#include <expected>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -420,6 +421,27 @@ private:
    * panel is open, so the result listing stays visible while you walk it.
    */
   void openGrepHit(GrepHit const& hit);
+
+  /**
+   * @brief Open a path that the user typed into Ctrl-o.
+   *
+   * A directory opens in the directory browser. A FIFO is read whole into a
+   * scratch buffer named `*<path>*` (see readFifo()). Anything else opens as
+   * a file. Before it opens a file or a FIFO, it shows "Opening file <path>..."
+   * or "Opening fifo <path>...", so the user knows what a slow open waits for.
+   * @pre @p path is not empty and holds no NUL.
+   */
+  void openPath(std::string const& path);
+
+  /**
+   * @brief Read the FIFO at @p path to its end, with an abort prompt.
+   *
+   * It polls like runPipeCommand(). After 2 s without data (no writer yet,
+   * or a writer that sends nothing), it asks "Abort? y/n". A SIGTERM aborts
+   * too, and the loop acts on it later. It redraws on SIGWINCH.
+   * @return The text, or a status message that says why there is none.
+   */
+  std::expected<std::string, std::string> readFifo(std::string const& path);
 
   /** @brief Result of a runPipeCommand() invocation. */
   struct PipeResult {

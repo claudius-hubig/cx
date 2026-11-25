@@ -45,6 +45,13 @@ status 1 if it could not write a buffer.
 If stdin is a pipe, `main` reads all of it before the raw-mode setup. It then dups `/dev/tty` over fd 0, so
 terminal setup still works, and puts the captured bytes into a `*stdin*` scratch buffer.
 
+A FIFO argument (bash's `cx <(cmd)` passes a pipe as `/dev/fd/N`) has no size and can be read only once. So
+`readFifo()` reads it whole with a `FifoReader` (`src/fifo.hpp`), before stdin is drained. `main` opens it as a
+scratch buffer named `*<path>*`. There is no file to revert from or save to. For a named FIFO, the read waits for a
+writer with no time limit, as `cat` does. The terminal is not set up yet, so Ctrl-C still works.
+`BufferManager::refreshDisplayNames()` shows a `*scratch*` name whole, so a `/` in it does not shorten it to a
+filename.
+
 ---
 
 ### `SetupTerminal` (`src/terminal/setup_terminal.hpp/.cpp`)
@@ -259,6 +266,21 @@ with `ppoll()`.
 - An optional `PipeLimit` (lines and bytes of stdout) stops a command early. The command is killed, stdout is cut
   after the last whole line within the limit, and the result is marked `truncated`. Grep uses 100,000 lines /
   64 MB.
+
+#### Opening a path from Ctrl-o
+
+`openPath()` opens a path that the user typed into Ctrl-o. A directory opens in the directory browser. For a file or
+a FIFO, it first shows "Opening file <path>..." or "Opening fifo <path>..." and draws, so the user knows what a slow
+open waits for.
+
+`readFifo()` reads a FIFO whole into a scratch buffer named `*<path>*`. Opening the same FIFO again replaces the text
+of that buffer, as one edit. `readFifo()` polls like `runPipeCommand()`:
+
+- After `kFifoAbortPromptDelay` (2 s) without data, it asks "Still waiting for <path>. Abort? y/n". The FIFO may
+  have no writer yet, or a writer that sends nothing.
+- `y` aborts the open. `n` waits another 2 s.
+- A SIGTERM aborts the open too, and the loop acts on the request later.
+- It redraws on SIGWINCH.
 
 #### Session state
 
@@ -1041,6 +1063,7 @@ classification, the bracket tagging and the allocation of the token vector for e
 | `src/theme.hpp`                        | `Theme` (`Dark` / `Light`, chosen by `--theme`) and `Palette`: the truecolor SGR sequences for syntax, whitespace markers, diff and conflict lines, the find match and the Esc-_ current-line tint. `palette(Theme)` picks `kDarkPalette` or `kLightPalette` |
 | `src/version.hpp/.cpp`                 | `versionText()` for `--version`. It is compiled into `cx` only, from the generated `build_info.hpp` (`cmake/build_info.cmake` runs on every build and rewrites the file only when it changes) |
 | `src/file_arg.hpp`                     | `parseFileArg` splits a `path:LINE` command-line argument into a path and an optional line number                           |
+| `src/fifo.hpp`                         | `isFifo` and `FifoReader`: open a FIFO without waiting for a writer (`O_NONBLOCK`) and read what is there after `poll()` reports it. `main` and `Screen::readFifo()` use it. It relies on Linux `poll()` behaviour for FIFOs: nothing until a writer connects, then POLLHUP when no writer is left |
 | `src/fs_path.hpp`                      | Non-throwing path helpers for paths that the user supplies: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir`, `holdsNul`. The open and Save As prompts and the rename and mkdir of the directory browser refuse a typed name with a NUL byte, because the system calls would cut it short |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 

@@ -142,15 +142,20 @@ std::string BufferManager::displayName(std::string const& name) const {
 void BufferManager::refreshDisplayNames() {
   _displayNames.clear();
   _displayNames.reserve(_buffers.size() + _dirBuffers.size());
+  // A *scratch* name is shown whole, even when it holds a '/' (`cx <(cmd)`
+  // makes `*/dev/fd/63*`); a path is shortened to its filename.
+  auto filename = [](std::string const& name) {
+    return name.starts_with('*') ? std::string{} : std::filesystem::path(name).filename().string();
+  };
   // Count filename occurrences to detect ambiguity.
   std::unordered_map<std::string, int> fnCount;
   for (auto& [name, _] : _buffers) {
-    auto fn = std::filesystem::path(name).filename().string();
+    auto fn = filename(name);
     if (!fn.empty() && fn != name)
       fnCount[fn]++;
   }
   for (auto& [name, _] : _buffers) {
-    auto fn = std::filesystem::path(name).filename().string();
+    auto fn = filename(name);
     if (!fn.empty() && fn != name && fnCount[fn] == 1)
       _displayNames[name] = fn;
     else

@@ -35,6 +35,11 @@ number of the last argument only.
 
 If stdin is a pipe (e.g. `cmd | cx`), cx reads it into a `*stdin*` scratch buffer.
 
+cx reads a pipe or FIFO argument the same way. For example, `cx <(cmd)` opens the output of `cmd` in a scratch
+buffer named after its path, such as `*/dev/fd/63*`. A FIFO that you open with Ctrl-o goes into a scratch buffer
+too. While it waits, the status line shows "Opening fifo <path>...". After 2 s with no data, cx asks whether to
+abort the open.
+
 Options:
 
 - `-h` or `--help` prints a short usage summary.

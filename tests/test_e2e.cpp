@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -17,6 +18,7 @@
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -361,6 +363,87 @@ BOOST_AUTO_TEST_CASE(e2e_mouse_drag_selects_region_and_cut_removes_it) {
                "c"
                "n");
   session.waitExit();
+}
+
+// `cx <(cmd)`: bash passes a pipe as /dev/fd/N. It has no size, so a file
+// load read nothing; its text now goes into a scratch buffer named after
+// the path, shown whole on the modeline (it used to read "63").
+BOOST_AUTO_TEST_CASE(e2e_process_substitution_opens_pipe_contents) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  int fds[2];
+  BOOST_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
+  // The read end goes to cx, as bash's does; the write end must not, or cx
+  // would wait for an EOF that never comes.
+  BOOST_REQUIRE(fcntl(fds[0], F_SETFD, 0) == 0);
+  std::string_view text = "123\nabc\n";
+  BOOST_REQUIRE(write(fds[1], text.data(), text.size()) == static_cast<ssize_t>(text.size()));
+  close(fds[1]);
+  auto path = "/dev/fd/" + std::to_string(fds[0]);
+  PtySession session(24, 80, bin, {path + ":2"});
+  close(fds[0]);
+
+  auto out = stripAnsi(session.readUntil("abc", std::chrono::milliseconds{1000}));
+  out += stripAnsi(session.readOutput(std::chrono::milliseconds{200}));
+  BOOST_CHECK_MESSAGE(out.find("123") != std::string::npos, out);
+  BOOST_CHECK_MESSAGE(out.find("*" + path + "*") != std::string::npos, out);
+  BOOST_CHECK_MESSAGE(out.find("2:1") != std::string::npos, out); // the :2 suffix
+}
+
+// Ctrl-o on a FIFO reads it whole into a scratch buffer, as on startup. A
+// status message tells what the open waits for. After 2 s without a writer,
+// cx asks whether to abort: n waits on, y gives up.
+BOOST_AUTO_TEST_CASE(e2e_ctrl_o_reads_fifo_and_offers_to_abort) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  auto fifo = std::filesystem::temp_directory_path() / ("cx_fifo_" + std::to_string(getpid()));
+  std::filesystem::remove(fifo);
+  BOOST_REQUIRE(mkfifo(fifo.c_str(), 0600) == 0);
+  TempFile plain("plain text\n");
+  // Wide, so the long temp path in the status leaves the buffer name whole.
+  PtySession session(24, 160, bin);
+  session.readUntil("*1*", std::chrono::milliseconds{1000});
+
+  // A plain file says what it opens too.
+  session.send("\x0f" + plain.path().string() + "\r");
+  auto out = stripAnsi(session.readUntil("plain text", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(
+      out.find("Opening file " + plain.path().string() + "...") != std::string::npos, out);
+
+  // No writer: the status says so at once, and the abort prompt follows.
+  session.send("\x0f" + fifo.string() + "\r");
+  out = stripAnsi(session.readUntil("Opening fifo", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Opening fifo " + fifo.string() + "...") != std::string::npos, out);
+  out = stripAnsi(session.readUntil("Abort? y/n", std::chrono::milliseconds{3000}));
+  BOOST_CHECK_MESSAGE(
+      out.find("Still waiting for " + fifo.string() + ". Abort? y/n") != std::string::npos, out);
+  // n: wait on. Then a writer comes, and the text arrives.
+  session.send("n");
+  session.readUntil("Opening fifo", std::chrono::milliseconds{1000});
+  {
+    std::ofstream writer(fifo); // cx holds the read end, so this does not block
+    writer << "from the fifo\n";
+  }
+  out = stripAnsi(session.readUntil("Read 14 byte(s)", std::chrono::milliseconds{2000}));
+  BOOST_CHECK_MESSAGE(out.find("from the fifo") != std::string::npos, out);
+  BOOST_CHECK_MESSAGE(out.find("*" + fifo.string() + "*") != std::string::npos, out);
+  BOOST_CHECK_MESSAGE(out.find("Read 14 byte(s) from " + fifo.string()) != std::string::npos, out);
+
+  // y: give up. The buffer keeps the text it had.
+  session.send("\x0f" + fifo.string() + "\r");
+  session.readUntil("Abort? y/n", std::chrono::milliseconds{3000});
+  session.send("y");
+  out = stripAnsi(session.readUntil("Open aborted", std::chrono::milliseconds{1000}));
+  BOOST_CHECK_MESSAGE(out.find("Open aborted") != std::string::npos, out);
+  std::filesystem::remove(fifo);
 }
 
 BOOST_AUTO_TEST_CASE(e2e_stdin_pipe_seeds_scratch_buffer) {

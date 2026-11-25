@@ -1,12 +1,14 @@
 #include "buffer/buffer_manager.hpp"
 #include "cli.hpp"
 #include "error_log.hpp"
+#include "fifo.hpp"
 #include "file_arg.hpp"
 #include "terminal/screen.hpp"
 #include "terminal/setup_terminal.hpp"
 #include "version.hpp"
 
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -23,16 +25,16 @@
 #include <vector>
 
 /**
- * @brief Drain all bytes from fd 0 into a string.
+ * @brief Read @p fd to EOF (or to the first read error) into a string.
  *
- * Used when stdin is a pipe so the data can be seeded into a scratch
- * buffer before raw-mode terminal setup takes over fd 0.
+ * cx uses it for a piped stdin. It puts the data into a scratch buffer
+ * before the raw-mode terminal setup takes over fd 0.
  */
-static std::string drainStdin() {
+static std::string drainFd(int fd) {
   std::string out;
   char buf[4096];
   for (;;) {
-    ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+    ssize_t n = read(fd, buf, sizeof(buf));
     if (n > 0)
       out.append(buf, static_cast<std::size_t>(n));
     else if (n == 0)
@@ -43,6 +45,33 @@ static std::string drainStdin() {
       break;
   }
   return out;
+}
+
+/**
+ * @brief The whole contents of @p path if it is a FIFO, else nullopt.
+ *
+ * Bash's process substitution (`cx <(cmd)`) passes a pipe as /dev/fd/N.
+ * cx reads a FIFO argument here, like a piped stdin, and opens it as a
+ * scratch buffer (see fifo.hpp). For a named FIFO, this waits for a writer,
+ * as `cat` does. The terminal is not set up yet, so Ctrl-C still works.
+ * Returns nullopt also if the FIFO cannot be opened, so the normal file
+ * path reports the problem.
+ */
+static std::optional<std::string> readFifo(std::string const& path) {
+  if (!isFifo(path))
+    return std::nullopt;
+  auto reader = FifoReader::open(path);
+  if (!reader)
+    return std::nullopt;
+  pollfd pfd{reader->fd(), POLLIN, 0};
+  for (;;) {
+    int rc = poll(&pfd, 1, -1);
+    if (rc < 0 && errno != EINTR)
+      break;
+    if (rc > 0 && reader->readAvailable())
+      break;
+  }
+  return reader->takeText();
 }
 
 int main(int argc, char* argv[]) {
@@ -63,6 +92,12 @@ int main(int argc, char* argv[]) {
   }
   auto const& [files, theme] = std::get<cli::OpenFiles>(*command);
 
+  // FIFO arguments are read first, before stdin is drained and replaced,
+  // so `cmd | cx /dev/stdin` works too.
+  std::vector<std::optional<std::string>> fifoTexts;
+  for (auto const& arg : files)
+    fifoTexts.push_back(readFifo(parseFileArg(arg).first));
+
   // If stdin is a pipe (no terminal attached), drain it before raw mode
   // takes over. Then dup /dev/tty over fd 0 so SetupTerminal's tcgetattr
   // and the input loop see a real terminal. If /dev/tty cannot be
@@ -71,7 +106,7 @@ int main(int argc, char* argv[]) {
   std::string pipedStdin;
   bool stdinPiped = !isatty(STDIN_FILENO);
   if (stdinPiped) {
-    pipedStdin = drainStdin();
+    pipedStdin = drainFd(STDIN_FILENO);
     int tty = open("/dev/tty", O_RDWR);
     if (tty < 0) {
       std::fprintf(stderr, "cx: cannot open /dev/tty: %s\n", std::strerror(errno));
@@ -96,10 +131,15 @@ int main(int argc, char* argv[]) {
       // The line number to jump to in the last-opened buffer (if any
       // arg used `path:LINE` syntax — only the final value is honoured).
       std::optional<std::size_t> jumpTo;
-      for (auto const& arg : files) {
-        auto [path, line] = parseFileArg(arg);
+      for (std::size_t i = 0; i < files.size(); ++i) {
+        auto [path, line] = parseFileArg(files[i]);
         std::error_code ec;
-        if (std::filesystem::is_directory(path, ec))
+        if (auto const& text = fifoTexts[i]) {
+          last = &bufferManager.create("*" + path + "*");
+          screen.setBuffer(*last);
+          screen.insertText(*text);
+          screen.gotoLine(1);
+        } else if (std::filesystem::is_directory(path, ec))
           last = &bufferManager.openDir(path);
         else
           last = &bufferManager.open(path);

@@ -95,6 +95,7 @@ src/
   clipboard.hpp/.cpp               X11 PRIMARY/CLIPBOARD integration via xclip/xsel
   error_log.hpp/.cpp               Diagnostic logging to ~/.cx-errors
   file_arg.hpp                     parseFileArg — split `path:LINE` command-line argument
+  fifo.hpp                         isFifo / FifoReader: read a FIFO whole without blocking (cx <(cmd), Ctrl-o)
   fs_path.hpp                      Non-throwing canonicalPath / currentDir / holdsNul for user paths
   cli.hpp                          cli::parse — -h/--help, --version, --theme, `--`, file arguments
   theme.hpp                        Theme (dark/light) and the colour Palette each renders with

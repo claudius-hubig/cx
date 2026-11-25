@@ -5,6 +5,7 @@
 #include "buffer/text_buffer.hpp"
 #include "byte_constants.hpp"
 #include "error_log.hpp"
+#include "fifo.hpp"
 #include "fs_path.hpp"
 #include "key_sequence.hpp"
 #include "mouse.hpp"
@@ -133,6 +134,9 @@ constexpr auto kHighlightTtl = std::chrono::seconds(3);
 // pipe command (and the same value used to refresh the deadline if
 // the user answers no).
 constexpr auto kKillPromptDelay = std::chrono::seconds(10);
+// Time a Ctrl-o open of a FIFO waits for data before it asks whether to
+// abort (and waits again after the user answers no).
+constexpr auto kFifoAbortPromptDelay = std::chrono::seconds(2);
 // Find-in-files stops after this many result lines (one per hit, unless a
 // file name holds a newline) or bytes of output. Unbounded, grepping '.'
 // over a large tree could use up all memory, and a longer listing is no
@@ -1462,12 +1466,8 @@ void Screen::openSwitchBufferPrompt() {
                 setBuffer(_bufMgr->create(name));
             } else if (holdsNul(value)) {
               setStatus(std::string(kNulInFileName));
-            } else {
-              std::error_code fec;
-              if (std::filesystem::is_directory(value, fec))
-                setBuffer(_bufMgr->openDir(value));
-              else
-                setBuffer(_bufMgr->open(value));
+            } else if (!value.empty()) {
+              openPath(value);
             }
           },
       .onTab = [this, state, buildDisplay](std::string& input) -> PromptDisplay {
@@ -1500,6 +1500,115 @@ void Screen::openSwitchBufferPrompt() {
       },
   };
   runAutocomplete();
+}
+
+void Screen::openPath(std::string const& path) {
+  std::error_code ec;
+  if (std::filesystem::is_directory(path, ec)) {
+    setBuffer(_bufMgr->openDir(path));
+    return;
+  }
+  bool const fifo = isFifo(path);
+  // Drawn before the open, which can take long: a FIFO without a writer,
+  // or a slow network file system.
+  setStatus(std::format("Opening {} {}...", fifo ? "fifo" : "file", escapeNonPrintable(path)));
+  draw();
+  if (!fifo) {
+    Buffer& buf = _bufMgr->open(path);
+    _statusMsg.clear();
+    _statusExpiry.reset();
+    setBuffer(buf);
+    return;
+  }
+  auto text = readFifo(path);
+  if (!text) {
+    setStatus(text.error());
+    return;
+  }
+  std::string name = "*" + path + "*";
+  Buffer* existing = _bufMgr->find(name);
+  setBuffer(existing ? *existing : _bufMgr->create(name));
+  // A FIFO that is opened again replaces the text it gave before, as one edit.
+  std::size_t last = _buf->lineCount() - 1;
+  _view->replaceRegion({0, 0}, {last, _buf->lineContent(last).size()}, *text);
+  gotoLine(1);
+  setStatus(std::format("Read {} byte(s) from {}", text->size(), escapeNonPrintable(path)));
+}
+
+std::expected<std::string, std::string> Screen::readFifo(std::string const& path) {
+  auto reader = FifoReader::open(path);
+  if (!reader)
+    return std::unexpected("Cannot open " + escapeNonPrintable(path) + ": " +
+                           reader.error().message());
+  std::string const waiting = std::format("Opening fifo {}...", escapeNonPrintable(path));
+  bool asking = false;
+  auto deadline = std::chrono::steady_clock::now() + kFifoAbortPromptDelay;
+  for (;;) {
+    // A negative fd is ignored by poll(): the keyboard counts only while
+    // the prompt asks.
+    pollfd fds[] = {{reader->fd(), POLLIN, 0}, {asking ? STDIN_FILENO : -1, POLLIN, 0}};
+    int timeoutMs = -1;
+    if (!asking) {
+      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now());
+      timeoutMs = std::max(0, static_cast<int>(remaining.count()));
+    }
+    // SIGTERM is blocked while the flag is checked, and ppoll() lets it in
+    // as it starts to wait (see runPipeCommand()).
+    sigset_t termOnly, unblocked;
+    sigemptyset(&termOnly);
+    sigaddset(&termOnly, SIGTERM);
+    sigprocmask(SIG_BLOCK, &termOnly, &unblocked);
+    int rc = -1;
+    if (g_termRequests == 0) {
+      timespec ts{timeoutMs / 1000, (timeoutMs % 1000) * 1'000'000L};
+      rc = ppoll(fds, 2, timeoutMs < 0 ? nullptr : &ts, &unblocked);
+    }
+    int const pollErrno = errno;
+    sigprocmask(SIG_SETMASK, &unblocked, nullptr);
+    if (g_termRequests > 0)
+      return std::unexpected("Open cancelled");
+    if (rc < 0) {
+      if (pollErrno != EINTR)
+        return std::unexpected("Cannot read " + escapeNonPrintable(path) + ": " +
+                               std::strerror(pollErrno));
+      if (g_resized) {
+        g_resized = 0;
+        resize();
+        draw();
+      }
+      continue;
+    }
+    if (rc == 0) {
+      if (asking || std::chrono::steady_clock::now() < deadline)
+        continue;
+      setStatus(std::format("Still waiting for {}. Abort? y/n", escapeNonPrintable(path)));
+      draw();
+      asking = true;
+      continue;
+    }
+    if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
+      auto before = reader->text().size();
+      if (reader->readAvailable())
+        return reader->takeText();
+      if (reader->text().size() > before)
+        deadline = std::chrono::steady_clock::now() + kFifoAbortPromptDelay;
+    }
+    if (fds[1].revents & POLLIN) {
+      char ch;
+      if (read(STDIN_FILENO, &ch, 1) == 1) {
+        if (ch == 'y' || ch == 'Y')
+          return std::unexpected("Open aborted");
+        if (ch == 'n' || ch == 'N') {
+          setStatus(waiting);
+          draw();
+          asking = false;
+          deadline = std::chrono::steady_clock::now() + kFifoAbortPromptDelay;
+        }
+        // Other keys are ignored, as at the kill prompt.
+      }
+    }
+  }
 }
 
 void Screen::openFindPrompt(bool backward) {
