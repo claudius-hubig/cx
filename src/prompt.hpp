@@ -98,6 +98,10 @@ struct Prompt {
   /** @brief Ctrl-q was pressed: the next key goes into @c input as it is
    *         (Enter as a newline). */
   bool quoteNext = false;
+  /** @brief Enter on an empty input calls @c onResult with "" instead of
+   *         closing the prompt. For inputs where empty means something, such
+   *         as a replacement that deletes each match. */
+  bool acceptEmpty = false;
 
   /**
    * @brief Called after every input change; returns a display hint or an

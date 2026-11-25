@@ -127,8 +127,8 @@ Any other unrecognised option is an error.
   prompt, Ctrl-F and Ctrl-R repeat the previous search forward and backward without leaving the prompt. An empty
   prompt uses the last pattern again, which the prompt shows as a dim hint.
 - `Esc-%` asks for a pattern and a replacement. It then walks forward through the matches and asks `y`/`n`/`!`/`q`
-  at each one. `!` replaces all the remaining matches without asking. Matching is exact (case-sensitive, no fuzzy
-  skipping), unlike the smart matching of Find.
+  at each one. `!` replaces all the remaining matches without asking. An empty replacement deletes each match.
+  Matching is exact (case-sensitive, no fuzzy skipping), unlike the smart matching of Find.
 - The Find, Replace and regex prompts accept newlines and tabs. Ctrl-q quotes any key, so Ctrl-q Enter inserts a
   newline. Tab inserts a tab, and a paste keeps all its lines. The prompt shows a newline as `\n` and a tab as `\t`.
 - A pattern with a newline matches across lines. Replacing `abc` Ctrl-q Enter `def` with `abc def` joins those

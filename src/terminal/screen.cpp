@@ -1037,7 +1037,7 @@ void Screen::handlePromptInput(char c) {
   if (c == key::Enter || c == key::Newline) {
     if (!p.showInput)
       return; // Enter is ignored on confirm prompts
-    if (!p.input.empty()) {
+    if (!p.input.empty() || p.acceptEmpty) {
       _promptHistory.push(p.label, p.input);
       auto resultFn = std::move(p.onResult);
       auto value = std::move(p.input);
@@ -1680,6 +1680,8 @@ void Screen::openReplacePrompt() {
       .multiLine = true,
       .onResult =
           [this](std::string const& pattern) {
+            // An empty pattern would match everywhere; an empty
+            // replacement is fine and deletes each match.
             if (pattern.empty() || !_buf)
               return;
             _prompt = Prompt{
@@ -1687,6 +1689,7 @@ void Screen::openReplacePrompt() {
                 // bytes, which the label would write to the terminal raw.
                 .label = "Replace '" + promptText(pattern) + "' with: ",
                 .multiLine = true,
+                .acceptEmpty = true,
                 .onResult =
                     [this, pattern](std::string const& replacement) {
                       replacePump(pattern, replacement, 0);
@@ -1876,6 +1879,7 @@ void Screen::openRegexReplacePrompt() {
                 // Escaped for the same reason as in openReplacePrompt().
                 .label = "Replace /" + promptText(pattern) + "/ with: ",
                 .multiLine = true,
+                .acceptEmpty = true,
                 .onResult =
                     [this, pattern](std::string const& replacement) {
                       regexReplacePump(pattern, replacement, 0);

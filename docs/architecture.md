@@ -308,6 +308,9 @@ Up/Down arrows. `Prompt::quoteNext` is set by Ctrl-q: the next key goes
 into the input as it is (Enter as a newline). The find, replace and regex
 prompts set `Prompt::multiLine`, so a paste keeps all its lines and Tab
 inserts a tab; `promptText()` shows a newline as `\n` and a tab as `\t`.
+Enter on an empty input closes a prompt without calling `onResult`,
+unless it sets `Prompt::acceptEmpty`; the replacement prompts of Esc-%
+and Esc-Y do, so an empty replacement deletes each match.
 A find pattern with a newline is matched exactly across lines, as Replace
 matches it (`findNextMatchInBuffer` / `findPrevMatchInBuffer`), and the
 match is selected with `onFindMatch(from, to)`.

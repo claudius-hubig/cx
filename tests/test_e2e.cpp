@@ -1557,6 +1557,51 @@ BOOST_AUTO_TEST_CASE(e2e_find_and_replace_across_lines) {
   }
 }
 
+// An empty replacement deletes each match (Enter on it used to close the
+// prompt and do nothing); an empty pattern still closes the prompt, since
+// it would match everywhere.
+BOOST_AUTO_TEST_CASE(e2e_replace_with_empty_replacement_deletes_matches) {
+  auto bin = cxBinary();
+  if (!std::filesystem::exists(bin)) {
+    BOOST_WARN_MESSAGE(false, "cx binary not found, skipping E2E test");
+    return;
+  }
+
+  for (auto key : {"\x1b%", "\x1bY"}) {
+    BOOST_TEST_CONTEXT(key) {
+      TempFile tmp("tree see\nbee\n");
+      PtySession session(24, 80, bin, {tmp.path().string()});
+      session.readUntil("tree", std::chrono::milliseconds{1000});
+      session.send(key);
+      session.readOutput(std::chrono::milliseconds{200});
+      session.send("e\r");
+      session.readUntil("with:", std::chrono::milliseconds{1000});
+      session.send("\r");
+      session.readUntil("Replace this", std::chrono::milliseconds{1000});
+      session.send("n"); // keep the first 'e', delete the rest
+      session.readUntil("Replace this", std::chrono::milliseconds{1000});
+      session.send("!");
+      auto out = stripAnsi(session.readUntil("Replaced 5", std::chrono::milliseconds{1000}));
+      BOOST_CHECK_MESSAGE(out.find("Replaced 5") != std::string::npos, out);
+      session.send("\x13");
+      session.readUntil("Saved", std::chrono::milliseconds{1000});
+      BOOST_CHECK_EQUAL(readFile(tmp.path()), "tre s\nb\n");
+    }
+  }
+
+  // Empty pattern: the prompt closes, so the next key goes into the buffer.
+  TempFile tmp("abc\n");
+  PtySession session(24, 80, bin, {tmp.path().string()});
+  session.readUntil("abc", std::chrono::milliseconds{1000});
+  session.send("\x1b%");
+  session.readUntil("Replace:", std::chrono::milliseconds{1000});
+  session.send("\r");
+  session.readOutput(std::chrono::milliseconds{200});
+  session.send("x\x13");
+  session.readUntil("Saved", std::chrono::milliseconds{1000});
+  BOOST_CHECK_EQUAL(readFile(tmp.path()), "xabc\n");
+}
+
 // --- Bookmarks (C-x b / C-x j) ---
 
 BOOST_AUTO_TEST_CASE(e2e_bookmark_set_and_jump_returns_to_position) {
