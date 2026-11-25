@@ -1,13 +1,14 @@
-# cx Architecture
+# cx architecture
 
 ## Overview
 
-`cx` is a simple terminal text editor. Its architecture is split into two
-layers: a **terminal layer** that handles raw I/O and rendering, and a
-**buffer layer** that owns all text content and editing state. The two
-layers are decoupled through the `BufferSink` interface so that tests can
-exercise the buffer layer without a real terminal. A separate **shortcut
-module** provides the single source of truth for all keybindings.
+`cx` is a simple terminal text editor. It has two layers:
+
+- The terminal layer handles raw I/O and rendering.
+- The buffer layer owns all text content and editing state.
+
+The `BufferSink` interface decouples the two layers, so tests can exercise the buffer layer without a real
+terminal. A separate shortcut module is the single source of truth for all keybindings.
 
 ```
 main()
@@ -25,1045 +26,995 @@ main()
 
 ### `main` (`src/main.cpp`)
 
-Entry point. Parses the command line with `cli::parse()`
-(`src/cli.hpp`) into a `cli::Command` — `ShowHelp`, `ShowVersion`, or
-`OpenFiles` — before touching stdin or the terminal, and handles the
-first two by printing `cli::usage()` or `versionText()`
-(`src/version.hpp/.cpp`) and exiting. Otherwise it constructs
-`SetupTerminal`, `Screen`, and `BufferManager` in the correct order, hands
-`OpenFiles::theme` (from `--theme=light|dark`) to `Screen::setTheme()`,
-opens any files given on the command line, then calls
-`Screen::loop()` to run the editor. A `FatalSignalHook` makes a crash,
-and a signal that ends the editor, call
-`Screen::emergencySave()`; `main` calls it itself, after
-`SetupTerminal::restore()`, when the loop ends with `Exit::Emergency`,
-and exits with status 1 if a buffer could not be written. Each path argument is parsed via
-`parseFileArg()` (`src/file_arg.hpp`) to honour an optional trailing
-`:LINE` suffix (e.g. `cx src/foo.cpp:42`). If stdin is a pipe, `main`
-drains it before raw-mode setup, dups `/dev/tty` over fd 0 so terminal
-init still works, and seeds the captured bytes into a `*stdin*` scratch
-buffer.
+This is the entry point. Before it touches stdin or the terminal, it parses the command line with `cli::parse()`
+(`src/cli.hpp`) into a `cli::Command`: `ShowHelp`, `ShowVersion` or `OpenFiles`. For the first two, it prints
+`cli::usage()` or `versionText()` (`src/version.hpp/.cpp`) and exits.
+
+Otherwise, `main` does these steps:
+
+1. It constructs `SetupTerminal`, `Screen` and `BufferManager`, in that order.
+2. It hands `OpenFiles::theme` (from `--theme=light|dark`) to `Screen::setTheme()`.
+3. It opens the files given on the command line. `parseFileArg()` (`src/file_arg.hpp`) parses each path argument,
+   to honour an optional trailing `:LINE` suffix (e.g. `cx src/foo.cpp:42`).
+4. It calls `Screen::loop()` to run the editor.
+
+A `FatalSignalHook` calls `Screen::emergencySave()` on a crash, and on a signal that ends the editor. When the loop
+ends with `Exit::Emergency`, `main` calls `emergencySave()` itself, after `SetupTerminal::restore()`. It exits with
+status 1 if it could not write a buffer.
+
+If stdin is a pipe, `main` reads all of it before the raw-mode setup. It then dups `/dev/tty` over fd 0, so
+terminal setup still works, and puts the captured bytes into a `*stdin*` scratch buffer.
 
 ---
 
 ### `SetupTerminal` (`src/terminal/setup_terminal.hpp/.cpp`)
 
-RAII wrapper around terminal configuration. On construction, saves the
-current `termios` state and puts stdin into raw mode; switches the
-terminal to the alternate screen buffer; enables SGR mouse tracking
-(`?1000h` press/release, `?1002h` motion-while-held for drag-select,
-`?1006h` extended coordinates; `?1003h` any-motion is deliberately not
-enabled) and bracketed paste (`?2004h`). On destruction, disables both,
-restores the saved state, and returns to the normal screen
-(`restore()` does the same early, for output that is to stay on the
-normal screen). Guarantees cleanup even on exception. A signal that
-ends the process would skip the destructor, so while an instance exists
-a handler puts the terminal back first and then re-raises the signal
-with its default action (core dump included). This covers SIGTERM
-(until `Screen` takes it over), SIGHUP, SIGINT and SIGQUIT, and the
-crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL, except a signal
-that was ignored on entry (nohup's SIGHUP; SIGINT and SIGQUIT for a
-command a script starts in the background), which stays ignored. The handler runs
-on an alternate stack (`sigaltstack`), since a stack overflow leaves no
-room for it on the normal one.
+This is an RAII wrapper around the terminal configuration. On construction it does these steps:
 
-`FatalSignalHook` (same files) registers what happens between
-restoring the terminal and dying, for every one of those signals:
-`main` uses it to save the modified buffers. The hook runs in the
-signal handler, after a fault or in the middle of whatever the editor
-was doing, so it is best effort by nature and must not replace anything
-the user still has. It is called at most once (a fault inside it ends
-the process) and SIGALRM ends a hook that has not returned after 10
-seconds, for instance one waiting on the allocator lock that the
-interrupted code holds. The other fatal signals are blocked while it
-runs, since with the terminal restored a Ctrl-C raises SIGINT again and
-must not cut the save short; afterwards they are discarded, so the
-process still ends with the signal that started it. `main` blocks
-SIGTERM, SIGHUP, SIGINT and SIGQUIT around its own emergency save for
-the same reason. SIGHUP, SIGINT and SIGQUIT are handled
-this way rather than in the input loop so that they also end an editor
-that is not responding.
+- It saves the current `termios` state and puts stdin into raw mode.
+- It switches the terminal to the alternate screen buffer.
+- It turns on SGR mouse tracking: `?1000h` for press and release, `?1002h` for motion while a button is held (for
+  drag-select), and `?1006h` for extended coordinates. It deliberately does not turn on `?1003h` (any motion).
+- It turns on bracketed paste (`?2004h`).
+
+On destruction, it turns off mouse tracking and bracketed paste, restores the saved state and returns to the normal
+screen. `restore()` does the same earlier, for output that must stay on the normal screen. Cleanup happens even on
+an exception.
+
+A signal that ends the process would skip the destructor. So while an instance exists, a handler first puts the
+terminal back and then raises the signal again with its default action (core dump included). This covers:
+
+- SIGTERM (until `Screen` takes it over), SIGHUP, SIGINT and SIGQUIT
+- the crashes SIGSEGV, SIGABRT, SIGBUS, SIGFPE and SIGILL
+
+A signal that was ignored on entry stays ignored. Examples are the SIGHUP of nohup, and SIGINT and SIGQUIT for a
+command that a script starts in the background. The handler runs on an alternate stack (`sigaltstack`), because a
+stack overflow leaves no room for it on the normal stack.
+
+`FatalSignalHook` (same files) registers what happens between restoring the terminal and dying, for each of those
+signals. `main` uses it to save the modified buffers. The hook runs in the signal handler, after a fault or in the
+middle of whatever the editor was doing. So it is best effort by nature, and it must not replace anything that the
+user still has. These rules apply:
+
+- The hook runs at most once. A fault inside it ends the process.
+- SIGALRM ends a hook that has not returned after 10 seconds. For example, the hook can wait on an allocator lock
+  that the interrupted code holds.
+- The other fatal signals are blocked while the hook runs. With the terminal restored, a Ctrl-C raises SIGINT
+  again, and that must not cut the save short. Afterwards the blocked signals are discarded, so the process still
+  ends with the signal that started it.
+
+`main` blocks SIGTERM, SIGHUP, SIGINT and SIGQUIT around its own emergency save, for the same reason. SIGHUP,
+SIGINT and SIGQUIT go through this handler and not through the input loop, so that they also end an editor that
+does not respond.
 
 ---
 
 ### `Shortcut` (`src/shortcut.hpp/.cpp`)
 
-Defines the `Action` enum (one value per editor command), the `Shortcut`
-struct (modifier flags + key), and a single `constexpr` binding table
-that is the **only** place keybindings are defined. Both input dispatch
-and help display read from this table.
+This module defines:
+
+- the `Action` enum, with one value per editor command
+- the `Shortcut` struct (modifier flags and a key)
+- a single `constexpr` binding table
+
+The table is the **only** place where keybindings are defined. Both input dispatch and the help display read from
+it.
 
 Key API:
-- `handleShortcut(Shortcut)` — forward lookup: returns the `Action` for
-  a shortcut, or `nullopt` if unrecognised.
-- `shortcutForAction(Action)` — reverse lookup: returns the primary
-  shortcut for an action (first match in the table).
-- `formatShortcut(Shortcut)` — human-readable label (e.g. `"Ctrl-s"`,
-  `"Esc-?"`, `"Ctrl-Bksp"`).
-- `descriptionForAction(Action)` — short description string.
-- `shortcutFromCtrlChar(char)` / `shortcutFromEscChar(char)` — convert
-  raw terminal bytes to `Shortcut` values.
 
-Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`, `DeleteLine`,
-`SwitchBuffer`, `ToggleMark`, `Cut`, `Copy`, `Paste`, `PasteCycle`,
-`DeleteChunkBefore`, `Revert`, `VersionHistory`, `Find`,
-`FindBackward`, `Replace`, `BufferList`, `PasteRing`, `ToggleWhitespace`,
-`ToggleWrap`, `Format`, `ToggleComment`, `SetMode`, `DirBrowser`, `PipeReplace`,
-`SplitVertical`, `SplitHorizontal`, `ClosePanel`,
-`FocusPanel1`–`FocusPanel6`, `FocusMRUPanel`, `NextBlock`, `PrevBlock`,
-`Recenter`, `ToggleCurrentLine`, `ExecuteCommand`, `Reflow`,
-`RegexFind`, `RegexReplace`, `ToggleLineNumbers`, `ToggleMouseTracking`,
-`SetBookmark`, `JumpBookmark`, `SelectAllOccurrences`, `AddCursorDown`,
-`AddCursorUp`.
+- `handleShortcut(Shortcut)` is the forward lookup. It returns the `Action` for a shortcut, or `nullopt` if it does
+  not know the shortcut.
+- `shortcutForAction(Action)` is the reverse lookup. It returns the primary shortcut for an action, which is the
+  first match in the table.
+- `formatShortcut(Shortcut)` returns a readable label (e.g. `"Ctrl-s"`, `"Esc-?"`, `"Ctrl-Bksp"`).
+- `descriptionForAction(Action)` returns a short description.
+- `shortcutFromCtrlChar(char)` and `shortcutFromEscChar(char)` convert raw terminal bytes to `Shortcut` values.
 
-Some bindings have two shortcuts: `DeleteChunkBefore` is reachable via
-both `Ctrl-Bksp` (which arrives as `Ctrl-h`) and `Esc-Bksp`. The table
-contains the bare-Ctrl path first; help and reverse-lookup callers see
-that one.
+Actions: `Help`, `Exit`, `GoToLine`, `Save`, `KillBuffer`, `DeleteLine`, `SwitchBuffer`, `ToggleMark`, `Cut`,
+`Copy`, `Paste`, `PasteCycle`, `DeleteChunkBefore`, `Revert`, `VersionHistory`, `Find`, `FindBackward`, `Replace`,
+`BufferList`, `PasteRing`, `ToggleWhitespace`, `ToggleWrap`, `Format`, `ToggleComment`, `SetMode`, `DirBrowser`,
+`PipeReplace`, `SplitVertical`, `SplitHorizontal`, `ClosePanel`, `FocusPanel1` to `FocusPanel6`, `FocusMRUPanel`,
+`NextBlock`, `PrevBlock`, `Recenter`, `ToggleCurrentLine`, `ExecuteCommand`, `Reflow`, `RegexFind`,
+`RegexReplace`, `ToggleLineNumbers`, `ToggleMouseTracking`, `SetBookmark`, `JumpBookmark`,
+`SelectAllOccurrences`, `AddCursorDown`, `AddCursorUp`.
 
-A few actions have no table shortcut at all (an empty `Shortcut`) because
-they are driven from CSI sequences in the input loop rather than by a
-chord: `ToggleOverwriteMode` (Insert key) and `AddCursorDown` /
-`AddCursorUp` (`Ctrl-Shift-Down/Up`, `ESC[1;6B` / `ESC[1;6A`). They still
-get table rows so they stay listed in help and reachable by name through
-`Esc-x`; help renders them with `formatRawLine` since `formatShortcut`
-has no chord to format.
+Some actions have two shortcuts. For example, both `Ctrl-Bksp` (which arrives as `Ctrl-h`) and `Esc-Bksp` reach
+`DeleteChunkBefore`. The table has the bare-Ctrl path first, so help and reverse-lookup callers see that one.
+
+A few actions have no shortcut in the table (an empty `Shortcut`), because the input loop drives them from CSI
+sequences and not from a chord. These are `ToggleOverwriteMode` (the Insert key) and `AddCursorDown` /
+`AddCursorUp` (`Ctrl-Shift-Down/Up`, `ESC[1;6B` / `ESC[1;6A`). They still have table rows, so help lists them and
+`Esc-x` can run them by name. Help renders them with `formatRawLine`, because `formatShortcut` has no chord to
+format.
 
 ---
 
 ### `Screen` (`src/terminal/screen.hpp/.cpp`)
 
-Manages all terminal I/O. Owns the main event loop and the active
-`Buffer*` pointer. Implements `BufferSink` so that `BufferManager` can
-push buffer switches to it.
+`Screen` manages all terminal I/O. It owns the main event loop and the active `Buffer*` pointer. It implements
+`BufferSink`, so that `BufferManager` can push buffer switches to it.
 
-Key responsibilities:
-- **Drawing**: `draw()` calls `Buffer::render()` to produce an ANSI escape
-  string, then writes it to stdout along with a status line and cursor
-  positioning. Manages timed status messages and find-highlight expiry.
-  The cursor shape is emitted per frame from the focused buffer's
-  overwrite flag via DECSCUSR — steady block (`ansi::CursorBlock`) for
-  insert, steady bar (`ansi::CursorBar`) for overwrite — and reset to the
-  terminal default when the alternate screen is torn down. The terminal
-  cursor is hidden while a prompt is open (the prompt draws its own) and
-  while the focused buffer's `selectsRows()` is true (list buffers show
-  the cursor as a reverse-video row).
-- **Input loop**: `loop()` reads raw keystrokes, handles SIGWINCH and
-  SIGTERM, and dispatches to sub-handlers. It waits in `pselect()` with
-  the two signals blocked just for the check of their flags, so a signal
-  that arrives right before the wait is not left until the next key.
-  The redraw after a key is skipped while more input is already waiting
-  (text pasted without bracketed paste, a held key), but for at most
-  `kMaxDrawDelay` (30 ms), so a burst is drawn a few times rather than
-  once per byte.
-- **Termination**: SIGTERM is the exit command. The first one
-  (`handleTerminationRequest()`) cancels an open prompt and starts the
-  exit flow of Esc-c, which asks about each modified buffer; an exit
-  flow the user already opened is left alone. A further SIGTERM while
-  that flow is open means nobody is answering: `loop()` returns
-  `Exit::Emergency` and `main` calls `emergencySave()`. A cancelled
-  exit flow resets this, so the next SIGTERM asks again. The handler
-  only counts; requests are acted on in the loop, and the waits that
-  could keep the editor from getting back to it give way to a pending
-  request: `readByte()` (the rest of an escape sequence or a paste never
-  comes), the Esc and C-x prefixes, and `runPipeCommand()`, which stops
-  the running command as the kill prompt's `y` does.
-- **Emergency save**: `emergencySave()` is the way out when nobody can
-  be asked: after that second SIGTERM, when stdin is closed (`loop()`
-  returns `Exit::Emergency` for a `read()` of 0 bytes too: the terminal
-  went away, with or without a SIGHUP), and from the `FatalSignalHook`
-  when the editor crashes or SIGHUP, SIGINT or SIGQUIT ends it. It never
-  writes a buffer's own file, since nobody agreed to that and in a
-  signal handler the buffer may be damaged or half updated. Every
-  modified buffer that has a file goes to a new file next to it
-  (`Buffer::writeCopy()`): `<file>.unsaved-<UTC time>`, owner-only,
-  never replacing a file. The file itself stays as it was last saved,
-  and modified buffers without a file are abandoned. The restored
-  terminal gets one line per buffer: `cx: unsaved <file> written to
-  <copy>`, `cx: could not save …` or `cx: discarded …`.
-- **Input dispatch**: Any `std::exception` escaping a handler is
-  logged and shown in the status line rather than ending the session:
-  - `handlePromptInput` — generic handler for the active `Prompt`, driving
-    text entry, history navigation, autocomplete, and confirmation;
-    cursor and editing keys go to `handlePromptKey`
-  - `handleEscapeInput` — key escape sequences, Esc-prefix chords, and
-    SGR mouse payloads routed to `handleMouseEvent`
-  - `handleKeyPress` — the cursor and editing keys (arrows, Home/End,
-    PgUp/PgDn, Insert, Delete, with Ctrl / Ctrl-Shift) in normal mode.
-    Both input paths read a CSI (`ESC [ … final`) or SS3 (`ESC O final`)
-    sequence to its end and decode it with `key_sequence.hpp`, so a key
-    cx has no use for (function keys, …) is dropped whole and never
-    leaks its tail bytes into the buffer or the prompt. `ESC O` is told
-    apart from Alt-O by whether a byte follows within the Esc
-    disambiguation window. A bracketed paste (`ESC[200~ … ESC[201~`) is
-    read whole and inserted with one `BufferView::insertText()` — one
-    undo step, no auto-indent or Tab formatting; a prompt takes its
-    first line, and a read-only buffer or confirm prompt drops it. A
-    paste whose end marker is lost ends after `kPasteIdleMs` (2 s)
-    without input, with a status message, rather than taking every later
-    key as paste text
-  - `handleNormalInput` — printable characters and control keys in normal
-    editing mode
-  - `handleMouseEvent` / `extendDragSelection` — left-press positions the
-    cursor and arms a drag (a plain click keeps any existing mark);
-    left-motion lazily sets the mark to the drag anchor and extends the
-    `mark`→point region, autoscrolling at the top/bottom content row;
-    left-release ends the drag; middle-press pastes the X11 PRIMARY
-    selection at the cursor; the wheel scrolls the panel under the pointer
-- **Action dispatch**: `dispatchAction(Action)` is the centralised switch
-  that executes the effect of any `Action`. Three input paths feed it,
-  all through `handleShortcut()`: the bare Ctrl-key path
-  (`shortcutFromCtrlChar`), the Esc-chord path (`shortcutFromEscChar`),
-  and the two-key C-x prefix path (`shortcutFromCxChar`, driven by
-  `handleCtrlXInput()`). Unrecognised shortcuts produce a status message.
-  Many actions guard at entry through `requireNotInHistoryMode()`, which
-  posts a status message and returns `true` when a view is currently
-  browsing history so the caller can `break` out without effect.
-- **Find**: `findNext()` and `findPrev()` implement forward and backward
-  search with smart matching (case-insensitive when the pattern is
-  lowercase; digits and special characters in the buffer are skipped
-  unless they appear in the pattern). On match, sets the cursor after the
-  last matched character and applies a timed highlight.
-- **Subprocess execution**: `runPipeCommand()` is the unified subprocess
-  runner used by Format (Esc-f), Tab-format (Cpp mode), and PipeReplace
-  (Ctrl-p). It forks/execs an external command, pipes stdin/stdout/stderr,
-  and monitors the child with `ppoll()`. The child runs in a process group
-  of its own, so stopping it stops what it started too (`sh -c 'sleep
-  60'` keeps `sleep` as a child of the shell, which held the output pipe
-  open after the shell was killed). After 10 seconds of inactivity it
-  displays a kill prompt; the user can press `y` to SIGTERM/SIGKILL the
-  process group or `n` to dismiss, and a SIGTERM to the editor does the
-  same as `y`. What is left in the pipes after a kill is drained without
-  blocking. SIGWINCH is handled during the poll loop so
-  the terminal redraws correctly while a command is running. A pipe that
-  reaches EOF leaves the poll set, and once every pipe is closed the loop
-  polls for the child's exit instead of blocking in `waitpid()`, so a
-  command that closes its outputs and keeps running (`cmd 2>/dev/null`)
-  neither spins the editor nor escapes the kill prompt. An optional
-  `PipeLimit` (lines and bytes of stdout) stops a command early: it is
-  killed, stdout is cut after the last whole line within the limit and the
-  result is marked `truncated`. Grep uses 100,000 lines / 64 MB.
+#### Drawing
 
-`Screen` holds session-wide state that does not belong to any one
-buffer: the active prompt, find state, the paste ring, the X11
-`Clipboard` adapter, the timed status message, and the `Bookmarks`
-store (`_bookmarks`, `src/bookmarks.hpp`). Bookmarks are global across
-buffers and session-only, so `Screen` — not any `Buffer` or
-`BufferView`, which are per-buffer or transient — is their only
-sensible owner. `openSetBookmarkPrompt()` / `openJumpBookmarkPrompt()`
-(bound to `C-x b` / `C-x j`) prompt for a single slot character and
-call `jumpToBookmark()`, which switches the focused panel's buffer if
-needed and clamps the stored point to the target buffer's current
-contents. `renameBufferAndRekeyBookmarks()` wraps every
-`BufferManager::rename()` call site (both Save-As paths) so a renamed
-buffer's bookmarks follow it under the new name. Buffers the manager
-cannot resolve by name — the singleton `*help*`, `*buffers*` and
-`*paste ring*` overlays — are refused at set time, since a bookmark
-into one could never be honoured. Per-view display
-toggles (soft-wrap, whitespace markers) live on `BufferView` so that
-different panels can be configured independently. After every keystroke, `loop()` calls `syncPrimarySelection()`
-to mirror the active mark region into the X11 PRIMARY selection (no-op
-when there is no mark or no graphical session).
+`draw()` calls `Buffer::render()` to produce an ANSI escape string. It then writes that string to stdout, together
+with a status line and the cursor position. It also manages timed status messages and the expiry of the find
+highlight.
 
-**Read-only overlays**: `Help`, `BufferList` and `PasteRing` switch the
-focused panel to a read-only buffer while stashing the previous buffer
-in `Panel::prevBuf`. `Esc-Esc`, `q`, or pressing the same overlay key a
-second time pops the stash and restores the prior buffer (and, with it,
-the saved cursor / mark / viewport). `handleBareEscEsc()` services the
-overlay-dismissal half of `Esc-Esc`; clearing the mark only happens when
-no overlay is up. `updateFocusPointers()` re-binds `_buf` / `_view` to
-the focused panel after layout changes — split, close, focus, kill, or
-overlay restoration — and, as every change of focus passes through it,
-warns when the newly focused buffer's file changed on disk.
+Each frame sets the cursor shape from the overwrite flag of the focused buffer, through DECSCUSR. Insert mode gets
+a steady block (`ansi::CursorBlock`), and overwrite mode a steady bar (`ansi::CursorBar`). The shape goes back to
+the terminal default when the alternate screen is torn down.
 
-**Helpers used across action handlers**: `bufferWorkDir()` returns the
-parent directory of the focused buffer's file (or the process working
-directory for pathless buffers) and is the working directory for every
-external command launched via `runPipeCommand()`.
+The terminal cursor is hidden in two cases:
 
-When opening a file with non-Unix line endings, `checkLineEndings()`
-inspects the `LineEndingStyle` set during `TextBuffer::loadFromFile()`
-and either prompts the user to translate (CRLF / lone CR) or surfaces
-a "mixed line endings" status message. The flag is acknowledged on
-read, so the same buffer is only flagged once per load.
+- while a prompt is open, because the prompt draws its own cursor
+- while `selectsRows()` of the focused buffer is true, because list buffers show the cursor as a reverse-video row
 
-Prompts are represented by the `Prompt` struct (`src/prompt.hpp`), which
-carries a label, callbacks for autocomplete/result/abort/tab/special keys,
-cached display state, and a UTF-8-aware edit cursor with single-line
-editing operations (insert, character/chunk deletion, character/word/
-Home/End movement), plus a mark whose region `Screen::handlePromptAction`
-cuts, copies and pastes through the shared paste ring (the same
-shortcut-table actions as in the buffer). Callbacks that replace `input`
-wholesale (Tab, Right-arrow completion, history, special keys) call
-`inputReplaced()`, leaving the cursor at the end and dropping the mark.
-`drawModeline()` draws the cell under the cursor in normal video against
-the reverse-video bar, the region in underlined normal video, and returns
-the cursor column; `draw()` parks the
-terminal cursor there hidden, since on top of that cell it would invert
-it back into the bar's colours. Each prompt type is constructed by an
-`openXxxPrompt()` helper (e.g. `openGoToLinePrompt()`,
-`openSwitchBufferPrompt()`, `openConfirmPrompt()`). `PromptHistory`
-(also in `prompt.hpp`) records per-label input history, navigable with
-Up/Down arrows. `Prompt::quoteNext` is set by Ctrl-q: the next key goes
-into the input as it is (Enter as a newline). The find, replace and regex
-prompts set `Prompt::multiLine`, so a paste keeps all its lines and Tab
-inserts a tab; `promptText()` shows a newline as `\n` and a tab as `\t`.
-Enter on an empty input closes a prompt without calling `onResult`,
-unless it sets `Prompt::acceptEmpty`; the replacement prompts of Esc-%
-and Esc-Y do, so an empty replacement deletes each match.
-A find pattern with a newline is matched exactly across lines, as Replace
-matches it (`findNextMatchInBuffer` / `findPrevMatchInBuffer`), and the
-match is selected with `onFindMatch(from, to)`.
+#### Input loop
+
+`loop()` reads raw keystrokes, handles SIGWINCH and SIGTERM, and dispatches to sub-handlers. It waits in
+`pselect()`, and blocks the two signals only while it checks their flags. So a signal that arrives just before the
+wait does not stay unhandled until the next key.
+
+While more input is already waiting, `loop()` skips the redraw after a key, for at most `kMaxDrawDelay` (30 ms).
+This happens with text pasted without bracketed paste, or with a held key. So cx draws a burst a few times, and not
+once per byte.
+
+#### Termination
+
+SIGTERM is the exit command:
+
+- The first SIGTERM (`handleTerminationRequest()`) cancels an open prompt and starts the exit flow of Esc-c, which
+  asks about each modified buffer. If the user already opened an exit flow, it stays as it is.
+- A further SIGTERM while that flow is open means that nobody answers. `loop()` returns `Exit::Emergency`, and
+  `main` calls `emergencySave()`.
+- A cancelled exit flow resets this, so the next SIGTERM asks again.
+
+The handler only counts requests. The loop acts on them. Some waits could keep the editor from getting back to the
+loop, so they give way to a pending request:
+
+- `readByte()`, because the rest of an escape sequence or a paste may never come
+- the Esc and C-x prefixes
+- `runPipeCommand()`, which stops the running command, as `y` at the kill prompt does
+
+#### Emergency save
+
+`emergencySave()` is the way out when nobody can be asked. cx uses it:
+
+- after that second SIGTERM
+- when stdin is closed. `loop()` also returns `Exit::Emergency` when a `read()` returns 0 bytes, because then the
+  terminal went away, with or without a SIGHUP.
+- from the `FatalSignalHook`, when the editor crashes or when SIGHUP, SIGINT or SIGQUIT ends it
+
+It never writes a buffer's own file. Nobody agreed to that, and in a signal handler the buffer may be damaged or
+half updated. Instead, `Buffer::writeCopy()` writes every modified buffer that has a file to a new file next to it:
+`<file>.unsaved-<UTC time>`. The copy is owner-only and never replaces a file. The file itself stays as it was last
+saved. Modified buffers without a file are abandoned. The restored terminal gets one line per buffer:
+`cx: unsaved <file> written to <copy>`, `cx: could not save …` or `cx: discarded …`.
+
+#### Input dispatch
+
+If a `std::exception` escapes a handler, cx logs it and shows it in the status line. It does not end the session.
+The handlers are:
+
+- `handlePromptInput` is the generic handler for the active `Prompt`. It drives text entry, history navigation,
+  autocomplete and confirmation. Cursor and editing keys go to `handlePromptKey`.
+- `handleEscapeInput` handles key escape sequences and Esc-prefix chords. It routes SGR mouse payloads to
+  `handleMouseEvent`.
+- `handleKeyPress` handles the cursor and editing keys in normal mode: arrows, Home/End, PgUp/PgDn, Insert and
+  Delete, with Ctrl or Ctrl-Shift.
+- `handleNormalInput` handles printable characters and control keys in normal editing mode.
+- `handleMouseEvent` / `extendDragSelection` handle the mouse:
+  - A left press positions the cursor and arms a drag. A plain click keeps any existing mark.
+  - Left motion sets the mark to the drag anchor (lazily) and extends the `mark`→point region. It scrolls
+    automatically at the top and bottom content rows.
+  - A left release ends the drag.
+  - A middle press pastes the X11 PRIMARY selection at the cursor.
+  - The wheel scrolls the panel under the pointer.
+
+Both input paths read a CSI (`ESC [ … final`) or SS3 (`ESC O final`) sequence to its end, and decode it with
+`key_sequence.hpp`. So cx drops a key that it has no use for (function keys, …) whole, and its tail bytes never
+leak into the buffer or the prompt. cx tells `ESC O` apart from Alt-O by whether a byte follows within the Esc
+disambiguation window.
+
+cx reads a bracketed paste (`ESC[200~ … ESC[201~`) whole and inserts it with one `BufferView::insertText()`. That is
+one undo step, with no auto-indent or Tab formatting. A prompt takes the first line of the paste. A read-only buffer
+or a confirm prompt drops it. If the end marker of a paste gets lost, the paste ends after `kPasteIdleMs` (2 s)
+without input, with a status message. Otherwise cx would take every later key as paste text.
+
+#### Action dispatch
+
+`dispatchAction(Action)` is the central switch that carries out every `Action`. Three input paths feed it, all
+through `handleShortcut()`:
+
+- the bare Ctrl-key path (`shortcutFromCtrlChar`)
+- the Esc-chord path (`shortcutFromEscChar`)
+- the two-key C-x prefix path (`shortcutFromCxChar`, driven by `handleCtrlXInput()`)
+
+An unknown shortcut produces a status message. Many actions start with a guard, `requireNotInHistoryMode()`. When a
+view is browsing history, it posts a status message and returns `true`, so the caller can `break` out without
+effect.
+
+#### Find
+
+`findNext()` and `findPrev()` search forward and backward with smart matching. The search ignores case when the
+pattern is lowercase. It skips digits and special characters in the buffer unless they appear in the pattern. On a
+match, it puts the cursor after the last matched character and applies a timed highlight.
+
+#### Subprocess execution
+
+`runPipeCommand()` is the one subprocess runner. Format (Esc-f), Tab-format (Cpp mode) and PipeReplace (Ctrl-p) use
+it. It forks and execs an external command, connects stdin, stdout and stderr through pipes, and monitors the child
+with `ppoll()`.
+
+- The child runs in a process group of its own, so stopping it also stops what it started. (With
+  `sh -c 'sleep 60'`, `sleep` is a child of the shell, and it held the output pipe open after the shell was
+  killed.)
+- After 10 seconds without activity, it shows a kill prompt. `y` sends SIGTERM and then SIGKILL to the process
+  group, and `n` dismisses the prompt. A SIGTERM to the editor does the same as `y`. After a kill, it drains what is
+  left in the pipes without blocking.
+- It handles SIGWINCH during the poll loop, so the terminal redraws correctly while a command runs.
+- A pipe that reaches EOF leaves the poll set. Once every pipe is closed, the loop polls for the child's exit and
+  does not block in `waitpid()`. So a command that closes its outputs and keeps running (`cmd 2>/dev/null`) neither
+  spins the editor nor escapes the kill prompt.
+- An optional `PipeLimit` (lines and bytes of stdout) stops a command early. The command is killed, stdout is cut
+  after the last whole line within the limit, and the result is marked `truncated`. Grep uses 100,000 lines /
+  64 MB.
+
+#### Session state
+
+`Screen` holds the session-wide state that does not belong to any one buffer:
+
+- the active prompt
+- the find state
+- the paste ring
+- the X11 `Clipboard` adapter
+- the timed status message
+- the `Bookmarks` store (`_bookmarks`, `src/bookmarks.hpp`)
+
+Bookmarks are global across buffers and last only for the session. A `Buffer` is per buffer and a `BufferView` is
+transient, so `Screen` is their only sensible owner. `openSetBookmarkPrompt()` and `openJumpBookmarkPrompt()`
+(bound to `C-x b` and `C-x j`) ask for a single slot character. The jump calls `jumpToBookmark()`. It switches the
+buffer of the focused panel if needed, and clamps the stored point to the current contents of the target buffer.
+`renameBufferAndRekeyBookmarks()` wraps every `BufferManager::rename()` call site (both Save-As paths), so the
+bookmarks of a renamed buffer follow it under the new name. cx refuses to set a bookmark in a buffer that the manager
+cannot find by name: the singleton overlays `*help*`, `*buffers*` and `*paste ring*`. A bookmark into one of them
+could never work.
+
+The per-view display toggles (soft wrap, whitespace markers) live on `BufferView`, so that each panel can have its
+own settings. After every keystroke, `loop()` calls `syncPrimarySelection()`, which copies the active mark region to
+the X11 PRIMARY selection. It does nothing when there is no mark or no graphical session.
+
+#### Read-only overlays
+
+`Help`, `BufferList` and `PasteRing` switch the focused panel to a read-only buffer, and keep the previous buffer in
+`Panel::prevBuf`. `Esc-Esc`, `q`, or the same overlay key a second time, restores the previous buffer from there.
+That also restores its saved cursor, mark and viewport. `handleBareEscEsc()` does the overlay-dismissal part of
+`Esc-Esc`. It clears the mark only when no overlay is up.
+
+`updateFocusPointers()` binds `_buf` and `_view` to the focused panel again after layout changes: split, close,
+focus, kill or overlay restoration. Every change of focus goes through it, so it also warns when the file of the
+newly focused buffer changed on disk.
+
+#### Shared helpers
+
+`bufferWorkDir()` returns the parent directory of the focused buffer's file. For a buffer without a path, it returns
+the working directory of the process. Every external command that `runPipeCommand()` starts runs in this directory.
+
+#### Line endings
+
+When cx opens a file with non-Unix line endings, `checkLineEndings()` reads the `LineEndingStyle` that
+`TextBuffer::loadFromFile()` set. For CRLF or lone CR, it asks the user whether to translate. For mixed endings, it
+shows a "mixed line endings" status message. Reading the flag acknowledges it, so cx flags the same buffer only once
+per load.
+
+#### Prompts
+
+The `Prompt` struct (`src/prompt.hpp`) represents a prompt. It carries:
+
+- a label
+- callbacks for autocomplete, result, abort, Tab and special keys
+- cached display state
+- a UTF-8-aware edit cursor with single-line editing operations: insert, character and chunk deletion, and
+  character, word and Home/End movement
+- a mark. `Screen::handlePromptAction` cuts, copies and pastes its region through the shared paste ring, with the
+  same shortcut-table actions as in the buffer.
+
+Callbacks that replace `input` as a whole (Tab, Right-arrow completion, history, special keys) call
+`inputReplaced()`. That leaves the cursor at the end and drops the mark.
+
+`drawModeline()` draws the cell under the cursor in normal video against the reverse-video bar, and the region in
+underlined normal video. It returns the cursor column. `draw()` parks the hidden terminal cursor there, because on
+top of that cell the cursor would invert it back into the colours of the bar.
+
+An `openXxxPrompt()` helper constructs each prompt type (e.g. `openGoToLinePrompt()`, `openSwitchBufferPrompt()`,
+`openConfirmPrompt()`). `PromptHistory` (also in `prompt.hpp`) records input history per label. Up and Down
+navigate it.
+
+These flags change how a prompt behaves:
+
+- Ctrl-q sets `Prompt::quoteNext`. The next key goes into the input as it is (Enter as a newline).
+- The find, replace and regex prompts set `Prompt::multiLine`. A paste keeps all its lines, and Tab inserts a tab.
+  `promptText()` shows a newline as `\n` and a tab as `\t`.
+- Enter on an empty input closes a prompt without calling `onResult`, unless the prompt sets
+  `Prompt::acceptEmpty`. The replacement prompts of Esc-% and Esc-Y set it, so an empty replacement deletes each
+  match.
+
+Find matches a pattern with a newline exactly across lines, the same way as Replace (`findNextMatchInBuffer` /
+`findPrevMatchInBuffer`). `onFindMatch(from, to)` selects the match.
 
 ---
 
 ### `BufferSink` (`src/buffer/buffer_sink.hpp`)
 
-Abstract interface with a single method `setBuffer(Buffer&)`. Decouples
-`BufferManager` from `Screen` so that unit tests can supply a stub sink
-without constructing a real terminal.
+This abstract interface has a single method, `setBuffer(Buffer&)`. It decouples `BufferManager` from `Screen`, so
+unit tests can supply a stub sink without a real terminal.
 
 ---
 
 ### `BufferManager` (`src/buffer/buffer_manager.hpp/.cpp`)
 
-Owns all `TextBuffer` instances (keyed by canonical path or synthetic
-name), all `DirBuffer` instances (keyed by canonical directory path),
-plus the singleton `HelpBuffer`, and lazily-created `BufferListBuffer`,
-`PasteRingBuffer`, and `GrepBuffer`. Maintains an MRU list for buffer
-switching.
+`BufferManager` owns these buffers:
+
+- all `TextBuffer` instances, keyed by canonical path or synthetic name
+- all `DirBuffer` instances, keyed by canonical directory path
+- the singleton `HelpBuffer`
+- the `BufferListBuffer`, `PasteRingBuffer` and `GrepBuffer`, which it creates when they are first needed
+
+It keeps an MRU list for buffer switching.
 
 Key responsibilities:
-- `open()` — canonicalizes a path and opens or returns an existing
-  `TextBuffer`
-- `openDir()` — canonicalizes a directory path and opens or returns an
-  existing `DirBuffer`; an existing one has its listing re-read
-  (`DirBuffer::reload()`), with the saved cursor kept on its entry
-- `grepBuffer()` — creates or refreshes the singleton `GrepBuffer` with a
-  new result set
-- `create()` — creates a new empty `TextBuffer` with a synthetic name
-- `kill()` — removes a buffer; always leaves at least one buffer alive
-- `completions()` — returns match candidates for the switch-buffer prompt,
-  covering both open buffers and filesystem entries. The directory
-  listing behind it is cached per directory and re-read when the
-  directory's modification time changes
-- `displayName()` — returns a short unambiguous name for status line and
-  buffer-list display (filename only when unambiguous, full path otherwise)
-- `touch()` / `secondMRU()` — MRU management for default buffer switching
-- `rename()` — re-keys a buffer in the map after save-as; canonicalises the new
-  path like `open()` and refuses (returns false) if another buffer already has it
+
+- `open()` canonicalizes a path. It opens a `TextBuffer`, or returns the existing one.
+- `openDir()` canonicalizes a directory path. It opens a `DirBuffer`, or returns the existing one. For an existing
+  one, it reads the listing again (`DirBuffer::reload()`) and keeps the saved cursor on its entry.
+- `grepBuffer()` creates the singleton `GrepBuffer`, or refreshes it, with a new result set.
+- `create()` creates a new empty `TextBuffer` with a synthetic name.
+- `kill()` removes a buffer. It always leaves at least one buffer alive.
+- `completions()` returns the candidates for the switch-buffer prompt. They cover both open buffers and filesystem
+  entries. It caches the directory listing behind them for each directory, and reads it again when the
+  modification time of the directory changes.
+- `displayName()` returns a short, unambiguous name for the status line and the buffer list. That is the filename
+  when it is unambiguous, and the full path otherwise.
+- `touch()` / `secondMRU()` manage the MRU list for the default buffer switch.
+- `rename()` gives a buffer a new key in the map after Save As. It canonicalises the new path as `open()` does. It
+  refuses (returns false) if another buffer already has that path.
 
 ---
 
 ### `Buffer` (`src/buffer/buffer.hpp/.cpp`)
 
-Abstract base for all buffer types. Owns *document content only* — line
-storage, filename, mode, modified flag, document version, and the
-per-line syntax cache. All *view state* (cursor position, viewport,
-mark, selection highlight, per-view caches) lives in `BufferView`, so
-multiple views can share the same `Buffer` for split-window editing.
+`Buffer` is the abstract base for all buffer types. It owns *document content only*: line storage, filename, mode,
+modified flag, document version, and the syntax cache for each line. All *view state* lives in `BufferView`: cursor
+position, viewport, mark, selection highlight and the caches for each view. So several views can share the same
+`Buffer` for split-window editing.
 
-Text is stored in a `LineStore` (see below) of `LinePtr`s, where
-`LinePtr` is `std::shared_ptr<std::string const>` (one string per line,
-without newline delimiters). The store's chunks and lines are shared
-with `VersionHistory` snapshots, so capturing or restoring a snapshot
-copies one pointer per chunk (O(N/512)), not one per line and never a
-string. Mutations go through `Buffer::mutLine(idx)` →
-`LineStore::mutableLine`, which detaches a shared chunk and then a
-shared string before handing out a mutable reference; new lines come
-from `makeLine()`. `lineContent(idx)` and `lineCount()` keep their
-signatures; `lines()` returns `LineStore const&`. An empty buffer has a
-single empty-string line; a file ending in `\n` is represented by an
-empty trailing entry. Loading collects the lines into a vector and
-moves it into the store, which keeps the line strings contiguous.
+The text is in a `LineStore` (see below) of `LinePtr`s. `LinePtr` is `std::shared_ptr<std::string const>`, one
+string per line, without the newline. The store shares its chunks and lines with the `VersionHistory` snapshots. So
+to capture or restore a snapshot, cx copies one pointer per chunk (O(N/512)). It does not copy one pointer per line,
+and never a string.
+
+Changes go through `Buffer::mutLine(idx)` → `LineStore::mutableLine`. That call detaches a shared chunk and then a
+shared string, and then hands out a mutable reference. New lines come from `makeLine()`. `lineContent(idx)` and
+`lineCount()` keep their signatures. `lines()` returns `LineStore const&`. An empty buffer has a single empty line.
+A file that ends in `\n` has an empty entry at the end. Loading collects the lines into a vector and moves it into
+the store, which keeps the line strings next to each other in memory.
 
 Public API:
 
-- **Position-explicit editing**: `insertAt(cp, point)`, `deleteAt(point)`,
-  `deleteBefore(point)`, `insertText(text, point)`, `deleteRegion(from, to)`,
-  `extractRegion(from, to)`. Every editing method takes the cursor position
-  as a parameter and returns the new position — `Buffer` never reads or
-  writes any view state.
-- **Rendering**: virtual `render(out, rows, cols, RenderParams)` produces
-  an ANSI escape string for the visible portion of the buffer, including
-  syntax highlighting (via per-mode tokenizers), region highlighting
-  (inverse video when a selection mark is active), and find highlighting.
-  `RenderParams` bundles the view-state inputs (point, viewFrom, mark,
-  highlight, extraCursors, showWhitespace, wrap, row/col offsets) and the
-  `Theme`, whose `Palette` (`src/theme.hpp`) supplies every colour.
-  Returns the screen `{row, col}` of the cursor.
-  `RenderParams::extraCursors` is a sorted span of secondary cursor
-  positions (empty in single-cursor editing); each one that falls in the
-  viewport reverse-videos its character cell — a space at end-of-line —
-  while the hardware terminal cursor stays on `point`.
-  Nothing is drawn outside the panel: a cluster cut by the left edge of
-  a horizontally scrolled row is drawn as blanks, and one wider than a
-  whole wrapped row (an escape in a panel a few columns wide) is cut to
-  fit. In no-wrap mode the part of a line scrolled off to the left is
-  measured in a loop of its own, which is where a long line scrolled far
-  right spends its time.
-- **Screen row query**: virtual `screenRow(cols, point, viewFrom, wrap)`
-  reports where a given point sits relative to a viewport start, used
-  by `BufferView::ensureVisible` and similar.
-- **Mode**: `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`,
-  `Yml`, `Tml`, `Py`) determines syntax highlighting, auto-indent, and
-  formatting behaviour.
-  Changed via `setMode()`, which invalidates the per-line syntax cache.
-- **Line-number gutter**: `RenderParams::leftGutter` (in screen columns)
-  reserves space at the left of the panel for right-aligned 1-based
-  physical-line numbers. `Buffer::render` honours it; subclassed
-  buffers (Help / Dir / BufferList / PasteRing) opt out via
-  `supportsLineNumberGutter()` so a per-view toggle silently no-ops on
-  overlays. Per-view state (`BufferView::showLineNumbers`,
-  `lineNumberGutterWidth`) is the source of truth for the toggle.
-- **Document version**: `docVersion()` is incremented on every edit so
-  `BufferView` can detect external modifications made by another view
-  sharing the buffer and invoke `clampToBuffer()` to re-validate its
-  cached positions.
-- **Saved view state**: for buffer switching, a `SavedViewState`
-  ({point, viewFrom, mark}) can be stashed on the buffer via
-  `setSavedView()` / `savedView()` / `clearSavedView()` and later
-  restored by `BufferView::fromSavedState()`.
-- **Version-history hooks**: `recordVersion(cursor)` is invoked by
-  `BufferView` after every successful edit (and by the replace-all
-  helpers, which edit the buffer directly); the default is a no-op
-  (read-only buffers ignore it). `TextBuffer` overrides it to append a
-  snapshot of the whole buffer to its `VersionHistory`; the snapshot
-  shares the line store's chunks, so callers need not describe what
-  changed. The history-browsing
-  interface (`browsingHistory()`, `setBrowsingHistory()`,
-  `versionHistoryInfo()`, `applyVersionAt()`, `truncateHistoryAfter()`)
-  is virtual on the base class so `BufferView` can drive history
-  navigation through the abstract type without depending on
-  `TextBuffer`.
+- Position-explicit editing: `insertAt(cp, point)`, `deleteAt(point)`, `deleteBefore(point)`,
+  `insertText(text, point)`, `deleteRegion(from, to)`, `extractRegion(from, to)`. Every editing method takes the
+  cursor position as a parameter and returns the new position. `Buffer` never reads or writes view state.
+- Rendering: the virtual `render(out, rows, cols, RenderParams)` produces an ANSI escape string for the visible
+  part of the buffer. The string includes syntax highlighting (from the tokenizer of the mode), region highlighting
+  (inverse video when a selection mark is active) and find highlighting. It returns the screen `{row, col}` of the
+  cursor.
+  - `RenderParams` bundles the view-state inputs (point, viewFrom, mark, highlight, extraCursors, showWhitespace,
+    wrap, row and col offsets) and the `Theme`. The `Palette` of the theme (`src/theme.hpp`) supplies every colour.
+  - `RenderParams::extraCursors` is a sorted span of secondary cursor positions. It is empty in single-cursor
+    editing. Each one that falls in the viewport shows its character cell in reverse video (a space at the end of
+    a line). The hardware terminal cursor stays on `point`.
+  - Nothing is drawn outside the panel. A cluster that the left edge of a horizontally scrolled row cuts is drawn
+    as blanks. A cluster wider than a whole wrapped row (an escape in a panel a few columns wide) is cut to fit.
+  - In no-wrap mode, a separate loop measures the part of a line that is scrolled off to the left. A long line
+    scrolled far right spends its time there.
+- Screen row query: the virtual `screenRow(cols, point, viewFrom, wrap)` reports where a point is relative to the
+  start of a viewport. `BufferView::ensureVisible` and similar methods use it.
+- Mode: the `BufferMode` enum (`Txt`, `Cpp`, `Md`, `Jsn`, `Dif`, `Sh`, `Yml`, `Tml`, `Py`) controls syntax
+  highlighting, auto-indent and formatting. `setMode()` changes it and invalidates the syntax cache.
+- Line-number gutter: `RenderParams::leftGutter` (in screen columns) reserves space at the left of the panel for
+  right-aligned, 1-based physical line numbers. `Buffer::render` honours it. The derived buffers Help, Dir,
+  BufferList and PasteRing opt out through `supportsLineNumberGutter()`, so the per-view toggle silently does
+  nothing on overlays. The state of the toggle lives in the view (`BufferView::showLineNumbers`,
+  `lineNumberGutterWidth`).
+- Document version: every edit increments `docVersion()`. So a `BufferView` can detect a change that another view
+  of the same buffer made, and call `clampToBuffer()` to check its cached positions again.
+- Saved view state: for buffer switching, a buffer can keep a `SavedViewState` ({point, viewFrom, mark}) through
+  `setSavedView()` / `savedView()` / `clearSavedView()`. `BufferView::fromSavedState()` restores it later.
+- Version-history hooks: `BufferView` calls `recordVersion(cursor)` after every successful edit. The replace-all
+  helpers, which edit the buffer directly, call it too. The default does nothing, so read-only buffers ignore it.
+  `TextBuffer` overrides it to append a snapshot of the whole buffer to its `VersionHistory`. The snapshot shares
+  the chunks of the line store, so callers do not need to describe what changed. The history-browsing interface
+  (`browsingHistory()`, `setBrowsingHistory()`, `versionHistoryInfo()`, `applyVersionAt()`,
+  `truncateHistoryAfter()`) is virtual on the base class. So `BufferView` can drive history navigation through the
+  abstract type, without a dependency on `TextBuffer`.
 
-Editing methods are guarded by `readonly()` (a pure virtual that derived
-classes override). The `_modified` flag is set on any edit and cleared by
-a successful `save()`. While history browsing is active, `TextBuffer`
-reports `readonly() == true`, so all editing entry points become no-ops
-without any per-method special-casing.
+`readonly()` guards the editing methods. It is pure virtual, and derived classes override it. Any edit sets the
+`_modified` flag, and a successful `save()` clears it. While history browsing is active, `TextBuffer` reports
+`readonly() == true`. So all editing entry points do nothing, without a special case in each method.
 
-Insert vs. overwrite is a per-buffer flag (`_overwriteMode`, toggled via
-`toggleOverwriteMode()`) that lives on the base `Buffer` so every view of
-the buffer shares it. It changes only editing semantics —
-`BufferView::insert()` deletes the character under the cursor before
-inserting when the flag is set — plus two purely presentational cues: the
-`I`/`O` modeline indicator and the terminal cursor shape (see Screen).
-`drawModeline` prefixes that indicator with the view's live cursor count
-as `<count>@` (blank with one cursor, `***@` above 999). The count and the
-`@` occupy a fixed-width field so the `I`/`O` never changes column as
-cursors are added or dropped.
+Insert or overwrite is a flag for each buffer (`_overwriteMode`, toggled with `toggleOverwriteMode()`). It lives on
+the base `Buffer`, so every view of the buffer shares it. It changes only the editing behaviour: when the flag is
+set, `BufferView::insert()` deletes the character under the cursor before it inserts. It also has two visual cues:
+the `I`/`O` modeline indicator and the terminal cursor shape (see `Screen`). `drawModeline` puts the live cursor
+count of the view in front of that indicator, as `<count>@`. The count is blank with one cursor, and `***@` above
+999. The count and the `@` take a fixed-width field, so the `I`/`O` never changes column as cursors come and go.
 
 Caching:
-- `_synCache` — per-line syntax tokenisation cache; an edit invalidates
-  it from the edited line until the tokenizer state matches again.
-  Exposed to other subsystems via `cachedLineTokens(line)` so e.g.
-  bracket-match scans reuse the same tokens that the renderer already
-  computed.
-- `_bracketCache` — last `findMatchingBracket()` result, keyed by point
-  and `docVersion`. Lets repeated render passes reuse a previously
-  computed match without rescanning.
+
+- `_synCache` is the syntax cache, one entry per line. An edit invalidates it from the edited line down, until the
+  tokenizer state matches again. `cachedLineTokens(line)` exposes it to other subsystems. For example, bracket
+  matching reuses the tokens that the renderer already computed.
+- `_bracketCache` holds the last `findMatchingBracket()` result, keyed by point and `docVersion`. Repeated render
+  passes reuse the match and do not scan again.
 
 Conflict detection:
-- `scanForConflicts()` walks the lines setting `_hasConflicts` if
-  any line is a 7-character conflict marker (`<<<<<<<`, `=======`,
-  `>>>>>>>`). Triggered by load, revert, and save in `TextBuffer`. When
-  set, the syntax-cache pass overlays each conflict-marker line with a
-  `ConflictMarker` token regardless of mode, so even a `Txt` buffer
-  highlights merge regions with distinct backgrounds.
+
+- `scanForConflicts()` walks the lines and sets `_hasConflicts` if any line is a 7-character conflict marker
+  (`<<<<<<<`, `=======`, `>>>>>>>`). `TextBuffer` runs it on load, revert and save. When the flag is set, the
+  syntax-cache pass puts a `ConflictMarker` token over each conflict-marker line, whatever the mode. So even a `Txt`
+  buffer shows merge regions with their own backgrounds.
 
 ### `BufferView` (`src/buffer/buffer_view.hpp/.cpp`)
 
-Owns all view-specific state for one logical "view" of a `Buffer`:
-point (`BufferPoint`), mark, secondary cursors, viewport (`ViewFrom`),
-wrap mode, desired column for vertical movement, find highlight, and
-per-view caches (`PointColCache`, `RowBoundsCache`). Multiple
-`BufferView`s can share the same `Buffer`, each with independent cursor
-and viewport.
+`BufferView` owns all the state of one logical view of a `Buffer`: the point (`BufferPoint`), the mark, the
+secondary cursors, the viewport (`ViewFrom`), the wrap mode, the desired column for vertical movement, the find
+highlight, and the caches for the view (`PointColCache`, `RowBoundsCache`). Several `BufferView`s can share the
+same `Buffer`. Each has its own cursor and viewport.
 
-All user-facing movement, editing, and render operations are methods on
-`BufferView`:
+All movement, editing and render operations for the user are methods on `BufferView`:
 
-- **Movement**: `moveLeft/Right/Up/Down`, `moveHome/End`,
-  `moveWordLeft/Right`, `moveParagraphUp/Down`, `movePhysicalUp/Down`,
-  `pageUp/Down`, `gotoLine`, `gotoMatchingBracket`, `setPoint`.
-- **Editing**: `insert`, `deleteAtPoint`, `deleteBeforePoint`,
-  `deleteChunkAtPoint`, `deleteChunkBeforePoint`, `insertText`,
-  `deleteRegion`. These call the position-explicit methods on `Buffer`
-  and apply the necessary mark-adjustment locally. A chunk delete finds
-  its span first and removes it as one edit (`deleteSpan`), so it is a
-  single history entry however long the chunk is.
-  `replaceRegion(from, to, text)` swaps a region for new text as one
-  edit and one history entry; `Screen` uses it wherever text is replaced
-  (find-and-replace, piping a region, paste cycling), so
-  undoing never lands on a state with the old text gone and the new not
-  yet there. `replaceLines(fromLine, toLine, lines, cursor)` is the same
-  for whole lines whose replacement was computed from all of them and
-  mostly equals them (reflow, the formatter's output for the whole
-  buffer): the equal lines at either end are left alone, so they stay
-  shared with earlier history versions and keep their syntax cache, and
-  only the span between them is rewritten.
-- **Case conversion**: `convertCase(CaseOp)` upper/lower/capitalizes the
-  active region, or the word at/after the cursor when no mark is set. The
-  transform is byte-wise ASCII (UTF-8-safe and length-preserving), applied
-  as a single `deleteRegion`+`insertText` edit.
-- **Reflow**: `reflowParagraph(width, ReflowTables)` refills the paragraph
-  at the cursor, or every paragraph in the region, keeping list bullets,
-  common indentation and blank lines. With `ReflowTables::Markdown` (passed
-  by `Screen` for `md` buffers) GFM tables are formatted through
-  `modes/md/table.hpp` instead, and fenced code blocks
-  (`modes/md/fence.hpp`) are left untouched. The cursor's table is aligned and the
-  cursor's column wrapped. Paragraphs stop at adjacent tables. A region
-  widens to cover whole tables, which are aligned only. The result is one
-  `deleteRegion`+`insertText` edit (one undo step) over just the span of
-  lines that differ, so unchanged lines keep their storage (shared with
-  earlier history snapshots); it is skipped when the text is unchanged.
-- **Mark and region**: `toggleMark`, `setMark`, `clearMark`,
-  `extractRegion`.
-- **Viewport management**: `ensureVisible`, `scrollUp/Down`,
-  `scrollViewNearEnd`, `currentLineWraps`. The viewport is described
-  by `ViewFrom` which holds a `RowIdx line` and a mode-dependent
-  sub-position: `ByteOffset` in wrap mode (sub-line scroll), or
-  `VisualCol` in no-wrap mode (horizontal scroll).
-- **Rendering**: `render()` builds a `RenderParams` from the view's
-  state plus the per-frame `BufferRenderArgs` (focus, panel offsets,
-  theme) that `Screen::draw()` passes, and forwards to `Buffer::render()`.
-- **Highlight**: `setHighlight/clearHighlight` for find highlighting.
-- **Cursor helpers**: `adjustCursorToIndent()` advances the cursor to
-  the first non-space byte when it is in the leading whitespace.
-- **History mode**: `enterHistoryMode()`, `stepHistory(delta)`,
-  `exitHistoryModeCommit()` and `exitHistoryModeCancel()` provide
-  read-only browsing of the underlying buffer's version history.
-  Entering flips the buffer to read-only via
-  `setBrowsingHistory(true)`; stepping calls `applyVersionAt()` and
-  updates the cursor; committing (Ctrl-u, Enter) truncates any forward
-  history beyond the selected version and re-enables editing;
-  cancelling (Esc-Esc) shows the newest version again, puts the cursor
-  back where it was on entry and drops nothing. The read-only flag
-  lives on the buffer, so a view must leave history mode before it is
-  dropped; `Screen::setBuffer()` cancels it, so opening an overlay
-  never discards versions.
-  Only one view per buffer may browse at a time: `enterHistoryMode()`
-  returns false while the buffer is already browsing, since the shown
-  snapshot is per buffer. `inHistoryMode()` / `historyIndex()` expose the current state to
-  `Screen` for status-line rendering.
-- **Multiple cursors**: `_extraCursors` holds the secondary cursors,
-  kept sorted, deduplicated, and never equal to `_point`;
-  `multiCursor()` *is* "that vector is non-empty", so there is no
-  separate mode flag to drift. Created by `selectAllOccurrences()`
-  (`Esc-*`) and `addCursorDown/Up()` (`Ctrl-Shift-Down/Up`), dropped by
-  `collapseCursors()`.
-  - *Editing*: `insert`, the deletes, the chunk deletes, and
-    `insertText` route to `multi*` drivers. Each snapshots every cursor
-    into `_batch` (sorted), visits the cursors in ascending order and
-    performs primitive edits through `Buffer`'s position-explicit API.
-    Since every edit happens at or after the visited cursor, the
-    unvisited tail is shifted lazily: `BatchShift` (an anchor pair: a
-    pre-batch position and where it is now) maps each cursor once, in
-    `batchVisit()`, which also detects cursors merged onto their
-    predecessor. Only a backward deletion can reach visited cursors; it
-    collapses them onto its start. A keystroke is O(N) in the cursor
-    count.
-  - *History*: the batch ends with exactly one `recordVersion(point)`,
-    so one keystroke is one undo step regardless of cursor count.
-  - *Movement*: the parallel commands are thin wrappers whose `*Impl`
-    body runs once for the primary and then once per extra cursor
-    (`moveExtras()`), each extra temporarily installed as `_point`.
-    Commands that jump somewhere unrelated — `setPoint` (and so find,
-    bookmarks, mouse clicks), `gotoLine`, paging, paragraph moves,
-    bracket match — collapse to the primary first, as do setting the
-    mark, region edits, and entering history mode. Conversely, adding a
-    cursor clears the mark (selections are not per-cursor), and so does
-    every batch edit, since batch edits never shift it.
-  - Extra cursors are deliberately **not** persisted in
-    `Buffer::SavedViewState`: a buffer switch or panel close collapses
-    to the primary cursor.
-- **Consistency**: `clampToBuffer()` re-clamps point, mark, extra
-  cursors, and viewport to valid positions after the underlying buffer
-  changed (e.g. via another view or `revert()`). Called automatically
-  when the view notices a `docVersion` mismatch. Every clamped byte
-  offset (and `setPoint()`) is snapped back to a code-point boundary via
-  `snapToCodepoint()` (`utf8.hpp`), so a stale position can never split a
-  multi-byte character. The view's own edits adopt the new version via
-  `syncAfterEdit()`, which also keeps the viewport in range.
+- Movement: `moveLeft/Right/Up/Down`, `moveHome/End`, `moveWordLeft/Right`, `moveParagraphUp/Down`,
+  `movePhysicalUp/Down`, `pageUp/Down`, `gotoLine`, `gotoMatchingBracket`, `setPoint`.
+- Editing: `insert`, `deleteAtPoint`, `deleteBeforePoint`, `deleteChunkAtPoint`, `deleteChunkBeforePoint`,
+  `insertText`, `deleteRegion`. These call the position-explicit methods on `Buffer` and adjust the mark locally.
+  - A chunk delete first finds its span and then removes it as one edit (`deleteSpan`). So it is a single history
+    entry, however long the chunk is.
+  - `replaceRegion(from, to, text)` swaps a region for new text as one edit and one history entry. `Screen` uses
+    it wherever it replaces text (find-and-replace, piping a region, paste cycling). So an undo never lands on a
+    state where the old text is gone and the new text is not there yet.
+  - `replaceLines(fromLine, toLine, lines, cursor)` does the same for whole lines, when the new lines were computed
+    from all of the old ones and are mostly equal to them. Reflow and the formatter's output for the whole buffer
+    use it. It leaves the equal lines at either end alone, so they stay shared with earlier history versions and
+    keep their syntax cache. It rewrites only the span between them.
+- Case conversion: `convertCase(CaseOp)` uppercases, lowercases or capitalizes the active region. With no mark set,
+  it changes the word at or after the cursor. The transform is byte-wise ASCII, which is UTF-8-safe and keeps the
+  length. It applies as a single `deleteRegion`+`insertText` edit.
+- Reflow: `reflowParagraph(width, ReflowTables)` refills the paragraph at the cursor, or every paragraph in the
+  region. It keeps list bullets, common indentation and blank lines.
+  - With `ReflowTables::Markdown`, which `Screen` passes for `md` buffers, it formats GFM tables through
+    `modes/md/table.hpp` instead. It leaves fenced code blocks (`modes/md/fence.hpp`) untouched.
+  - It aligns the cursor's table and wraps the cursor's column.
+  - Paragraphs stop at adjacent tables.
+  - A region widens to cover whole tables, which it only aligns.
+  - The result is one `deleteRegion`+`insertText` edit (one undo step) over only the span of lines that differ. So
+    unchanged lines keep their storage, which they share with earlier history snapshots. When the text does not
+    change, there is no edit.
+- Mark and region: `toggleMark`, `setMark`, `clearMark`, `extractRegion`.
+- Viewport management: `ensureVisible`, `scrollUp/Down`, `scrollViewNearEnd`, `currentLineWraps`. `ViewFrom`
+  describes the viewport. It holds a `RowIdx line` and a sub-position that depends on the mode: `ByteOffset` in
+  wrap mode (scrolling within a line), or `VisualCol` in no-wrap mode (horizontal scrolling).
+- Rendering: `render()` builds a `RenderParams` from the state of the view and the `BufferRenderArgs` for the frame
+  (focus, panel offsets, theme) that `Screen::draw()` passes. It then calls `Buffer::render()`.
+- Highlight: `setHighlight/clearHighlight` for find highlighting.
+- Cursor helpers: when the cursor is in the leading whitespace, `adjustCursorToIndent()` moves it to the first byte
+  that is not a space.
+- History mode: `enterHistoryMode()`, `stepHistory(delta)`, `exitHistoryModeCommit()` and
+  `exitHistoryModeCancel()` give read-only browsing of the version history of the buffer.
+  - Entering sets the buffer to read-only through `setBrowsingHistory(true)`.
+  - Stepping calls `applyVersionAt()` and updates the cursor.
+  - Committing (Ctrl-u, Enter) truncates any history after the selected version and allows editing again.
+  - Cancelling (Esc-Esc) shows the newest version again, puts the cursor back where it was on entry, and drops
+    nothing.
+  - The read-only flag lives on the buffer, so a view must leave history mode before it is dropped.
+    `Screen::setBuffer()` cancels history mode, so opening an overlay never discards versions.
+  - Only one view of a buffer can browse at a time, because the shown snapshot belongs to the buffer.
+    `enterHistoryMode()` returns false while the buffer is already browsing.
+  - `inHistoryMode()` / `historyIndex()` expose the current state to `Screen` for the status line.
+- Multiple cursors: `_extraCursors` holds the secondary cursors. They are kept sorted and free of duplicates, and
+  are never equal to `_point`. `multiCursor()` *is* "that vector is not empty", so there is no separate mode flag
+  that could drift. `selectAllOccurrences()` (`Esc-*`) and `addCursorDown/Up()` (`Ctrl-Shift-Down/Up`) create them,
+  and `collapseCursors()` drops them.
+  - Editing: `insert`, the deletes, the chunk deletes and `insertText` go to `multi*` drivers. Each driver
+    snapshots every cursor into `_batch` (sorted) and visits the cursors in ascending order. It makes primitive
+    edits through the position-explicit API of `Buffer`. Every edit happens at or after the visited cursor, so the
+    unvisited tail shifts lazily. `BatchShift` is an anchor pair: a position from before the batch, and where it is
+    now. `batchVisit()` uses it to map each cursor once, and also detects cursors that merged onto the cursor before
+    them. Only a backward deletion can reach visited cursors, and it collapses them onto its start. A keystroke is
+    O(N) in the cursor count.
+  - History: the batch ends with exactly one `recordVersion(point)`. So one keystroke is one undo step, whatever the
+    cursor count.
+  - Movement: the parallel commands are thin wrappers. Their `*Impl` body runs once for the primary cursor, and
+    then once for each extra cursor (`moveExtras()`), with that extra cursor installed as `_point` for the moment.
+    Commands that jump somewhere unrelated collapse to the primary cursor first: `setPoint` (and so find,
+    bookmarks and mouse clicks), `gotoLine`, paging, paragraph moves and bracket match. Setting the mark, region
+    edits and entering history mode collapse too. The other way round, adding a cursor clears the mark, because
+    selections do not belong to single cursors. Every batch edit clears it too, because batch edits never shift it.
+  - Extra cursors are deliberately **not** kept in `Buffer::SavedViewState`. A buffer switch or a panel close
+    collapses to the primary cursor.
+- Consistency: `clampToBuffer()` clamps the point, mark, extra cursors and viewport to valid positions again after
+  the buffer changed (e.g. through another view or `revert()`). The view calls it automatically when it notices a
+  `docVersion` mismatch. `snapToCodepoint()` (`utf8.hpp`) snaps every clamped byte offset (and `setPoint()`) back to
+  a code-point boundary. So a stale position can never split a multi-byte character. The view's own edits adopt
+  the new version through `syncAfterEdit()`, which also keeps the viewport in range.
 
 ---
 
 ### `TextBuffer` (`src/buffer/text_buffer.hpp/.cpp`)
 
-Concrete editable buffer backed by a file on disk. Reads the file on
-construction; `save()` writes lines back as a truncating binary write
-and returns `std::expected<void, std::string>` with an error message on
-failure. `writeCopy(path)` writes the same bytes to a new owner-only
-file instead (`umask` and `std::ios::noreplace`: private from creation,
-and an existing file or symlink of that name is not touched) and leaves
-the buffer's path, modified flag and disk stamp alone; the emergency
-save uses it. `revert()` reloads the buffer contents from its backing file
-and bumps `docVersion`; it does *not* touch view state. Callers that
-need to reposition the cursor after a revert (e.g. `Screen` on the
-user-invoked `Revert` action) explicitly reset `_view->setPoint(0,0)`
-and clear the mark. Exposes `setPath()` for the save-as rename
-workflow. `detectMode()` sets the `BufferMode` based on file extension
-(`.c`, `.h`, `.cpp`, `.hpp` → `Cpp`; `.md` → `Md`; `.json` → `Jsn`;
-`.diff`, `.patch` → `Dif`; `.sh`, `.bash`, `.zsh`, `.ksh` → `Sh`;
-`.yml`, `.yaml` → `Yml`; `.toml` → `Tml`; `.py`, `.pyi`, `.pyw` → `Py`; otherwise
-`Txt`). When the extension is unknown, a leading `#!` line is sniffed
-for an interpreter (`bash`/`zsh`/`ksh`/`dash`/`sh` → `Sh`, `python`
-→ `Py`) as a fallback; only line 0 is inspected, so `detectMode()`
-now runs after `loadFromFile()` in the file constructor.
+`TextBuffer` is the concrete editable buffer, backed by a file on disk. It reads the file on construction.
 
-`TextBuffer` also tracks the on-disk mtime + size (captured on load and
-after a successful `save()`) so `changedOnDisk()` can warn when the file
-has been modified by another process. `Screen::Save` checks that flag
-before overwriting and prompts the user when it is set.
-`noticeDiskChange()` is the same check reporting each state of the file
-only once (until the next load or save); `Screen::updateFocusPointers()`
-uses it to warn in the status line when a buffer whose file changed gets
-focus.
+- `save()` writes the lines back with a truncating binary write. It returns `std::expected<void, std::string>`, with
+  an error message on failure.
+- `writeCopy(path)` writes the same bytes to a new owner-only file instead. It uses `umask` and
+  `std::ios::noreplace`, so the file is private from creation, and an existing file or symlink of that name stays
+  untouched. It does not change the buffer's path, modified flag or disk stamp. The emergency save uses it.
+- `revert()` reloads the buffer contents from the file and bumps `docVersion`. It does *not* touch view state.
+  Callers that need to move the cursor after a revert reset it themselves. For example, `Screen` calls
+  `_view->setPoint(0,0)` and clears the mark for the user's `Revert` action.
+- `setPath()` supports the Save As rename.
+- `detectMode()` sets the `BufferMode` from the file extension:
+  - `.c`, `.h`, `.cpp`, `.hpp` → `Cpp`
+  - `.md` → `Md`
+  - `.json` → `Jsn`
+  - `.diff`, `.patch` → `Dif`
+  - `.sh`, `.bash`, `.zsh`, `.ksh` → `Sh`
+  - `.yml`, `.yaml` → `Yml`
+  - `.toml` → `Tml`
+  - `.py`, `.pyi`, `.pyw` → `Py`
+  - otherwise `Txt`
 
-Line-ending style is captured during `loadFromFile()` into a
-`LineEndingStyle` enum (`Unix`, `Crlf`, `Cr`, `Mixed`). `\r` bytes are
-left intact in the line strings so they remain editable; `Screen` reads
-the flag via `lineEndingStyle()`, prompts the user to normalize on
-non-Unix files, and calls `normalizeLineEndings()` on consent
-(`acknowledgeLineEndingStyle()` clears the flag so the same load isn't
-flagged twice). `Mixed` files are surfaced as a status warning rather
-than prompted — they cannot be unambiguously translated.
+  When the extension is unknown, it looks at a leading `#!` line for an interpreter as a fallback
+  (`bash`/`zsh`/`ksh`/`dash`/`sh` → `Sh`, `python` → `Py`). It reads only line 0, so `detectMode()` now runs after
+  `loadFromFile()` in the file constructor.
 
-`TextBuffer` owns a `VersionHistory _history` and a
-`bool _browsingHistory` flag. The history is captured on construction,
-on every successful edit (via the inherited `recordVersion()` hook),
-and on `save()` / `revert()` to preserve the on-disk state as a
-restorable snapshot. `readonly()` returns `_browsingHistory`, which
-makes the buffer immutable while a view is stepping through history.
-Showing the newest version again while browsing restores the
-`modified()` flag the buffer had when browsing began, so stepping back
-and returning (or cancelling) leaves a saved buffer unmodified.
+`TextBuffer` also keeps the mtime and size of the file on disk. It captures them on load and after a successful
+`save()`. So `changedOnDisk()` can warn when another process changed the file. `Screen::Save` checks that flag
+before it overwrites the file, and asks the user when it is set. `noticeDiskChange()` does the same check, but
+reports each state of the file only once (until the next load or save). `Screen::updateFocusPointers()` uses it to
+warn in the status line when a buffer gets focus and its file changed.
+
+`loadFromFile()` captures the line-ending style in a `LineEndingStyle` enum (`Unix`, `Crlf`, `Cr`, `Mixed`). The
+`\r` bytes stay in the line strings, so the user can still edit them. `Screen` reads the flag through
+`lineEndingStyle()`. For a non-Unix file, it asks the user whether to normalize, and calls `normalizeLineEndings()`
+on consent. `acknowledgeLineEndingStyle()` clears the flag, so cx does not flag the same load twice. For `Mixed`
+files, cx shows a status warning and does not ask, because they cannot be translated unambiguously.
+
+`TextBuffer` owns a `VersionHistory _history` and a `bool _browsingHistory` flag. It captures the history:
+
+- on construction
+- on every successful edit, through the inherited `recordVersion()` hook
+- on `save()` and `revert()`, so that the state on disk is a snapshot that the user can restore
+
+`readonly()` returns `_browsingHistory`, so the buffer cannot change while a view steps through history. When the
+browsing view shows the newest version again, the buffer gets back the `modified()` flag that it had when browsing
+began. So stepping back and returning (or cancelling) leaves a saved buffer unmodified.
 
 ---
 
 ### `HelpBuffer` (`src/buffer/help_buffer.hpp/.cpp`)
 
-Readonly buffer that renders the key-binding reference. Overrides
-`render()` and `screenRow()` to lay out command and movement sections
-side-by-side when the terminal is wide enough, or stacked otherwise. The
-command section is generated from the shortcut binding table via
-`formatShortcut()` and `descriptionForAction()`, ensuring the help
-display stays in sync with actual keybindings.
+This read-only buffer renders the key-binding reference. It overrides `render()` and `screenRow()`. When the
+terminal is wide enough, it lays out the command and movement sections side by side. Otherwise it stacks them. It
+generates the command section from the shortcut binding table, through `formatShortcut()` and
+`descriptionForAction()`. So the help display always matches the actual keybindings.
 
 ---
 
 ### `BufferListBuffer` (`src/buffer/buffer_list_buffer.hpp/.cpp`)
 
-Readonly buffer that displays open buffers as a trie-based directory tree
-with collapsed single-child nodes. Overrides `render()` to draw the
-selected row in reverse video, padded with spaces up to the gutter so the
-whole row is highlighted; `selectsRows()` returns true, so `Screen::draw()`
-hides the terminal cursor while it has focus. The directory and grep
-buffers do both the same way. Rows are clipped to the panel width
-(`clipToVisualWidth()`), like those of the directory and grep buffers.
-`selectedName()` returns the buffer name
-under the cursor for use by `Screen` when the user presses Enter.
+This read-only buffer shows the open buffers as a directory tree, built from a trie. Nodes with a single child are
+collapsed. It overrides `render()` to draw the selected row in reverse video, padded with spaces up to the gutter,
+so the whole row is highlighted. `selectsRows()` returns true, so `Screen::draw()` hides the terminal cursor while
+the buffer has focus. The directory and grep buffers do both the same way. Rows are clipped to the panel width
+(`clipToVisualWidth()`), as in the directory and grep buffers. When the user presses Enter, `Screen` calls
+`selectedName()` to get the buffer name under the cursor.
 
 ---
 
 ### `DirBuffer` (`src/buffer/dir_buffer.hpp/.cpp`)
 
-Readonly buffer that displays a directory listing with permissions,
-owner, group, size, and modification time. Supports:
-- Navigation into subdirectories and parent (`.` and `..` entries)
-- Toggling hidden (dotfile) visibility
-- Marking entries for deletion and executing bulk delete
-- Renaming the selected entry (`r`) and creating subdirectories (`m`)
+This read-only buffer shows a directory listing with permissions, owner, group, size and modification time. It
+supports:
 
-Each entry is represented as a `DirBuffer::Entry` struct with metadata
-gathered from the filesystem. `refresh()` rebuilds the listing from disk
-and bumps `docVersion()`, so views of it re-clamp. `reload()` re-reads
-a listing that may have gone stale (it is called whenever the directory
-is opened again): the cursor and the deletion marks follow their
-entries by name, since positions shift when files come and go.
+- navigation into subdirectories and to the parent (the `.` and `..` entries)
+- toggling the visibility of hidden files (dotfiles)
+- marking entries for deletion and deleting them all at once
+- renaming the selected entry (`r`) and creating subdirectories (`m`)
+
+Each entry is a `DirBuffer::Entry` struct with metadata from the filesystem. `refresh()` rebuilds the listing from
+disk and bumps `docVersion()`, so views of it clamp their positions again. `reload()` reads a listing that may be
+stale again. cx calls it whenever the directory is opened again. The cursor and the deletion marks follow their
+entries by name, because positions shift when files come and go.
 
 ---
 
 ### `GrepBuffer` (`src/buffer/grep_buffer.hpp/.cpp`)
 
-Readonly buffer listing find-in-files results, one `path:line: text` row
-per hit under a one-line header describing the search. `refresh()`
-rebuilds the listing from a new result set; `selectedHit()` maps a cursor
-position past the header back to a `GrepHit` so `Screen` can open the
-file when the user presses Enter.
+This read-only buffer lists find-in-files results. It has a one-line header that describes the search, and then one
+`path:line: text` row per hit. `refresh()` rebuilds the listing from a new result set. `selectedHit()` maps a cursor
+position below the header back to a `GrepHit`, so `Screen` can open the file when the user presses Enter.
 
-The free function `parseGrepOutput()` turns the raw stdout of either
-backend into `GrepHit` values. Both are invoked with a NUL after the
-filename (`git grep -z`, `grep -Z`), which keeps paths containing `:`
-or a newline unambiguous (the path is located by its NUL before the
-record's end-of-line is); they differ in whether the line number is terminated by NUL
-or `:`, and the parser accepts either. Malformed records are skipped
-rather than aborting the parse. Consecutive hits in one file share a
-`GrepFile` (absolute and display path): a `std::filesystem::path` per
-hit cost ~800 bytes, 3.4 GB for 4M hits. The display rows are built
-once, straight into the base-class `LineStore`. A result set cut short by
-`runGrep()`'s output limit is marked in the header ("search stopped at
-the limit").
+The free function `parseGrepOutput()` turns the raw stdout of either backend into `GrepHit` values:
 
-Backend selection, argument construction, and opening a hit live in
-`Screen` (`runGrep()`, `searchStartDir()`, `openGrepHit()`), not here, so
-this class stays a pure display of an already-computed result set:
-- inside a git work tree, `git grep` runs from the repository root, so
-  `.gitignore` is honoured (and only tracked files are searched)
-- otherwise `grep -r` runs from `searchStartDir()` — the browsed
-  directory for a `DirBuffer`, else the current file's parent, else the
-  process working directory
-- `openGrepHit()` shows the target in the other panel, splitting
-  vertically first when only one panel is open, so the listing survives
-  walking several matches
+- cx runs both backends with a NUL after the filename (`git grep -z`, `grep -Z`). This keeps paths that contain `:`
+  or a newline unambiguous, because the parser finds the path by its NUL before it looks for the end of the record.
+- The backends differ in whether a NUL or a `:` ends the line number. The parser accepts either.
+- The parser skips malformed records and does not abort.
+- Consecutive hits in one file share a `GrepFile` (absolute and display path). A `std::filesystem::path` per hit
+  cost about 800 bytes, which was 3.4 GB for 4M hits.
+- It builds the display rows once, directly into the `LineStore` of the base class.
+- When the output limit of `runGrep()` cuts a result set short, the header says so ("search stopped at the limit").
+
+Backend selection, argument construction and opening a hit live in `Screen` (`runGrep()`, `searchStartDir()`,
+`openGrepHit()`), not here. So this class only displays a result set that is already computed.
+
+- Inside a git work tree, `git grep` runs from the repository root. So it honours `.gitignore`, and it searches
+  only tracked files.
+- Otherwise, `grep -r` runs from `searchStartDir()`. That is the browsed directory for a `DirBuffer`, or else the
+  parent of the current file, or else the working directory of the process.
+- `openGrepHit()` shows the target in the other panel. If only one panel is open, it first splits it vertically.
+  So the listing stays visible while the user walks through several matches.
 
 ---
 
 ### `PasteRing` (`src/paste_ring.hpp`)
 
-Fixed-capacity ring buffer for cut/copied text. Stores entries as
-`std::string` with embedded `'\n'` for line breaks. Index 0 is the most
-recent entry. Used by `Screen` to implement cut, copy, paste, and paste
-cycling.
+This is a fixed-capacity ring buffer for cut or copied text. It stores entries as `std::string`, with embedded
+`'\n'` for line breaks. Index 0 is the most recent entry. `Screen` uses it for cut, copy, paste and paste cycling.
 
 ---
 
 ### `Clipboard` (`src/clipboard.hpp/.cpp`)
 
-Best-effort X11 clipboard integration. Detects `DISPLAY` and the
-presence of `xclip` (preferred) or `xsel` on `$PATH` lazily on first
-use; if neither is available, all methods become silent no-ops so the
-editor still works on a tty without a graphical session. Project rules
-forbid linking `libX11`, so all interaction is via these external
-helpers.
+This class gives best-effort X11 clipboard integration. On first use, it checks for `DISPLAY` and for `xclip`
+(preferred) or `xsel` on `$PATH`. If neither tool is available, all methods silently do nothing, so the editor
+still works on a tty without a graphical session. The project rules forbid linking `libX11`, so all interaction
+goes through these external tools.
 
-`Screen` calls `setPrimary()` after every keystroke (in `loop()`,
-through `syncPrimarySelection()`) so the active mark region tracks the
-X11 PRIMARY selection — the buffer that mouse-drag selections populate
-and middle-click pastes. Internal dedup against the last published
-text means cursor moves that don't change the selected text cost zero
-forks. `Screen` also calls `setClipboard()` on cut and copy so the
-text becomes available to other apps via the standard Ctrl-C/Ctrl-V
-clipboard, `getClipboard()` on paste so external copies flow into the
-editor (and onto the paste ring), and `getPrimary()` on middle-click so
-the PRIMARY selection pastes back in at the cursor. `getClipboard()`
-and `getPrimary()` share a private `getSelection()` helper.
+`Screen` uses it in these places:
 
-Writes use a double-fork detach: the parent forks an intermediate
-child, which forks again and exits, leaving the grandchild xclip/xsel
-to be reaped by init. This keeps the input loop responsive (~1 ms per
-write) regardless of xclip startup latency. Reads are synchronous
-because the caller (Paste) needs the result immediately.
+- `setPrimary()` after every keystroke (in `loop()`, through `syncPrimarySelection()`). So the active mark region
+  follows the X11 PRIMARY selection, which mouse-drag selections fill and middle clicks paste. The class compares
+  each text with the last text it published, so cursor moves that do not change the selected text cost no forks.
+- `setClipboard()` on cut and copy, so other applications can get the text through the standard Ctrl-C/Ctrl-V
+  clipboard
+- `getClipboard()` on paste, so copies from other applications come into the editor (and onto the paste ring)
+- `getPrimary()` on a middle click, so the PRIMARY selection pastes in at the cursor
 
-Errors are logged to `~/.cx-errors` via `error_log` and never surfaced
-to the user.
+`getClipboard()` and `getPrimary()` share a private `getSelection()` helper.
+
+Writes use a double fork to detach. The parent forks an intermediate child. That child forks again and exits, and
+init reaps the grandchild xclip/xsel. This keeps the input loop responsive (about 1 ms per write), however slowly
+xclip starts. Reads are synchronous, because the caller (Paste) needs the result at once.
+
+Errors go to `~/.cx-errors` through `error_log`. The user never sees them.
 
 ---
 
 ### `PasteRingBuffer` (`src/buffer/paste_ring_buffer.hpp/.cpp`)
 
-Readonly buffer that displays the paste ring contents. Similar pattern to
-`BufferListBuffer` — `refresh()` rebuilds lines from the current ring
-state.
+This read-only buffer shows the contents of the paste ring. It works like `BufferListBuffer`: `refresh()` rebuilds
+the lines from the current state of the ring.
 
 ---
 
 ### `LineStore` (`src/buffer/line_store.hpp/.cpp`)
 
-An indexed sequence of `LinePtr`s kept in shared copy-on-write chunks of
-up to 2×T pointers (T = 512 by default, a constructor parameter so tests
-can use tiny chunks; every chunk but the last holds at least T/4).
-Copying a store copies one pointer per chunk, and the copies share every
-chunk; the first edit of a shared chunk clones it, and `mutableLine(i)`
-then also detaches a shared line string. Line `i` is found by binary
-search over the chunks' first line numbers, with a cached last chunk
-that makes sequential access O(1); edits cost O(T + N/T). Large inserts
-build whole chunks and large erases drop whole chunks. The free
-`makeLine()` helpers create line strings non-const behind the
-`string const` pointer, which makes `mutableLine()`'s in-place edit of an
-unshared line well-defined.
+`LineStore` is an indexed sequence of `LinePtr`s, kept in shared copy-on-write chunks of up to 2×T pointers.
+T is 512 by default. It is a constructor parameter, so tests can use tiny chunks. Every chunk but the last holds at
+least T/4.
 
-Assumptions (stated in the header): single-threaded (the lookup cache and
-the `use_count()` sharing test), and references/iterators are valid only
-until the next mutation. Bulk loads move a `std::vector<LinePtr>` in, so
-the chunk arrays are allocated after the lines (8 KB arrays interleaved
-with the line strings were measured to halve later scan speed).
-`operator[]` caches the last chunk's range and array (one comparison
-and one load for nearby reads); the iterator holds the current chunk's
-element range. Used by `Buffer` for its lines and by `VersionHistory`
-for full snapshots.
+- To copy a store, cx copies one pointer per chunk, and the copies share every chunk. The first edit of a shared
+  chunk clones it, and `mutableLine(i)` then also detaches a shared line string.
+- A binary search over the first line numbers of the chunks finds line `i`. A cached last chunk makes sequential
+  access O(1).
+- Edits cost O(T + N/T). Large inserts build whole chunks, and large erases drop whole chunks.
+- The free `makeLine()` helpers create line strings that are not const behind the `string const` pointer. This
+  makes the in-place edit of an unshared line in `mutableLine()` well defined.
+
+The header states these assumptions:
+
+- The store is single-threaded, because of the lookup cache and the `use_count()` sharing test.
+- References and iterators stay valid only until the next change.
+
+Bulk loads move a `std::vector<LinePtr>` in, so cx allocates the chunk arrays after the lines. (Measurements showed
+that 8 KB arrays between the line strings halved the speed of later scans.) `operator[]` caches the range and array
+of the last chunk, so a nearby read costs one comparison and one load. The iterator holds the element range of the
+current chunk. `Buffer` uses the store for its lines, and `VersionHistory` uses it for full snapshots.
 
 ---
 
 ### `VersionHistory` (`src/buffer/version_history.hpp/.cpp`)
 
-Append-only history of buffer snapshots used by `TextBuffer` to
-implement undo and version browsing. Each `VersionSnapshot` records
-the buffer's lines at the time of capture (a `LineStore` copy, which
-shares the buffer's chunks), a timestamp, and the cursor position.
+This is an append-only history of buffer snapshots. `TextBuffer` uses it for undo and version browsing. Each
+`VersionSnapshot` records:
 
-Every version is a complete snapshot: capturing copies one pointer per
-chunk (O(N/512)) whatever the edit was, and versions keep only the
-chunks and lines that differ between them, so memory grows with what
-was edited, not with file size × versions. `linesAt(idx)` returns a copy
-of the version's store (same cost) without changing the history;
-`timestampAt(idx)` and `cursorAt(idx)` are O(1).
+- the lines of the buffer at the time of capture, as a `LineStore` copy that shares the buffer's chunks
+- a timestamp
+- the cursor position
 
-Pruning runs whenever `_versions.size()` exceeds `kMaxVersions` and
-drops every other entry among the oldest `kThinCount`. Snapshots are
-independent, so dropping one needs no fix-up of its neighbours; it
-costs one reference-count decrement per chunk plus freeing what only
-that version held.
+Every version is a complete snapshot. A capture copies one pointer per chunk (O(N/512)), whatever the edit was.
+Versions keep only the chunks and lines that differ between them. So memory grows with what was edited, not with
+file size × versions. `linesAt(idx)` returns a copy of the store of a version (at the same cost) without changing
+the history. `timestampAt(idx)` and `cursorAt(idx)` are O(1).
 
-Public surface: `capture(lines, cursor)`, `linesAt(idx)` /
-`timestampAt(idx)` / `cursorAt(idx)`, `truncateAfter(idx)` (for
-committing a history-mode rewind), `size()` / `empty()` / `clear()`.
+Pruning runs whenever `_versions.size()` exceeds `kMaxVersions`. It drops every other entry among the oldest
+`kThinCount`. Snapshots are independent, so dropping one needs no fix-up of its neighbours. It costs one
+reference-count decrement per chunk, plus freeing what only that version held.
+
+Public surface: `capture(lines, cursor)`, `linesAt(idx)` / `timestampAt(idx)` / `cursorAt(idx)`,
+`truncateAfter(idx)` (to commit a rewind in history mode), and `size()` / `empty()` / `clear()`.
 
 ---
 
 ### `Panel` (`src/terminal/panel.hpp/.cpp`)
 
-A panel is one pane of the terminal. It owns a `BufferView`, an integer
-id, a `PanelRect` describing its absolute position and size, and a
-`Buffer* prevBuf` slot used by the read-only overlay flow (see
-`Screen` above). Panels provide `setBuffer()` to switch to a different
-buffer (optionally restoring saved view state via
-`BufferView::fromSavedState()`), and `saveViewState()` to persist
-cursor / mark / viewport / wrap state before the view is destroyed.
-`saveViewState()` is called whenever a panel is about to drop its
-`BufferView` — buffer switch or panel close — not just at last-view
-destruction.
+A panel is one pane of the terminal. It owns:
+
+- a `BufferView`
+- an integer id
+- a `PanelRect` with its absolute position and size
+- a `Buffer* prevBuf` slot, which the read-only overlay flow uses (see `Screen` above)
+
+`setBuffer()` switches the panel to a different buffer. It can restore saved view state through
+`BufferView::fromSavedState()`. `saveViewState()` keeps the cursor, mark, viewport and wrap state before the view is
+destroyed. cx calls `saveViewState()` whenever a panel is about to drop its `BufferView` (a buffer switch or a panel
+close), not only when the last view is destroyed.
 
 ---
 
 ### `PanelLayout` (`src/terminal/panel_layout.hpp/.cpp`)
 
-Binary split tree managing a set of panels. Each leaf owns a `Panel`;
-internal nodes record a split direction (`Vertical` / `Horizontal`).
-The tree is recomputed on `resize()`, `splitFocused()`, and
-`closeFocused()` to assign each panel an absolute `PanelRect`.
+`PanelLayout` manages a set of panels in a binary split tree. Each leaf owns a `Panel`. Each internal node records a
+split direction (`Vertical` / `Horizontal`). `resize()`, `splitFocused()` and `closeFocused()` compute the tree
+again and give each panel an absolute `PanelRect`.
 
 Key operations:
-- `splitFocused(dir, buf)` — replace the focused leaf with a split
-  node; the original panel stays left/top and a new panel is created
-  right/bottom. Returns `nullptr` if the split would make panels
-  smaller than the minimum dimensions (10 cols, 3 rows). Panels are
-  numbered from 1 upward; `FocusPanel1`..`FocusPanel6` correspond to
-  the first six panels in tree order, which is the practical maximum.
-- `closeFocused()` — remove the focused leaf and promote its sibling.
-  Restores focus to the most recently used panel via an MRU history,
-  falling back to the first panel in tree order.
-- `focusPanel(id)` — switch focus by panel id; updates the MRU history.
-- `forEachPanel(fn)` — visit every panel in tree order.
+
+- `splitFocused(dir, buf)` replaces the focused leaf with a split node. The original panel stays left or top, and a
+  new panel goes right or bottom. It returns `nullptr` if the split would make panels smaller than the minimum size
+  (10 cols, 3 rows). Panels are numbered from 1 upward. `FocusPanel1`..`FocusPanel6` go to the first six panels in
+  tree order, which is the practical maximum.
+- `closeFocused()` removes the focused leaf and promotes its sibling. It gives focus back to the most recently used
+  panel, from an MRU history. If there is none, it focuses the first panel in tree order.
+- `focusPanel(id)` switches focus by panel id and updates the MRU history.
+- `forEachPanel(fn)` visits every panel in tree order.
 
 ---
 
 ### `BufferSink` / `BufferManager` interaction
 
-`BufferManager` holds a `BufferSink&` and calls `setBuffer()` on it
-whenever a new buffer is switched to (from `open`, `openDir`, `create`,
-the constructor's initial buffer, and `kill`'s replacement). `Screen`
-implements `BufferSink::setBuffer()` by updating its `_buf` pointer and
-calling `draw()`. This one-way dependency means `BufferManager` never
-knows about `Screen` concretely.
+`BufferManager` holds a `BufferSink&`. It calls `setBuffer()` on it whenever it switches to a new buffer: from
+`open`, `openDir` and `create`, for the initial buffer of the constructor, and for the replacement buffer of `kill`.
+`Screen` implements `BufferSink::setBuffer()`: it updates its `_buf` pointer and calls `draw()`. The dependency goes
+one way only, so `BufferManager` never knows the concrete `Screen`.
 
 ---
 
-## Syntax Highlighting
+## Syntax highlighting
 
-Syntax highlighting is mode-driven and lives in `src/buffer/modes/`:
+Syntax highlighting depends on the buffer mode. The code lives in `src/buffer/modes/`.
 
-- **C/C++ mode** (`modes/c/syntax.hpp/.cpp`): Tokenizes keywords,
-  comments (line and block), strings (regular, character literals, raw
-  strings with `R"delim(...)delim"`), value literals (`Number`:
-  numeric literals — integer/float, `0x`/`0b` prefixes, `'` digit
-  separators, hex floats, `u`/`l`/`f`/`z`/user-defined suffixes — plus
-  the boolean/null literals `true`/`false`/`nullptr`, which are values
-  rather than keywords and so share the numeric colour), operators, and
-  brackets (parens, brackets, braces, angles). Maintains multi-line state
-  (`CSyntaxState`) for block comments and raw string literals. Also
-  provides `findMatchingBracket()` for jump-to-matching-bracket
-  support.
+### C/C++ mode (`modes/c/syntax.hpp/.cpp`)
 
-- **Markdown mode** (`modes/md/syntax.hpp/.cpp`): Tokenizes headings
-  (`# ...`), bold (`**...**`, single-line), and links (`[text](url)`).
-  Links may span lines: `MdSyntaxState::mdLink` (`MdLink::Label`/`Url`) carries
-  an open `[...` label or `](...` destination across the boundary and
-  is Link-coloured until it closes, or until its block ends if it never
-  does (so an unmatched `[` in prose does not recolour the rest of the
-  file). A block ends where Alt-q starts a new one: at a blank line, a
-  fenced code block, a list item (`listMarkerLength()`) and a table row
-  (`MdSyntaxState::table`, an `MdTableScan`). A table row is a block of
-  its own, so a `[` not closed on the row is plain text there; only the
-  header row is not recognised, as the delimiter row below it is what
-  makes it one. Headings are suppressed while a link continuation is
-  open. Bold is single-line only. Inline code spans (`` `...` ``) are
-  skipped so markup inside them is not tokenised — most importantly a
-  stray `[` cannot open a link, which prevents an unbalanced bracket in
-  code from carrying link highlighting onto the following lines.
-  Fenced code blocks get no markup tokens at all (a `# comment` in a
-  shell snippet is not a heading): `MdSyntaxState::fence` (an `MdFence`)
-  tracks the open fence from line to line.
+The tokenizer recognises:
 
-- **Markdown tables** (`modes/md/table.hpp/.cpp`): Pure functions
-  with no buffer or view dependency. `findPipeRun()` returns the run of
-  lines containing a `|` around a line and the table header inside it
-  (callers reuse it for every line of the run, keeping detection linear);
-  `findMarkdownTable()` narrows that to the
-  line range of the GFM pipe table around a line: a header, then a
-  delimiter row with the same cell count, then body rows, every line
-  holding an unescaped `|`. `formatMarkdownTable()` pads every cell to its
-  column's `visualWidth` and resizes delimiter rows, keeping their `:`
-  alignment markers. Given a cursor, it also wraps the cursor's column
-  into the width left of the target by the other columns. That width is
-  no narrower than the longest word, the header, or min(20, the widest
-  cell). Code spans and links are never split. A GFM row is one line, so
-  a wrapped cell continues in body rows whose first cell is empty.
-  Column 1 and the header are never wrapped. A fully empty body row is
-  a spacer and is kept. Rows may carry indentation and block-quote
-  markers (`> `), which every output row gets, and the header a
-  byte-order mark. The returned cursor keeps
-  its logical cell and its non-blank-byte offset within that cell's
-  text. `MdTableScan` is the same table test for a caller that sees one
-  line at a time (the tokenizer): it remembers the cell count of the line
-  above instead of looking at the line below, so it reports the
-  delimiter row and the rows under it, but not the header.
+- keywords
+- comments, both line and block
+- strings: regular strings, character literals, and raw strings with `R"delim(...)delim"`
+- value literals (`Number`):
+  - numeric literals: integer and float, `0x`/`0b` prefixes, `'` digit separators, hex floats, and
+    `u`/`l`/`f`/`z`/user-defined suffixes
+  - the boolean and null literals `true`/`false`/`nullptr`. They are values and not keywords, so they share the
+    numeric colour.
+- operators
+- brackets: parens, brackets, braces and angles
 
-- **Markdown list markers** (`modes/md/list.hpp`): `listMarkerLength()`
-  recognises `- `, `* `, `+ `, `1. ` and `1) `. Reflow uses it in every
-  mode to reflow each list item on its own, and the Markdown tokenizer
-  to end an open link at the next item.
+It keeps multi-line state (`CSyntaxState`) for block comments and raw string literals. It also provides
+`findMatchingBracket()` for jump-to-matching-bracket.
 
-- **Markdown fences** (`modes/md/fence.hpp/.cpp`): `MdFence` is the
-  line-by-line state of "which fenced code block am I in" (``` or ~~~,
-  closing run at least as long) and the only place that knows the rules.
-  `markdownFencedLines()` runs it over a whole buffer for reflow, which
-  leaves fenced lines untouched; the Markdown tokenizer carries one in
-  its per-line state.
+### Markdown mode (`modes/md/syntax.hpp/.cpp`)
 
-- **Diff mode** (`modes/dif/syntax.hpp/.cpp`): Classifies entire lines
-  based on their prefix: `+` (add), `-` (remove), `+++`/`---` (file
-  headers), `@@` (hunk headers). No multi-line state needed, so the
-  tokenizer takes none.
+The tokenizer recognises headings (`# ...`), bold (`**...**`, on one line) and links (`[text](url)`).
 
-- **JSON mode** (`modes/jsn/syntax.hpp/.cpp`): Tokenizes strings,
-  numbers, the value literals `true`/`false`/`null` (coloured as
-  `Number`, like numeric literals — JSON emits no `Keyword`), and
-  brackets (`[]`, `{}`). No multi-line state needed, so the tokenizer
-  takes none. Provides
-  `findMatchingBracketJson()` for jump-to-matching-bracket; only `[]`
-  and `{}` are matched, brackets inside strings are skipped.
+Links can span lines. `MdSyntaxState::mdLink` (`MdLink::Label`/`Url`) carries an open `[...` label or `](...`
+destination across the line boundary. The link has the Link colour until it closes. If it never closes, the colour
+stops where its block ends, so an unmatched `[` in prose does not colour the rest of the file. A block ends where
+Alt-q starts a new one:
 
-- **Shell mode** (`modes/sh/syntax.hpp/.cpp`): Tokenizes `#` comments,
-  single/double-quoted and backtick strings, the reserved word set
-  (`if`/`then`/`fi`/`for`/`while`/`do`/`done`/…), `$VAR`/`${...}`/`$?`
-  parameter expansions (the `Variable` token), brackets, and the `|`
-  `&` `;` `<` `>` `=` operators. Maintains multi-line state
-  (`ShSyntaxState`) for heredocs: `state.heredocTag` makes every following line one `String`
-  span until a line equal to the tag (leading tabs stripped for the
-  `<<-` form, tracked by `state.heredocStripTabs`); `<<<` here-strings
-  are not heredocs.
+- at a blank line
+- at a fenced code block
+- at a list item (`listMarkerLength()`)
+- at a table row (`MdSyntaxState::table`, an `MdTableScan`)
 
-- **YAML mode** (`modes/yml/syntax.hpp/.cpp`): Tokenizes `#` comments,
-  mapping keys (`Keyword`, the text before a `: `/EOL colon), `'...'`
-  and `"..."` strings, the plain constants `true`/`false`/`yes`/`no`/
-  `on`/`off`/`null`/`~`/`nan` (case-insensitive) and numeric scalars —
-  both value literals, coloured as `Number`; mapping keys remain
-  `Keyword` — `: , -` and flow brackets, and node properties
-  `&anchor`/`*alias`/`!tag` (`Preprocessor`). Directives (`%YAML`) and
-  document markers (`---`/`...`) are `Preprocessor`. Maintains
-  multi-line state (`YmlSyntaxState`) for `|`/`>` block scalars: `state.yamlBlockCol`
-  holds the introducing line's indent; deeper-indented or blank lines
-  are one `String` span until a non-blank line dedents back to it.
+A table row is a block of its own, so a `[` that does not close on the row is plain text there. Only the header row
+is not recognised, because the delimiter row below it is what makes it a header.
 
-- **TOML mode** (`modes/tml/syntax.hpp/.cpp`): Tokenizes `#` comments,
-  table headers `[a.b]`/`[[a]]` (names `Preprocessor`, brackets
-  `Bracket`), bare and dotted keys before `=` (`Keyword`; quoted key
-  parts `String`), basic/literal strings and their `"""`/`'''`
-  multi-line forms, and the value literals — booleans, integers
-  (`0x`/`0o`/`0b`, `_` groups), floats (`inf`/`nan`) and date/times —
-  as `Number`. Inside inline tables `{...}` keys are recognised after
-  `{` and `,`. Maintains multi-line state (`TmlSyntaxState`): `state.tomlTriple` holds
-  the open triple-quote char, `state.tomlDepth` counts `[`/`{` left
-  open by earlier lines so lines inside a multi-line array are parsed
-  as values (no header or key detection).
+More rules:
 
-- **Python mode** (`modes/py/syntax.hpp/.cpp`): Tokenizes `#`
-  comments, strings with optional `r`/`b`/`f`/`u` prefixes
-  (single/double and triple-quoted), the keyword set
-  (`def`/`class`/`for`/`lambda`/… ), numbers
-  (`0x`/`0o`/`0b`, `_` groups, fraction/exponent, imaginary `j`) and
-  the value literals `None`/`True`/`False` (coloured as `Number`, not
-  `Keyword`),
-  `@decorator` lines (`Preprocessor`), brackets, and `:` (`Operator`).
-  Maintains multi-line state (`PySyntaxState`) for triple-quoted strings:
-  `state.pyTriple` holds the open quote char and `state.pyTripleRaw`
-  suppresses escape handling for `r'''...'''`; f-string `{...}`
-  interiors stay inside the `String` span (no recursion). Python is
-  also added to the leading-indent-preserving set in
-  `Buffer::insertAt` (alongside Cpp/Jsn).
+- Headings are suppressed while a link continuation is open.
+- Bold works on one line only.
+- The tokenizer skips inline code spans (`` `...` ``), so it does not tokenise markup inside them. Most
+  importantly, a stray `[` there cannot open a link. So an unbalanced bracket in code does not carry link
+  highlighting onto the next lines.
+- Fenced code blocks get no markup tokens at all. For example, a `# comment` in a shell snippet is not a heading.
+  `MdSyntaxState::fence` (an `MdFence`) tracks the open fence from line to line.
 
-`BufferView::gotoMatchingBracket()` dispatches to the JSON matcher in
-JSON mode and to the C/C++ matcher in every other mode. Because the
-C/C++ matcher only treats `<>` as brackets when tagged `Angle`, plain
-text, Markdown, shell, YAML, TOML and Python buffers (where `<>` are
-`Operator`/`Normal`, never `Angle`) get a clean `()[]{}`-only
-fallback for free.
+### Markdown tables (`modes/md/table.hpp/.cpp`)
 
-- **Conflict markers**: Regardless of mode, lines matching `<<<<<<<`,
-  `=======`, or `>>>>>>>` (7 identical characters) are overlaid with
-  `ConflictMarker` tokens when `_hasConflicts` is set. The flag is
-  computed on load, revert, and save via `scanForConflicts()`.
+These are pure functions, with no dependency on a buffer or a view.
 
-The `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`,
-`Operator`, `Paren`, `Bracket`, `Brace`, `Angle`, `Heading`, `Bold`,
-`Link`, `Number`, `Preprocessor`, `DiffAdd`, `DiffRemove`, `DiffMeta`,
-`DiffHunk`, `ConflictMarker`, `Variable`) is shared across modes.
-Tokens are mapped to ANSI colours in `Buffer::render()`, taken from the
+- `findPipeRun()` returns the run of lines that contain a `|` around a line, and the table header inside that run.
+  Callers reuse the result for every line of the run, which keeps detection linear.
+- `findMarkdownTable()` narrows the run to the line range of the GFM pipe table around a line: a header, then a
+  delimiter row with the same cell count, then body rows. Every line holds an unescaped `|`.
+- `formatMarkdownTable()` pads every cell to the `visualWidth` of its column and resizes delimiter rows. It keeps
+  their `:` alignment markers. Given a cursor, it also wraps the cursor's column into the width that the other
+  columns leave free in the target width:
+  - That width is at least the longest word, the header, or min(20, the widest cell).
+  - Code spans and links are never split.
+  - A GFM row is one line, so a wrapped cell continues in body rows whose first cell is empty.
+  - Column 1 and the header are never wrapped.
+  - A body row that is completely empty is a spacer, and it stays.
+  - Rows can have indentation and block-quote markers (`> `), and every output row gets them. The header can have
+    a byte-order mark.
+  - The returned cursor keeps its logical cell, and its offset in non-blank bytes within the text of that cell.
+- `MdTableScan` is the same table test, for a caller that sees one line at a time (the tokenizer). It remembers the
+  cell count of the line above, and does not look at the line below. So it reports the delimiter row and the rows
+  under it, but not the header.
+
+### Markdown list markers (`modes/md/list.hpp`)
+
+`listMarkerLength()` recognises `- `, `* `, `+ `, `1. ` and `1) `. Reflow uses it in every mode, to reflow each list
+item on its own. The Markdown tokenizer uses it to end an open link at the next item.
+
+### Markdown fences (`modes/md/fence.hpp/.cpp`)
+
+`MdFence` is the line-by-line state of "which fenced code block am I in" (``` or ~~~, with a closing run at least
+as long). It is the only place that knows the rules. `markdownFencedLines()` runs it over a whole buffer for reflow,
+which leaves fenced lines untouched. The Markdown tokenizer carries one in its state for each line.
+
+### Diff mode (`modes/dif/syntax.hpp/.cpp`)
+
+The tokenizer classifies whole lines by their prefix: `+` (add), `-` (remove), `+++`/`---` (file headers) and `@@`
+(hunk headers). It needs no multi-line state, so it takes none.
+
+### JSON mode (`modes/jsn/syntax.hpp/.cpp`)
+
+The tokenizer recognises strings, numbers, the value literals `true`/`false`/`null`, and the brackets `[]` and
+`{}`. The value literals have the `Number` colour, like numeric literals, and JSON emits no `Keyword`. It needs no
+multi-line state, so it takes none. It provides `findMatchingBracketJson()` for jump-to-matching-bracket. That
+function matches only `[]` and `{}`, and skips brackets inside strings.
+
+### Shell mode (`modes/sh/syntax.hpp/.cpp`)
+
+The tokenizer recognises:
+
+- `#` comments
+- single-quoted, double-quoted and backtick strings
+- the reserved words (`if`/`then`/`fi`/`for`/`while`/`do`/`done`/…)
+- the parameter expansions `$VAR`/`${...}`/`$?` (the `Variable` token)
+- brackets
+- the operators `|` `&` `;` `<` `>` `=`
+
+It keeps multi-line state (`ShSyntaxState`) for heredocs. `state.heredocTag` makes every following line one
+`String` span, until a line equal to the tag. For the `<<-` form, which `state.heredocStripTabs` tracks, leading
+tabs are stripped. `<<<` here-strings are not heredocs.
+
+### YAML mode (`modes/yml/syntax.hpp/.cpp`)
+
+The tokenizer recognises:
+
+- `#` comments
+- mapping keys (`Keyword`): the text before a colon that is followed by a space or the end of the line
+- `'...'` and `"..."` strings
+- value literals, with the `Number` colour: the plain constants `true`/`false`/`yes`/`no`/`on`/`off`/`null`/`~`/`nan`
+  (case-insensitive) and numeric scalars. Mapping keys stay `Keyword`.
+- `: , -` and flow brackets
+- the node properties `&anchor`/`*alias`/`!tag` (`Preprocessor`)
+- directives (`%YAML`) and document markers (`---`/`...`), also `Preprocessor`
+
+It keeps multi-line state (`YmlSyntaxState`) for `|`/`>` block scalars. `state.yamlBlockCol` holds the indent of
+the line that starts the block. Lines with a deeper indent, and blank lines, are one `String` span, until a
+non-blank line goes back to that indent.
+
+### TOML mode (`modes/tml/syntax.hpp/.cpp`)
+
+The tokenizer recognises:
+
+- `#` comments
+- table headers `[a.b]`/`[[a]]`: names are `Preprocessor`, brackets are `Bracket`
+- bare and dotted keys before `=` (`Keyword`). Quoted key parts are `String`.
+- basic and literal strings, and their `"""`/`'''` multi-line forms
+- the value literals, as `Number`: booleans, integers (`0x`/`0o`/`0b`, `_` groups), floats (`inf`/`nan`) and
+  dates and times
+
+Inside inline tables `{...}`, it recognises keys after `{` and `,`. It keeps multi-line state (`TmlSyntaxState`).
+`state.tomlTriple` holds the open triple-quote character. `state.tomlDepth` counts the `[`/`{` that earlier lines
+left open. So the tokenizer parses lines inside a multi-line array as values, without header or key detection.
+
+### Python mode (`modes/py/syntax.hpp/.cpp`)
+
+The tokenizer recognises:
+
+- `#` comments
+- strings with optional `r`/`b`/`f`/`u` prefixes, single-quoted, double-quoted and triple-quoted
+- the keywords (`def`/`class`/`for`/`lambda`/…)
+- numbers: `0x`/`0o`/`0b`, `_` groups, fraction and exponent, and imaginary `j`
+- the value literals `None`/`True`/`False`, with the `Number` colour and not `Keyword`
+- `@decorator` lines (`Preprocessor`)
+- brackets, and `:` (`Operator`)
+
+It keeps multi-line state (`PySyntaxState`) for triple-quoted strings. `state.pyTriple` holds the open quote
+character, and `state.pyTripleRaw` turns off escape handling for `r'''...'''`. The `{...}` parts of f-strings stay
+inside the `String` span, without recursion. `Buffer::insertAt` also keeps the leading indent in Python, as in Cpp
+and Jsn.
+
+### Bracket matching and conflict markers
+
+`BufferView::gotoMatchingBracket()` uses the JSON matcher in JSON mode, and the C/C++ matcher in every other mode.
+The C/C++ matcher treats `<>` as brackets only when they are tagged `Angle`. In plain text, Markdown, shell, YAML,
+TOML and Python buffers, `<>` are `Operator` or `Normal` and never `Angle`. So those buffers get a clean fallback
+that matches only `()[]{}`, for free.
+
+In every mode, lines that match `<<<<<<<`, `=======` or `>>>>>>>` (7 identical characters) get `ConflictMarker`
+tokens when `_hasConflicts` is set. `scanForConflicts()` computes the flag on load, revert and save.
+
+### Tokens and the syntax cache
+
+All modes share the `SyntaxToken` enum (`Normal`, `Keyword`, `Comment`, `String`, `Operator`, `Paren`, `Bracket`,
+`Brace`, `Angle`, `Heading`, `Bold`, `Link`, `Number`, `Preprocessor`, `DiffAdd`, `DiffRemove`, `DiffMeta`,
+`DiffHunk`, `ConflictMarker`, `Variable`). `Buffer::render()` maps tokens to ANSI colours, which it takes from the
 `Palette` for `RenderParams::theme`.
 
-Per-line tokenisation results are cached in `Buffer::_synCache`. An edit
-makes the entries from its first line on stale, but keeps those below it
-as the *tail* (`_synCacheTailFrom`/`_synCacheTailUpto`): the edit
-primitives report the lines they replace (`noteLinesEdited()`). The
-entries below stay where they are, with the tail recording how far their
-lines have moved (`_synCacheTailShift`), and `fillSynCache()` moves them
-to their lines' places once before it uses them, however many edits came
-in between. (Moving them on every edit made a replace-all that inserts
-thousands of lines move the whole cache once per line.) When `fillSynCache()` re-tokenizes
-its way down and a line ends in the state its entry already recorded,
-every line below it would get the same tokens again, so the rest of the
-tail is taken as valid. Typing at the top of a file while another panel
-shows its end thus costs a line or two of tokenizing, not the whole file
-(98 ms per key on 600K lines before). The price is one move of the kept
-entries per redraw after edits that changed the line count, bounded by
-how far the cache was filled. Each entry, a `LineSyntax<S>`,
-holds the line's tokens and the tokenizer state after it, where `S` is
-the buffer mode's state struct (above), or `std::monostate` for modes
-without one (txt, dif, jsn), which takes no space. The cache is a
-`SyntaxCache` (`buffer/syntax_cache.hpp`), a `std::variant` of one entry
-vector per state type: the variant is per buffer, so entries carry no
-tag and each is only as large as its own mode needs (48 bytes for C and
-shell, 32 for Markdown/Python/YAML/TOML, 24 for the stateless modes).
-The two string-valued states are kept small: a C++ raw-string delimiter
-is at most 16 characters, so `RawDelimiter` holds it inline (17 bytes),
-and a shell heredoc tag, which has no limit, is a
-`shared_ptr<string const>` shared by every line of the heredoc.
-`ensureSynCache()` picks the mode's state type and tokenizer and hands
-them to `fillSynCache<S>()`, which switches the variant (and drops the
-old entries) when the mode's state type changed. `Buffer::render()` extends
-the cache up to just past the last visible line via `ensureSynCache()`;
-`Buffer::cachedLineTokens()` exposes this incrementally-extended cache
-to `findMatchingBracket()`, so jump-to-matching-bracket looks up
-pre-computed tokens for any line in the visible window and only
-tokenises on demand when a forward scan runs off the bottom.
+`Buffer::_synCache` caches the tokenisation result of each line. An edit makes the entries from its first line down
+stale, but keeps the entries below it as the *tail* (`_synCacheTailFrom`/`_synCacheTailUpto`). The edit primitives
+report the lines that they replace (`noteLinesEdited()`).
 
-The cheaper `advanceBlockCommentState()` exists for callers that only
-need to maintain the multi-line block-comment / raw-string-literal
-state without producing tokens. Unlike `tokenizeLine()` it skips
-identifier/keyword classification, bracket tagging, and the per-byte
-token vector allocation.
+- The entries below the edit stay where they are. The tail records how far their lines moved
+  (`_synCacheTailShift`). Before it uses them, `fillSynCache()` moves them to the places of their lines, once,
+  however many edits came in between. (Moving them on every edit made a replace-all that inserts thousands of lines
+  move the whole cache once per line.)
+- `fillSynCache()` tokenizes again from the top of the stale part downward. When a line ends in the same state as
+  its entry already recorded, every line below it would get the same tokens again. So the rest of the tail counts as
+  valid.
+- So typing at the top of a file, while another panel shows its end, costs a line or two of tokenizing, not the
+  whole file. (It was 98 ms per key on 600K lines before.)
+- The price is one move of the kept entries per redraw after edits that changed the line count. How far the cache
+  was filled limits that cost.
+
+Each entry is a `LineSyntax<S>`. It holds the tokens of the line and the tokenizer state after the line. `S` is the
+state struct of the buffer mode (above), or `std::monostate` for modes without state (txt, dif, jsn), which takes no
+space.
+
+The cache is a `SyntaxCache` (`buffer/syntax_cache.hpp`): a `std::variant` of one entry vector per state type. The
+variant belongs to the buffer, so entries carry no tag, and each entry is only as large as its own mode needs: 48
+bytes for C and shell, 32 for Markdown/Python/YAML/TOML, and 24 for the modes without state. The two string-valued
+states are kept small:
+
+- A C++ raw-string delimiter is at most 16 characters, so `RawDelimiter` holds it inline (17 bytes).
+- A shell heredoc tag has no length limit. It is a `shared_ptr<string const>` that every line of the heredoc shares.
+
+`ensureSynCache()` picks the state type and tokenizer of the mode and hands them to `fillSynCache<S>()`. When the
+state type of the mode changed, `fillSynCache<S>()` switches the variant and drops the old entries.
+`Buffer::render()` extends the cache to just past the last visible line, through `ensureSynCache()`.
+`Buffer::cachedLineTokens()` exposes this cache, which grows step by step, to `findMatchingBracket()`. So
+jump-to-matching-bracket looks up computed tokens for any line in the visible window. It tokenises on demand only
+when a forward scan runs past the bottom.
+
+The cheaper `advanceBlockCommentState()` is for callers that only need to keep the multi-line block-comment and
+raw-string-literal state, without tokens. Unlike `tokenizeLine()`, it skips the identifier and keyword
+classification, the bracket tagging and the allocation of the token vector for each byte.
 
 ---
 
@@ -1072,56 +1023,48 @@ token vector allocation.
 | File                                   | Contents                                                                                                                     |
 |----------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
 | `src/types.hpp`                        | `RowIdx`, `ColIdx`, `contentWidth()`, `BufferPoint`, `ByteOffset`, `VisualCol`, `ViewFrom`                                   |
-| `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace incl. `cursorTo()`) |
-| `src/utf8.hpp/.cpp`                    | UTF-8 decoding/encoding (`decodeUtf8`, `encodeUtf8`), character width (`charWidth`, `codepointWidth`), clusters (`charInfoAt` measures a character plus its combining marks as one unit; `clusterStart`, `prevClusterStart`, `nextClusterStart`, used by all cursor movement and character deletion in `BufferView`, `Buffer` and `Prompt`, so the cursor never rests between a character and its marks), `codepointClass` (block summary `kBlockClass` in front of one binary search), escaped characters — invisible format characters, line/paragraph separators and C1 controls — shown as `codepointEscape` escapes and orphaned marks drawn on `kOrphanMarkBase` ◌, `visualWidth`, `clipToVisualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
-| `src/unicode_tables.hpp`               | Generated (`tools/gen_unicode_tables.py`, Unicode 15.1 as in xfce4-terminal): `CodepointClass` (`Normal`, `Wide`, `Combining`, `Escaped`) and the sorted range table `kCodepointClasses`; looked up through `codepointClass()` in `utf8.hpp` |
-| `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache, edit cursor, mark), `PromptDisplay`, `PromptHistory` (per-label input history)    |
-| `src/paste_ring.hpp`                   | `PasteRing` — fixed-capacity ring buffer for clipboard history                                                               |
-| `src/bookmarks.hpp`                    | `Bookmarks` — session-wide named positions (`Bookmark{bufferName, point}`) keyed by a single char in `[0-9a-z]`; owned by `Screen` |
-| `src/clipboard.hpp/.cpp`               | X11 PRIMARY/CLIPBOARD integration via `xclip`/`xsel` subprocesses; lazy detection, async writes, sync reads                   |
+| `src/byte_constants.hpp`               | Named constants for terminal input bytes (`key::` namespace) and ANSI output sequences (`ansi::` namespace, with `cursorTo()`) |
+| `src/utf8.hpp/.cpp`                    | UTF-8 decoding and encoding (`decodeUtf8`, `encodeUtf8`). Character width (`charWidth`, `codepointWidth`). Clusters: `charInfoAt` measures a character and its combining marks as one unit. `clusterStart`, `prevClusterStart` and `nextClusterStart` serve all cursor movement and character deletion in `BufferView`, `Buffer` and `Prompt`, so the cursor never rests between a character and its marks. `codepointClass` (the block summary `kBlockClass` in front of one binary search). Escaped characters (invisible format characters, line and paragraph separators, C1 controls) show as `codepointEscape` escapes, and orphaned marks are drawn on `kOrphanMarkBase` ◌. Also `visualWidth`, `clipToVisualWidth`, `escapeNonPrintable`, `isWhitespace`, `readUtf8Tail`, `readUtf8Codepoint` |
+| `src/unicode_tables.hpp`               | Generated by `tools/gen_unicode_tables.py` (Unicode 15.1, as in xfce4-terminal): `CodepointClass` (`Normal`, `Wide`, `Combining`, `Escaped`) and the sorted range table `kCodepointClasses`. Lookups go through `codepointClass()` in `utf8.hpp` |
+| `src/prompt.hpp`                       | `Prompt` struct (label, callbacks, display cache, edit cursor, mark), `PromptDisplay`, `PromptHistory` (input history per label) |
+| `src/paste_ring.hpp`                   | `PasteRing`: fixed-capacity ring buffer for clipboard history                                                                |
+| `src/bookmarks.hpp`                    | `Bookmarks`: session-wide named positions (`Bookmark{bufferName, point}`), keyed by a single char in `[0-9a-z]`. `Screen` owns it |
+| `src/clipboard.hpp/.cpp`               | X11 PRIMARY/CLIPBOARD integration through `xclip`/`xsel` subprocesses: lazy detection, async writes, sync reads               |
 | `src/error_log.hpp/.cpp`               | Appends diagnostic messages to `~/.cx-errors` for post-mortem inspection                                                     |
-| `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) used by `Screen::findNext/findPrev`            |
-| `src/replace.hpp`                      | Exact find-and-replace helpers (`findNextMatchInBuffer`, `findPrevMatchInBuffer`, `replaceAllForward`) used by `Screen::openReplacePrompt` and, for a pattern with a newline, by Find. A pattern with newlines (`patternLines()`) matches across lines: first piece ends a line, middle pieces are whole lines, last piece starts the next line (`exactMatchOnLine()`). `applyRewrites()` applies sorted matches with their new text as one delete and one insert per group of touching lines, leaving the lines between groups (and their history sharing) alone; the multi-line replace-alls of both modes use it |
-| `src/regex.hpp/.cpp`                   | `Regex`, cx's own regex engine (no `std::regex`): a recursive-descent parser for the dialect in `docs/regex-dialect.md` (an ECMAScript subset without back-references or lookaround), a compiler to Pike VM instructions (`{n,m}` copies its operand; counts ≤ 1000, programs ≤ 20,000 instructions) and the VM, which matches code points (an invalid byte is a unit of its own) in O(n·m) time with an explicit stack instead of recursion, over one line or, for a pattern that can match a line break (`spansLines()`: `\n`, `\s`, a class listing one; never `.` or a negated class), over a `LineSource` of lines as one text (`searchLines`, `matchAtLines`, `LinesMatch` with points, cancellable via `ScanCancel`). Leftmost-first semantics as ECMAScript; groups 0..9 reported; `expand()` / `expandLines()` build replacements (`$& $0-$9 $$ $\` $'` and the escapes `\n \t \r \\`). A literal prefix lets the search skip ahead with `find()`. Its scratch memory is kept between calls (one thread only) |
-| `src/regex_search.hpp`                 | Regex search/replace helpers on top of `Regex` (`compileRegex`, `bufferLines`, `findFirstRegex`, `findNextRegexInBuffer`, `stepPastEmptyMatch`, `substituteCapturesInBuffer`, `substituteCaptures`, `replaceAllRegexForward`) used by Esc-X / Esc-Y; a line-spanning pattern is matched over the buffer's lines and its replace-all collects the matches and applies them with `applyRewrites()`; mid-line searches keep the preceding text as context and scans step past empty matches; both replace-all helpers match each line once against its original text, rewrite it in one edit, and (bypassing BufferView) record one history version themselves. Whole-buffer scans take a `ScanCancel`, asked once per megabyte (`ScanBudget`): `Screen::searchCancel()` stops them on Esc, Ctrl-g or a request to terminate, keeping any other key waiting as the next input (`_typedAhead`) |
-| `src/key_sequence.hpp`                 | `Key`, `KeyPress`, `decodeCsiKey`, `decodeSs3Key` — decode the CSI / SS3 sequences of cursor and editing keys (xterm, VT220/tmux and rxvt forms, with modifiers); anything else decodes to nothing. Also the bracketed-paste markers (`isPasteStart`, `kPasteEnd`) and `normalizePastedText` |
-| `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`) — translates `ESC[<…M/m` payloads from the input loop into structured events |
-| `src/cli.hpp`                          | `cli::parse` — turn argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`, which carries the `--theme`); `cli::usage` help text |
-| `src/theme.hpp`                        | `Theme` (`Dark` / `Light`, chosen by `--theme`) and `Palette` — the truecolor SGR sequences for syntax, whitespace markers, diff/conflict lines, find match and the Esc-_ current-line tint; `palette(Theme)` picks `kDarkPalette` or `kLightPalette` |
-| `src/version.hpp/.cpp`                 | `versionText()` for `--version`; compiled into `cx` only, from the build-generated `build_info.hpp` (`cmake/build_info.cmake`, run every build, rewrites only on change) |
-| `src/file_arg.hpp`                     | `parseFileArg` — split a `path:LINE` command-line argument into a path and an optional line number                          |
-| `src/fs_path.hpp`                      | Non-throwing path helpers for user-supplied paths: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir`, `holdsNul` (a typed name with a NUL byte is refused by the open and Save as prompts and the directory browser's rename and mkdir, as the system calls would cut it short) |
+| `src/search.hpp`                       | Smart-find helpers (`matchAt`, `FindFlags`, `findFirstMatch`, `findLastMatch`) for `Screen::findNext/findPrev`               |
+| `src/replace.hpp`                      | Exact find-and-replace helpers (`findNextMatchInBuffer`, `findPrevMatchInBuffer`, `replaceAllForward`) for `Screen::openReplacePrompt`, and for Find with a pattern that has a newline. A pattern with newlines (`patternLines()`) matches across lines: the first piece ends a line, middle pieces are whole lines, and the last piece starts the next line (`exactMatchOnLine()`). `applyRewrites()` applies sorted matches with their new text as one delete and one insert per group of touching lines. It leaves the lines between groups (and their history sharing) alone. The multi-line replace-alls of both modes use it |
+| `src/regex.hpp/.cpp`                   | `Regex`, cx's own regex engine (no `std::regex`). It has a recursive-descent parser for the dialect in `docs/regex-dialect.md` (an ECMAScript subset without back-references or lookaround), and a compiler to Pike VM instructions (`{n,m}` copies its operand, counts ≤ 1000, programs ≤ 20,000 instructions). The VM matches code points (an invalid byte is a unit of its own) in O(n·m) time, with an explicit stack instead of recursion. It runs over one line, or over a `LineSource` of lines as one text for a pattern that can match a line break (`spansLines()`: `\n`, `\s`, a class that lists one, never `.` or a negated class). The `LineSource` path is `searchLines`, `matchAtLines` and `LinesMatch` with points, and `ScanCancel` can cancel it. Semantics are leftmost-first, as in ECMAScript. It reports groups 0..9. `expand()` / `expandLines()` build replacements (`$& $0-$9 $$ $\` $'` and the escapes `\n \t \r \\`). A literal prefix lets the search skip ahead with `find()`. It keeps its scratch memory between calls (one thread only) |
+| `src/regex_search.hpp`                 | Regex search and replace helpers on top of `Regex` (`compileRegex`, `bufferLines`, `findFirstRegex`, `findNextRegexInBuffer`, `stepPastEmptyMatch`, `substituteCapturesInBuffer`, `substituteCaptures`, `replaceAllRegexForward`) for Esc-X / Esc-Y. A line-spanning pattern is matched over the buffer's lines, and its replace-all collects the matches and applies them with `applyRewrites()`. Mid-line searches keep the text before them as context, and scans step past empty matches. Both replace-all helpers match each line once against its original text, rewrite it in one edit, and record one history version themselves (they bypass BufferView). Whole-buffer scans take a `ScanCancel`, which they ask once per megabyte (`ScanBudget`). `Screen::searchCancel()` stops them on Esc, Ctrl-g or a request to terminate. It keeps any other key waiting as the next input (`_typedAhead`) |
+| `src/key_sequence.hpp`                 | `Key`, `KeyPress`, `decodeCsiKey`, `decodeSs3Key`: decode the CSI / SS3 sequences of cursor and editing keys (xterm, VT220/tmux and rxvt forms, with modifiers). Anything else decodes to nothing. Also the bracketed-paste markers (`isPasteStart`, `kPasteEnd`) and `normalizePastedText` |
+| `src/mouse.hpp`                        | SGR mouse parser (`parseSgrMouse`, `MouseEvent`): turns `ESC[<…M/m` payloads from the input loop into structured events     |
+| `src/cli.hpp`                          | `cli::parse` turns argv into a `cli::Command` (`ShowHelp` / `ShowVersion` / `OpenFiles`, which carries the `--theme`). `cli::usage` is the help text |
+| `src/theme.hpp`                        | `Theme` (`Dark` / `Light`, chosen by `--theme`) and `Palette`: the truecolor SGR sequences for syntax, whitespace markers, diff and conflict lines, the find match and the Esc-_ current-line tint. `palette(Theme)` picks `kDarkPalette` or `kLightPalette` |
+| `src/version.hpp/.cpp`                 | `versionText()` for `--version`. It is compiled into `cx` only, from the generated `build_info.hpp` (`cmake/build_info.cmake` runs on every build and rewrites the file only when it changes) |
+| `src/file_arg.hpp`                     | `parseFileArg` splits a `path:LINE` command-line argument into a path and an optional line number                           |
+| `src/fs_path.hpp`                      | Non-throwing path helpers for paths that the user supplies: `canonicalPath` (buffer keys in `BufferManager`/`DirBuffer`), `currentDir`, `holdsNul`. The open and Save As prompts and the rename and mkdir of the directory browser refuse a typed name with a NUL byte, because the system calls would cut it short |
 | `src/terminal/setup_terminal.hpp/.cpp` | RAII terminal raw-mode setup                                                                                                 |
 
 ---
 
 ### Performance characteristics
 
-The text storage model (a chunked `LineStore` of `LinePtr`s, one
-`shared_ptr<string const>` per line) has these characteristics:
+The text storage model is a chunked `LineStore` of `LinePtr`s, with one `shared_ptr<string const>` per line. It has
+these characteristics:
 
-- **Per-line overhead**: each line is a separate `std::string` plus a
-  `shared_ptr` control block (~32 bytes overhead + allocator metadata).
-  A file with millions of short lines wastes significant memory and
-  fragments the heap. Snapshots and the live buffer share chunks and
-  `LinePtr`s, so unchanged lines are not duplicated across versions.
-- **Line splits/joins are O(T + N/T)**: inserting or deleting a line
-  shifts pointers within one chunk (T ≈ 512) and updates the chunk
-  index; the first edit of a chunk shared with a snapshot clones it
-  (512 pointer copies).
-- **Region deletion and large pastes** drop or build whole chunks;
-  the cost is proportional to the region, not to the file.
-- **Huge lines**: an edit to a line shared with a snapshot copies the
-  whole line string, so history memory grows by the line's size per
-  version (e.g. a 4 MB minified line).
-- **Rendering is full-redraw**: `render()` rebuilds the entire screen
-  string on every keystroke. This is adequate for typical terminal sizes
-  but may cause lag on very large terminals over slow connections.
-- **Syntax cache**: Per-line tokenisation results are cached and only
-  recomputed from the edited line until the tokenizer state matches what
-  it was before the edit, avoiding full-file retokenisation on each
-  keystroke.
+- Overhead per line: each line is a separate `std::string` plus a `shared_ptr` control block (about 32 bytes of
+  overhead, plus allocator metadata). A file with millions of short lines wastes a lot of memory and fragments the
+  heap. Snapshots and the live buffer share chunks and `LinePtr`s, so versions do not duplicate unchanged lines.
+- Line splits and joins are O(T + N/T). Inserting or deleting a line shifts pointers within one chunk (T ≈ 512) and
+  updates the chunk index. The first edit of a chunk that a snapshot shares clones it (512 pointer copies).
+- Region deletion and large pastes drop or build whole chunks. The cost depends on the size of the region, not of
+  the file.
+- Huge lines: an edit to a line that a snapshot shares copies the whole line string. So history memory grows by the
+  size of the line per version (e.g. a 4 MB minified line).
+- Rendering always redraws everything. `render()` rebuilds the whole screen string on every keystroke. This is
+  enough for typical terminal sizes, but it can cause lag on very large terminals over slow connections.
+- Syntax cache: cx caches the tokenisation result of each line. After an edit, it computes them again only from the
+  edited line down, until the tokenizer state matches what it was before the edit. So it does not tokenise the
+  whole file again on each keystroke.
 
-For a production editor handling 100 MB+ files, a gap buffer, rope, or
-piece table would be more appropriate. The current model is chosen for
-simplicity and readability.
+A production editor for files of 100 MB and more would do better with a gap buffer, a rope or a piece table. The
+current model is chosen for simplicity and readability.

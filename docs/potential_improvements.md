@@ -1,13 +1,10 @@
-# Potential Improvements
+# Potential improvements
 
-Ideas for future work that would improve performance or architecture but
-are not yet implemented.
+These ideas would improve performance or architecture. cx does not implement them yet.
 
 ## Dirty-region rendering
 
-`render()` rebuilds the entire screen string on every keystroke via
-`_renderBuf.clear()` followed by a full reconstruction. A double-buffer
-or dirty-region approach could skip re-rendering unchanged lines, reducing
-the per-frame cost from O(rows × cols) to O(changed lines × cols). This
-would help on very large terminals or over slow SSH connections where the
-full write can cause visible flicker.
+`render()` rebuilds the whole screen string on every keystroke. It calls `_renderBuf.clear()` and then builds the
+string again from the start. A double buffer or a dirty-region approach could skip the lines that did not change.
+That would cut the cost of a frame from O(rows × cols) to O(changed lines × cols). It would help on very large
+terminals, and over slow SSH connections where the full write can cause visible flicker.
